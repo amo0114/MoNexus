@@ -6,6 +6,12 @@ import {
   type AnnouncementReceiptResult,
 } from '../api/announcements'
 import type { PublicAnnouncement } from '../types/admin'
+import { getAuthSessionContext } from '../auth/sessionContext'
+import { useAuthStore } from '../stores/authStore'
+import {
+  broadcastAnnouncementReceiptInvalidation,
+  subscribeAnnouncementReceiptInvalidation,
+} from '../realtime/announcementSyncBroadcast'
 
 type NoticeDisplayState = {
   count: number
@@ -13,6 +19,7 @@ type NoticeDisplayState = {
 }
 
 const NOTICE_STORAGE_PREFIX = 'monexus:announcement:notice:'
+const MAX_BROWSER_TIMEOUT_MS = 2_147_000_000
 
 function noticeKey(announcement: PublicAnnouncement) {
   return `${NOTICE_STORAGE_PREFIX}${announcement.id}:${announcement.version}`
@@ -53,25 +60,138 @@ function applyReceipt(
 }
 
 export function useAnnouncements() {
-  const [items, setItems] = useState<PublicAnnouncement[]>([])
-  const [loading, setLoading] = useState(true)
+  const userId = useAuthStore((state) => state.user?.id ?? null)
+  const userRole = useAuthStore((state) => state.user?.role ?? null)
+  const accessToken = useAuthStore((state) => state.accessToken)
+  const authEpoch = useAuthStore((state) => state.authEpoch)
+  const sessionContext = getAuthSessionContext({ userId, accessToken, authEpoch })
+  const sessionOwnerKey = [
+    userId ?? 'visitor',
+    sessionContext?.sessionId ?? 'unbound',
+    authEpoch,
+    userRole ?? 'visitor',
+  ].join(':')
+  const [snapshot, setSnapshot] = useState<{ ownerKey: string; items: PublicAnnouncement[] } | null>(null)
+  const [loadingOwnerKey, setLoadingOwnerKey] = useState(sessionOwnerKey)
   const [noticeRevision, setNoticeRevision] = useState(0)
   const shownNoticeKeys = useRef(new Set<string>())
+  const ownerKeyRef = useRef(sessionOwnerKey)
+  const requestGenerationRef = useRef(0)
+  const receiptMutationEpochRef = useRef(0)
+  const receiptMutationsInFlightRef = useRef(0)
+  const reloadInFlightRef = useRef(false)
+  const reloadDirtyRef = useRef(false)
+  const reloadRef = useRef<() => Promise<void>>(() => Promise.resolve())
+  const mountedRef = useRef(true)
+  ownerKeyRef.current = sessionOwnerKey
 
   const reload = useCallback(async () => {
-    setLoading(true)
-    try {
-      setItems(await getPublicAnnouncements())
-    } finally {
-      setLoading(false)
+    if (receiptMutationsInFlightRef.current > 0) {
+      reloadDirtyRef.current = true
+      return
     }
-  }, [])
+    if (reloadInFlightRef.current) {
+      reloadDirtyRef.current = true
+      return
+    }
+
+    reloadInFlightRef.current = true
+    const requestOwnerKey = sessionOwnerKey
+    const requestGeneration = ++requestGenerationRef.current
+    const requestMutationEpoch = receiptMutationEpochRef.current
+    setLoadingOwnerKey(requestOwnerKey)
+    try {
+      const nextItems = await getPublicAnnouncements()
+      if (
+        mountedRef.current
+        && ownerKeyRef.current === requestOwnerKey
+        && requestGenerationRef.current === requestGeneration
+        && receiptMutationEpochRef.current === requestMutationEpoch
+      ) {
+        setSnapshot({ ownerKey: requestOwnerKey, items: nextItems })
+      }
+    } finally {
+      reloadInFlightRef.current = false
+      if (
+        mountedRef.current
+        && ownerKeyRef.current === requestOwnerKey
+        && requestGenerationRef.current === requestGeneration
+      ) {
+        setLoadingOwnerKey('')
+      }
+      if (reloadDirtyRef.current) {
+        reloadDirtyRef.current = false
+        if (mountedRef.current) void reloadRef.current().catch(() => {})
+      }
+    }
+  }, [sessionOwnerKey])
+  reloadRef.current = reload
+
+  const items = snapshot?.ownerKey === sessionOwnerKey ? snapshot.items : []
+  const loading = loadingOwnerKey === sessionOwnerKey
 
   useEffect(() => {
     void reload().catch(() => {
       // Announcements are an enhancement, never a reason to interrupt a page.
     })
   }, [reload])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      requestGenerationRef.current++
+    }
+  }, [])
+
+  useEffect(() => subscribeAnnouncementReceiptInvalidation(() => {
+    void reload().catch(() => {})
+  }), [reload])
+
+  useEffect(() => {
+    const reloadWhenVisible = () => {
+      if (document.visibilityState === 'visible') void reload().catch(() => {})
+    }
+    document.addEventListener('visibilitychange', reloadWhenVisible)
+    const calibrationTimer = window.setInterval(reloadWhenVisible, 5 * 60_000)
+    return () => {
+      document.removeEventListener('visibilitychange', reloadWhenVisible)
+      window.clearInterval(calibrationTimer)
+    }
+  }, [reload])
+
+  useEffect(() => {
+    const now = Date.now()
+    const nextExpiry = items.reduce<number | null>((nearestExpiry, announcement) => {
+      if (!announcement.endsAt) return nearestExpiry
+      const expiry = new Date(announcement.endsAt).getTime()
+      if (!Number.isFinite(expiry) || expiry <= now) return nearestExpiry
+      return nearestExpiry === null ? expiry : Math.min(nearestExpiry, expiry)
+    }, null)
+    if (nextExpiry === null) return
+
+    const expiryTimer = window.setTimeout(() => {
+      void reload().catch(() => {})
+    }, Math.min(MAX_BROWSER_TIMEOUT_MS, Math.max(0, nextExpiry - now + 50)))
+    return () => window.clearTimeout(expiryTimer)
+  }, [items, reload])
+
+  const beginReceiptMutation = useCallback(() => {
+    receiptMutationEpochRef.current++
+    requestGenerationRef.current++
+    receiptMutationsInFlightRef.current++
+    reloadDirtyRef.current = true
+  }, [])
+
+  const finishReceiptMutation = useCallback(() => {
+    receiptMutationsInFlightRef.current = Math.max(0, receiptMutationsInFlightRef.current - 1)
+    if (receiptMutationsInFlightRef.current > 0) return
+
+    reloadDirtyRef.current = true
+    if (reloadInFlightRef.current || !mountedRef.current) return
+    reloadDirtyRef.current = false
+    void reloadRef.current().catch(() => {})
+  }, [])
 
   const shouldShowNotice = useCallback((announcement: PublicAnnouncement) => {
     // noticeRevision intentionally participates so localStorage updates cause
@@ -102,16 +222,44 @@ export function useAnnouncements() {
   }, [])
 
   const markRead = useCallback(async (announcement: PublicAnnouncement) => {
-    const receipt = await markAnnouncementRead(announcement.id)
-    setItems((current) => applyReceipt(current, announcement.id, receipt))
-    return receipt
-  }, [])
+    const requestOwnerKey = sessionOwnerKey
+    beginReceiptMutation()
+    try {
+      const receipt = await markAnnouncementRead(announcement.id, announcement.version)
+      if (
+        ownerKeyRef.current === requestOwnerKey
+        && receipt.version === announcement.version
+      ) {
+        setSnapshot((current) => current?.ownerKey === requestOwnerKey
+          ? { ...current, items: applyReceipt(current.items, announcement.id, receipt) }
+          : current)
+        broadcastAnnouncementReceiptInvalidation()
+      }
+      return receipt
+    } finally {
+      finishReceiptMutation()
+    }
+  }, [beginReceiptMutation, finishReceiptMutation, sessionOwnerKey])
 
   const acknowledge = useCallback(async (announcement: PublicAnnouncement) => {
-    const receipt = await acknowledgeAnnouncement(announcement.id)
-    setItems((current) => applyReceipt(current, announcement.id, receipt))
-    return receipt
-  }, [])
+    const requestOwnerKey = sessionOwnerKey
+    beginReceiptMutation()
+    try {
+      const receipt = await acknowledgeAnnouncement(announcement.id, announcement.version)
+      if (
+        ownerKeyRef.current === requestOwnerKey
+        && receipt.version === announcement.version
+      ) {
+        setSnapshot((current) => current?.ownerKey === requestOwnerKey
+          ? { ...current, items: applyReceipt(current.items, announcement.id, receipt) }
+          : current)
+        broadcastAnnouncementReceiptInvalidation()
+      }
+      return receipt
+    } finally {
+      finishReceiptMutation()
+    }
+  }, [beginReceiptMutation, finishReceiptMutation, sessionOwnerKey])
 
   const unreadCount = useMemo(() => {
     // Keep the local revision dependency explicit: ordinary notices are local

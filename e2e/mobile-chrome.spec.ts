@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { createMockAccessToken } from './auth-fixtures'
 
 test.use({
   viewport: { width: 390, height: 844 },
@@ -79,12 +80,12 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
     return route.fulfill({ status: 404, json: { error: { message: 'not mocked' } } })
   })
 
-  await page.addInitScript((user) => {
+  await page.addInitScript(({ user, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
-      state: { user, accessToken: 'mobile-chrome-test-token', isLoggedIn: true },
+      state: { user, accessToken, isLoggedIn: true },
       version: 0,
     }))
-  }, TEST_USER)
+  }, { user: TEST_USER, accessToken: createMockAccessToken(TEST_USER) })
   await page.goto('/profile')
 
   const navbar = page.getByTestId('app-navbar')
@@ -199,12 +200,12 @@ test('mobile admin has a direct leaderboard tab', async ({ page }) => {
     return route.fulfill({ status: 404, json: { error: { message: 'not mocked' } } })
   })
 
-  await page.addInitScript((user) => {
+  await page.addInitScript(({ user, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
-      state: { user, accessToken: 'mobile-admin-chrome-test-token', isLoggedIn: true },
+      state: { user, accessToken, isLoggedIn: true },
       version: 0,
     }))
-  }, TEST_ADMIN)
+  }, { user: TEST_ADMIN, accessToken: createMockAccessToken(TEST_ADMIN) })
   await page.goto('/leaderboard')
 
   const tab = page.getByTestId('tab-bar-leaderboard')

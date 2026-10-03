@@ -3,6 +3,7 @@ import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } f
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionContext } from '../auth/sessionContext'
 import { disputeOrder, closeOrder, createOrder, renewOrder, type RenewPrecheck } from '../api/orders'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { OwnReview } from '../api/reviews'
@@ -157,6 +158,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     agreementVersions?: Record<string, string>
   ): Promise<ConfirmOutcome> {
     if (!renewInfo || renewSubmitting) return 'failed'
+    const renewalAuthContext = getAuthSessionContext(useAuthStore.getState())
     setRenewSubmitting(true)
     try {
       const data = await createOrder(renewInfo.productId, {
@@ -173,7 +175,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         // SPEC-LEGAL-001：续费同样是新订单；弹窗仅在用户勾选后回传版本。
         agreementVersions,
       })
-      useAuthStore.getState().updatePoints(data.balanceAfter)
+      if (renewalAuthContext) {
+        useAuthStore.getState().updatePoints(data.balanceAfter, renewalAuthContext)
+      }
       // PR-3 复审：续费是全新的进行中订单——人工履约续费不会产生买家
       // 「新订单」实时事件，这里无条件补拉权威计数（即时已交付单不计数）。
       void useAppStore.getState().refreshOrderAttention()

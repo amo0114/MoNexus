@@ -53,6 +53,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, '请输入密码'),
 })
 
+export const expectedSessionBodySchema = z.object({
+  expectedSessionId: z.string().uuid('登录会话标识无效').optional(),
+}).strict().optional().default({})
+
 const mfaChallengeIdSchema = z.string().uuid('MFA 验证请求无效')
 
 // Keep the factor payload broadly shaped enough for a wrong TOTP/recovery

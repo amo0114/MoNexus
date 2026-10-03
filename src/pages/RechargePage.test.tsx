@@ -57,6 +57,18 @@ import RechargePage from './RechargePage'
 
 const ORDER_ID = '11111111-1111-4111-8111-111111111111'
 
+function createAccessToken(userId: number, sessionId: string) {
+  const payload = btoa(JSON.stringify({
+    userId,
+    sid: sessionId,
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `header.${payload}.signature`
+}
+
 function apiError(code: string, message = code, status = 409) {
   return Object.assign(new Error(message), {
     response: { status, data: { error: { code, message } } },
@@ -178,8 +190,10 @@ describe('RechargePage', () => {
         points: 500,
         merchant: null,
       },
-      accessToken: 'token',
+      accessToken: createAccessToken(1, 'recharge-test-session'),
+      sessionId: 'recharge-test-session',
       isLoggedIn: true,
+      authEpoch: 1,
     })
     getRechargeConfig.mockImplementation(async (currency: string) => configFor(currency as 'CNY' | 'USD'))
     createRechargeQuote.mockImplementation(async (body: { amountMinor: string; currency: string }) =>

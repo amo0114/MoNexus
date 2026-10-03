@@ -5,6 +5,7 @@ import { useAppStore } from '../../stores/appStore'
 import { updateMe } from '../../api/auth'
 import { uploadImage, UploadError } from '../../api/uploads'
 import { getApiErrorMessage } from '../../api/error'
+import { getAuthSessionContext, matchesAuthSessionContext } from '../../auth/sessionContext'
 import AvatarPresetDialog from './AvatarPresetDialog'
 import UserAvatar from '../ui/UserAvatar'
 
@@ -18,6 +19,14 @@ export default function ProfileIdentityCard() {
   const showToast = useAppStore((s) => s.showToast)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  function getRequestAuthContext() {
+    return getAuthSessionContext(useAuthStore.getState())
+  }
+
+  function isRequestContextCurrent(requestContext: NonNullable<ReturnType<typeof getRequestAuthContext>>) {
+    return matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))
+  }
+
   const [editing, setEditing] = useState(false)
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [savingNick, setSavingNick] = useState(false)
@@ -26,33 +35,40 @@ export default function ProfileIdentityCard() {
 
   async function handleSavePreset(avatarUrl: string) {
     if (!user || uploading) return
+    const requestContext = getRequestAuthContext()
+    if (!requestContext) return
     setUploading(true)
     try {
       const me = await updateMe({ avatarUrl })
-      setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null })
+      if (!setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null }, requestContext)) return
       setChoosingAvatar(false)
       showToast('头像已更新')
     } catch (err: unknown) {
-      showToast(getApiErrorMessage(err, '头像保存失败，请重试'), 'error')
+      if (isRequestContextCurrent(requestContext)) {
+        showToast(getApiErrorMessage(err, '头像保存失败，请重试'), 'error')
+      }
     } finally {
       setUploading(false)
     }
   }
 
   async function handleSaveNickname() {
+    if (!user) return
     const value = nickname.trim()
     if (!value || value.length > 20) {
       showToast('昵称需为 1-20 个字符', 'error')
       return
     }
+    const requestContext = getRequestAuthContext()
+    if (!requestContext) return
     setSavingNick(true)
     try {
       const me = await updateMe({ nickname: value })
-      setUser({ ...user!, ...me, merchant: me.merchant ?? user?.merchant ?? null })
+      if (!setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null }, requestContext)) return
       showToast('昵称已更新')
       setEditing(false)
     } catch (err: unknown) {
-      showToast(getApiErrorMessage(err, '保存失败'), 'error')
+      if (isRequestContextCurrent(requestContext)) showToast(getApiErrorMessage(err, '保存失败'), 'error')
     } finally {
       setSavingNick(false)
     }
@@ -60,13 +76,16 @@ export default function ProfileIdentityCard() {
 
   async function handleAvatarFile(file: File | null) {
     if (!file || !user) return
+    const requestContext = getRequestAuthContext()
+    if (!requestContext) return
     setUploading(true)
     try {
       const { url } = await uploadImage(file)
       const me = await updateMe({ avatarUrl: url })
-      setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null })
+      if (!setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null }, requestContext)) return
       showToast('头像已更新')
     } catch (err: unknown) {
+      if (!isRequestContextCurrent(requestContext)) return
       if (err instanceof UploadError) {
         showToast(err.message, 'error')
       } else {
@@ -80,13 +99,17 @@ export default function ProfileIdentityCard() {
 
   async function handleClearAvatar() {
     if (!user?.avatarUrl) return
+    const requestContext = getRequestAuthContext()
+    if (!requestContext) return
     setUploading(true)
     try {
       const me = await updateMe({ avatarUrl: null })
-      setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null })
+      if (!setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null }, requestContext)) return
       showToast('已恢复默认头像')
     } catch (err: unknown) {
-      showToast(getApiErrorMessage(err, '清除头像失败'), 'error')
+      if (isRequestContextCurrent(requestContext)) {
+        showToast(getApiErrorMessage(err, '清除头像失败'), 'error')
+      }
     } finally {
       setUploading(false)
     }

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { createMockAccessToken } from './auth-fixtures'
 
 const profile = {
   id: 4242,
@@ -52,18 +53,16 @@ function apiPath(path: string) {
 }
 
 async function openGallery(page: Page) {
-  await page.addInitScript((authenticatedProfile) => {
+  await page.addInitScript(({ authenticatedProfile, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
       state: {
         user: authenticatedProfile,
-        // The role claim prevents ProtectedRoute's role-healing path from
-        // attempting a real refresh request during this fully mocked UI test.
-        accessToken: 'e30.eyJyb2xlIjoidXNlciJ9.signature',
+        accessToken,
         isLoggedIn: true,
       },
       version: 0,
     }))
-  }, profile)
+  }, { authenticatedProfile: profile, accessToken: createMockAccessToken(profile) })
 
   await page.route('**/api/**', async (route: Route) => {
     const path = new URL(route.request().url()).pathname

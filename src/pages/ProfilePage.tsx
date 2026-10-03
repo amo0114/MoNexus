@@ -7,7 +7,7 @@ import { useAppStore } from '../stores/appStore'
 import api from '../api/client'
 import { getApiErrorMessage } from '../api/error'
 import { getOrders, getOrderDetail } from '../api/orders'
-import { changePassword, updateMe } from '../api/auth'
+import { changePassword, logoutCurrentSession, updateMe } from '../api/auth'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
 import OrderDetailModal from '../components/OrderDetailModal'
 import PointsHistorySheet from '../components/PointsHistorySheet'
@@ -23,6 +23,7 @@ import SessionManager from '../components/auth/SessionManager'
 import { getMyInvites, createInviteCode, type MyInvitesResponse } from '../api/invites'
 import ProfileIdentityCard from '../components/profile/ProfileIdentityCard'
 import ChatBindCard from '../components/ChatBindCard'
+import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
 
 
 function PasswordChangeCard() {
@@ -55,14 +56,20 @@ function PasswordChangeCard() {
       return
     }
 
+    const passwordChangeAuthContext = getAuthSessionContext(useAuthStore.getState())
+    if (!passwordChangeAuthContext) return
+
     setLoading(true)
     try {
       await changePassword({ currentPassword, newPassword })
+      if (!matchesAuthSessionContext(passwordChangeAuthContext, getAuthSessionContext(useAuthStore.getState()))) return
       showToast('密码已修改，请重新登录')
-      logout()
+      logout(passwordChangeAuthContext)
       navigate('/login')
     } catch (err: any) {
-      setErrorMsg(getApiErrorMessage(err, '修改密码失败'))
+      if (matchesAuthSessionContext(passwordChangeAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        setErrorMsg(getApiErrorMessage(err, '修改密码失败'))
+      }
     } finally {
       setLoading(false)
     }
@@ -464,10 +471,12 @@ export default function ProfilePage() {
   }, [historyOpen])
 
   async function handleCheckin() {
+    const checkinAuthContext = getAuthSessionContext(useAuthStore.getState())
+    if (!checkinAuthContext) return
     setCheckingIn(true)
     try {
       const { data } = await api.post('/points/checkin')
-      useAuthStore.getState().updatePoints(data.balanceAfter)
+      useAuthStore.getState().updatePoints(data.balanceAfter, checkinAuthContext)
       setHasCheckedIn(true)
       showToast(`打卡成功！积分 +${data.totalReward}`)
     } catch (err: any) {
@@ -478,13 +487,17 @@ export default function ProfilePage() {
   }
 
   async function handleLogout() {
+    const logoutAuthContext = getAuthSessionContext(useAuthStore.getState())
+    if (!logoutAuthContext) return
     try {
-      await api.post('/auth/logout')
+      await logoutCurrentSession()
     } catch (e) {
       // ignore
     } finally {
-      logout()
-      navigate('/login')
+      if (matchesAuthSessionContext(logoutAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        logout(logoutAuthContext)
+        navigate('/login')
+      }
     }
   }
 

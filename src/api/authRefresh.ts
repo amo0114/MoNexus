@@ -1,85 +1,205 @@
 import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
+import { supportsCrossTabAuthLock, withAuthCookieMutationLock } from './authCookieLock'
+import { broadcastAuthSessionChange } from '../auth/sessionStorageSync'
+import {
+  accessTokenMatchesSession,
+  AuthSessionChangedError,
+  getAuthSessionContext,
+  hasUnexpiredAccessToken,
+  matchesAuthSessionContext,
+  readPersistedAuthIdentity,
+  type AuthSessionContext,
+} from '../auth/sessionContext'
 
 type PersistedAuthState = {
   state?: {
+    user?: { id?: unknown } | null
     accessToken?: unknown
   }
 }
 
-let refreshPromise: Promise<string> | null = null
-
-/**
- * A Refresh Token is single-use: the backend rotates it and regards a second
- * use as replay. Keep all 401 recovery in one place so parallel API requests
- * never spend the same browser cookie more than once.
- */
-function requestRefreshToken(): Promise<string> {
-  if (!refreshPromise) {
-    refreshPromise = axios
-      .post<{ accessToken: string }>('/api/auth/refresh', undefined, { withCredentials: true })
-      .then(({ data }) => {
-        useAuthStore.getState().setAccessToken(data.accessToken)
-        return data.accessToken
-      })
-      .finally(() => {
-        refreshPromise = null
-      })
-  }
-
-  return refreshPromise
+type PersistedAuthSnapshot = {
+  available: boolean
+  identity: { userId: number; sessionId: string } | null
+  accessToken: string | null
 }
 
-/**
- * Another tab persists its newly refreshed access token synchronously. A tab
- * waiting for the origin-wide lock adopts that token instead of rotating the
- * shared cookie a second time.
- */
-function getTokenRefreshedByAnotherTab(staleToken: string | null): string | null {
-  if (typeof window === 'undefined') return null
+const refreshPromises = new Map<string, Promise<string>>()
+export const AUTH_REFRESH_TIMEOUT_MS = 15_000
+
+function readPersistedAuthSnapshot(): PersistedAuthSnapshot {
+  if (typeof window === 'undefined') {
+    return { available: false, identity: null, accessToken: null }
+  }
 
   try {
-    const raw = window.localStorage.getItem('monexus-auth')
-    if (!raw) return null
-    const persisted = JSON.parse(raw) as PersistedAuthState
-    const token = persisted.state?.accessToken
-    return typeof token === 'string' && token.length > 0 && token !== staleToken ? token : null
+    const rawValue = window.localStorage.getItem('monexus-auth')
+    if (!rawValue) return { available: true, identity: null, accessToken: null }
+
+    const persisted = JSON.parse(rawValue) as PersistedAuthState
+    return {
+      available: true,
+      identity: readPersistedAuthIdentity(rawValue),
+      accessToken: typeof persisted.state?.accessToken === 'string'
+        ? persisted.state.accessToken
+        : null,
+    }
   } catch {
-    return null
+    return { available: false, identity: null, accessToken: null }
   }
+}
+
+function getCurrentAuthSessionContext(): AuthSessionContext | null {
+  return getAuthSessionContext(useAuthStore.getState())
+}
+
+function isCurrentAuthSession(context: AuthSessionContext): boolean {
+  return matchesAuthSessionContext(getCurrentAuthSessionContext(), context)
+}
+
+function persistedIdentityMatches(
+  snapshot: PersistedAuthSnapshot,
+  context: AuthSessionContext,
+): boolean {
+  return snapshot.identity?.userId === context.userId
+    && snapshot.identity.sessionId === context.sessionId
+}
+
+function invalidateLocalSession(context: AuthSessionContext): void {
+  if (!isCurrentAuthSession(context)) return
+
+  const persistedAuth = readPersistedAuthSnapshot()
+  if (persistedAuth.available && !persistedIdentityMatches(persistedAuth, context)) {
+    // A different tab now owns the shared storage/cookie identity. Clear only
+    // this tab so an older response cannot erase that tab's persisted login.
+    useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
+    return
+  }
+
+  useAuthStore.getState().logout(context)
+  broadcastAuthSessionChange(null)
+}
+
+function assertPersistedIdentityMatches(context: AuthSessionContext): PersistedAuthSnapshot {
+  const snapshot = readPersistedAuthSnapshot()
+  if (
+    snapshot.available
+    && !persistedIdentityMatches(snapshot, context)
+  ) {
+    useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
+    throw new AuthSessionChangedError()
+  }
+
+  return snapshot
 }
 
 function isTerminalRefreshError(error: unknown): boolean {
   if (!axios.isAxiosError(error)) return false
-  // /auth/refresh has no user input. Its 400 is the server's banned-account
-  // result; 401 means missing, expired, revoked, or replayed refresh token.
   return error.response?.status === 400 || error.response?.status === 401
 }
 
-/**
- * Refresh the access token once per tab and, where supported, once per
- * browser origin. Transient errors deliberately preserve the local session:
- * the next request can retry while a valid refresh cookie still exists.
- */
-export async function refreshAccessToken(staleToken = useAuthStore.getState().accessToken): Promise<string> {
-  const refresh = async () => {
-    const tokenFromAnotherTab = getTokenRefreshedByAnotherTab(staleToken)
-    if (tokenFromAnotherTab) {
-      useAuthStore.getState().setAccessToken(tokenFromAnotherTab)
-      return tokenFromAnotherTab
+function isServerSessionChangedError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false
+  return error.response?.data?.error?.code === 'SESSION_CHANGED'
+}
+
+async function refreshWithinCookieLock(
+  staleToken: string,
+  context: AuthSessionContext,
+): Promise<string> {
+  return withAuthCookieMutationLock(async () => {
+    if (!isCurrentAuthSession(context)) throw new AuthSessionChangedError()
+
+    const persistedAuth = assertPersistedIdentityMatches(context)
+    const newerSameSessionToken = persistedAuth.accessToken
+    if (
+      newerSameSessionToken
+      && newerSameSessionToken !== staleToken
+      && accessTokenMatchesSession(newerSameSessionToken, context)
+      && hasUnexpiredAccessToken(newerSameSessionToken)
+    ) {
+      if (useAuthStore.getState().accessToken === newerSameSessionToken) {
+        // Another request in this tab already rotated this same session.
+        return newerSameSessionToken
+      }
+
+      if (!supportsCrossTabAuthLock()) {
+        // Without a browser-wide lock, do not adopt another tab's token or
+        // race its single-use refresh cookie. Require this tab to re-authenticate.
+        useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
+        throw new AuthSessionChangedError()
+      }
+
+      if (!useAuthStore.getState().setAccessTokenForSession(newerSameSessionToken, context)) {
+        throw new AuthSessionChangedError()
+      }
+      return newerSameSessionToken
     }
-    return requestRefreshToken()
+
+    const refreshController = new AbortController()
+    const refreshTimeout = setTimeout(
+      () => refreshController.abort(),
+      AUTH_REFRESH_TIMEOUT_MS,
+    )
+    let data: { accessToken: string }
+    try {
+      const response = await axios.post<{ accessToken: string }>(
+        '/api/auth/refresh',
+        { expectedSessionId: context.sessionId },
+        {
+          withCredentials: true,
+          timeout: AUTH_REFRESH_TIMEOUT_MS,
+          signal: refreshController.signal,
+        },
+      )
+      data = response.data
+    } finally {
+      clearTimeout(refreshTimeout)
+    }
+
+    if (
+      !isCurrentAuthSession(context)
+      || !accessTokenMatchesSession(data.accessToken, context)
+      || !useAuthStore.getState().setAccessTokenForSession(data.accessToken, context)
+    ) {
+      throw new AuthSessionChangedError()
+    }
+
+    broadcastAuthSessionChange({ userId: context.userId, sessionId: context.sessionId })
+    return data.accessToken
+  })
+}
+
+/** Refresh once per captured user/session/epoch, never for a newer identity. */
+export async function refreshAccessToken(
+  staleToken = useAuthStore.getState().accessToken,
+  context = getCurrentAuthSessionContext(),
+): Promise<string> {
+  if (!staleToken || !context || !isCurrentAuthSession(context)) {
+    throw new AuthSessionChangedError()
+  }
+
+  const inFlightKey = `${context.userId}:${context.sessionId}:${context.authEpoch}`
+  let refreshPromise = refreshPromises.get(inFlightKey)
+  if (!refreshPromise) {
+    refreshPromise = refreshWithinCookieLock(staleToken, context)
+    refreshPromises.set(inFlightKey, refreshPromise)
   }
 
   try {
-    if (typeof navigator !== 'undefined' && navigator.locks) {
-      return await navigator.locks.request('monexus-auth-refresh', refresh)
-    }
-    return await refresh()
+    return await refreshPromise
   } catch (error) {
-    if (isTerminalRefreshError(error)) {
-      useAuthStore.getState().logout()
+    if (
+      isCurrentAuthSession(context)
+      && (isTerminalRefreshError(error) || isServerSessionChangedError(error))
+    ) {
+      invalidateLocalSession(context)
     }
     throw error
+  } finally {
+    if (refreshPromises.get(inFlightKey) === refreshPromise) {
+      refreshPromises.delete(inFlightKey)
+    }
   }
 }

@@ -55,6 +55,9 @@ export type ErrorCode =
   | 'MFA_TOO_MANY_ATTEMPTS'
   | 'MFA_REQUIRED'
   | 'SESSION_REVOKED'
+  | 'SESSION_CHANGED'
+  | 'ANNOUNCEMENT_VERSION_CHANGED'
+  | 'ANNOUNCEMENT_VERSION_REQUIRED'
   // A session-management caller tried to delete its own active family. The
   // existing logout endpoint is the only current-session revocation path.
   | 'CURRENT_SESSION_REQUIRES_LOGOUT'
@@ -195,6 +198,18 @@ export function mfaRequired(message = '管理员需要完成多因素验证') {
 
 export function sessionRevoked(message = '登录会话已失效，请重新登录') {
   return new HttpError(401, 'SESSION_REVOKED', message)
+}
+
+export function sessionChanged(message = '登录会话已变化，请重新登录') {
+  return new HttpError(409, 'SESSION_CHANGED', message)
+}
+
+export function announcementVersionChanged(message = '公告已更新，请重新阅读后再确认') {
+  return new HttpError(409, 'ANNOUNCEMENT_VERSION_CHANGED', message)
+}
+
+export function announcementVersionRequired(message = '公告版本参数缺失，请刷新后重新阅读并确认') {
+  return new HttpError(409, 'ANNOUNCEMENT_VERSION_REQUIRED', message)
 }
 
 export function tooManyRequests(message = '请求过于频繁，请稍后再试', retryAfterSeconds?: number) {

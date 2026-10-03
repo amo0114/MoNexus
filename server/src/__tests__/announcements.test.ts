@@ -371,6 +371,7 @@ describe('Announcement read and acknowledgement receipts', () => {
     const read = await api
       .post(`/api/announcements/${announcement.id}/read`)
       .set(authHeader(firstLogin.accessToken))
+      .send({ version: 1 })
       .expect(200)
     expect(read.body.readAt).toEqual(expect.any(String))
 
@@ -400,14 +401,23 @@ describe('Announcement read and acknowledgement receipts', () => {
     await api
       .post(`/api/announcements/${ordinary.id}/acknowledge`)
       .set(authHeader(accessToken))
+      .send({ version: 1 })
       .expect(400)
 
     const acknowledged = await api
       .post(`/api/announcements/${required.id}/acknowledge`)
       .set(authHeader(accessToken))
+      .send({ version: 1 })
       .expect(200)
     expect(acknowledged.body).toMatchObject({ id: required.id, version: 1 })
     expect(acknowledged.body.acknowledgedAt).toEqual(expect.any(String))
+
+    const retriedAcknowledgement = await api
+      .post(`/api/announcements/${required.id}/acknowledge`)
+      .set(authHeader(accessToken))
+      .send({ version: 1 })
+      .expect(200)
+    expect(retriedAcknowledgement.body.acknowledgedAt).toBe(acknowledged.body.acknowledgedAt)
 
     const list = await api.get('/api/announcements').set(authHeader(accessToken)).expect(200)
     const result = list.body.find((item: { id: number }) => item.id === required.id)
@@ -437,10 +447,12 @@ describe('Announcement read and acknowledgement receipts', () => {
     await api
       .post(`/api/announcements/${created.body.id}/read`)
       .set(authHeader(merchantLogin.accessToken))
+      .send({ version: 1 })
       .expect(404)
     await api
       .post(`/api/announcements/${created.body.id}/read`)
       .set(authHeader(userLogin.accessToken))
+      .send({ version: 1 })
       .expect(200)
 
     const updated = await api
@@ -452,5 +464,50 @@ describe('Announcement read and acknowledgement receipts', () => {
 
     const afterRevision = await api.get('/api/announcements').set(authHeader(userLogin.accessToken)).expect(200)
     expect(afterRevision.body[0]).toMatchObject({ id: created.body.id, version: 2, readAt: null, acknowledgedAt: null })
+  })
+
+  it('requires the displayed version and never records a newer version for a stale acknowledgement', async () => {
+    const { accessToken: adminToken } = await loginAdmin('ann-ack-version-admin@test.local')
+    const created = await createAnnouncement(adminToken, {
+      title: '必须重新阅读', content: '第一版内容', audience: 'user', priority: 10,
+      presentation: 'acknowledgement_required', startsAt: pastDate(1).toISOString(), status: 'published',
+    }).expect(201)
+    const { user, password } = await createTestUser('ann-ack-version-user@test.local', 'pass123', 'user')
+    const { accessToken } = await loginAs(user.email, password)
+
+    const missingDisplayedVersion = await api
+      .post(`/api/announcements/${created.body.id}/acknowledge`)
+      .set(authHeader(accessToken))
+      .expect(409)
+    expect(missingDisplayedVersion.body.error.code).toBe('ANNOUNCEMENT_VERSION_REQUIRED')
+
+    const visibleVersionOne = await api
+      .get('/api/announcements')
+      .set(authHeader(accessToken))
+      .expect(200)
+    expect(visibleVersionOne.body[0].version).toBe(1)
+
+    await api
+      .put(`/api/admin/announcements/${created.body.id}`)
+      .set(authHeader(adminToken))
+      .send({ content: '第二版内容，必须再次阅读' })
+      .expect(200)
+
+    const staleRead = await api
+      .post(`/api/announcements/${created.body.id}/read`)
+      .set(authHeader(accessToken))
+      .send({ version: visibleVersionOne.body[0].version })
+      .expect(409)
+    expect(staleRead.body.error.code).toBe('ANNOUNCEMENT_VERSION_CHANGED')
+
+    const staleAcknowledgement = await api
+      .post(`/api/announcements/${created.body.id}/acknowledge`)
+      .set(authHeader(accessToken))
+      .send({ version: visibleVersionOne.body[0].version })
+      .expect(409)
+    expect(staleAcknowledgement.body.error.code).toBe('ANNOUNCEMENT_VERSION_CHANGED')
+    expect(await prisma.announcementReceipt.count({
+      where: { announcementId: created.body.id, userId: user.id, version: 2 },
+    })).toBe(0)
   })
 })

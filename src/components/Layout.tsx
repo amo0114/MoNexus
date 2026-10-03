@@ -1,5 +1,6 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionContext } from '../auth/sessionContext'
 import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package, Wallet, ArrowLeft } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
 import { formatBadgeCount } from '../utils/orderAttention'
@@ -34,6 +35,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isAdminPage = location.pathname.startsWith('/admin')
   const navRef = useRef<HTMLElement>(null)
   const user = useAuthStore((s) => s.user)
+  const storedSessionId = useAuthStore((s) => s.sessionId)
+  const accessToken = useAuthStore((s) => s.accessToken)
+  const authEpoch = useAuthStore((s) => s.authEpoch)
+  const authContext = getAuthSessionContext({ userId: user?.id ?? null, accessToken, authEpoch })
+  const sessionId = authContext?.sessionId ?? storedSessionId
   const showToast = useAppStore((s) => s.showToast)
   const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
   const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
@@ -48,6 +54,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const hasPendingRequiredAnnouncement = announcements.items.some(
     (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
   )
+
+  useEffect(() => {
+    surfacedRequiredAnnouncements.current.clear()
+  }, [user?.id, sessionId, authEpoch])
+
+  useEffect(() => {
+    if (announcementCenterOpen) void announcements.reload().catch(() => {})
+  }, [announcementCenterOpen, announcements.reload])
 
   // PR-3：全局角标唯一初始化/清零点（顶栏与底栏共用 store 状态）。
   // 用户变化即初始化两个角标；登出立即归零（store 内作废在途响应）。
@@ -206,11 +220,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
     )
     if (!pending) return
-    const key = `${pending.id}:${pending.version}`
+    const key = `${user?.id ?? 'visitor'}:${sessionId ?? 'unbound'}:${authEpoch}:${pending.id}:${pending.version}`
     if (surfacedRequiredAnnouncements.current.has(key)) return
     surfacedRequiredAnnouncements.current.add(key)
     setAnnouncementCenterOpen(true)
-  }, [announcements.items])
+  }, [announcements.items, user?.id, sessionId, authEpoch])
 
   // SPEC-NOTIFY-RT-001：实时失效驱动未读刷新。移除旧独立 30s 轮询 effect
   // （CHK-FE-010）；notifications topic 覆盖实时事件，all.visible 覆盖
@@ -226,6 +240,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useNotificationInvalidation('all.visible', () => {
     if (!user) return
     void refreshNotificationUnread()
+    void announcements.reload().catch(() => {})
     // 补拉性质（ready/回前台/校准）：走 1s 间隔去重，避免与登录初始化重复。
     void refreshOrderAttentionIfStale()
   })

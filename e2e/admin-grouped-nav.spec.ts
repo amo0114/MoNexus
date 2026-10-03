@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { createMockAccessToken } from './auth-fixtures'
+
+const adminAccessToken = createMockAccessToken({ id: 1, role: 'admin' })
 
 test.describe('Admin Grouped Navigation Mobile Verification @375px', () => {
   test.use({ viewport: { width: 375, height: 667 }, hasTouch: true })
@@ -18,7 +21,7 @@ test.describe('Admin Grouped Navigation Mobile Verification @375px', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        json: { accessToken: 'e30.eyJyb2xlIjoiYWRtaW4ifQ.signature' },
+        json: { accessToken: adminAccessToken },
       }),
     )
     await page.route('**/api/config/registry', (route) =>
@@ -67,19 +70,19 @@ test.describe('Admin Grouped Navigation Mobile Verification @375px', () => {
     )
 
     // Seed admin auth state in browser storage using the app's zustand persist key
-    await page.addInitScript(() => {
+    await page.addInitScript((accessToken) => {
       localStorage.setItem(
         'monexus-auth',
         JSON.stringify({
           state: {
             user: { id: 1, email: 'admin@moyuan.net', role: 'admin', nickname: '系统管理员' },
             isLoggedIn: true,
-            accessToken: 'e30.eyJyb2xlIjoiYWRtaW4ifQ.signature',
+            accessToken,
           },
           version: 0,
         }),
       )
-    })
+    }, adminAccessToken)
 
     await page.goto('/admin')
 

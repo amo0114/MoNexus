@@ -19,6 +19,7 @@ import {
   verifyEmailSchema,
   updateMeSchema,
   humanChallengeQuerySchema,
+  expectedSessionBodySchema,
 } from './schema.js'
 import * as controller from './controller.js'
 import * as authService from './service.js'
@@ -99,8 +100,8 @@ router.post('/login', authLimiter, validate(loginSchema), controller.login)
 router.post('/mfa/enrollment/start', authLimiter, validate(mfaEnrollmentStartSchema), controller.startMfaEnrollment)
 router.post('/mfa/enrollment/confirm', authLimiter, validate(mfaEnrollmentConfirmSchema), controller.confirmMfaEnrollment)
 router.post('/mfa/verify', authLimiter, validate(mfaVerifySchema), controller.verifyMfa)
-router.post('/refresh', refreshLimiter, controller.refresh)
-router.post('/logout', controller.logout)
+router.post('/refresh', validate({ body: expectedSessionBodySchema }), refreshLimiter, controller.refresh)
+router.post('/logout', validate({ body: expectedSessionBodySchema }), controller.logout)
 router.get('/me', authenticate, requireActiveUser, controller.me)
 router.patch('/me', authenticate, requireActiveUser, validate(updateMeSchema), controller.updateMe)
 router.get('/sessions', authenticate, requireActiveUser, controller.sessions)

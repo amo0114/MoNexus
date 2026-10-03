@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Bell, CheckCheck, CircleAlert, Megaphone, MessageSquare, ShieldCheck } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/Dialog'
@@ -10,6 +10,8 @@ import { useAppStore } from '../stores/appStore'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import { formatBadgeCount } from '../utils/orderAttention'
 import { broadcastReadInvalidation } from '../realtime/readSyncBroadcast'
+import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionContext } from '../auth/sessionContext'
 
 interface AnnouncementCenterProps {
   open: boolean
@@ -89,11 +91,22 @@ export default function AnnouncementCenter({
   const showToast = useAppStore((state) => state.showToast)
   const notificationUnreadCount = useAppStore((state) => state.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((state) => state.refreshNotificationUnread)
+  const userId = useAuthStore((state) => state.user?.id ?? null)
+  const accessToken = useAuthStore((state) => state.accessToken)
+  const authEpoch = useAuthStore((state) => state.authEpoch)
+  const authContext = getAuthSessionContext({ userId, accessToken, authEpoch })
+  const messageOwnerKey = authContext
+    ? `${authContext.userId}:${authContext.sessionId}:${authContext.authEpoch}`
+    : `${userId ?? 'visitor'}:unbound:${authEpoch}`
   const navigate = useNavigate()
   const [workingId, setWorkingId] = useState<number | null>(null)
   const [tab, setTab] = useState<CenterTab>('announcements')
-  const [messages, setMessages] = useState<Notification[]>([])
+  const [messageSnapshot, setMessageSnapshot] = useState<{ ownerKey: string; items: Notification[] } | null>(null)
   const [messagesLoading, setMessagesLoading] = useState(false)
+  const currentMessageOwnerKeyRef = useRef(messageOwnerKey)
+  const previousMessageOwnerKeyRef = useRef(messageOwnerKey)
+  currentMessageOwnerKeyRef.current = messageOwnerKey
+  const messages = messageSnapshot?.ownerKey === messageOwnerKey ? messageSnapshot.items : []
 
   const defaultTab = useMemo<CenterTab>(() => {
     if (forceAnnouncementTab) return 'announcements'
@@ -107,83 +120,120 @@ export default function AnnouncementCenter({
   }, [open, defaultTab])
 
   useEffect(() => {
+    if (previousMessageOwnerKeyRef.current === messageOwnerKey) return
+    previousMessageOwnerKeyRef.current = messageOwnerKey
+    setMessageSnapshot(null)
+    setMessagesLoading(false)
+    setWorkingId(null)
+    if (open) onOpenChange(false)
+  }, [messageOwnerKey, onOpenChange, open])
+
+  useEffect(() => {
     if (!open || tab !== 'messages') return
     let active = true
+    const requestOwnerKey = messageOwnerKey
     setMessagesLoading(true)
     getNotifications({ limit: 5 })
       .then((data) => {
-        if (active) setMessages(data.notifications)
+        if (active && currentMessageOwnerKeyRef.current === requestOwnerKey) {
+          setMessageSnapshot({ ownerKey: requestOwnerKey, items: data.notifications })
+        }
       })
       .catch((err) => {
-        if (active) {
+        if (active && currentMessageOwnerKeyRef.current === requestOwnerKey) {
           const status = (err as { response?: { status?: number } })?.response?.status
           if (status !== 404) {
             showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
           }
-          setMessages([])
+          setMessageSnapshot({ ownerKey: requestOwnerKey, items: [] })
         }
       })
       .finally(() => {
-        if (active) setMessagesLoading(false)
+        if (active && currentMessageOwnerKeyRef.current === requestOwnerKey) setMessagesLoading(false)
       })
     return () => {
       active = false
     }
-  }, [open, tab, showToast])
+  }, [messageOwnerKey, open, tab, showToast])
 
   // SPEC-NOTIFY-RT-001 (T-FE-003): reload the latest 5 messages when the messages
   // tab is open and a notifications invalidation arrives (no skeleton swap).
   useNotificationInvalidation('notifications', () => {
     if (!open || tab !== 'messages') return
+    const requestOwnerKey = messageOwnerKey
     void getNotifications({ limit: 5 })
-      .then((data) => setMessages(data.notifications))
+      .then((data) => {
+        if (currentMessageOwnerKeyRef.current === requestOwnerKey) {
+          setMessageSnapshot({ ownerKey: requestOwnerKey, items: data.notifications })
+        }
+      })
       .catch((err) => {
         const status = (err as { response?: { status?: number } })?.response?.status
-        if (status !== 404) setMessages([])
+        if (status !== 404 && currentMessageOwnerKeyRef.current === requestOwnerKey) {
+          setMessageSnapshot({ ownerKey: requestOwnerKey, items: [] })
+        }
       })
   })
 
   async function markRead(announcement: PublicAnnouncement) {
+    const requestOwnerKey = messageOwnerKey
     setWorkingId(announcement.id)
     try {
       await onMarkRead(announcement)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '标记已读失败，请稍后重试'), 'error')
+      if (currentMessageOwnerKeyRef.current === requestOwnerKey) {
+        showToast(getApiErrorMessage(err, '标记已读失败，请稍后重试'), 'error')
+      }
     } finally {
-      setWorkingId(null)
+      if (currentMessageOwnerKeyRef.current === requestOwnerKey) setWorkingId(null)
     }
   }
 
   async function acknowledge(announcement: PublicAnnouncement) {
+    const requestOwnerKey = messageOwnerKey
     setWorkingId(announcement.id)
     try {
       await onAcknowledge(announcement)
-      showToast('已确认公告')
+      if (currentMessageOwnerKeyRef.current === requestOwnerKey) showToast('已确认公告')
     } catch (err) {
-      showToast(getApiErrorMessage(err, '确认失败，请稍后重试'), 'error')
+      if (currentMessageOwnerKeyRef.current === requestOwnerKey) {
+        showToast(getApiErrorMessage(err, '确认失败，请稍后重试'), 'error')
+      }
     } finally {
-      setWorkingId(null)
+      if (currentMessageOwnerKeyRef.current === requestOwnerKey) setWorkingId(null)
     }
   }
 
   async function openMessage(item: Notification) {
+    const requestOwnerKey = messageOwnerKey
     setWorkingId(item.id)
     try {
       if (item.status === 'unread') {
         await markAsRead(item.id)
+        if (currentMessageOwnerKeyRef.current !== requestOwnerKey) return
         void refreshNotificationUnread()
         // PR-5：提示同浏览器其他 Tab 刷新未读数（实时关闭时的兜底通道）。
         broadcastReadInvalidation()
-        setMessages((prev) => prev.map((n) => (
-          n.id === item.id ? { ...n, status: 'read', readAt: new Date().toISOString() } : n
-        )))
+        setMessageSnapshot((current) => current?.ownerKey === requestOwnerKey
+          ? {
+              ...current,
+              items: current.items.map((message) => (
+                message.id === item.id
+                  ? { ...message, status: 'read', readAt: new Date().toISOString() }
+                  : message
+              )),
+            }
+          : current)
       }
+      if (currentMessageOwnerKeyRef.current !== requestOwnerKey) return
       onOpenChange(false)
       navigate(item.deeplink)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '打开消息失败'), 'error')
+      if (currentMessageOwnerKeyRef.current === requestOwnerKey) {
+        showToast(getApiErrorMessage(err, '打开消息失败'), 'error')
+      }
     } finally {
-      setWorkingId(null)
+      if (currentMessageOwnerKeyRef.current === requestOwnerKey) setWorkingId(null)
     }
   }
 
