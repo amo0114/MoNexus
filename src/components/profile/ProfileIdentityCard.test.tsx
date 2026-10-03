@@ -14,9 +14,28 @@ vi.mock('../../api/uploads', () => ({ uploadImage: vi.fn(), UploadError: class e
 const user = { id: 7, email: 'avatar@test.local', nickname: '测试用户', avatarUrl: null, role: 'user' as const, status: 'active', points: 20, merchant: null }
 const zhao = AVATAR_PRESETS.find((a) => a.id === 'shu-zhao-yun')!
 
+function createSessionToken() {
+  const payload = btoa(JSON.stringify({
+    userId: user.id,
+    sid: 'profile-identity-card-session',
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `header.${payload}.signature`
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
-  useAuthStore.setState({ user: { ...user }, isLoggedIn: true })
+  localStorage.clear()
+  useAuthStore.setState({
+    user: { ...user },
+    accessToken: createSessionToken(),
+    sessionId: 'profile-identity-card-session',
+    isLoggedIn: true,
+    authEpoch: 1,
+  })
   useAppStore.setState({ toasts: [] })
 })
 

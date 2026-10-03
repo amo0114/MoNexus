@@ -3,6 +3,8 @@ import { useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
 import { useAppStore } from './stores/appStore'
 import { fetchMeWithRoleHealing } from './api/auth'
+import { subscribeToAuthSessionChanges } from './auth/sessionStorageSync'
+import { getAuthSessionContext, matchesAuthSessionContext } from './auth/sessionContext'
 import Layout from './components/Layout'
 import Toast from './components/Toast'
 import ScrollToTop from './components/ScrollToTop'
@@ -38,21 +40,33 @@ function SessionLayout({
   requireAuth?: boolean
 }) {
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const authEpoch = useAuthStore((s) => s.authEpoch)
+  const userId = useAuthStore((s) => s.user?.id ?? null)
   const setUser = useAuthStore((s) => s.setUser)
   const logout = useAuthStore((s) => s.logout)
 
   useEffect(() => {
     if (!isLoggedIn) return
+    const requestContext = getAuthSessionContext(useAuthStore.getState())
+    if (!requestContext) {
+      logout()
+      return
+    }
     fetchMeWithRoleHealing()
-      .then(setUser)
+      .then((profile) => {
+        setUser(profile, requestContext)
+      })
       .catch((err) => {
         // role-skew healing failed (refresh rejected) — only logout on hard auth errors.
         // Transient network failures should not boot the user.
-        if (err?.response?.status === 401) {
-          logout()
+        if (
+          err?.response?.status === 401
+          && matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))
+        ) {
+          logout(requestContext)
         }
       })
-  }, [isLoggedIn, setUser, logout])
+  }, [isLoggedIn, authEpoch, userId, setUser, logout])
 
   if (requireAuth && !isLoggedIn) return <Navigate to="/login" />
   return <Layout>{children}</Layout>
@@ -64,6 +78,8 @@ export default function App() {
   useEffect(() => {
     loadRegistry()
   }, [loadRegistry])
+
+  useEffect(() => subscribeToAuthSessionChanges(), [])
 
   return (
     <BrowserRouter>

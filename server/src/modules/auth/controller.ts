@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import { refreshTokenCookieName, setRefreshTokenCookie, clearRefreshTokenCookie } from '../../lib/cookies.js'
-import { HttpError, unauthenticated } from '../../lib/httpError.js'
+import { HttpError, sessionChanged, unauthenticated } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import * as authService from './service.js'
 import * as sessionService from './sessionService.js'
@@ -145,7 +145,8 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
     const result = await authService.refreshAccessToken(
       refreshToken,
       req.ip,
-      req.headers['user-agent']
+      req.headers['user-agent'],
+      req.body?.expectedSessionId,
     )
     setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.json({ accessToken: result.accessToken })
@@ -157,8 +158,17 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
 export async function logout(req: Request, res: Response, next: NextFunction) {
   try {
     const refreshToken = req.cookies?.[refreshTokenCookieName]
+    const expectedSessionId = req.body?.expectedSessionId
+    if (typeof expectedSessionId !== 'string') {
+      throw sessionChanged('请刷新页面后再退出登录')
+    }
     if (refreshToken) {
-      await authService.revokeRefreshToken(refreshToken, req.ip, req.headers['user-agent'])
+      await authService.revokeRefreshToken(
+        refreshToken,
+        req.ip,
+        req.headers['user-agent'],
+        expectedSessionId,
+      )
     }
     clearRefreshTokenCookie(res)
     res.json({ ok: true })

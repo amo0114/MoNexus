@@ -10,7 +10,7 @@
  *    silent); and
  *  - refreshes on auth.expiring (single-flight) then aborts + reconnects.
  */
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import { refreshAccessToken } from '../api/authRefresh'
@@ -20,15 +20,28 @@ import {
   type RealtimeNotificationData,
 } from '../realtime/notificationInvalidation.js'
 import { getExactIdLru, getInvalidationScheduler, resetRealtimeRuntime } from '../realtime/runtime.js'
+import {
+  getAuthSessionContext,
+  matchesAuthSessionContext,
+  type AuthSessionContext,
+} from '../auth/sessionContext'
 
 export function NotificationRealtimeBridge(): null {
   const user = useAuthStore((s) => s.user)
   const accessToken = useAuthStore((s) => s.accessToken)
+  const authEpoch = useAuthStore((s) => s.authEpoch)
+  const sessionContext = useMemo(
+    () => getAuthSessionContext({ userId: user?.id ?? null, accessToken, authEpoch }),
+    [user?.id, accessToken, authEpoch],
+  )
+  const sessionOwnerKey = sessionContext
+    ? `${sessionContext.userId}:${sessionContext.sessionId}:${sessionContext.authEpoch}`
+    : null
   const showToast = useAppStore((s) => s.showToast)
   const setStreamState = useAppStore((s) => s.setNotificationStreamState)
   const realtimeEnabled = useAppStore((s) => s.registry?.capabilities?.notificationRealtime)
   const streamRef = useRef<NotificationStream | null>(null)
-  const lastUserIdRef = useRef<number | null>(null)
+  const lastSessionOwnerKeyRef = useRef<string | null>(null)
   const lastTokenRef = useRef<string | null>(null)
 
   if (!streamRef.current) {
@@ -40,8 +53,8 @@ export function NotificationRealtimeBridge(): null {
         // PR-5：同用户其他连接已读提示——只刷未读数，绝不弹 Toast。
         getInvalidationScheduler().publishNow('notifications')
       },
-      onAuthExpiring: () => {
-        void handleAuthExpiring(streamRef)
+      onAuthExpiring: (context, token) => {
+        void handleAuthExpiring(streamRef, context, token)
       },
       onDegraded: () => publishAllVisible(),
       onFallbackTick: () => publishAllVisible(),
@@ -55,30 +68,31 @@ export function NotificationRealtimeBridge(): null {
   useEffect(() => {
     // Wait for the public runtime capability before connecting. Disabled
     // installations stay polling-only without deliberately probing a 404.
-    if (!user || !accessToken || realtimeEnabled !== true) {
+    if (!user || !accessToken || !sessionOwnerKey || realtimeEnabled !== true) {
       resetRealtimeRuntime()
       streamRef.current?.stop()
-      lastUserIdRef.current = null
+      lastSessionOwnerKeyRef.current = null
       lastTokenRef.current = null
       return
     }
-    if (lastUserIdRef.current !== user.id) {
+    if (lastSessionOwnerKeyRef.current !== sessionOwnerKey) {
       resetRealtimeRuntime()
-      lastUserIdRef.current = user.id
+      streamRef.current?.stop()
+      lastSessionOwnerKeyRef.current = sessionOwnerKey
       lastTokenRef.current = accessToken
-      streamRef.current?.start(user.id, accessToken)
+      streamRef.current?.start(user.id, accessToken, sessionContext)
       return
     }
     if (lastTokenRef.current !== accessToken) {
       lastTokenRef.current = accessToken
       streamRef.current?.onAccessTokenChanged(accessToken)
     }
-  }, [user, accessToken, realtimeEnabled])
+  }, [user?.id, accessToken, sessionContext, sessionOwnerKey, realtimeEnabled])
 
   useEffect(() => () => {
     streamRef.current?.stop()
     resetRealtimeRuntime()
-    lastUserIdRef.current = null
+    lastSessionOwnerKeyRef.current = null
     lastTokenRef.current = null
   }, [])
 
@@ -116,11 +130,20 @@ export function handleRealtimeNotification(n: RealtimeNotificationData, showToas
   }
 }
 
-async function handleAuthExpiring(streamRef: { current: NotificationStream | null }): Promise<void> {
-  const stale = useAuthStore.getState().accessToken
-  if (!stale) return
+async function handleAuthExpiring(
+  streamRef: { current: NotificationStream | null },
+  expectedContext: AuthSessionContext | null,
+  streamToken: string | null,
+): Promise<void> {
+  const authState = useAuthStore.getState()
+  const currentContext = getAuthSessionContext(authState)
+  const requestContext = expectedContext ?? currentContext
+  const staleToken = streamToken ?? authState.accessToken
+  if (!staleToken || !requestContext || !matchesAuthSessionContext(requestContext, currentContext)) return
+
   try {
-    const token = await refreshAccessToken(stale)
+    const token = await refreshAccessToken(staleToken, requestContext)
+    if (!matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))) return
     // Success: abort the old stream and reconnect without overlap (CHK-FE-004).
     streamRef.current?.onAccessTokenChanged(token)
   } catch {

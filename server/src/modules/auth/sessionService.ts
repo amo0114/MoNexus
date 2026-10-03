@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client'
 import { redactIpHint } from '../../lib/clientIp.js'
-import { badRequest, notFound, unauthenticated } from '../../lib/httpError.js'
+import { badRequest, notFound, sessionChanged, unauthenticated } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import {
   getSecurityEventDeviceHint,
@@ -283,6 +283,7 @@ export async function revokeOtherSessions(input: {
 /** Used by the existing logout cookie flow to revoke its whole family. */
 export async function revokeRefreshSessionByTokenHash(input: {
   tokenHash: string
+  expectedSessionId?: string
   metadata?: SessionRequestMetadata
 }) {
   const pointer = await prisma.refreshToken.findUnique({
@@ -301,6 +302,9 @@ export async function revokeRefreshSessionByTokenHash(input: {
       select: { userId: true, sessionId: true },
     })
     if (!token) return { revokedCount: 0 }
+    if (input.expectedSessionId && token.sessionId !== input.expectedSessionId) {
+      throw sessionChanged()
+    }
 
     const revokedRows = await revokeFamily({
       userId: token.userId,

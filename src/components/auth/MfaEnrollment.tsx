@@ -7,11 +7,13 @@ import {
   type MfaEnrollmentConfirmResponse,
   type MfaEnrollmentStartResponse,
 } from '../../api/auth'
+import type { PendingAuthSessionCommit } from '../../auth/pendingAuthSession'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 
 type Props = {
   challengeId: string
-  onCompleted: (result: MfaEnrollmentConfirmResponse) => void
+  expectedAuthEpoch: number
+  onCompleted: (result: MfaEnrollmentConfirmResponse, commitProof: PendingAuthSessionCommit) => void
   onCancel: () => void
 }
 
@@ -20,7 +22,7 @@ function isTerminalChallengeError(error: unknown) {
   return code === 'MFA_CHALLENGE_INVALID' || code === 'MFA_TOO_MANY_ATTEMPTS'
 }
 
-export default function MfaEnrollment({ challengeId, onCompleted, onCancel }: Props) {
+export default function MfaEnrollment({ challengeId, expectedAuthEpoch, onCompleted, onCancel }: Props) {
   const [enrollment, setEnrollment] = useState<MfaEnrollmentStartResponse | null>(null)
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
@@ -38,7 +40,7 @@ export default function MfaEnrollment({ challengeId, onCompleted, onCancel }: Pr
   useEffect(() => {
     let active = true
 
-    startMfaEnrollment(challengeId)
+    startMfaEnrollment(challengeId, expectedAuthEpoch)
       .then((result) => {
         if (!active) return
         setEnrollment(result)
@@ -58,7 +60,7 @@ export default function MfaEnrollment({ challengeId, onCompleted, onCancel }: Pr
     return () => {
       active = false
     }
-  }, [challengeId])
+  }, [challengeId, expectedAuthEpoch])
 
   async function copyManualKey() {
     if (!enrollment?.manualKey || !navigator.clipboard) {
@@ -80,9 +82,14 @@ export default function MfaEnrollment({ challengeId, onCompleted, onCancel }: Pr
     setSubmitting(true)
     setError('')
     try {
-      const result = await confirmMfaEnrollment({ challengeId, code: code.trim() })
-      clearSecrets()
-      onCompleted(result)
+      await confirmMfaEnrollment(
+        { challengeId, code: code.trim() },
+        expectedAuthEpoch,
+        (result, commitProof) => {
+          clearSecrets()
+          onCompleted(result, commitProof)
+        },
+      )
     } catch (requestError) {
       setCode('')
       setError(getApiErrorMessage(requestError, 'MFA 验证失败'))

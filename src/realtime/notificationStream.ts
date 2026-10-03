@@ -10,6 +10,7 @@
  */
 import { SseParser, type SseFrame } from './sseParser.js'
 import type { RealtimeNotificationData } from './notificationInvalidation.js'
+import type { AuthSessionContext } from '../auth/sessionContext.js'
 
 export type NotificationStreamState = 'idle' | 'connecting' | 'healthy' | 'degraded' | 'polling_only' | 'auth_blocked' | 'logged_out'
 
@@ -25,7 +26,7 @@ export interface NotificationStreamEvents {
   onNotification?: (n: RealtimeNotificationData) => void
   /** PR-5：同用户其他连接已读失效提示（control event，无业务 payload）。 */
   onReadInvalidation?: () => void
-  onAuthExpiring?: () => void
+  onAuthExpiring?: (context: AuthSessionContext | null, token: string | null) => void
   onDegraded?: (reason: string) => void
   onFallbackTick?: () => void
   onCalibrationTick?: () => void
@@ -49,6 +50,7 @@ export class NotificationStream {
   private authRetryCount = 0
   private userId: number | null = null
   private token: string | null = null
+  private authContext: AuthSessionContext | null = null
   private stopped = false
   private generation = 0
   private readyGeneration = 0
@@ -60,10 +62,11 @@ export class NotificationStream {
   }
 
   /** login / user change / token change entry. */
-  start(userId: number, token: string): void {
+  start(userId: number, token: string, authContext: AuthSessionContext | null = null): void {
     const userChanged = this.userId !== null && this.userId !== userId
     this.userId = userId
     this.token = token
+    this.authContext = authContext
     this.stopped = false
     if (userChanged) {
       this.backoffIndex = 0
@@ -89,6 +92,7 @@ export class NotificationStream {
     this.stopped = true
     this.userId = null
     this.token = null
+    this.authContext = null
     this.backoffIndex = 0
     this.authRetryCount = 0
     this.readyGeneration = 0
@@ -314,7 +318,7 @@ export class NotificationStream {
       return
     }
     if (frame.event === 'auth.expiring') {
-      this.events.onAuthExpiring?.()
+      this.events.onAuthExpiring?.(this.authContext, this.token)
       return
     }
     // PR-5：同用户其他连接的已读提示——控制事件，只刷未读数，绝不弹 Toast。
@@ -332,13 +336,18 @@ export class NotificationStream {
     try {
       // authRefresh already owns the application-wide single-flight promise.
       const { refreshAccessToken } = await import('../api/authRefresh.js')
-      const token = await refreshAccessToken(staleToken)
+      const token = this.authContext
+        ? await refreshAccessToken(staleToken, this.authContext)
+        : await refreshAccessToken(staleToken)
       return { ok: true, terminal: false, token }
     } catch {
       // refreshAccessToken already logs out on terminal errors.
       const { useAuthStore } = await import('../stores/authStore.js')
-      const stillLoggedIn = useAuthStore.getState().isLoggedIn
-      return { ok: false, terminal: !stillLoggedIn, token: null }
+      const authState = useAuthStore.getState()
+      const stillOwnsConnection = authState.isLoggedIn
+        && (!this.authContext || (authState.user?.id === this.authContext.userId
+          && authState.authEpoch === this.authContext.authEpoch))
+      return { ok: false, terminal: !stillOwnsConnection, token: null }
     }
   }
 

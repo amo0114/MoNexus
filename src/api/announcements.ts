@@ -13,12 +13,12 @@ export async function getPublicAnnouncements(): Promise<PublicAnnouncement[]> {
   return Array.isArray(data) ? data : []
 }
 
-export async function markAnnouncementRead(id: number): Promise<AnnouncementReceiptResult> {
-  const { data } = await api.post<AnnouncementReceiptResult>(`/announcements/${id}/read`)
+export async function markAnnouncementRead(id: number, version: number): Promise<AnnouncementReceiptResult> {
+  const { data } = await api.post<AnnouncementReceiptResult>(`/announcements/${id}/read`, { version })
   return data
 }
 
-export async function acknowledgeAnnouncement(id: number): Promise<AnnouncementReceiptResult> {
-  const { data } = await api.post<AnnouncementReceiptResult>(`/announcements/${id}/acknowledge`)
+export async function acknowledgeAnnouncement(id: number, version: number): Promise<AnnouncementReceiptResult> {
+  const { data } = await api.post<AnnouncementReceiptResult>(`/announcements/${id}/acknowledge`, { version })
   return data
 }

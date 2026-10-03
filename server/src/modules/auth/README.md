@@ -15,8 +15,8 @@ and `/me`.
 | POST | `/api/auth/mfa/enrollment/start` | Pre-auth challenge | Starts first admin TOTP enrollment and returns a provisioning URI/manual key for that active challenge only. These values are secrets and must stay in component memory. |
 | POST | `/api/auth/mfa/enrollment/confirm` | Pre-auth challenge | Correct factor atomically enables MFA, creates the first MFA session, and returns the one-time recovery-code display with `201`. |
 | POST | `/api/auth/mfa/verify` | Pre-auth challenge | Existing admin completes a TOTP or recovery-code login. Only success returns AuthSession + Cookie. |
-| POST | `/api/auth/refresh` | Cookie | Rotates a refresh token inside its existing `sessionId` family. |
-| POST | `/api/auth/logout` | Cookie | Revokes the cookie's current refresh family and clears the cookie. |
+| POST | `/api/auth/refresh` | Cookie | Rotates inside the existing `sessionId` family. Optional `{ expectedSessionId }` must match the cookie family; mismatch returns `409 SESSION_CHANGED` without rotation or Set-Cookie. |
+| POST | `/api/auth/logout` | Cookie | Requires `{ expectedSessionId }`. Revokes and clears only a matching cookie family; missing/mismatched identity returns `409 SESSION_CHANGED` without clearing another session's cookie. |
 | GET / PATCH | `/api/auth/me` | Bearer | Returns current user/merchant context; PATCH updates the current user's nickname. |
 | GET | `/api/auth/sessions` | Bearer | Lists only the caller's active session-family summaries. |
 | DELETE | `/api/auth/sessions/:sessionId` | Bearer | Revokes an owned, non-current family. Current session must use `/logout`; absent/non-owned IDs return 404. |
@@ -31,6 +31,24 @@ and `/me`.
 There is intentionally no HTTP endpoint to disable MFA, reset another user's
 MFA, regenerate recovery codes, reconfigure MFA, or revoke all sessions. Those
 P1 capabilities need their own reviewed contract.
+
+## Browser identity completion
+
+Browser requests and store updates are bound to `userId`, the JWT `sid`, and
+the local `authEpoch`. Refresh, login, registration, MFA issuance, and logout
+share one same-origin Cookie mutation lock where Web Locks are available.
+Login completion includes the explicit-token `/me` check and guarded local
+commit before releasing that lock.
+
+MFA enrollment releases the lock while the user saves recovery codes. A
+non-secret pending-session marker fences the eventual commit; it contains no
+access token, refresh token, TOTP secret, or recovery code. Final acknowledgement
+reacquires the lock and rejects a marker superseded by a newer login.
+
+Do not roll back the frontend to a client that omits `expectedSessionId` while
+keeping the new logout contract without communicating that a reload is required.
+Release ordering and versioned announcement compatibility are documented in
+[the R1/R2 release checklist](../../../../docs/specs/order-notification-system/2026-10-03-r1-r2-release-preparation.md).
 
 ## Public Registration Switch
 

@@ -6,6 +6,7 @@ import { confirmAdminSandboxOrder } from '../../api/adminRecharge'
 import { fetchMeWithRoleHealing } from '../../api/auth'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import { useAuthStore } from '../../stores/authStore'
+import { getAuthSessionContext } from '../../auth/sessionContext'
 import EmptyState from '../../components/ui/EmptyState'
 import { formatCurrencyAmount, formatPoints } from './money'
 import { buildPayableRecognitionNotice } from './payableCopy'
@@ -50,9 +51,11 @@ function StatusPill({ status }: { status: string }) {
 }
 
 async function refreshCurrentUser() {
+  const authContext = getAuthSessionContext(useAuthStore.getState())
+  if (!authContext) return
   try {
     const me = await fetchMeWithRoleHealing()
-    useAuthStore.getState().setUser(me)
+    useAuthStore.getState().setUser(me, authContext)
   } catch {
     // Local order is the source of truth; auth refresh is best-effort.
   }

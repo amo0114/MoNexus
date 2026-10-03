@@ -21,6 +21,7 @@ import { getApiErrorMessage, getApiErrorCode } from '../api/error'
 import { createOrder, type CheckoutPreview } from '../api/orders'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionContext } from '../auth/sessionContext'
 import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
 import { formatFileSize } from '../utils/formatFileSize'
@@ -261,6 +262,7 @@ export default function ProductDetailPage() {
     agreementVersions?: Record<string, string>
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing) return 'failed'
+    const purchaseAuthContext = getAuthSessionContext(useAuthStore.getState())
     setPurchasing(true)
     try {
       const data = await createOrder(product.id, {
@@ -275,7 +277,9 @@ export default function ProductDetailPage() {
         verificationPassword: verificationPassword || undefined,
         agreementVersions,
       })
-      useAuthStore.getState().updatePoints(data.balanceAfter)
+      if (purchaseAuthContext) {
+        useAuthStore.getState().updatePoints(data.balanceAfter, purchaseAuthContext)
+      }
       void useAppStore.getState().refreshOrderAttention()
       setDeliveryContent(data.deliveryContent ?? '')
       setDeliveryContentType(data.deliveryContentType ?? '')

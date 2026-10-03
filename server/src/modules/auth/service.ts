@@ -19,6 +19,7 @@ import {
   notFound,
   registrationDisabled,
   sessionRevoked,
+  sessionChanged,
   tooManyRequests,
   unauthenticated,
 } from '../../lib/httpError.js'
@@ -1010,7 +1011,12 @@ async function handleRefreshReplay(
   return { kind: 'reused' as const }
 }
 
-export async function refreshAccessToken(rawRefreshToken: string, ip?: string, userAgent?: string) {
+export async function refreshAccessToken(
+  rawRefreshToken: string,
+  ip?: string,
+  userAgent?: string,
+  expectedSessionId?: string,
+) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
   // This lookup discovers the only safe advisory-lock key. It does not decide
   // whether the token is active, replayed, expired, or allowed to rotate.
@@ -1032,6 +1038,9 @@ export async function refreshAccessToken(rawRefreshToken: string, ip?: string, u
       include: { user: true },
     })
     if (!storedToken) return { kind: 'invalid' as const }
+    if (expectedSessionId && storedToken.sessionId !== expectedSessionId) {
+      return { kind: 'session_changed' as const }
+    }
 
     if (storedToken.revoked) {
       if (!(await shouldTreatRevokedRefreshTokenAsReplay(tx, storedToken))) {
@@ -1111,6 +1120,7 @@ export async function refreshAccessToken(rawRefreshToken: string, ip?: string, u
   })
 
   if (result.kind === 'invalid') throw unauthenticated('Refresh Token 无效')
+  if (result.kind === 'session_changed') throw sessionChanged()
   if (result.kind === 'reused') throw unauthenticated('Refresh Token 已被使用，请重新登录')
   if (result.kind === 'revoked') throw unauthenticated('Refresh Token 已失效，请重新登录')
   if (result.kind === 'expired') throw unauthenticated('Refresh Token 已过期')
@@ -1131,9 +1141,18 @@ export async function refreshAccessToken(rawRefreshToken: string, ip?: string, u
   }
 }
 
-export async function revokeRefreshToken(rawRefreshToken: string, ip?: string, userAgent?: string) {
+export async function revokeRefreshToken(
+  rawRefreshToken: string,
+  ip?: string,
+  userAgent?: string,
+  expectedSessionId?: string,
+) {
   const tokenHash = hashRefreshToken(rawRefreshToken)
-  await revokeRefreshSessionByTokenHash({ tokenHash, metadata: { ip, userAgent } })
+  await revokeRefreshSessionByTokenHash({
+    tokenHash,
+    expectedSessionId,
+    metadata: { ip, userAgent },
+  })
 }
 
 export async function revokeAllUserRefreshTokens(

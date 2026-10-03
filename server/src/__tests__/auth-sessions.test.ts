@@ -82,6 +82,12 @@ function refreshCookieFrom(res: { headers: Record<string, unknown> }) {
   return cookie
 }
 
+function sessionIdFromAccessToken(accessToken: string): string {
+  const payload = jwt.decode(accessToken) as { sid?: unknown } | null
+  if (typeof payload?.sid !== 'string') throw new Error('Expected an access-token session id')
+  return payload.sid
+}
+
 async function login(email: string, password: string, userAgent = 'M3-ISH session test agent'):
   Promise<LoginResult> {
   const response = await api
@@ -250,7 +256,11 @@ describe('device session families', () => {
     const current = await login(user.email, password, 'Current Device')
     const other = await login(user.email, password, 'Other Device')
 
-    await api.post('/api/auth/logout').set('Cookie', current.refreshCookie).expect(200)
+    await api
+      .post('/api/auth/logout')
+      .set('Cookie', current.refreshCookie)
+      .send({ expectedSessionId: sessionIdFromAccessToken(current.accessToken) })
+      .expect(200)
     await api.post('/api/auth/refresh').set('Cookie', current.refreshCookie).expect(401)
     await api.post('/api/auth/refresh').set('Cookie', other.refreshCookie).expect(200)
 
@@ -300,7 +310,11 @@ describe('device session families', () => {
       .set('User-Agent', 'Rotating Device')
       .expect(200)
 
-    await api.post('/api/auth/logout').set('Cookie', rotating.refreshCookie).expect(200)
+    await api
+      .post('/api/auth/logout')
+      .set('Cookie', rotating.refreshCookie)
+      .send({ expectedSessionId: sessionIdFromAccessToken(rotating.accessToken) })
+      .expect(200)
     await api.post('/api/auth/refresh').set('Cookie', refreshCookieFrom(rotated)).expect(401)
     await api.post('/api/auth/refresh').set('Cookie', other.refreshCookie).expect(200)
   })

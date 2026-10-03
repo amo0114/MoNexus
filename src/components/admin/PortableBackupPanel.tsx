@@ -10,6 +10,7 @@ import {
 } from '../../api/portableBackups'
 import { useAppStore } from '../../stores/appStore'
 import { useAuthStore } from '../../stores/authStore'
+import { getAuthSessionContext, matchesAuthSessionContext } from '../../auth/sessionContext'
 import ConfirmDialog from '../ui/ConfirmDialog'
 
 function formatBytes(bytes?: number) {
@@ -88,13 +89,18 @@ export default function PortableBackupPanel() {
 
   async function doRestore() {
     if (!importFile) return
+    const restoreAuthContext = getAuthSessionContext(useAuthStore.getState())
+    if (!restoreAuthContext) return
     setImporting(true)
     try {
       const result = await restorePortableBackup(importFile, importPassphrase)
+      if (!matchesAuthSessionContext(restoreAuthContext, getAuthSessionContext(useAuthStore.getState()))) return
       showToast(`已恢复 ${result.objectCount} 个对象，即将退出并请重新登录`)
-      logout()
+      logout(restoreAuthContext)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '导入失败'), 'error')
+      if (matchesAuthSessionContext(restoreAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        showToast(getApiErrorMessage(err, '导入失败'), 'error')
+      }
     } finally {
       setImporting(false)
       setImportPassphrase('')

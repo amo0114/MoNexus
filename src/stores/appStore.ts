@@ -4,6 +4,7 @@ import { getConfigRegistry } from '../api/registry'
 import { getOrderAttentionCount } from '../api/orders'
 import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
 import { useAuthStore } from './authStore'
+import { readAccessTokenIdentity } from '../auth/sessionContext'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -78,6 +79,7 @@ interface AppState {
   loadRegistry: () => Promise<void>
   /** SPEC-NOTIFY-001：事务消息未读数（与公告未读独立） */
   notificationUnreadCount: number
+  notificationUnreadStatus: 'unknown' | 'known'
   refreshNotificationUnread: () => Promise<void>
   /** SPEC-NOTIFY-RT-001：realtime stream 状态（observability / UI glue） */
   notificationStreamState: string
@@ -93,9 +95,16 @@ let orderAttentionRequestSeq = 0
 let orderAttentionLastFetchAt = 0
 /** 通知未读刷新的请求代次：A 的慢响应不得写入 B 的界面（PR-3 复审）。 */
 let notificationUnreadRequestSeq = 0
+let previousAuthUserId = useAuthStore.getState().user?.id ?? null
+let previousAuthSessionId = getCurrentSessionId(useAuthStore.getState())
+let previousAuthEpoch = useAuthStore.getState().authEpoch
 /** 补拉性质刷新的最小间隔：合并首次挂载时「登录初始化」与「stream ready」
     的双重触发；事件驱动（buyer.orders / 下单成功）永不节流。 */
 const ORDER_ATTENTION_IF_STALE_MIN_INTERVAL_MS = 1_000
+
+function getCurrentSessionId(authState: ReturnType<typeof useAuthStore.getState>): string | null {
+  return readAccessTokenIdentity(authState.accessToken)?.sessionId ?? authState.sessionId
+}
 
 export const useAppStore = create<AppState>()((set, get) => ({
   activeTab: 'store',
@@ -110,6 +119,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   tabbarHidden: false,
   orderAttentionCount: -1,
   notificationUnreadCount: 0,
+  notificationUnreadStatus: 'unknown',
   notificationStreamState: 'disabled',
   setActiveTab: (tab) => set({ activeTab: tab }),
   setNotificationStreamState: (state) => set({ notificationStreamState: state }),
@@ -233,7 +243,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // A 的慢响应绝不写入 B 的界面；登出立即清零并作废在途响应。
     if (!useAuthStore.getState().user) {
       notificationUnreadRequestSeq++
-      set({ notificationUnreadCount: 0 })
+      set({ notificationUnreadCount: 0, notificationUnreadStatus: 'unknown' })
       return
     }
     const seq = ++notificationUnreadRequestSeq
@@ -241,7 +251,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     try {
       const count = await fetchNotificationUnreadCount()
       if (seq === notificationUnreadRequestSeq && useAuthStore.getState().user?.id === userId) {
-        set({ notificationUnreadCount: Math.max(0, count) })
+        set({ notificationUnreadCount: Math.max(0, count), notificationUnreadStatus: 'known' })
       }
     } catch (err) {
       // Feature flag off (404) or network: keep last known count quietly.
@@ -251,8 +261,34 @@ export const useAppStore = create<AppState>()((set, get) => ({
         && seq === notificationUnreadRequestSeq
         && useAuthStore.getState().user?.id === userId
       ) {
-        set({ notificationUnreadCount: 0 })
+        set({ notificationUnreadCount: 0, notificationUnreadStatus: 'known' })
       }
     }
   },
 }))
+
+useAuthStore.subscribe((authState) => {
+  const nextAuthUserId = authState.user?.id ?? null
+  const nextAuthSessionId = getCurrentSessionId(authState)
+  const sameIdentity = previousAuthEpoch === authState.authEpoch
+    && previousAuthUserId === nextAuthUserId
+    && previousAuthSessionId === nextAuthSessionId
+
+  if (sameIdentity) return
+
+  previousAuthUserId = nextAuthUserId
+  previousAuthSessionId = nextAuthSessionId
+  previousAuthEpoch = authState.authEpoch
+  orderAttentionRequestSeq++
+  orderAttentionTrailing = false
+  orderAttentionLastFetchAt = 0
+  notificationUnreadRequestSeq++
+  useAppStore.setState({
+    orderAttentionCount: authState.user ? -1 : 0,
+    notificationUnreadCount: 0,
+    notificationUnreadStatus: 'unknown',
+    notificationStreamState: 'disabled',
+    toasts: [],
+    islandNotice: null,
+  })
+})

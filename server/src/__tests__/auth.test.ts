@@ -4,6 +4,12 @@ import { loginUser, refreshAccessToken } from '../modules/auth/service.js'
 import { prisma } from '../lib/prisma.js'
 import avatarPresetUrls from '../modules/auth/avatarPresetUrls.json' with { type: 'json' }
 
+function sessionIdFromAccessToken(accessToken: string): string {
+  const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf8')) as { sid?: unknown }
+  if (typeof payload.sid !== 'string') throw new Error('Expected an access token session id')
+  return payload.sid
+}
+
 describe('POST /api/auth/register', () => {
   it('should register a new user and return access token + user', async () => {
     const res = await api
@@ -93,11 +99,12 @@ describe('POST /api/auth/login', () => {
 describe('POST /api/auth/refresh', () => {
   it('should issue new access token with valid refresh cookie', async () => {
     await createTestUser('refresh-test@test.local', 'pass123')
-    const { cookies } = await loginAs('refresh-test@test.local', 'pass123')
+    const { cookies, accessToken } = await loginAs('refresh-test@test.local', 'pass123')
 
     const res = await api
       .post('/api/auth/refresh')
       .set('Cookie', cookies)
+      .send({ expectedSessionId: sessionIdFromAccessToken(accessToken) })
       .expect(200)
 
     expect(res.body.accessToken).toBeDefined()
@@ -113,6 +120,27 @@ describe('POST /api/auth/refresh', () => {
       .expect(401)
 
     expect(res.body.error.code).toBe('UNAUTHENTICATED')
+  })
+
+  it('does not rotate a refresh cookie from a different session', async () => {
+    const firstUser = await createTestUser('refresh-session-a@test.local', 'pass123')
+    const secondUser = await createTestUser('refresh-session-b@test.local', 'pass123')
+    const firstSession = await loginAs(firstUser.user.email, firstUser.password)
+    const secondSession = await loginAs(secondUser.user.email, secondUser.password)
+
+    const mismatch = await api
+      .post('/api/auth/refresh')
+      .set('Cookie', secondSession.cookies)
+      .send({ expectedSessionId: sessionIdFromAccessToken(firstSession.accessToken) })
+      .expect(409)
+    expect(mismatch.body.error.code).toBe('SESSION_CHANGED')
+    expect(mismatch.headers['set-cookie']).toBeUndefined()
+
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', secondSession.cookies)
+      .send({ expectedSessionId: sessionIdFromAccessToken(secondSession.accessToken) })
+      .expect(200)
   })
 
   it('allows only one concurrent rotation and treats the other use as replay', async () => {
@@ -138,14 +166,36 @@ describe('POST /api/auth/refresh', () => {
 describe('POST /api/auth/logout', () => {
   it('should clear refresh token cookie', async () => {
     await createTestUser('logout-test@test.local', 'pass123')
-    const { cookies } = await loginAs('logout-test@test.local', 'pass123')
+    const { cookies, accessToken } = await loginAs('logout-test@test.local', 'pass123')
 
     const res = await api
       .post('/api/auth/logout')
       .set('Cookie', cookies)
+      .send({ expectedSessionId: sessionIdFromAccessToken(accessToken) })
       .expect(200)
 
     expect(res.body.ok).toBe(true)
+  })
+
+  it('does not revoke or clear a cookie that belongs to a newer session', async () => {
+    const firstUser = await createTestUser('logout-session-a@test.local', 'pass123')
+    const secondUser = await createTestUser('logout-session-b@test.local', 'pass123')
+    const firstSession = await loginAs(firstUser.user.email, firstUser.password)
+    const secondSession = await loginAs(secondUser.user.email, secondUser.password)
+
+    const mismatch = await api
+      .post('/api/auth/logout')
+      .set('Cookie', secondSession.cookies)
+      .send({ expectedSessionId: sessionIdFromAccessToken(firstSession.accessToken) })
+      .expect(409)
+    expect(mismatch.body.error.code).toBe('SESSION_CHANGED')
+    expect(mismatch.headers['set-cookie']).toBeUndefined()
+
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', secondSession.cookies)
+      .send({ expectedSessionId: sessionIdFromAccessToken(secondSession.accessToken) })
+      .expect(200)
   })
 })
 
