@@ -1193,6 +1193,77 @@ describe('AdminEditorialManager edit (T-MERCH-FE-003 §edit)', () => {
       scheduledFeature.internalReason,
     )
   })
+
+  it('rebuilds the edit form when the operator switches to a different feature target', async () => {
+    await renderMutatingManager({ items: [scheduledFeature, activeFeature], total: 2 })
+
+    // edit the first feature and dirty every editable field without submitting
+    const first = await openEditDialog(scheduledFeature)
+    fillEditForm(first, {
+      placement: 'category_editorial',
+      startsAt: '2099-06-01T09:30',
+      endsAt: '2099-07-01T18:45',
+      sortWeight: '777',
+      publicReason: '草稿公开理由',
+      internalReason: '草稿内部原因',
+    })
+    expect(within(first).getByLabelText('权重')).toHaveValue(777)
+    expect(within(first).getByLabelText('内部原因（仅管理员可见）')).toHaveValue('草稿内部原因')
+    fireEvent.click(within(first).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    // switching target must re-initialize from the NEW DTO, not carry the draft
+    const second = await openEditDialog(activeFeature)
+    expect(within(second).getByText('编辑精选')).toBeInTheDocument()
+    expect(within(second).getByText(/正在编辑“商品1002”的平台精选/)).toBeInTheDocument()
+    expect(within(second).getByLabelText('展位')).toHaveValue(activeFeature.placement)
+    expect(within(second).getByLabelText('开始时间')).toHaveValue(
+      isoToDatetimeLocal(activeFeature.startsAt),
+    )
+    expect(within(second).getByLabelText('结束时间')).toHaveValue(
+      isoToDatetimeLocal(activeFeature.endsAt),
+    )
+    expect(within(second).getByLabelText('权重')).toHaveValue(activeFeature.sortWeight)
+    expect(within(second).getByLabelText('内部原因（仅管理员可见）')).toHaveValue(
+      activeFeature.internalReason,
+    )
+    // the previous draft never leaks into the new target
+    expect(within(second).getByLabelText('权重')).not.toHaveValue(777)
+    expect(within(second).getByLabelText('内部原因（仅管理员可见）')).not.toHaveValue('草稿内部原因')
+    expect(within(second).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('shows the unparseable-date error for the fields that cannot be parsed', async () => {
+    const badEndsAt: AdminEditorialFeatureDTO = {
+      ...scheduledFeature,
+      id: 404,
+      productName: '商品坏日期',
+      startsAt: '2026-02-01T00:00:00.000Z',
+      endsAt: 'not-a-date',
+    }
+    await renderMutatingManager({ items: [scheduledFeature, badEndsAt], total: 2 })
+
+    // only 结束时间 fails to parse → the error names that field alone
+    const partial = await openEditDialog(badEndsAt)
+    expect(within(partial).getByRole('alert')).toHaveTextContent(
+      '该精选的结束时间无法解析，请重新选择后再保存。',
+    )
+    // the parseable field still prefills, so the error is not a blanket failure
+    expect(within(partial).getByLabelText('开始时间')).toHaveValue(
+      isoToDatetimeLocal(badEndsAt.startsAt),
+    )
+    // an unparseable date is never silently submitted
+    expect(within(partial).getByLabelText('结束时间')).toHaveValue('')
+    fireEvent.click(within(partial).getByRole('button', { name: '取消' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    // reopening the healthy feature must not inherit the error state
+    const healthy = await openEditDialog(scheduledFeature)
+    expect(within(healthy).queryByRole('alert')).not.toBeInTheDocument()
+    expect(within(healthy).getByLabelText('开始时间')).toHaveValue(
+      isoToDatetimeLocal(scheduledFeature.startsAt),
+    )
+  })
 })
 
 describe('AdminEditorialManager revoke (T-MERCH-FE-003 §revoke)', () => {
