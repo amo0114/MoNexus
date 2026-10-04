@@ -63,29 +63,6 @@ const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] 
   { key: 'categoryApplications', label: '分类申请', Icon: FilePlus2 },
 ]
 
-function isInstantInventoryProduct(product: MerchantProduct) {
-  // 兼容早期商品：服务端在未返回 deliveryMode 时默认按即时库存处理。
-  return (product.deliveryMode ?? 'instant_inventory') === 'instant_inventory'
-}
-
-function getAvailabilityLabel(product: MerchantProduct) {
-  if (isInstantInventoryProduct(product)) return '交付库存'
-  if (product.stockMode === 'unlimited') return '不限量'
-  return product.deliveryMode === 'manual_service'
-    ? '服务名额'
-    : '可售名额'
-}
-
-function getOfferAvailabilityLabel(offer: NonNullable<MerchantProduct['offers']>[number]) {
-  if (offer.deliveryMode === 'instant_inventory') {
-    return `交付库存 ${offer.availableStock ?? '—'}`
-  }
-  if (offer.stockMode === 'unlimited') return '不限量'
-  return offer.deliveryMode === 'manual_service'
-    ? `服务名额 ${offer.stock}`
-    : `可售名额 ${offer.stock}`
-}
-
 function isGoneOrForbidden(error: any) {
   const status = error?.response?.status
   return status === 403 || status === 404
