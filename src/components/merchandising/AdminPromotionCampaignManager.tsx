@@ -42,7 +42,7 @@
 // unparseable input is shown verbatim and null is shown as —.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Megaphone } from 'lucide-react'
+import { Megaphone } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
   adjustAdminPromotionCampaignRefund,
@@ -63,9 +63,18 @@ import type {
   CampaignStatusFilter,
 } from '../../types/merchandising'
 import AdminPagination from '../admin/AdminPagination'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
+import CampaignActionDialog, {
+  type CampaignActionDialogTarget,
+} from './campaignManager/CampaignActionDialog'
+import CampaignDetailDialog from './campaignManager/CampaignDetailDialog'
+import { formatDateTime, formatMaybeDate } from './campaignManager/dateFormat'
+import {
+  MAX_REASON_LENGTH,
+  type AdminCampaignActionKind,
+  type AdminCampaignDialogAction,
+} from './campaignManager/types'
 import {
   CAMPAIGN_STATUS_LABEL,
   CAMPAIGN_STATUS_ORDER,
@@ -108,22 +117,10 @@ export interface AdminPromotionCampaignManagerProps {
 
 const PAGE_SIZE = 20
 
-/** Max length for admin-entered reasons (mirrors the frozen server cap). */
-const MAX_REASON_LENGTH = 500
-
-/**
- * Strictly-typed mutation action union. Every entry-button maps to exactly one
- * kind; no type assertion is used to smuggle a value through.
- */
-export type AdminCampaignDialogAction =
-  | { kind: 'approve' }
-  | { kind: 'reject' }
-  | { kind: 'pause' }
-  | { kind: 'resume' }
-  | { kind: 'cancel' }
-  | { kind: 'refund-adjustment' }
-
-type AdminCampaignActionKind = AdminCampaignDialogAction['kind']
+// R09a: the mutation action union + reason cap are read by both this page and
+// the extracted confirm Dialog, so they live in campaignManager/types.ts. The
+// type is re-exported to keep this module's previous public surface intact.
+export type { AdminCampaignDialogAction } from './campaignManager/types'
 
 /** Buttons available per frozen CampaignStatus (expired / cancelled → none). */
 const ACTIONS_BY_STATUS: Record<CampaignStatus, readonly AdminCampaignActionKind[]> = {
@@ -232,46 +229,6 @@ const ACTION_SUCCESS_COPY: Record<AdminCampaignActionKind, string> = {
   'refund-adjustment': '退款调整已完成。',
 }
 
-const ACTION_DIALOG_TITLE: Record<AdminCampaignActionKind, string> = {
-  approve: '批准推广活动',
-  reject: '拒绝推广活动',
-  pause: '暂停推广活动',
-  resume: '恢复推广活动',
-  cancel: '取消推广活动',
-  'refund-adjustment': '退款调整',
-}
-
-/**
- * Per-action confirm description. Cancel copy reflects the frozen server
- * semantics: scheduled → full auto-refund; active/paused → one-time explicit
- * adjustment decision; other statuses → free (no charge).
- */
-function buildDialogDescription(
-  action: AdminCampaignDialogAction,
-  campaign: AdminPromotionCampaignDTO,
-): string {
-  switch (action.kind) {
-    case 'approve':
-      return `确认批准活动 ${campaign.id} 的推广申请？批准后将按套餐价格扣款。`
-    case 'reject':
-      return `确认拒绝活动 ${campaign.id} 的推广申请？拒绝不会扣积分。`
-    case 'pause':
-      return `确认暂停活动 ${campaign.id} 的推广？暂停期间仍占用该展位，暂停时间不顺延。`
-    case 'resume':
-      return `确认恢复活动 ${campaign.id} 的推广？`
-    case 'cancel':
-      if (campaign.status === 'scheduled') {
-        return `确认取消活动 ${campaign.id}？取消将全额自动退回已扣积分。`
-      }
-      if (campaign.status === 'active' || campaign.status === 'paused') {
-        return `确认取消活动 ${campaign.id} 的推广？取消将按下方退款积分进行一次退款调整，不可再次调整。`
-      }
-      return `确认取消活动 ${campaign.id} 的推广申请？取消不会扣积分。`
-    case 'refund-adjustment':
-      return `为活动 ${campaign.id} 设置一次性退款调整决定，提交后不可修改。`
-  }
-}
-
 /**
  * Frozen status filter options: “全部” + the eight frozen CampaignStatus values
  * in display order (promotionCopy is the single source of truth for the labels).
@@ -294,18 +251,6 @@ function parseStatusFilter(value: string): CampaignStatusFilter | null {
   return isKnownCampaignStatus(value) ? value : null
 }
 
-/** Safe date formatting: unparseable input is shown verbatim. */
-function formatDateTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
-}
-
-/** Nullable timestamps render as — when absent; else safe local formatting. */
-function formatMaybeDate(iso: string | null): string {
-  return iso == null ? '—' : formatDateTime(iso)
-}
-
 export default function AdminPromotionCampaignManager({
   adapter = DEFAULT_ADAPTER,
   className = '',
@@ -321,10 +266,7 @@ export default function AdminPromotionCampaignManager({
   const [feedback, setFeedback] = useState<{ kind: 'success'; text: string } | null>(null)
 
   // ONE controlled confirm Dialog for every mutation.
-  const [dialog, setDialog] = useState<{
-    action: AdminCampaignDialogAction
-    campaign: AdminPromotionCampaignDTO
-  } | null>(null)
+  const [dialog, setDialog] = useState<CampaignActionDialogTarget | null>(null)
   const [dialogReason, setDialogReason] = useState('')
   const [dialogPoints, setDialogPoints] = useState('0')
   const [dialogFieldError, setDialogFieldError] = useState<string | null>(null)
@@ -733,8 +675,13 @@ export default function AdminPromotionCampaignManager({
         )}
       </div>
 
-      <Dialog
-        open={dialog != null}
+      <CampaignActionDialog
+        dialog={dialog}
+        reason={dialogReason}
+        points={dialogPoints}
+        fieldError={dialogFieldError}
+        submitError={dialogSubmitError}
+        busy={dialogBusy}
         onOpenChange={(open) => {
           // Never allow closing while a mutation is in flight (ref OR state).
           if (!open && (dialogBusyRef.current || dialogBusy)) return
@@ -744,249 +691,32 @@ export default function AdminPromotionCampaignManager({
             idempotencyRef.current = null
           }
         }}
-      >
-        <DialogContent className="max-w-md">
-          <DialogTitle>{dialog == null ? '' : ACTION_DIALOG_TITLE[dialog.action.kind]}</DialogTitle>
-          <DialogDescription>
-            {dialog == null
-              ? ''
-              : buildDialogDescription(dialog.action, dialog.campaign)}
-          </DialogDescription>
-          <div className="space-y-4 mt-4">
-            {(dialog?.action.kind === 'reject' ||
-              dialog?.action.kind === 'cancel' ||
-              dialog?.action.kind === 'refund-adjustment') && (
-              <div>
-                <label
-                  htmlFor="admin-campaign-action-reason"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  {dialog?.action.kind === 'cancel' ? '取消原因（可选）' : '原因'}
-                </label>
-                <textarea
-                  id="admin-campaign-action-reason"
-                  value={dialogReason}
-                  onChange={(e) => {
-                    setDialogReason(e.target.value)
-                    setDialogFieldError(null)
-                    setDialogSubmitError(null)
-                  }}
-                  rows={3}
-                  maxLength={MAX_REASON_LENGTH}
-                  placeholder={
-                    dialog?.action.kind === 'cancel'
-                      ? '请输入取消原因（可选，不超过 500 字）'
-                      : dialog?.action.kind === 'reject'
-                        ? '请输入拒绝原因（不超过 500 字）'
-                        : '请输入调整理由（不超过 500 字）'
-                  }
-                  className="input resize-y"
-                  disabled={dialogBusy}
-                />
-              </div>
-            )}
-            {(dialog?.action.kind === 'refund-adjustment' ||
-              (dialog?.action.kind === 'cancel' &&
-                (dialog?.campaign.status === 'active' ||
-                  dialog?.campaign.status === 'paused'))) && (
-              <div>
-                <label
-                  htmlFor="admin-campaign-action-points"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  退款积分
-                </label>
-                <input
-                  id="admin-campaign-action-points"
-                  type="text"
-                  inputMode="numeric"
-                  value={dialogPoints}
-                  onChange={(e) => {
-                    setDialogPoints(e.target.value)
-                    setDialogFieldError(null)
-                    setDialogSubmitError(null)
-                  }}
-                  placeholder="0"
-                  className="input"
-                  disabled={dialogBusy}
-                />
-                <p className="text-xs text-[var(--color-text-muted)] mt-1">
-                  {dialog != null
-                    ? `已扣积分 ${dialog.campaign.chargedPoints}，退款积分必须在 0 到 ${dialog.campaign.chargedPoints} 之间。`
-                    : ''}
-                </p>
-              </div>
-            )}
-            {dialogFieldError && (
-              <div
-                role="alert"
-                className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
-              >
-                {dialogFieldError}
-              </div>
-            )}
-            {dialogSubmitError && (
-              <div
-                role="alert"
-                className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
-              >
-                {dialogSubmitError}
-              </div>
-            )}
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                className="btn-secondary px-4 py-2 text-sm"
-                disabled={dialogBusy}
-                onClick={() => {
-                  // Never allow closing while a mutation is in flight.
-                  if (dialogBusyRef.current || dialogBusy) return
-                  setDialog(null)
-                  idempotencyRef.current = null
-                }}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn-primary px-4 py-2 text-sm"
-                disabled={dialogBusy}
-                onClick={() => void handleDialogSubmit()}
-              >
-                {dialogBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认'}
-              </button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        onReasonChange={(value) => {
+          setDialogReason(value)
+          setDialogFieldError(null)
+          setDialogSubmitError(null)
+        }}
+        onPointsChange={(value) => {
+          setDialogPoints(value)
+          setDialogFieldError(null)
+          setDialogSubmitError(null)
+        }}
+        onCancel={() => {
+          // Never allow closing while a mutation is in flight.
+          if (dialogBusyRef.current || dialogBusy) return
+          setDialog(null)
+          idempotencyRef.current = null
+        }}
+        onSubmit={() => void handleDialogSubmit()}
+      />
 
-      <Dialog
-        open={detailTarget != null}
+      <CampaignDetailDialog
+        campaign={detailTarget}
         onOpenChange={(open) => {
           if (!open) setDetailTarget(null)
         }}
-      >
-        <DialogContent className="max-w-xl min-w-0 break-words overflow-y-auto">
-          <DialogTitle>推广活动详情</DialogTitle>
-          <DialogDescription>
-            活动 #{detailTarget?.id} 完整快照、时间线与审核信息
-          </DialogDescription>
-          {detailTarget && (
-            <div className="space-y-4 mt-4 text-xs min-w-0 break-words">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] min-w-0">
-                <div>
-                  <span className="text-[var(--color-text-muted)]">活动 ID：</span>
-                  <span className="font-mono font-medium">#{detailTarget.id}</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">当前状态：</span>
-                  <span className="font-medium">{CAMPAIGN_STATUS_LABEL[detailTarget.status] ?? detailTarget.status}</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">商家 ID：</span>
-                  <span className="font-mono">{detailTarget.merchantId}</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">商品 ID：</span>
-                  <span className="font-mono">{detailTarget.productId}</span>
-                </div>
-                <div className="min-w-0">
-                  <span className="text-[var(--color-text-muted)]">套餐规格：</span>
-                  <span className="break-all">{detailTarget.packageCodeSnapshot} (ID {detailTarget.packageId})</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">推广展位：</span>
-                  <span>{PLACEMENT_LABEL[detailTarget.placementSnapshot] ?? detailTarget.placementSnapshot}</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">投放天数：</span>
-                  <span>{detailTarget.durationDaysSnapshot} 天</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">快照价格：</span>
-                  <span>{detailTarget.pricePointsSnapshot} 积分</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">已扣积分：</span>
-                  <span>{detailTarget.chargedPoints} 积分</span>
-                </div>
-                <div>
-                  <span className="text-[var(--color-text-muted)]">已退积分：</span>
-                  <span>{detailTarget.refundedPoints} 积分</span>
-                </div>
-              </div>
-
-              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-1.5 min-w-0">
-                <div className="font-medium text-[var(--color-text)] mb-1">投放与时间线</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
-                  <div>
-                    <span className="text-[var(--color-text-muted)]">创建时间：</span>
-                    <time dateTime={detailTarget.createdAt}>{formatDateTime(detailTarget.createdAt)}</time>
-                  </div>
-                  <div>
-                    <span className="text-[var(--color-text-muted)]">更新时间：</span>
-                    <time dateTime={detailTarget.updatedAt}>{formatDateTime(detailTarget.updatedAt)}</time>
-                  </div>
-                  <div>
-                    <span className="text-[var(--color-text-muted)]">申请开始：</span>
-                    <span>{formatMaybeDate(detailTarget.requestedStartAt)}</span>
-                  </div>
-                  <div>
-                    <span className="text-[var(--color-text-muted)]">实际开始：</span>
-                    <span>{formatMaybeDate(detailTarget.startsAt)}</span>
-                  </div>
-                  <div className="sm:col-span-2">
-                    <span className="text-[var(--color-text-muted)]">实际结束：</span>
-                    <span>{formatMaybeDate(detailTarget.endsAt)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3 rounded bg-[var(--color-surface)] border border-[var(--color-border)] space-y-2 min-w-0">
-                <div className="font-medium text-[var(--color-text)]">审核与取消追溯</div>
-                <div className="space-y-1.5 border-b border-[var(--color-border)] pb-2 min-w-0">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
-                    <div>
-                      <span className="text-[var(--color-text-muted)]">审核人 ID：</span>
-                      <span className="font-mono">{detailTarget.reviewedByUserId ?? '—'}</span>
-                    </div>
-                    <div>
-                      <span className="text-[var(--color-text-muted)]">审核时间：</span>
-                      <span>{formatMaybeDate(detailTarget.reviewedAt)}</span>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-[var(--color-text-muted)]">审核意见：</span>
-                    <span className="break-all break-words">{detailTarget.reviewReason ?? '—'}</span>
-                  </div>
-                </div>
-                <div className="space-y-1.5 pt-1 min-w-0">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
-                    <div>
-                      <span className="text-[var(--color-text-muted)]">取消人 ID：</span>
-                      <span className="font-mono">{detailTarget.cancelledByUserId ?? '—'}</span>
-                    </div>
-                  </div>
-                  <div className="min-w-0">
-                    <span className="text-[var(--color-text-muted)]">取消原因：</span>
-                    <span className="break-all break-words">{detailTarget.cancellationReason ?? '—'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  className="btn-secondary px-4 py-2 text-sm"
-                  onClick={() => setDetailTarget(null)}
-                >
-                  关闭
-                </button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+        onClose={() => setDetailTarget(null)}
+      />
     </section>
   )
 }
