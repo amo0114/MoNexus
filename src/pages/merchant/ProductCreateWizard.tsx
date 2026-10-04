@@ -1,23 +1,19 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, Coins, CreditCard, Eye, FileText, Globe, Loader2,
+  ArrowLeft, ArrowRight, CalendarDays, Check, CreditCard, Eye, FileText, Globe, Loader2,
   Package, UserRound, Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
-import ProductCategorySelect from '../../components/catalog/ProductCategorySelect'
 import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
-import ProductImageUploader from '../../components/merchant/ProductImageUploader'
-import PurchaseFormFieldsEditor, {
+import {
   serializePurchaseFormFields,
   validatePurchaseFormFields,
 } from '../../components/merchant/PurchaseFormFieldsEditor'
-import TemplateAttributeFields from '../../components/catalog/TemplateAttributeFields'
-import ProductDetailsFields from '../../components/catalog/ProductDetailsFields'
 import {
   buildCreateProductV2Request, catalogApi, mapInsertedEditorImageToWriteRef, readinessErrorToIssues,
   type CatalogAdapter,
@@ -42,11 +38,12 @@ import {
 } from '../../types/catalog'
 import type { DeliveryField, DeliveryMode, PurchaseFormField, StockMode } from '../../types/merchant'
 
-import FieldLabel from '../../components/catalog/wizard/FieldLabel'
 import { DELIVERY_FIELDS_MAX, serializeDeliveryFields, serializeStructuredContent, validateStructuredRows } from '../../components/catalog/wizard/deliveryFields'
 import { deliveryModeFor } from '../../components/catalog/wizard/fulfillment'
 import PricingStep from '../../components/catalog/wizard/steps/PricingStep'
 import DeliveryStep from '../../components/catalog/wizard/steps/DeliveryStep'
+import PresentationStep from '../../components/catalog/wizard/steps/PresentationStep'
+import DraftReviewStep from '../../components/catalog/wizard/steps/DraftReviewStep'
 import {
   DEFAULT_OFFER_NAME,
   type DeliverySelection,
@@ -55,8 +52,6 @@ import {
   type StructuredRequirement,
 } from '../../components/catalog/wizard/steps/wizardStepTypes'
 import { pickFileFromInput } from '../../utils/pickFileFromInput'
-
-const RichTextEditor = lazy(() => import('../../components/catalog/RichTextEditor'))
 
 const TEMPLATE_ICONS: Record<TemplateKey, LucideIcon> = {
   redemption_code: CreditCard,
@@ -277,9 +272,29 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   }
 
   /**
-   * Step 2/3 field writers. They only patch the mirrored WizardForm draft;
-   * coercion and validation stay here in the parent.
+   * Step 1 field writers. Same contract as the step 2/3 writers above:
+   * patch the mirrored WizardForm draft only, no validation and no I/O.
    */
+  function handleNameChange(name: string) {
+    setForm(prev => ({ ...prev, name }))
+  }
+
+  function handleCategoryIdChange(categoryId: number | null) {
+    setForm(prev => ({ ...prev, categoryId }))
+  }
+
+  function handleDescriptionChange(description: string) {
+    setForm(prev => ({ ...prev, description }))
+  }
+
+  function handleVisibilityChange(visibility: ProductVisibility) {
+    setForm(prev => ({ ...prev, visibility }))
+  }
+
+  function handleRichDescriptionChange(richDescription: string | null) {
+    setForm(prev => ({ ...prev, richDescription }))
+  }
+
   function handlePriceChange(price: string) {
     setForm(prev => ({ ...prev, price }))
   }
@@ -825,99 +840,34 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
           </div>
         )}
 
+
         {step === 1 && (
-          <div className="space-y-5" data-testid="wizard-step-display">
-            <div>
-              <FieldLabel required>商品名称</FieldLabel>
-              <input type="text" className="input" placeholder="输入吸引人的商品名称" value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="wizard-name" />
-            </div>
-            <ProductCategorySelect
-              categories={categories}
-              value={form.categoryId}
-              onChange={(categoryId) => setForm({ ...form, categoryId })}
-              disabled={busy}
-            />
-            <ProductImageUploader
-              images={images}
-              imageKeys={imageKeys}
-              onChange={setImages}
-              onImageKeysChange={setImageKeys}
-              disabled={busy}
-            />
-            <div>
-              <FieldLabel>一句话简介</FieldLabel>
-              <textarea className="input min-h-[60px] resize-y" placeholder="简明扼要地概括商品亮点..."
-                value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </div>
-            <div data-testid="wizard-visibility">
-              <FieldLabel required>浏览可见性</FieldLabel>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                  form.visibility === PRODUCT_VISIBILITY.PUBLIC
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                    : 'border-[var(--color-border)]'
-                }`}>
-                  <input type="radio" name="wizardVisibility" value={PRODUCT_VISIBILITY.PUBLIC}
-                    checked={form.visibility === PRODUCT_VISIBILITY.PUBLIC}
-                    onChange={() => setForm({ ...form, visibility: PRODUCT_VISIBILITY.PUBLIC })}
-                    className="w-4 h-4 mt-0.5" data-testid="wizard-visibility-public" />
-                  <span>游客可浏览商品信息</span>
-                </label>
-                <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                  form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                    : 'border-[var(--color-border)]'
-                }`}>
-                  <input type="radio" name="wizardVisibility" value={PRODUCT_VISIBILITY.MEMBERS_ONLY}
-                    checked={form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY}
-                    onChange={() => setForm({ ...form, visibility: PRODUCT_VISIBILITY.MEMBERS_ONLY })}
-                    className="w-4 h-4 mt-0.5" data-testid="wizard-visibility-members_only" />
-                  <span>仅登录后可浏览</span>
-                </label>
-              </div>
-              <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">兑换始终需要登录</p>
-            </div>
-            <div>
-              <FieldLabel>图文详情</FieldLabel>
-              <Suspense fallback={
-                <div className="input min-h-[140px] flex items-center text-sm text-[var(--color-text-muted)]">
-                  正在加载图文编辑器…
-                </div>
-              }>
-                <RichTextEditor
-                  value={form.richDescription}
-                  onChange={(html) => setForm(prev => ({ ...prev, richDescription: html }))}
-                  onInsertImage={handleInsertDescriptionImage}
-                  placeholder="详细描述商品特性、使用教程、售后承诺等..."
-                  disabled={busy}
-                />
-              </Suspense>
-            </div>
-            {selectedTemplate && (
-              <div data-testid="wizard-product-attributes">
-                <FieldLabel>商品参数</FieldLabel>
-                <TemplateAttributeFields
-                  template={selectedTemplate}
-                  target="product"
-                  value={productAttributes}
-                  onChange={setProductAttributes}
-                  disabled={busy}
-                  mode="draft"
-                />
-              </div>
-            )}
-            <ProductDetailsFields
-              value={productDetails}
-              onChange={setProductDetails}
-              disabled={busy}
-              mode="draft"
-            />
-            <div data-testid="wizard-purchase-form">
-              <FieldLabel>购买资料</FieldLabel>
-              <PurchaseFormFieldsEditor fields={purchaseForm} onChange={setPurchaseForm} />
-            </div>
-          </div>
+          <PresentationStep
+            name={form.name}
+            onNameChange={handleNameChange}
+            categories={categories}
+            categoryId={form.categoryId}
+            onCategoryIdChange={handleCategoryIdChange}
+            images={images}
+            imageKeys={imageKeys}
+            onImagesChange={setImages}
+            onImageKeysChange={setImageKeys}
+            description={form.description}
+            onDescriptionChange={handleDescriptionChange}
+            visibility={form.visibility}
+            onVisibilityChange={handleVisibilityChange}
+            richDescription={form.richDescription}
+            onRichDescriptionChange={handleRichDescriptionChange}
+            onInsertDescriptionImage={handleInsertDescriptionImage}
+            template={selectedTemplate}
+            productAttributes={productAttributes}
+            onProductAttributesChange={setProductAttributes}
+            productDetails={productDetails}
+            onProductDetailsChange={setProductDetails}
+            purchaseForm={purchaseForm}
+            onPurchaseFormChange={setPurchaseForm}
+            disabled={busy}
+          />
         )}
 
         {step === 2 && (
@@ -969,82 +919,19 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
           />
         )}
 
-        {step === 4 && (
-          <div className="space-y-8" data-testid="wizard-step-confirm">
-            <div>
-              <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-3">确认草稿内容</h2>
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4 text-sm">
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品名称</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]" data-testid="wizard-confirm-name">{form.name || '（未填写）'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品分类</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]" data-testid="wizard-confirm-category">
-                    {selectedCategory ? `${selectedCategory.label}` : '（未选择）'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品形态</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{selectedTemplate?.label ?? templateKey ?? '（未选择）'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">浏览可见性</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">
-                    {form.visibility === PRODUCT_VISIBILITY.PUBLIC ? '游客可浏览商品信息' : '仅登录后可浏览'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">价格</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)] font-mono" data-testid="wizard-confirm-price">{form.price || '0'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">主规格</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{primaryOfferName.trim() || DEFAULT_OFFER_NAME}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">交付方式</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{form.deliveryMode}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">规格数</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{extraOffers.length + 1} 个</dd>
-                </div>
-              </dl>
-              <p className="mt-3 text-xs text-[var(--color-text-muted)]">
-                保存为草稿后不会在商店展示，可继续进入「可售量」配置与「发布」检查。兑换始终需要登录。
-              </p>
-            </div>
 
-            <div>
-              <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-3">买家看到的确认弹窗</h2>
-              <div className="max-w-sm mx-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 pointer-events-none select-none" data-testid="buyer-preview">
-                <div className="font-bold text-lg mb-1">确认兑换</div>
-                <div className="bg-[var(--color-surface)] rounded-lg p-4 my-3 border border-[var(--color-border)]">
-                  <div className="font-bold text-sm line-clamp-1">{form.name || '（商品名称）'}</div>
-                  <div className="flex justify-between items-center text-sm mt-2 pt-2 border-t border-dashed border-[var(--color-border)]">
-                    <span className="text-[var(--color-text-muted)]">
-                      {form.deliveryMode === 'manual_service' ? '本次冻结积分' : '本次支付积分'}
-                    </span>
-                    <span className="font-bold text-[var(--color-cta)] flex items-center gap-1">
-                      <Coins className="w-4 h-4" /> {form.price || '0'}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <span className="btn-secondary flex-1 px-0 text-center opacity-70">再想想</span>
-                  <span className="btn-cta flex-1 px-0 text-center opacity-70">确认支付</span>
-                </div>
-              </div>
-              {safePreviewHtml && (
-                <details className="mt-4">
-                  <summary className="text-sm text-[var(--color-text-muted)] cursor-pointer">图文详情预览</summary>
-                  <div className="mt-2 p-4 rounded-lg border border-[var(--color-border)] prose prose-neutral dark:prose-invert max-w-none text-sm"
-                    dangerouslySetInnerHTML={{ __html: safePreviewHtml }} />
-                </details>
-              )}
-            </div>
-          </div>
+        {step === 4 && (
+          <DraftReviewStep
+            name={form.name}
+            categoryLabel={selectedCategory?.label ?? null}
+            templateName={selectedTemplate?.label ?? templateKey ?? null}
+            visibility={form.visibility}
+            price={form.price}
+            deliveryMode={form.deliveryMode}
+            primaryOfferName={primaryOfferName}
+            extraOfferCount={extraOffers.length}
+            safePreviewHtml={safePreviewHtml}
+          />
         )}
 
         {step === 5 && (
