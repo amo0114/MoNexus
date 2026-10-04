@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
-  ChevronRight,
   Globe2,
   Headphones,
   Heart,
@@ -11,13 +10,11 @@ import {
   PackageCheck,
   ShieldCheck,
   ShoppingCart,
-  Store,
   Trash2,
   Zap,
 } from 'lucide-react'
 import type ProductDetailDesktop from './ProductDetailDesktop'
 import { useAppStore } from '../../stores/appStore'
-import { offerPeriodSubtitle } from '../../utils/offerPeriodDisplay'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import StarRating from '../ui/StarRating'
 import MerchantSupportModal from './MerchantSupportModal'
@@ -26,12 +23,13 @@ import { PRODUCT_MOCK_ASSETS, referenceRelated } from './productDetailMock'
 import { useProductFavorite } from '../../hooks/useProductFavorite'
 import ProductExchangeSummary from './ProductExchangeSummary'
 import FavoriteHeartButton from './FavoriteHeartButton'
-import AnimatedCounter from '../ui/AnimatedCounter'
 import MobileOfferPanel from './productDetail/mobile/MobileOfferPanel'
 import MobileMerchantSection from './productDetail/mobile/MobileMerchantSection'
 import MobileDetailContent, {
   MobileRelatedSection,
 } from './productDetail/mobile/MobileDetailContent'
+import MobilePurchaseBar from './productDetail/mobile/MobilePurchaseBar'
+import MobileSkuSheet from './productDetail/mobile/MobileSkuSheet'
 import './ProductDetailMobile.css'
 
 type Props = ComponentProps<typeof ProductDetailDesktop> & {
@@ -442,186 +440,56 @@ export default function ProductDetailMobile({
         </div>
       </div>
 
-      {createPortal(
-        <div
-          className={`pm-bottom-bar ${!preview ? 'pm-bottom-bar-flow' : ''}`}
-          data-testid="mobile-buy-bar"
-        >
-          {preview ? (
-            <>
-              <button onClick={() => setDialog('shop')}>
-                <Store />
-                <span>店铺</span>
-              </button>
-              <button onClick={() => setSupportOpen(true)}>
-                <Headphones />
-                <span>客服</span>
-              </button>
-              <FavoriteHeartButton
-                favorite={favorite}
-                onClick={toggleFavorite}
-                showLabel
-                size={18}
-              />
-              <button
-                className="pm-bottom-buy"
-                disabled={purchaseDisabled}
-                data-testid="mobile-buy-bar-cta"
-                onClick={previewOrderReady ? viewPreviewOrder : buy}
-              >
-                {previewOrderReady ? '查看本次订单' : '立即购买'}
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="pm-bottom-actions">
-                <button
-                  type="button"
-                  onClick={() => setSupportOpen(true)}
-                  aria-label="联系客服"
-                  className="pm-bottom-icon-btn"
-                >
-                  <Headphones size={18} />
-                  <span>客服</span>
-                </button>
-                <FavoriteHeartButton
-                  type="button"
-                  favorite={favorite}
-                  onClick={toggleFavorite}
-                  showLabel
-                  size={18}
-                  ariaLabel={favorite ? '已收藏' : '收藏'}
-                  className="pm-bottom-icon-btn"
-                />
-              </div>
-
-              <div className="pm-bottom-summary">
-                <div className="pm-bottom-offer-row">
-                  <span className="pm-bottom-offer-name" title={activeOffer?.name}>
-                    {activeOffer?.name || '暂无可售套餐'}
-                  </span>
-                  {offers.length > 1 && (
-                    <button
-                      ref={changeOfferBtnRef}
-                      type="button"
-                      onClick={() => setSkuDrawerOpen(true)}
-                      className="pm-bottom-change-btn"
-                      aria-label="更换套餐"
-                    >
-                      <span>更换</span>
-                      <ChevronRight size={12} />
-                    </button>
-                  )}
-                </div>
-                <div className="pm-bottom-price-row">
-                  <span className="pm-bottom-price">
-                    <AnimatedCounter
-                      value={price}
-                      formatFn={(val) => money(val)}
-                    />
-                  </span>
-                  {shortfall > 0 && (
-                    <span className="pm-bottom-shortfall">
-                      (差{shortfall}分)
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <button
-                className="pm-bottom-buy"
-                disabled={!onViewRecentOrder && purchaseDisabled}
-                data-testid="mobile-buy-bar-cta"
-                onClick={onViewRecentOrder ?? buy}
-              >
-                {onViewRecentOrder ? '查看本次订单' : redeemLabel}
-              </button>
-            </>
-          )}
-        </div>,
-        document.body
-      )}
+      <MobilePurchaseBar
+        preview={preview}
+        favorite={favorite}
+        onToggleFavorite={toggleFavorite}
+        offers={offers}
+        activeOffer={activeOffer}
+        shortfall={shortfall}
+        price={price}
+        money={money}
+        redeemLabel={redeemLabel}
+        purchaseDisabled={purchaseDisabled}
+        onBuy={buy}
+        previewOrderReady={previewOrderReady}
+        onViewPreviewOrder={viewPreviewOrder}
+        onViewRecentOrder={onViewRecentOrder}
+        onOpenShop={() => setDialog('shop')}
+        onOpenSupport={() => setSupportOpen(true)}
+        onChangeOffer={() => setSkuDrawerOpen(true)}
+        changeOfferRef={changeOfferBtnRef}
+      />
 
       {/* Mobile SKU Drawer / Bottom Sheet */}
-      <Dialog open={skuDrawerOpen} onOpenChange={setSkuDrawerOpen}>
-        <DialogContent
-          className="pm-dialog pm-sku-drawer"
-          onCloseAutoFocus={(event) => {
-            event.preventDefault()
-            // A confirmation may open checkout; do not steal its focus.
-            if (!skuConfirmingRef.current) changeOfferBtnRef.current?.focus({ preventScroll: true })
-            skuConfirmingRef.current = false
-          }}
-        >
-          <div className="pm-sku-drawer-handle" aria-hidden="true" />
-          <DialogTitle>选择套餐</DialogTitle>
-          <DialogDescription>
-            {product.name}
-            {stockLabel ? ` · ${stockTitle}：${stockLabel}` : ''}
-          </DialogDescription>
-
-          <div className="pm-sku-sheet-list" data-testid="mobile-sku-sheet-list">
-            {offers.map((offer) => {
-              const selected = offer.id === (selectedOfferId ?? activeOffer?.id)
-              const unavailable = isOfferSoldOut(offer)
-              const subtitle = offerPeriodSubtitle(offer)
-              return (
-                <button
-                  key={offer.id}
-                  type="button"
-                  disabled={unavailable}
-                  aria-pressed={selected}
-                  data-testid={`mobile-sku-sheet-option-${offer.id}`}
-                  onClick={() => {
-                    onSelectOffer(offer.id)
-                  }}
-                  className={`pm-sku-sheet-item ${
-                    selected ? 'pm-sku-sheet-item-selected' : ''
-                  } ${unavailable ? 'pm-sku-sheet-item-disabled' : ''}`}
-                >
-                  <div className="pm-sku-sheet-item-info">
-                    <div className="pm-sku-sheet-item-title-row">
-                      <strong className="truncate">{offer.name}</strong>
-                      {subtitle && <small>({subtitle})</small>}
-                    </div>
-                    {offer.deliveryMode && (
-                      <span className="pm-sku-sheet-item-mode">
-                        {offer.deliveryMode === 'manual_service' ? '人工服务交付' : '自动发货 / 凭据直出'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="pm-sku-sheet-item-price-col">
-                    <b>{money(offer.price)}</b>
-                    <small>{unavailable ? '已售罄' : selected ? '已选中' : '选择'}</small>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="pm-sku-sheet-footer">
-            <div className="pm-sku-sheet-footer-price">
-              <span>兑换需要</span>
-              <strong>{money(price)}</strong>
-              {shortfall > 0 && !preview && (
-                <small className="pm-sku-sheet-shortfall">还差 {shortfall} 积分</small>
-              )}
-            </div>
-            <button
-              type="button"
-              className="pm-sku-sheet-confirm-btn"
-              disabled={purchaseDisabled}
-              onClick={() => {
-                skuConfirmingRef.current = true
-                setSkuDrawerOpen(false)
-                buy()
-              }}
-            >
-              {preview ? '立即购买' : redeemLabel}
-            </button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MobileSkuSheet
+        open={skuDrawerOpen}
+        onOpenChange={setSkuDrawerOpen}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault()
+          // A confirmation may open checkout; do not steal its focus.
+          if (!skuConfirmingRef.current) changeOfferBtnRef.current?.focus({ preventScroll: true })
+          skuConfirmingRef.current = false
+        }}
+        productName={product.name}
+        stockLabel={stockLabel}
+        stockTitle={stockTitle}
+        offers={offers}
+        activeOffer={activeOffer}
+        selectedOfferId={selectedOfferId}
+        onSelectOffer={onSelectOffer}
+        price={price}
+        money={money}
+        shortfall={shortfall}
+        preview={preview}
+        redeemLabel={redeemLabel}
+        purchaseDisabled={purchaseDisabled}
+        onConfirm={() => {
+          skuConfirmingRef.current = true
+          setSkuDrawerOpen(false)
+          buy()
+        }}
+      />
       <MerchantSupportModal
         open={supportOpen}
         onClose={() => setSupportOpen(false)}
