@@ -1,0 +1,16 @@
+@media (prefers-reduced-motion: reduce) {
+  .pd-desktop button {
+    transition: none;
+  }
+}
+/* At very short heights, normal page scrolling keeps every control reachable. */
+@media (min-width: 1024px) and (max-height: 480px) {
+  .pd-purchase {
+    position: static;
+    height: auto;
+    min-height: 0;
+  }
+  .pd-purchase-scroll {
+    overflow: visible;
+  }
+}

@@ -1,0 +1,42 @@
+@media (max-width: 359px) {
+  .pm-overview {
+    padding-inline: 14px;
+  }
+  .pm-overview h1 {
+    font-size: 20px;
+  }
+  .pm-card {
+    margin-inline: 6px;
+    padding-inline: 12px;
+  }
+  .pm-offer {
+    padding-inline: 7px;
+  }
+  .pm-offer b {
+    font-size: 13px;
+  }
+  .pm-section {
+    padding-inline: 16px;
+  }
+  .pm-detail-features > div {
+    flex-direction: column;
+  }
+  .pm-tabs {
+    padding-inline: 6px;
+    gap: 0;
+  }
+  .pm-tabs-indicator {
+    left: 6px;
+    width: calc((100% - 12px) / 4);
+  }
+  .pm-tab-btn,
+  .pm-tabs a {
+    font-size: 11px;
+    min-height: 44px;
+  }
+  .pm-bottom-bar {
+    grid-template-columns: 37px 37px 43px minmax(0, 1fr);
+    gap: 4px;
+    padding-inline: 10px;
+  }
+}
