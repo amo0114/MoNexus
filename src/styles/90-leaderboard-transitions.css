@@ -1,0 +1,151 @@
+/* =========================================================
+   Leaderboard podium (spec §5.3)
+   金/银/铜为固定色板（奖牌语义与主题无关），但底色/描边/文字一律
+   走主题变量，light / dark / soft 三主题通用。
+   动画纯装饰：金环旋转的是环层本身（字母不转），浮动是 translateY；
+   全局 prefers-reduced-motion kill switch 生效后两者静止，
+   静止态即完整的金/银/铜环 + 正常布局，无位移依赖。
+   ========================================================= */
+
+@keyframes podiumRingSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes podiumFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+
+/* --- Transitions Polish: Like Button (Pattern 23) --- */
+.t-like-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.t-like-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.t-like-heart {
+  transition: color var(--duration-quick, 150ms) var(--ease-smooth-out),
+              transform var(--duration-quick, 150ms) var(--ease-smooth-out);
+}
+.t-like-btn.is-bursting[aria-pressed="true"] .t-like-icon {
+  animation: t-like-pop var(--duration-medium, 350ms) var(--ease-bounce-strong, cubic-bezier(0.34, 1.96, 0.64, 1));
+}
+@keyframes t-like-pop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.82); }
+  70%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.t-like-particles {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.t-like-particles i {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+}
+@keyframes t-like-burst {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  25%  { opacity: 1; transform: translate(calc(var(--px) * 0.4), calc(var(--py) * 0.4)) scale(1.1); }
+  100% { opacity: 0; transform: translate(var(--px), var(--py)) scale(var(--p-end-scale, 0.5)); }
+}
+.t-like-btn.is-bursting .t-like-particles i {
+  animation: t-like-burst 600ms cubic-bezier(0.22, 1, 0.36, 1) var(--pdelay, 0ms) forwards;
+}
+
+/* --- Transitions Polish: Accordion (Pattern 21) --- */
+.t-acc {
+  border-bottom: 1px solid var(--color-border);
+}
+.t-acc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  gap: 12px;
+}
+.t-acc-head:hover {
+  color: var(--color-primary);
+}
+.t-acc-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+.t-acc-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--duration-fast, 250ms) var(--ease-smooth-out);
+  color: var(--color-text-muted);
+}
+.t-acc[data-open="true"] .t-acc-chevron {
+  transform: scaleY(-1);
+  color: var(--color-primary);
+}
+.t-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration-fast, 250ms) var(--ease-smooth-out);
+}
+.t-acc[data-open="true"] .t-acc-panel {
+  grid-template-rows: 1fr;
+}
+.t-acc-panel-inner {
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(var(--blur-small, 2px));
+  transition: opacity var(--duration-fast, 250ms) var(--ease-smooth-out),
+              filter var(--duration-fast, 250ms) var(--ease-smooth-out);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.8;
+  padding-bottom: 16px;
+}
+.t-acc[data-open="true"] .t-acc-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-like-btn[aria-pressed="true"] .t-like-icon,
+  .t-like-btn.is-bursting .t-like-particles i,
+  .t-acc-panel,
+  .t-acc-panel-inner,
+  .t-acc-chevron,
+  .odometer-reel-track {
+    animation: none !important;
+    transition: none !important;
+  }
+}
