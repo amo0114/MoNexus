@@ -1,17 +1,24 @@
 // T-MERCH-FE-003 — AdminPromotionPackageManager: admin-only view of promotion
 // packages (SPEC-MERCH-001 §11 admin lane): a list shell with the “包含停用套餐”
-// includeInactive toggle, a “新建套餐” create dialog and a per-row “编辑” dialog.
+// includeInactive toggle and a per-row “编辑” action.
 //
-// The create dialog submits the frozen AdminPromotionPackageCreatePayload
-// (code / label / placement / durationDays / pricePoints / description /
-// sortOrder) and never sends status / id / timestamps. The edit dialog
-// prefills from the DTO, reuses the same validation boundaries, shows the
-// immutable code read-only, and submits the frozen
-// AdminPromotionPackageUpdatePayload (label / placement / durationDays /
-// pricePoints / description / sortOrder / status) — active/inactive status
-// is managed inside the edit dialog only, with no separate quick toggle, so
-// there is a single mutation owner. The update payload never contains code /
-// id / createdAt / updatedAt.
+// Structure: this component keeps the list lane only — the package list, the
+// strictly-increasing request-id guard, the includeInactive filter and its
+// request orchestration, the loading / error / empty rendering, the row
+// 编辑 trigger and the shared success feedback. The two dialogs live in
+// ./packageManager and own their own forms:
+//   - CreatePackageDialog submits the frozen AdminPromotionPackageCreatePayload
+//     (code / label / placement / durationDays / pricePoints / description /
+//     sortOrder) and never sends status / id / timestamps.
+//   - EditPackageDialog prefills from the DTO, shows the immutable code
+//     read-only and submits the frozen AdminPromotionPackageUpdatePayload
+//     (label / placement / durationDays / pricePoints / description /
+//     sortOrder / status) — active/inactive status is managed inside that
+//     dialog only, with no separate quick toggle, so there is a single
+//     mutation owner. The update payload never contains code / id /
+//     createdAt / updatedAt.
+// The parent reaches both dialogs through imperative refs, so opening either
+// one still resets its form synchronously and never remounts it.
 //
 // The full AdminPromotionPackageAdapter (listPackages / createPackage /
 // updatePackage) is exported and defaults to the frozen admin API.
@@ -23,28 +30,28 @@
 // Concurrency: a strictly-increasing request id guards against a stale
 // includeInactive response overwriting a newer toggle result. On a list
 // failure we surface getApiErrorMessage and never fabricate old data. Create
-// and edit are guarded against double-submit, keep the dialog open on failure
-// for retry, and only close + refresh the current query on real success.
+// and edit are guarded against double-submit inside their dialogs, which keep
+// the dialog open on failure for retry, and only close + refresh the current
+// query on real success.
 
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, PackageSearch, Plus } from 'lucide-react'
-import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
+import { PackageSearch, Plus } from 'lucide-react'
+import { getApiErrorMessage } from '../../api/error'
 import {
   createAdminPromotionPackage,
   listAdminPromotionPackages,
   updateAdminPromotionPackage,
 } from '../../api/merchandising'
-import type {
-  AdminPromotionPackageCreatePayload,
-  AdminPromotionPackageDTO,
-  AdminPromotionPackageUpdatePayload,
-  PackageStatus,
-  SponsoredPlacement,
-} from '../../types/merchandising'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
+import type { AdminPromotionPackageDTO, PackageStatus } from '../../types/merchandising'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
+import CreatePackageDialog, {
+  type CreatePackageDialogHandle,
+} from './packageManager/CreatePackageDialog'
+import EditPackageDialog, {
+  type EditPackageDialogHandle,
+} from './packageManager/EditPackageDialog'
 import { PLACEMENT_LABEL } from './promotionCopy'
 /**
  * Real adapter — passthrough to the frozen admin promotion package API.
@@ -79,37 +86,6 @@ function formatDateTime(iso: string): string {
   if (Number.isNaN(date.getTime())) return iso
   return date.toLocaleString()
 }
-
-const MAX_CODE_LENGTH = 64
-const MAX_LABEL_LENGTH = 100
-const MAX_DESCRIPTION_LENGTH = 1000
-const MIN_DURATION_DAYS = 1
-const MAX_DURATION_DAYS = 90
-const MIN_SORT_ORDER = -100000
-const MAX_SORT_ORDER = 100000
-
-/** Positive integer (no sign, no decimals, no leading zeros, no exponent). */
-const POSITIVE_INTEGER = /^[1-9]\d*$/
-/** Integer, optionally negative (no decimals, no exponent notation). */
-const INTEGER = /^-?\d+$/
-
-/**
- * Fail-closed runtime guard for the placement select: only the two frozen
- * SponsoredPlacement values are accepted; a type assertion never masks an
- * out-of-enum value.
- */
-function isKnownSponsoredPlacement(value: string): value is SponsoredPlacement {
-  return value === 'store_home_sponsored' || value === 'category_sponsored'
-}
-
-/**
- * Fail-closed runtime guard for the status select: only the two frozen
- * PackageStatus values are accepted; a type assertion never masks an
- * out-of-enum value.
- */
-function isKnownPackageStatus(value: string): value is PackageStatus {
-  return value === 'active' || value === 'inactive'
-}
 export default function AdminPromotionPackageManager({
   adapter = DEFAULT_ADAPTER,
   className = '',
@@ -118,35 +94,13 @@ export default function AdminPromotionPackageManager({
   const [includeInactive, setIncludeInactive] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-
-  // Create dialog state — always reset to a fresh empty form on open.
-  const [createOpen, setCreateOpen] = useState(false)
-  const [createCode, setCreateCode] = useState('')
-  const [createLabel, setCreateLabel] = useState('')
-  const [createPlacement, setCreatePlacement] = useState('store_home_sponsored')
-  const [createDurationDays, setCreateDurationDays] = useState('')
-  const [createPricePoints, setCreatePricePoints] = useState('')
-  const [createDescription, setCreateDescription] = useState('')
-  const [createSortOrder, setCreateSortOrder] = useState('')
-  const [createFieldError, setCreateFieldError] = useState<string | null>(null)
-  const [createSubmitError, setCreateSubmitError] = useState<string | null>(null)
-  const [createBusy, setCreateBusy] = useState(false)
-
-  // Edit dialog state — always reset to a fresh prefill on open.
-  const [editOpen, setEditOpen] = useState(false)
-  const [editTarget, setEditTarget] = useState<AdminPromotionPackageDTO | null>(null)
-  const [editLabel, setEditLabel] = useState('')
-  const [editPlacement, setEditPlacement] = useState('store_home_sponsored')
-  const [editDurationDays, setEditDurationDays] = useState('')
-  const [editPricePoints, setEditPricePoints] = useState('')
-  const [editDescription, setEditDescription] = useState('')
-  const [editSortOrder, setEditSortOrder] = useState('')
-  const [editStatus, setEditStatus] = useState('active')
-  const [editFieldError, setEditFieldError] = useState<string | null>(null)
-  const [editSubmitError, setEditSubmitError] = useState<string | null>(null)
-  const [editBusy, setEditBusy] = useState(false)
-  // Non-error feedback (create success) — rendered with role=status.
+  // Non-error feedback (create / edit success) — rendered with role=status.
   const [feedback, setFeedback] = useState<string | null>(null)
+
+  // Both dialogs own their form state; opening them through these handles keeps
+  // the previous synchronous reset-and-prefill behavior without a remount.
+  const createDialogRef = useRef<CreatePackageDialogHandle>(null)
+  const editDialogRef = useRef<EditPackageDialogHandle>(null)
 
   // Strictly-increasing request id: a stale list response (older
   // includeInactive request) must never overwrite a newer toggle result.
@@ -181,210 +135,23 @@ export default function AdminPromotionPackageManager({
   }
 
   const openCreateDialog = () => {
-    // Fresh form on every open — clears stale field values, field errors and
-    // all previous server errors so a retry never shows a leftover message.
-    setCreateCode('')
-    setCreateLabel('')
-    setCreatePlacement('store_home_sponsored')
-    setCreateDurationDays('')
-    setCreatePricePoints('')
-    setCreateDescription('')
-    setCreateSortOrder('')
-    setCreateFieldError(null)
-    setCreateSubmitError(null)
-    setCreateOpen(true)
-  }
-
-  const validateCreate = (): string | null => {
-    const code = createCode.trim()
-    if (!code) return '请输入套餐编码'
-    if (code.length > MAX_CODE_LENGTH) return `套餐编码不能超过 ${MAX_CODE_LENGTH} 个字符`
-    const label = createLabel.trim()
-    if (!label) return '请输入套餐名称'
-    if (label.length > MAX_LABEL_LENGTH) return `套餐名称不能超过 ${MAX_LABEL_LENGTH} 个字符`
-    if (!isKnownSponsoredPlacement(createPlacement)) return '请选择有效的展位'
-    const durationRaw = createDurationDays.trim()
-    if (!POSITIVE_INTEGER.test(durationRaw)) {
-      return `时长必须为 ${MIN_DURATION_DAYS} 到 ${MAX_DURATION_DAYS} 的整数`
-    }
-    const durationDays = Number(durationRaw)
-    if (
-      !Number.isSafeInteger(durationDays) ||
-      durationDays < MIN_DURATION_DAYS ||
-      durationDays > MAX_DURATION_DAYS
-    ) {
-      return `时长必须为 ${MIN_DURATION_DAYS} 到 ${MAX_DURATION_DAYS} 的整数`
-    }
-    const priceRaw = createPricePoints.trim()
-    if (!POSITIVE_INTEGER.test(priceRaw)) return '价格必须为正整数'
-    const pricePoints = Number(priceRaw)
-    if (!Number.isSafeInteger(pricePoints)) return '价格必须为正整数'
-    const sortRaw = createSortOrder.trim()
-    if (sortRaw === '' || !INTEGER.test(sortRaw)) {
-      return `排序必须为 ${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`
-    }
-    const sortOrder = Number(sortRaw)
-    if (!Number.isSafeInteger(sortOrder)) return `排序必须为 ${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`
-    if (sortOrder < MIN_SORT_ORDER || sortOrder > MAX_SORT_ORDER) {
-      return `排序必须为 ${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`
-    }
-    if (createDescription.trim().length > MAX_DESCRIPTION_LENGTH) {
-      return `说明不能超过 ${MAX_DESCRIPTION_LENGTH} 字`
-    }
-    return null
-  }
-
-  const handleCreateSubmit = async () => {
-    // Entry guard: a pending request must not be re-entered (double submit).
-    if (createBusy) return
-    const fieldError = validateCreate()
-    if (fieldError) {
-      setCreateFieldError(fieldError)
-      return
-    }
-    setCreateFieldError(null)
-    setCreateSubmitError(null)
-    setCreateBusy(true)
-    try {
-      if (!isKnownSponsoredPlacement(createPlacement)) {
-        setCreateFieldError('请选择有效的展位')
-        return
-      }
-      const payload: AdminPromotionPackageCreatePayload = {
-        code: createCode.trim(),
-        label: createLabel.trim(),
-        placement: createPlacement,
-        durationDays: Number(createDurationDays.trim()),
-        pricePoints: Number(createPricePoints.trim()),
-        description: createDescription.trim(),
-        sortOrder: Number(createSortOrder.trim()),
-      }
-      await adapter.createPackage(payload)
-      // Success only: close the dialog, report status, refresh the current query.
-      setCreateOpen(false)
-      setFeedback('套餐创建成功。')
-      void load()
-    } catch (e) {
-      // Failure: keep the dialog open, surface the server error, never fake
-      // success nor refresh the list — retry stays available.
-      setCreateSubmitError(
-        getApiErrorCode(e) === 'PACKAGE_CODE_TAKEN'
-          ? '套餐编码已存在，请更换编码。'
-          : getApiErrorMessage(e, '套餐创建失败，请稍后重试。'),
-      )
-    } finally {
-      setCreateBusy(false)
-    }
+    createDialogRef.current?.open()
   }
 
   const openEditDialog = (pkg: AdminPromotionPackageDTO) => {
-    // Fresh form on every open — clears stale values, field errors and all
-    // previous server errors so a retry never shows a leftover message.
-    setEditTarget(pkg)
-    setEditLabel(pkg.label)
-    setEditPlacement(pkg.placement)
-    setEditDurationDays(String(pkg.durationDays))
-    setEditPricePoints(String(pkg.pricePoints))
-    setEditDescription(pkg.description)
-    setEditSortOrder(String(pkg.sortOrder))
-    setEditStatus(pkg.status)
-    setEditFieldError(null)
-    setEditSubmitError(null)
-    setEditOpen(true)
+    editDialogRef.current?.open(pkg)
   }
 
-  // Mirrors the create validation boundaries exactly — label trim 必填 ≤100,
-  // description trim ≤1000, placement 仅两个 frozen enum, durationDays 严格十进制
-  // 整数 1..90, pricePoints 严格正整数, sortOrder 严格整数 -100000..100000；拒绝
-  // 小数、指数、空值、超 safe integer；status runtime fail-closed。
-  const validateEdit = (): string | null => {
-    const label = editLabel.trim()
-    if (!label) return '请输入套餐名称'
-    if (label.length > MAX_LABEL_LENGTH) return `套餐名称不能超过 ${MAX_LABEL_LENGTH} 个字符`
-    if (!isKnownSponsoredPlacement(editPlacement)) return '请选择有效的展位'
-    const durationRaw = editDurationDays.trim()
-    if (!POSITIVE_INTEGER.test(durationRaw)) {
-      return `时长必须为 ${MIN_DURATION_DAYS} 到 ${MAX_DURATION_DAYS} 的整数`
-    }
-    const durationDays = Number(durationRaw)
-    if (
-      !Number.isSafeInteger(durationDays) ||
-      durationDays < MIN_DURATION_DAYS ||
-      durationDays > MAX_DURATION_DAYS
-    ) {
-      return `时长必须为 ${MIN_DURATION_DAYS} 到 ${MAX_DURATION_DAYS} 的整数`
-    }
-    const priceRaw = editPricePoints.trim()
-    if (!POSITIVE_INTEGER.test(priceRaw)) return '价格必须为正整数'
-    const pricePoints = Number(priceRaw)
-    if (!Number.isSafeInteger(pricePoints)) return '价格必须为正整数'
-    const sortRaw = editSortOrder.trim()
-    if (sortRaw === '' || !INTEGER.test(sortRaw)) {
-      return `排序必须为 ${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`
-    }
-    const sortOrder = Number(sortRaw)
-    if (!Number.isSafeInteger(sortOrder)) return `排序必须为 ${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`
-    if (sortOrder < MIN_SORT_ORDER || sortOrder > MAX_SORT_ORDER) {
-      return `排序必须为 ${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`
-    }
-    if (editDescription.trim().length > MAX_DESCRIPTION_LENGTH) {
-      return `说明不能超过 ${MAX_DESCRIPTION_LENGTH} 字`
-    }
-    if (!isKnownPackageStatus(editStatus)) return '请选择有效的状态'
-    return null
+  // Success callbacks only: report the status and refresh the current query.
+  // The dialogs close themselves before calling these.
+  const handleCreated = () => {
+    setFeedback('套餐创建成功。')
+    void load()
   }
 
-  const handleEditSubmit = async () => {
-    // Entry guard: a pending request must not be re-entered (double submit).
-    if (editBusy) return
-    const fieldError = validateEdit()
-    if (fieldError) {
-      setEditFieldError(fieldError)
-      return
-    }
-    setEditFieldError(null)
-    setEditSubmitError(null)
-    setEditBusy(true)
-    try {
-      // Fail-closed at runtime: never trust the select value by type alone.
-      if (!isKnownSponsoredPlacement(editPlacement)) {
-        setEditFieldError('请选择有效的展位')
-        return
-      }
-      if (!isKnownPackageStatus(editStatus)) {
-        setEditFieldError('请选择有效的状态')
-        return
-      }
-      if (editTarget == null) {
-        setEditFieldError('缺少待编辑的套餐，请重新打开编辑窗口。')
-        return
-      }
-      // Exact update payload — the 7 editable fields only; code / id /
-      // createdAt / updatedAt are never sent (code is immutable).
-      const payload: AdminPromotionPackageUpdatePayload = {
-        label: editLabel.trim(),
-        placement: editPlacement,
-        durationDays: Number(editDurationDays.trim()),
-        pricePoints: Number(editPricePoints.trim()),
-        description: editDescription.trim(),
-        sortOrder: Number(editSortOrder.trim()),
-        status: editStatus,
-      }
-      await adapter.updatePackage(editTarget.id, payload)
-      // Success only: close the dialog, report status, refresh the current query.
-      setEditOpen(false)
-      setEditTarget(null)
-      setFeedback('套餐更新成功。')
-      void load()
-    } catch (e) {
-      // Failure: keep the dialog open, surface the server error, never fake
-      // success nor refresh the list — retry stays available.
-      setEditSubmitError(
-        getApiErrorMessage(e, '套餐更新失败，请稍后重试。'),
-      )
-    } finally {
-      setEditBusy(false)
-    }
+  const handleUpdated = () => {
+    setFeedback('套餐更新成功。')
+    void load()
   }
 
   return (
@@ -512,434 +279,17 @@ export default function AdminPromotionPackageManager({
         )}
       </div>
 
-      <Dialog
-        open={createOpen}
-        onOpenChange={(open) => {
-          // Prevent closing while a create request is in flight.
-          if (!open && createBusy) return
-          setCreateOpen(open)
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogTitle>新建推广套餐</DialogTitle>
-          <DialogDescription>
-            配置推广位的展位、时长与积分价格。套餐编码创建后不可修改。
-          </DialogDescription>
-          <div className="space-y-4 mt-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="package-create-code"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  套餐编码
-                </label>
-                <input
-                  id="package-create-code"
-                  type="text"
-                  value={createCode}
-                  onChange={(e) => {
-                    setCreateCode(e.target.value)
-                    setCreateFieldError(null)
-                  }}
-                  placeholder="请输入套餐编码"
-                  maxLength={MAX_CODE_LENGTH}
-                  className="input"
-                  disabled={createBusy}
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="package-create-label"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  套餐名称
-                </label>
-                <input
-                  id="package-create-label"
-                  type="text"
-                  value={createLabel}
-                  onChange={(e) => {
-                    setCreateLabel(e.target.value)
-                    setCreateFieldError(null)
-                  }}
-                  placeholder="请输入套餐名称"
-                  maxLength={MAX_LABEL_LENGTH}
-                  className="input"
-                  disabled={createBusy}
-                />
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label
-                  htmlFor="package-create-placement"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  展位
-                </label>
-                <select
-                  id="package-create-placement"
-                  value={createPlacement}
-                  onChange={(e) => {
-                    setCreatePlacement(e.target.value)
-                    setCreateFieldError(null)
-                  }}
-                  className="input py-2 pr-8"
-                  disabled={createBusy}
-                >
-                  <option value="store_home_sponsored">首页推广位</option>
-                  <option value="category_sponsored">分类推广位</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  htmlFor="package-create-duration"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  时长（天）
-                </label>
-                <input
-                  id="package-create-duration"
-                  type="text"
-                  inputMode="numeric"
-                  value={createDurationDays}
-                  onChange={(e) => {
-                    setCreateDurationDays(e.target.value)
-                    setCreateFieldError(null)
-                  }}
-                  placeholder={`${MIN_DURATION_DAYS}-${MAX_DURATION_DAYS}`}
-                  className="input"
-                  disabled={createBusy}
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="package-create-price"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  价格（积分）
-                </label>
-                <input
-                  id="package-create-price"
-                  type="text"
-                  inputMode="numeric"
-                  value={createPricePoints}
-                  onChange={(e) => {
-                    setCreatePricePoints(e.target.value)
-                    setCreateFieldError(null)
-                  }}
-                  placeholder="正整数"
-                  className="input"
-                  disabled={createBusy}
-                />
-              </div>
-            </div>
-            <div>
-              <label
-                htmlFor="package-create-sort"
-                className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-              >
-                展示顺序
-                <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
-                  （数字越小越靠前）
-                </span>
-              </label>
-              <input
-                id="package-create-sort"
-                aria-label="排序"
-                type="text"
-                inputMode="numeric"
-                value={createSortOrder}
-                onChange={(e) => {
-                  setCreateSortOrder(e.target.value)
-                  setCreateFieldError(null)
-                }}
-                placeholder={`${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`}
-                className="input"
-                disabled={createBusy}
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="package-create-description"
-                className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-              >
-                说明
-              </label>
-              <textarea
-                id="package-create-description"
-                value={createDescription}
-                onChange={(e) => {
-                  setCreateDescription(e.target.value)
-                  setCreateFieldError(null)
-                }}
-                rows={3}
-                maxLength={MAX_DESCRIPTION_LENGTH}
-                placeholder="请输入套餐说明（可为空，不超过 1000 字）"
-                className="input resize-y"
-                disabled={createBusy}
-              />
-            </div>
-            {createFieldError && (
-              <div
-                role="alert"
-                className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
-              >
-                {createFieldError}
-              </div>
-            )}
-            {createSubmitError && (
-              <div
-                role="alert"
-                className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
-              >
-                {createSubmitError}
-              </div>
-            )}
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                className="btn-secondary px-4 py-2 text-sm"
-                disabled={createBusy}
-                onClick={() => setCreateOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn-primary px-4 py-2 text-sm"
-                disabled={createBusy}
-                onClick={() => void handleCreateSubmit()}
-              >
-                {createBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认创建'}
-              </button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CreatePackageDialog
+        ref={createDialogRef}
+        createPackage={adapter.createPackage}
+        onCreated={handleCreated}
+      />
 
-      <Dialog
-        open={editOpen}
-        onOpenChange={(open) => {
-          // Prevent closing while an edit request is in flight.
-          if (!open && editBusy) return
-          setEditOpen(open)
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogTitle>编辑推广套餐</DialogTitle>
-          <DialogDescription>
-            修改套餐的展位、时长、价格、排序与启停状态。套餐编码创建后不可修改。
-          </DialogDescription>
-          <div className="space-y-4 mt-4">
-            <div>
-              <label
-                htmlFor="package-edit-code"
-                className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-              >
-                套餐编码
-              </label>
-              <div
-                id="package-edit-code"
-                className="input bg-[var(--color-surface)] font-mono text-xs text-[var(--color-text-muted)]"
-              >
-                {editTarget?.code ?? '—'}
-              </div>
-              <p className="text-xs text-[var(--color-text-muted)] mt-1">创建后不可修改。</p>
-            </div>
-            <div>
-              <label
-                htmlFor="package-edit-label"
-                className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-              >
-                套餐名称
-              </label>
-              <input
-                id="package-edit-label"
-                type="text"
-                value={editLabel}
-                onChange={(e) => {
-                  setEditLabel(e.target.value)
-                  setEditFieldError(null)
-                }}
-                placeholder="请输入套餐名称"
-                maxLength={MAX_LABEL_LENGTH}
-                className="input"
-                disabled={editBusy}
-              />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="package-edit-placement"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  展位
-                </label>
-                <select
-                  id="package-edit-placement"
-                  value={editPlacement}
-                  onChange={(e) => {
-                    setEditPlacement(e.target.value)
-                    setEditFieldError(null)
-                  }}
-                  className="input py-2 pr-8"
-                  disabled={editBusy}
-                >
-                  <option value="store_home_sponsored">首页推广位</option>
-                  <option value="category_sponsored">分类推广位</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  htmlFor="package-edit-status"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  状态
-                </label>
-                <select
-                  id="package-edit-status"
-                  value={editStatus}
-                  onChange={(e) => {
-                    setEditStatus(e.target.value)
-                    setEditFieldError(null)
-                  }}
-                  className="input py-2 pr-8"
-                  disabled={editBusy}
-                >
-                  <option value="active">启用</option>
-                  <option value="inactive">停用</option>
-                </select>
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label
-                  htmlFor="package-edit-duration"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  时长（天）
-                </label>
-                <input
-                  id="package-edit-duration"
-                  type="text"
-                  inputMode="numeric"
-                  value={editDurationDays}
-                  onChange={(e) => {
-                    setEditDurationDays(e.target.value)
-                    setEditFieldError(null)
-                  }}
-                  placeholder={`${MIN_DURATION_DAYS}-${MAX_DURATION_DAYS}`}
-                  className="input"
-                  disabled={editBusy}
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="package-edit-price"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  价格（积分）
-                </label>
-                <input
-                  id="package-edit-price"
-                  type="text"
-                  inputMode="numeric"
-                  value={editPricePoints}
-                  onChange={(e) => {
-                    setEditPricePoints(e.target.value)
-                    setEditFieldError(null)
-                  }}
-                  placeholder="正整数"
-                  className="input"
-                  disabled={editBusy}
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="package-edit-sort"
-                  className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-                >
-                  展示顺序
-                  <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
-                    （数字越小越靠前）
-                  </span>
-                </label>
-                <input
-                  id="package-edit-sort"
-                  aria-label="排序"
-                  type="text"
-                  inputMode="numeric"
-                  value={editSortOrder}
-                  onChange={(e) => {
-                    setEditSortOrder(e.target.value)
-                    setEditFieldError(null)
-                  }}
-                  placeholder={`${MIN_SORT_ORDER} 到 ${MAX_SORT_ORDER} 的整数`}
-                  className="input"
-                  disabled={editBusy}
-                />
-              </div>
-            </div>
-            <div>
-              <label
-                htmlFor="package-edit-description"
-                className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider"
-              >
-                说明
-              </label>
-              <textarea
-                id="package-edit-description"
-                value={editDescription}
-                onChange={(e) => {
-                  setEditDescription(e.target.value)
-                  setEditFieldError(null)
-                }}
-                rows={3}
-                maxLength={MAX_DESCRIPTION_LENGTH}
-                placeholder="请输入套餐说明（可为空，不超过 1000 字）"
-                className="input resize-y"
-                disabled={editBusy}
-              />
-            </div>
-            {editFieldError && (
-              <div
-                role="alert"
-                className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
-              >
-                {editFieldError}
-              </div>
-            )}
-            {editSubmitError && (
-              <div
-                role="alert"
-                className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
-              >
-                {editSubmitError}
-              </div>
-            )}
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                className="btn-secondary px-4 py-2 text-sm"
-                disabled={editBusy}
-                onClick={() => setEditOpen(false)}
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                className="btn-primary px-4 py-2 text-sm"
-                disabled={editBusy}
-                onClick={() => void handleEditSubmit()}
-              >
-                {editBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认保存'}
-              </button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <EditPackageDialog
+        ref={editDialogRef}
+        updatePackage={adapter.updatePackage}
+        onUpdated={handleUpdated}
+      />
     </section>
   )
 }
