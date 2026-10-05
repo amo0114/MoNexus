@@ -1,5 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
-import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw, Ticket, Star } from 'lucide-react'
+import {
+  Copy,
+  Check,
+  Package,
+  Store,
+  Clock,
+  Coins,
+  Info,
+  Loader2,
+  RefreshCw,
+  KeyRound,
+  MessageSquarePlus,
+  ReceiptText,
+} from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
@@ -300,7 +313,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         <div className="mb-3 sm:mb-4 pr-7 sm:pr-8 shrink-0 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-1.5 text-[var(--color-text)]">
-              <Info className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--color-primary)] shrink-0" />
+              <ReceiptText className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--color-primary)] shrink-0" />
               <span>订单详情</span>
             </DialogTitle>
             <span
@@ -367,7 +380,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           <div className="space-y-1.5">
             <div className="flex items-center justify-between px-0.5">
               <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] flex items-center gap-1.5">
-                <Ticket className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+                <KeyRound className="w-3.5 h-3.5 text-[var(--color-primary)]" />
                 <span>
                   {order.delivery?.structuredContent?.values?.action
                     ? '开通结果'
@@ -459,7 +472,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           {canReview && (
             <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] text-xs shadow-xs">
               <span className="text-[var(--color-text-muted)] flex items-center gap-1.5 font-medium">
-                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                <MessageSquarePlus className="w-3.5 h-3.5 text-[var(--color-primary)]" />
                 <span>商品体验如何？欢迎给本次服务评价</span>
               </span>
               <button
