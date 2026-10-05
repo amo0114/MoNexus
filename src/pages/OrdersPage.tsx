@@ -12,6 +12,7 @@ import { useAppStore } from '../stores/appStore'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import type { UserOrderDetail, UserOrderListItem } from '../types/order'
 import BuyerOrderCard from '../components/orders/BuyerOrderCard'
+import OrdersPagination from '../components/orders/OrdersPagination'
 import OrderDetailModal from '../components/OrderDetailModal'
 import EmptyState from '../components/ui/EmptyState'
 import { TableSkeleton } from '../components/ui/Skeleton'
@@ -46,6 +47,8 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
   const reloadRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
@@ -131,7 +134,30 @@ export default function OrdersPage() {
     else nextParams.set('tab', next)
     // keep focus if present until modal closes
     setSearchParams(nextParams, { replace: true })
+    setPage(1)
   }
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / pageSize))
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
+
+  const paginatedOrders = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return visible.slice(start, start + pageSize)
+  }, [visible, page, pageSize])
+
+  const handlePageChange = useCallback((nextPage: number) => {
+    setPage(nextPage)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
+  const handlePageSizeChange = useCallback((newSize: number) => {
+    setPageSize(newSize)
+    setPage(1)
+  }, [])
 
   const openOrder = useCallback(
     async (orderId: number) => {
@@ -156,8 +182,13 @@ export default function OrdersPage() {
   // Deep link from notification: open order detail once when focus is present.
   useEffect(() => {
     if (focusId == null) return
+    const idx = visible.findIndex((o) => o.id === focusId)
+    if (idx >= 0) {
+      const targetPage = Math.floor(idx / pageSize) + 1
+      setPage(targetPage)
+    }
     void openOrder(focusId)
-  }, [focusId, openOrder])
+  }, [focusId, openOrder, visible, pageSize])
 
   function clearFocus() {
     if (!searchParams.has('focus')) return
@@ -229,7 +260,7 @@ export default function OrdersPage() {
           <input
             type="search"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
             placeholder="搜索商品、商家或单号..."
             className="w-full pl-8 pr-7 py-2 rounded-xl text-xs bg-[var(--color-background)] border border-[var(--color-border)]
               focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-colors"
@@ -237,7 +268,7 @@ export default function OrdersPage() {
           {searchQuery && (
             <button
               type="button"
-              onClick={() => setSearchQuery('')}
+              onClick={() => { setSearchQuery(''); setPage(1); }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
             >
               ×
@@ -272,7 +303,7 @@ export default function OrdersPage() {
             }
             action={
               searchQuery ? (
-                <button type="button" onClick={() => setSearchQuery('')} className="btn-secondary px-4 py-2 text-sm">
+                <button type="button" onClick={() => { setSearchQuery(''); setPage(1); }} className="btn-secondary px-4 py-2 text-sm">
                   清除搜索
                 </button>
               ) : tab === 'all' ? (
@@ -288,16 +319,26 @@ export default function OrdersPage() {
           />
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-          {visible.map((order) => (
-            <BuyerOrderCard
-              key={order.id}
-              order={order}
-              loading={loadingOrderId === order.id}
-              onOpen={openOrder}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {paginatedOrders.map((order) => (
+              <BuyerOrderCard
+                key={order.id}
+                order={order}
+                loading={loadingOrderId === order.id}
+                onOpen={openOrder}
+              />
+            ))}
+          </div>
+
+          <OrdersPagination
+            page={page}
+            total={visible.length}
+            pageSize={pageSize}
+            onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
+          />
+        </>
       )}
 
       {selectedOrder && (
