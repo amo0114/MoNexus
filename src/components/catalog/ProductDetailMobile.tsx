@@ -105,6 +105,8 @@ export default function ProductDetailMobile({
   const [supportOpen, setSupportOpen] = useState(false)
   const [section, setSection] = useState<Section>('details')
   const [slideDirection, setSlideDirection] = useState<'forward' | 'backward'>('forward')
+  const [isTabsStuck, setIsTabsStuck] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const activeSectionIdx = sections.findIndex(([k]) => k === section)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -138,6 +140,42 @@ export default function ProductDetailMobile({
       ]
   const money = (value: number, isPreview = preview) =>
     isPreview ? `¥ ${value.toFixed(2)}` : `${value.toLocaleString()} 积分`
+
+  useEffect(() => {
+    const sentinelEl = sentinelRef.current
+    if (!sentinelEl) return
+
+    const getNavbarH = () => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue('--navbar-current-h')
+      return parseFloat(raw) || 77
+    }
+
+    let ticking = false
+    const checkStuck = () => {
+      if (!sentinelRef.current) return
+      const rect = sentinelRef.current.getBoundingClientRect()
+      const navH = getNavbarH()
+      if (window.scrollY === 0 && rect.top === 0 && rect.bottom === 0) { setIsTabsStuck(false); ticking = false; return; }
+      setIsTabsStuck(rect.top <= navH + 1)
+      ticking = false
+    }
+
+    const onScroll = () => {
+      if (!ticking) {
+        requestAnimationFrame(checkStuck)
+        ticking = true
+      }
+    }
+
+    window.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
+    checkStuck()
+
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [])
 
   function goToSection(key: Section) {
     if (key === section) {
@@ -383,8 +421,10 @@ export default function ProductDetailMobile({
       )}
 
       <div className="pm-content">
+        <div ref={sentinelRef} className="pm-tabs-sentinel" aria-hidden="true" />
         <nav
           className="pm-tabs"
+          data-stuck={isTabsStuck ? 'true' : undefined}
           aria-label="商品详情栏目"
           data-testid="product-section-nav"
           role="tablist"

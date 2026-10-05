@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { MemoryRouter } from 'react-router-dom'
@@ -473,6 +473,74 @@ describe('ProductDetailMobile - Horizontal Tab Switching & Touch Gestures', () =
     expect(screen.queryByText('测试使用说明流程文字')).not.toBeInTheDocument()
     expect(screen.queryByText('支持哪些操作系统？')).not.toBeInTheDocument()
     expect(screen.queryByTestId('test-reviews')).not.toBeInTheDocument()
+    expect(tabNav).not.toHaveAttribute('data-stuck')
+  })
+
+  it('updates data-stuck attribute on tab bar when scrolled to sentinel threshold', async () => {
+    const product = createTestProduct()
+    const { container } = render(
+      <MemoryRouter>
+        <ProductDetailMobile
+          product={product}
+          preview={false}
+          gallery={<div>Gallery</div>}
+          share={<button>Share</button>}
+          reviews={<div data-testid="test-reviews">用户评价内容组件</div>}
+          template={null}
+          onSelectOffer={vi.fn()}
+          onRedeem={vi.fn()}
+          redeemLabel="立即兑换"
+          purchaseDisabled={false}
+          stockLabel="10"
+          stockTitle="库存"
+          shortfall={0}
+        />
+      </MemoryRouter>
+    )
+
+    const tabNav = screen.getByTestId('product-section-nav')
+    const sentinel = container.querySelector('.pm-tabs-sentinel')
+    expect(sentinel).toBeInTheDocument()
+    expect(tabNav).not.toHaveAttribute('data-stuck')
+
+    vi.spyOn(sentinel as Element, 'getBoundingClientRect').mockReturnValue({
+      top: 50,
+      bottom: 50,
+      left: 0,
+      right: 375,
+      width: 375,
+      height: 0,
+      x: 0,
+      y: 50,
+      toJSON: () => {},
+    })
+
+    await act(async () => {
+      fireEvent.scroll(window)
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
+
+    expect(tabNav).toHaveAttribute('data-stuck', 'true')
+
+    // Simulate scrolling back down (sentinel position above navbar threshold)
+    vi.spyOn(sentinel as Element, 'getBoundingClientRect').mockReturnValue({
+      top: 150,
+      bottom: 150,
+      left: 0,
+      right: 375,
+      width: 375,
+      height: 0,
+      x: 0,
+      y: 150,
+      toJSON: () => {},
+    })
+
+    await act(async () => {
+      fireEvent.scroll(window)
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
+
+    expect(tabNav).not.toHaveAttribute('data-stuck')
   })
 
   it('switches between tabs upon clicking with directional slide classes', () => {

@@ -256,8 +256,15 @@
     background: var(--pm-surface);
     overflow: visible;
   }
+  .pm-tabs-sentinel {
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+    visibility: hidden;
+    pointer-events: none;
+  }
   .pm-tabs {
-    position: relative;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0;
@@ -269,6 +276,27 @@
     border-bottom: 1px solid var(--pm-border);
     user-select: none;
     touch-action: pan-y;
+  }
+  .pm-tabs::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    height: calc(var(--navbar-current-h, 77px) + 20px);
+    background: var(--pm-soft, var(--color-background));
+    border-bottom: 1px solid var(--pm-border);
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 120ms ease-out, visibility 120ms ease-out;
+  }
+  .pm-tabs[data-stuck='true'] {
+    box-shadow: var(--shadow-sm);
+  }
+  .pm-tabs[data-stuck='true']::before {
+    opacity: 1;
+    visibility: visible;
   }
   .pm-tab-btn,
   .pm-tabs a {
