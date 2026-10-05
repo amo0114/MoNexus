@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw, Ticket } from 'lucide-react'
+import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw, Ticket, Star } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
@@ -363,7 +363,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         </div>
 
         <div className="flex-1 overflow-y-auto hide-scrollbar space-y-3.5 pr-0.5">
-          {/* ① 核心交付凭证（置顶提权，去掉多层外层套娃） */}
+          {/* ① 核心交付凭证（置顶提权） */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between px-0.5">
               <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] flex items-center gap-1.5">
@@ -374,8 +374,33 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                     : '交付内容与凭证'}
                 </span>
               </h3>
+
+              {/* 订阅续费快捷入口：直接在交付凭证右侧展示，场景高度关联 */}
+              {subscriptionExpiresAt && (
+                order.hasActiveRenewal ? (
+                  <span
+                    className="text-xs text-[var(--color-text-muted)] font-medium"
+                    data-testid="order-renewed-hint"
+                  >
+                    已续费
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={startRenew}
+                    disabled={renewLoading}
+                    data-testid="order-renew-button"
+                    className="btn-primary h-6 px-2.5 text-xs whitespace-nowrap flex items-center gap-1 cursor-pointer font-medium shadow-xs"
+                  >
+                    {renewLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                    <span>续费</span>
+                  </button>
+                )
+              )}
             </div>
+
             <DeliveryContent {...deliverySlice} />
+
             {order.delivery?.publicNote && (
               <div className="text-xs text-[var(--color-text-muted)] px-1 pt-0.5">
                 <span className="font-bold text-[var(--color-text)]">附言：</span>
@@ -430,7 +455,25 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           </div>
 
-          {/* ③ 积分说明（条件展示） */}
+          {/* ③ 评价卡片：若可评价，在商品信息下方呈现评价邀请卡片 */}
+          {canReview && (
+            <div className="flex items-center justify-between p-3 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] text-xs shadow-xs">
+              <span className="text-[var(--color-text-muted)] flex items-center gap-1.5 font-medium">
+                <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                <span>商品体验如何？欢迎给本次服务评价</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setReviewOpen(true)}
+                data-testid="review-create-button"
+                className="btn-secondary h-7 px-3 text-xs text-[var(--color-primary)] border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-medium cursor-pointer shrink-0"
+              >
+                评价商品
+              </button>
+            </div>
+          )}
+
+          {/* ④ 积分说明（条件展示） */}
           {(showHolding || isRefunded) && (
             <div
               className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50"
@@ -453,7 +496,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
-          {/* ④ 购买前填写信息（条件展示，响应式网格） */}
+          {/* ⑤ 购买前填写信息（条件展示，响应式网格） */}
           {order.purchaseFormAnswers && Object.keys(order.purchaseFormAnswers).length > 0 && (
             <div
               className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50"
@@ -477,7 +520,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
-          {/* ⑤ 我的评价 */}
+          {/* ⑥ 我的评价 */}
           {review && (
             <div
               className="rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)] bg-[var(--color-background)]/50"
@@ -509,7 +552,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
-          {/* ⑥ 订单动态时间线 */}
+          {/* ⑦ 订单动态时间线 */}
           <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)]/50 p-3.5 sm:p-4">
             <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] mb-3 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-[var(--color-primary)]" />
@@ -548,14 +591,14 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           </div>
         </div>
 
-        {/* 底部操作栏：极简单行流（Plan 1：高度仅 36px/40px，轻量清爽，绝无堆叠拥挤感） */}
-        <div className="pt-3 mt-1.5 border-t border-[var(--color-border)] flex items-center justify-between gap-2 shrink-0">
-          {/* 左侧：关闭 + 弱化争议/异常入口 */}
-          <div className="flex items-center gap-2 shrink-0">
+        {/* 底部操作栏：仅保留真正的核心主操作（永不溢出、绝对不会出现右侧截断） */}
+        <div className="pt-3 mt-1.5 border-t border-[var(--color-border)] flex items-center justify-between gap-3 shrink-0">
+          {/* 左侧：关闭与异常申诉（低频入口） */}
+          <div className="flex items-center gap-2.5 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="btn-secondary h-8 sm:h-9 px-3 text-xs sm:text-sm text-[var(--color-text)] cursor-pointer"
+              className="btn-secondary h-9 px-3.5 text-xs sm:text-sm text-[var(--color-text)] cursor-pointer font-medium"
               data-testid="order-detail-close"
             >
               关闭
@@ -566,7 +609,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 onClick={() => setConfirmAction('dispute')}
                 disabled={loadingAction === 'dispute'}
                 data-testid="order-dispute-button"
-                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-warning)] hover:underline cursor-pointer py-1 px-1 transition-colors whitespace-nowrap"
+                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-warning)] hover:underline cursor-pointer py-1 transition-colors whitespace-nowrap"
               >
                 {loadingAction === 'dispute' ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
@@ -577,50 +620,28 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             )}
           </div>
 
-          {/* 右侧：紧凑业务操作组（评价 / 续费 / 结束 / 复制） */}
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {canReview && (
-              <button
-                type="button"
-                onClick={() => setReviewOpen(true)}
-                data-testid="review-create-button"
-                className="btn-secondary h-8 sm:h-9 px-2.5 sm:px-3 text-xs whitespace-nowrap cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-medium"
-              >
-                评价
-              </button>
-            )}
-            {subscriptionExpiresAt && !order.hasActiveRenewal && (
-              <button
-                type="button"
-                onClick={startRenew}
-                disabled={renewLoading}
-                data-testid="order-renew-button"
-                className="btn-primary h-8 sm:h-9 px-2.5 sm:px-3 text-xs whitespace-nowrap flex items-center gap-1 cursor-pointer font-medium"
-              >
-                {renewLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                续费
-              </button>
-            )}
+          {/* 右侧：主操作（结束订单/验收通过 + 一键复制发货内容） */}
+          <div className="flex items-center gap-2 shrink-0">
             {canClose && (
               <button
                 type="button"
                 onClick={() => setConfirmAction('close')}
                 disabled={loadingAction === 'close'}
                 data-testid="order-close-button"
-                className="btn-secondary h-8 sm:h-9 px-2.5 sm:px-3 text-xs whitespace-nowrap text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-cta)] hover:text-[var(--color-cta)] cursor-pointer font-medium"
+                className="btn-secondary h-9 px-3 text-xs whitespace-nowrap text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-cta)] hover:text-[var(--color-cta)] cursor-pointer font-medium"
               >
                 {loadingAction === 'close' ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   isAcceptance ? '验收通过' : '结束订单'
                 )}
               </button>
             )}
-            {Boolean(order.delivery?.content?.trim()) && !contentMasked ? (
+            {Boolean(order.delivery?.content?.trim()) && !contentMasked && (
               <button
                 type="button"
                 onClick={copyContent}
-                className="btn-primary h-8 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm whitespace-nowrap flex items-center justify-center gap-1.5 cursor-pointer shadow-xs font-medium"
+                className="btn-primary h-9 px-3.5 sm:px-4 text-xs sm:text-sm whitespace-nowrap flex items-center justify-center gap-1.5 cursor-pointer shadow-xs font-medium"
                 data-testid="order-detail-copy"
               >
                 {copiedContent ? (
@@ -635,14 +656,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   </>
                 )}
               </button>
-            ) : subscriptionExpiresAt && order.hasActiveRenewal ? (
-              <span
-                className="text-xs text-[var(--color-text-muted)] py-1"
-                data-testid="order-renewed-hint"
-              >
-                已续费
-              </span>
-            ) : null}
+            )}
           </div>
         </div>
       </DialogContent>
