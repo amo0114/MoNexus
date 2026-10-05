@@ -1,5 +1,6 @@
+import AsyncButton from '../ui/AsyncButton'
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Minus, Plus } from 'lucide-react'
+import { Minus, Plus } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import { adjustMerchantProductCapacity } from '../../api/merchant'
 import { MerchantProduct } from '../../types/merchant'
@@ -187,14 +188,14 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
             <button type="button" className="btn-secondary px-5 py-2" onClick={onClose} disabled={submitting}>
               取消
             </button>
-            <button
+            <AsyncButton loading={submitting} loadingLabel="调整中…"
               type="submit"
               className="btn-primary px-5 py-2 min-w-[150px]"
               disabled={submitting || !isValidDelta || wouldBecomeNegative || !reason.trim()}
               data-testid="merchant-capacity-adjust-submit"
             >
-              {submitting ? <Loader2 className="h-4 w-4 animate-spin inline" /> : actionLabel}
-            </button>
+              {actionLabel}
+            </AsyncButton>
           </div>
         </form>
       </DialogContent>

@@ -14,6 +14,7 @@ import { useAppStore } from '../../stores/appStore'
 import { StatCardSkeleton } from '../ui/Skeleton'
 import AdminOfferReport from './AdminOfferReport'
 import AdminPanelHeader from './AdminPanelHeader'
+import TrafficPanel from '../TrafficPanel'
 
 interface DashboardStats {
   users: number
@@ -172,6 +173,7 @@ export default function AdminDashboardPanel({ active = true }: Props) {
         )}
       </div>
       <AdminOfferReport />
+      <TrafficPanel audience="platform" active={active} />
     </div>
   )
 }

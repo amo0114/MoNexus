@@ -93,11 +93,11 @@ export const ProductShareButton = forwardRef<HTMLButtonElement, ShareButtonProps
         className={
           overlay
             ? 'pointer-events-auto shrink-0 inline-flex items-center justify-center gap-1.5 min-h-[44px] min-w-[44px] px-3 rounded-lg text-sm font-semibold text-white bg-black/40 border border-white/25 backdrop-blur-md hover:bg-black/55 focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.65)] cursor-pointer'
-            : 'btn-secondary shrink-0 min-h-[44px] min-w-[44px] px-3 py-2 text-sm'
+            : 'inline-flex items-center justify-center gap-1.5 shrink-0 min-h-[44px] min-w-[44px] px-3 py-2 text-xs sm:text-sm font-medium rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary-tint-strong)] hover:text-[var(--color-primary)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] shadow-xs'
         }
       >
-        <Share2 className="w-4 h-4" aria-hidden="true" />
-        分享
+        <Share2 className="w-4 h-4 shrink-0" aria-hidden="true" />
+        <span className="hidden sm:inline">分享</span>
       </button>
     )
   },

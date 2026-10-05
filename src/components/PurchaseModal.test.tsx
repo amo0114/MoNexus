@@ -58,6 +58,15 @@ describe('PurchaseModal checkout preview terms', () => {
     getCheckoutPreview.mockResolvedValue(preview())
   })
 
+  it('describes reservation as freezing, not an unpaid or already-paid order', async () => {
+    getCheckoutPreview.mockResolvedValue(preview({ chargeType: 'hold', deliveryMode: 'manual_service' }))
+    render(<PurchaseModal productId={42} onClose={vi.fn()} onConfirm={vi.fn()} />)
+    expect(await screen.findByText('本次冻结积分')).toBeInTheDocument()
+    expect(screen.getByText('冻结后可用余额')).toBeInTheDocument()
+    expect(screen.getByTestId('hold-explain')).toHaveTextContent('Xboard 确认开通成功后转为支付扣款')
+    expect(screen.queryByText('本次待支付')).not.toBeInTheDocument()
+  })
+
   it('passes productContentVersion and null assuranceGrantId from the loaded preview to onConfirm', async () => {
     const onConfirm = vi.fn()
     onConfirm.mockResolvedValue('success' as ConfirmOutcome)
@@ -547,4 +556,3 @@ describe('PurchaseModal checkout preview terms', () => {
     expect(keysPassed[0]).toBe(keysPassed[1])
   })
 })
-

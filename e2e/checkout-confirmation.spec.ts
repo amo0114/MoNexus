@@ -51,7 +51,7 @@ test.describe('M-P1 checkout confirmation', () => {
 
     // 服务端结算预览：本次扣除 + 余额前后值自洽
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次已支付')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('本次支付积分')).toBeVisible({ timeout: 10_000 })
     const before = Number(await modal.getByTestId('balance-before').locator('span').last().innerText())
     const after = Number(await modal.getByTestId('balance-after').locator('span').last().innerText())
     expect(before - after).toBe(3)
@@ -94,8 +94,10 @@ test.describe('M-P1 checkout confirmation', () => {
     await page.getByRole('button', { name: '立即兑换' }).click()
 
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次待支付')).toBeVisible({ timeout: 10_000 })
-    await expect(modal.getByTestId('hold-explain')).toContainText('取消或退款后会自动返还')
+    await expect(modal.getByText('本次冻结积分')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByTestId('hold-explain')).toContainText('下单时先冻结积分')
+    await expect(modal.getByTestId('hold-explain')).toContainText('人工服务在确认完成后扣款')
+    await expect(modal.getByTestId('hold-explain')).toContainText('失败或退款按订单结果返还')
   })
 
   test('adding a required form field after preview forces re-confirmation with the new field', async ({ page, request }) => {
@@ -113,12 +115,17 @@ test.describe('M-P1 checkout confirmation', () => {
     await page.goto(`/product/${product.id}`)
     await page.getByRole('button', { name: '立即兑换' }).click()
     const modal = page.getByTestId('purchase-modal')
-    await expect(modal.getByText('本次待支付')).toBeVisible({ timeout: 10_000 })
+    await expect(modal.getByText('本次冻结积分')).toBeVisible({ timeout: 10_000 })
 
     // 弹窗打开期间，商家给商品新增一个必填的购买前字段
-    const update = await request.put(`${API_BASE}/api/merchant/products/${product.id}`, {
+    const current = await request.get(`${API_BASE}/api/merchant/products/${product.id}/editor`, {
       headers: { Authorization: `Bearer ${token}` },
-      data: { purchaseForm: [{ key: 'contact', label: '联系方式', type: 'text', required: true }] },
+    })
+    expect(current.ok(), await current.text()).toBeTruthy()
+    const { product: { contentVersion } } = await current.json()
+    const update = await request.patch(`${API_BASE}/api/merchant/products/${product.id}/content`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { expectedContentVersion: contentVersion, purchaseForm: [{ key: 'contact', label: '联系方式', type: 'text', required: true }] },
     })
     expect(update.ok(), await update.text()).toBeTruthy()
 

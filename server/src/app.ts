@@ -41,6 +41,7 @@ import { merchandisingAdminRouter } from './integrations/cmi/merchandisingAdminR
 import { paymentWebhookRoutes } from './modules/payment/webhooks/routes.js'
 import { productTemplateRoutes } from './modules/catalog/templates/routes.js'
 import { chatBotRoutes } from './modules/chatbot/routes.js'
+import { trafficRoutes } from './modules/traffic/routes.js'
 
 const app = express()
 
@@ -138,6 +139,7 @@ app.get('/api/metrics', async (req, res) => {
 app.use('/api', apiLimiter)
 
 app.use('/api/auth', authRoutes)
+app.use('/api/traffic', trafficRoutes)
 // Public Merch shelves must precede Product `/:id`, otherwise Express would
 // parse `sponsored`/`editorial` as a product id.
 app.use('/api/products', publicSponsoredRouter)

@@ -129,7 +129,9 @@ async function goToProfile(page: Page) {
   // Navbar / Tab Bar 入口会落到隐藏的「个人中心」上并超时；登录后直达 /profile。
   await page.goto('/profile')
   await expect(page).toHaveURL(/\/profile$/)
+  await page.getByRole('tab', { name: '账号设置' }).click()
   await expect(page.getByTestId('session-manager')).toBeVisible()
+  await page.getByTestId('session-toggle-all').click()
 }
 
 async function expectNoHorizontalOverflow(page: Page) {

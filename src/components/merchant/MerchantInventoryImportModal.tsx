@@ -1,5 +1,6 @@
+import AsyncButton from '../ui/AsyncButton'
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { X, DatabaseZap, FileText, AlertCircle, Loader2 } from 'lucide-react'
+import { X, DatabaseZap, FileText, AlertCircle } from 'lucide-react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { useAppStore } from '../../stores/appStore'
 import { previewMerchantOfferInventory, type InventoryPreview } from '../../api/merchant'
@@ -332,23 +333,23 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
             取消
           </button>
           {!stats ? (
-            <button
+            <AsyncButton loading={previewing} loadingLabel="预览中…"
               type="button"
               onClick={handlePreview}
               disabled={previewing || lineCount === 0}
               className="btn-primary min-w-[140px]"
             >
-              {previewing ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '预览导入内容'}
-            </button>
+              预览导入内容
+            </AsyncButton>
           ) : (
-            <button
+            <AsyncButton loading={loading} loadingLabel="导入中…"
               type="submit"
               form="inventoryForm"
               disabled={loading || !stats.canImport}
               className="btn-primary min-w-[140px]"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : `确认导入 ${stats.validRows} 个`}
-            </button>
+              {`确认导入 ${stats.validRows} 个`}
+            </AsyncButton>
           )}
         </div>
         </DialogPrimitive.Content>

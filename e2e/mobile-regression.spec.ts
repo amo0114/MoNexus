@@ -56,28 +56,36 @@ async function mockDashboardApi(page: Page) {
 async function expectTouchTargets(
   page: Page,
   path: string,
-  opts: { ready: Locator; tab?: string },
+  opts: { ready: Locator; tab?: string; role?: 'button' | 'tab' },
 ) {
-  await page.goto(path)
+  await page.goto(path, { waitUntil: 'domcontentloaded' })
   if (opts.tab) {
-    await page.getByRole('button', { name: opts.tab, exact: true }).click()
+    await page.getByRole(opts.role ?? 'button', { name: opts.tab, exact: true }).click()
   }
   await expect(opts.ready).toBeVisible({ timeout: 10_000 })
-  const buttons = page.locator('button:visible')
-  const count = await buttons.count()
+  // Sample one DOM snapshot: loading controls can disappear between count()
+  // and nth(), causing a live locator to wait forever for a removed index.
+  const buttons = await page.locator('button:visible').evaluateAll(elements => elements.map(element => {
+    const box = element.getBoundingClientRect()
+    return {
+      width: box.width,
+      height: box.height,
+      text: (element as HTMLElement).innerText.trim(),
+      ariaLabel: element.getAttribute('aria-label'),
+    }
+  }))
+  expect(buttons.length).toBeGreaterThan(0)
   const violations: string[] = []
-  for (let i = 0; i < count; i++) {
-    const b = buttons.nth(i)
-    const box = await b.boundingBox()
-    if (!box || box.width === 0 || box.height === 0) continue
-    const text = (await b.innerText().catch(() => '')).trim()
+  for (const [i, box] of buttons.entries()) {
+    if (box.width === 0 || box.height === 0) continue
+    const text = box.text
     const iconOnly = text.length === 0
     // 39.5px 阈值：容忍亚像素渲染（min-40px 可能量出 39.9x），
     // 仍能稳定拦截 38/36/32/28/20px 的真实违规
     const heightBad = box.height < 39.5
     const widthBad = iconOnly && box.width < 39.5
     if (heightBad || widthBad) {
-      const label = text.slice(0, 24) || (await b.getAttribute('aria-label')) || '(no-label)'
+      const label = text.slice(0, 24) || box.ariaLabel || '(no-label)'
       violations.push(`  #${i} "${label}" ${Math.round(box.width)}x${Math.round(box.height)}`)
     }
   }
@@ -156,6 +164,9 @@ test.describe('mobile 320px', () => {
   })
 
   test('touch targets >= 40px on key pages', async ({ page }) => {
+    // This case visits seven page/tab combinations; the timeout is a suite
+    // allowance, while each page retains its explicit readiness assertions.
+    test.setTimeout(90_000)
     await mockDashboardApi(page)
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
@@ -172,6 +183,6 @@ test.describe('mobile 320px', () => {
       ready: page.getByTestId('merchant-order-todo'),
     })
     await expectTouchTargets(page, '/merchant/dashboard', { ready: page.getByTestId('merchant-trend-chart') })
-    await expectTouchTargets(page, '/profile', { ready: page.getByTestId('nickname-edit') })
+    await expectTouchTargets(page, '/profile', { tab: '账号设置', role: 'tab', ready: page.getByTestId('nickname-edit') })
   })
 })

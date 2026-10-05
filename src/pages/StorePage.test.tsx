@@ -232,3 +232,51 @@ describe('StorePage audience on logout', () => {
     })
   })
 })
+
+describe('StorePage scroll restoration and BackToTop', () => {
+  beforeEach(() => {
+    installJsdomStubs()
+    clearStorePageCache()
+    useAuthStore.setState({ isLoggedIn: false, user: null, token: null })
+    useAppStore.setState({ storeQuery: '', storeCategory: '全部', registry: null, tabbarHidden: false })
+    apiGet.mockReset()
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products') {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                id: 1,
+                name: '商品1',
+                price: 10,
+                stock: 10,
+                imageUrl: 'http://cdn/1.png',
+              },
+            ],
+            nextCursor: null,
+            hasMore: false,
+          },
+        })
+      }
+      if (url === '/products/sponsored' || url === '/products/editorial') {
+        return Promise.resolve({ data: { items: [] } })
+      }
+      return Promise.reject(new Error(`unexpected: ${url}`))
+    })
+  })
+
+  afterEach(() => {
+    clearStorePageCache()
+  })
+
+  it('renders BackToTop button inside StorePage', async () => {
+    render(
+      <MemoryRouter>
+        <StorePage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('back-to-top-button')
+    expect(screen.getByTestId('back-to-top-button')).toBeInTheDocument()
+  })
+})

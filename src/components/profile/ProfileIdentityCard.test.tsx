@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProfileIdentityCard from './ProfileIdentityCard'
 import { useAuthStore } from '../../stores/authStore'
 import { useAppStore } from '../../stores/appStore'
 import { AVATAR_PRESETS } from '../../lib/avatarPresets'
-import { updateMe } from '../../api/auth'
+import { changePassword, sendVerificationEmail, updateMe } from '../../api/auth'
 import { uploadImage } from '../../api/uploads'
 
-vi.mock('../../api/auth', () => ({ updateMe: vi.fn() }))
+vi.mock('../../api/auth', () => ({ updateMe: vi.fn(), changePassword: vi.fn(), sendVerificationEmail: vi.fn() }))
 vi.mock('../../api/uploads', () => ({ uploadImage: vi.fn(), UploadError: class extends Error {} }))
 
 const user = { id: 7, email: 'avatar@test.local', nickname: '测试用户', avatarUrl: null, role: 'user' as const, status: 'active', points: 20, merchant: null }
@@ -37,6 +37,102 @@ beforeEach(() => {
     authEpoch: 1,
   })
   useAppStore.setState({ toasts: [] })
+})
+
+describe('profile pending actions', () => {
+  it('does not log out a newer session when an old password change completes', async () => {
+    let resolve!: () => void
+    vi.mocked(changePassword).mockReturnValueOnce(new Promise((done) => { resolve = () => done({ message: 'ok' }) }))
+    render(<ProfileIdentityCard />)
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'old-password' } })
+    fireEvent.change(screen.getByLabelText('新密码（至少 6 位）'), { target: { value: 'new-password' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认修改' }))
+    expect(changePassword).toHaveBeenCalledOnce()
+    act(() => useAuthStore.setState({ sessionId: 'new-session', authEpoch: 2 }))
+    await act(async () => resolve())
+    expect(useAuthStore.getState().isLoggedIn).toBe(true)
+    expect(useAuthStore.getState().sessionId).toBe('new-session')
+    expect(useAppStore.getState().toasts).toHaveLength(0)
+  })
+
+  it('does not apply an old verification response to a newer session', async () => {
+    let resolve!: () => void
+    vi.mocked(sendVerificationEmail).mockReturnValueOnce(new Promise((done) => { resolve = () => done({ ok: true }) }))
+    render(<ProfileIdentityCard />)
+    fireEvent.click(screen.getByRole('button', { name: '发送验证邮件' }))
+    expect(sendVerificationEmail).toHaveBeenCalledOnce()
+    act(() => useAuthStore.setState({ sessionId: 'new-session', authEpoch: 2 }))
+    await act(async () => resolve())
+    expect(screen.getByRole('button', { name: '发送验证邮件' })).toBeEnabled()
+    expect(useAppStore.getState().toasts).toHaveLength(0)
+  })
+
+  it('retains the nickname draft after a failed save and allows retry', async () => {
+    let reject!: (reason: Error) => void
+    vi.mocked(updateMe).mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
+      .mockResolvedValueOnce({ ...user, nickname: '新昵称' })
+    render(<ProfileIdentityCard />)
+    fireEvent.click(screen.getByTestId('nickname-edit'))
+    fireEvent.change(screen.getByLabelText('昵称'), { target: { value: '新昵称' } })
+    fireEvent.click(screen.getByTestId('nickname-save'))
+    expect(screen.getByRole('button', { name: '保存中…' })).toBeDisabled()
+    fireEvent.click(screen.getByTestId('nickname-save'))
+    expect(updateMe).toHaveBeenCalledTimes(1)
+    await act(async () => reject(new Error('network')))
+    expect(screen.getByLabelText('昵称')).toHaveValue('新昵称')
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(screen.queryByLabelText('昵称')).toBeNull())
+    expect(useAuthStore.getState().user?.nickname).toBe('新昵称')
+  })
+
+  it('keeps password feedback visible during submission and exposes server errors', async () => {
+    let reject!: (reason: Error) => void
+    vi.mocked(changePassword).mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
+    render(<ProfileIdentityCard />)
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'old-password' } })
+    fireEvent.change(screen.getByLabelText('新密码（至少 6 位）'), { target: { value: 'new-password' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'new-password' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认修改' }))
+    expect(screen.getByRole('button', { name: '提交中…' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '收起表单' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '取消' })).toBeDisabled()
+    expect(changePassword).toHaveBeenCalledOnce()
+    await act(async () => reject(new Error('network')))
+    const error = screen.getByRole('alert')
+    expect(error).toHaveTextContent('修改密码失败')
+    expect(screen.getByLabelText('当前密码')).toHaveAttribute('aria-describedby', error.id)
+    expect(screen.getByRole('button', { name: '确认修改' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByLabelText('当前密码')).toBeNull()
+  })
+
+  it('keeps email resend disabled after pending switches to cooldown', async () => {
+    let resolve!: () => void
+    vi.mocked(sendVerificationEmail).mockReturnValueOnce(new Promise((done) => { resolve = () => done({ ok: true }) }))
+    render(<ProfileIdentityCard />)
+    fireEvent.click(screen.getByRole('button', { name: '发送验证邮件' }))
+    expect(screen.getByRole('button', { name: '发送中…' })).toBeDisabled()
+    await act(async () => resolve())
+    expect(screen.getByRole('button', { name: '60s 后可重发' })).toBeDisabled()
+    expect(sendVerificationEmail).toHaveBeenCalledOnce()
+  })
+
+  it('shows upload progress without requiring hover', async () => {
+    let reject!: (reason: Error) => void
+    vi.mocked(uploadImage).mockReturnValueOnce(new Promise((_, fail) => { reject = fail }))
+    render(<ProfileIdentityCard />)
+    fireEvent.change(screen.getByTestId('avatar-file-input'), { target: { files: [new File(['img'], 'avatar.png', { type: 'image/png' })] } })
+    const avatar = screen.getByTestId('avatar-edit')
+    expect(avatar).toHaveAttribute('aria-busy', 'true')
+    expect(avatar.querySelector('span.absolute')).toHaveClass('opacity-100')
+    expect(avatar).toBeDisabled()
+    await act(async () => reject(new Error('network')))
+    expect(avatar).toHaveAttribute('aria-busy', 'false')
+    expect(avatar).toBeEnabled()
+  })
 })
 
 describe('profile avatar selection', () => {

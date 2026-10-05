@@ -1,3 +1,4 @@
+import AsyncButton from '../ui/AsyncButton'
 import { useCallback, useEffect, useState } from 'react'
 import { Loader2, Plus, Pencil, Trash2, ArrowLeft } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
@@ -683,9 +684,9 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
 
             <div className="flex justify-end gap-3 pt-1">
               <button type="button" className="btn-secondary px-5 py-2" onClick={() => setEditing(null)} disabled={submitting}>取消</button>
-              <button type="submit" className="btn-primary px-5 py-2 min-w-[120px]" disabled={submitting} data-testid="offer-form-submit">
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '保存'}
-              </button>
+              <AsyncButton loading={submitting} loadingLabel="保存中…" type="submit" className="btn-primary px-5 py-2 min-w-[120px]" disabled={submitting} data-testid="offer-form-submit">
+                保存
+              </AsyncButton>
             </div>
           </form>
         )}

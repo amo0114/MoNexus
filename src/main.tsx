@@ -20,6 +20,12 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 initWebVitals()
 
+if (import.meta.env.DEV) {
+  import('./stores/appStore').then(({ useAppStore }) => {
+    ;(window as any).__appStore = useAppStore
+  })
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <AppErrorBoundary>

@@ -16,7 +16,7 @@ import {
 import { classifyFakaRemoteStatus } from './errors.js'
 import { fakaReconcileTotal, fakaRevokeTotal } from '../metrics.js'
 import { transitionOrderStatus } from '../../modules/orders/fulfillment.js'
-import { releaseHeldOrder } from '../../modules/orders/accounting.js'
+import { captureHeldOrder, releaseHeldOrder } from '../../modules/orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../../modules/orders/refundInventory.js'
 import { config } from '../../config/index.js'
 import { isLeaseExpiredUtc, readTaskScheduleUtc } from './scheduleUtc.js'
@@ -1147,7 +1147,7 @@ async function tryDeliverPendingOrder(
           tx
         )
       }
-      await transitionOrderStatus(
+      const deliveredOrder = await transitionOrderStatus(
         {
           orderId,
           toStatus: 'delivered',
@@ -1163,6 +1163,9 @@ async function tryDeliverPendingOrder(
         },
         tx
       )
+      // Reconciled success must capture the same reservation as direct success.
+      // The order lock and task CAS keep retries from charging a second time.
+      await captureHeldOrder(tx, deliveredOrder, `Xboard 对账开通成功扣款: #${deliveredOrder.id}`)
       return true
     })
   } catch (err) {

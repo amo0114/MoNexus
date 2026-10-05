@@ -10,6 +10,7 @@ import StatusBreakdown from './dashboard/StatusBreakdown'
 import RangeFilter from './dashboard/RangeFilter'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
+import TrafficPanel from '../../components/TrafficPanel'
 
 export default function Dashboard() {
   const { range } = useDashboardStore()
@@ -92,6 +93,7 @@ export default function Dashboard() {
       </div>
 
       <TrendChart data={timeseries?.points || []} loading={timeseriesLoading} />
+      <TrafficPanel audience="merchant" range={range} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <TopProducts data={timeseries?.top10 || []} loading={timeseriesLoading} />

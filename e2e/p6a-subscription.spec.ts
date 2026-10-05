@@ -83,7 +83,7 @@ test.describe.serial('P6a subscription', () => {
     // 订单详情：有效期行 + 续费按钮。
     await page.goto('/profile')
     const orderCard = page
-      .locator('div.shadow-sm')
+      .locator('[data-testid^="profile-order-card-"]')
       .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
       .first()
     await orderCard.getByRole('button', { name: '查看发货内容' }).click()
@@ -95,7 +95,7 @@ test.describe.serial('P6a subscription', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/profile')
     const orderCard = page
-      .locator('div.shadow-sm')
+      .locator('[data-testid^="profile-order-card-"]')
       .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
       .first()
     await orderCard.getByRole('button', { name: '查看发货内容' }).click()

@@ -181,3 +181,79 @@ describe('refreshNotificationUnread — 代际保护 (PR-3 复审)', () => {
     await flush()
   })
 })
+
+describe('Dynamic Island Live Activity & Demotion Protection', () => {
+  beforeEach(() => {
+    useAppStore.setState({
+      toasts: [],
+      islandNotice: null,
+      islandNoticeAvailable: true,
+      modalDepth: 0,
+    })
+  })
+
+  it('triggerIslandActivity activates island and prevents competing toast duplication', () => {
+    useAppStore.setState({
+      modalDepth: 1,
+      toasts: [{ id: 99, message: '兑换成功', type: 'success' }],
+    })
+
+    useAppStore.getState().triggerIslandActivity({
+      kind: 'order_success',
+      title: '兑换成功',
+      subtitle: '已扣除 3 积分 · 默认套餐',
+      badge: '即时交付',
+      actionLabel: '查看卡密',
+    })
+
+    const state = useAppStore.getState()
+    expect(state.islandNotice).not.toBeNull()
+    expect(state.islandNotice?.title).toBe('兑换成功')
+    expect(state.islandNotice?.kind).toBe('order_success')
+    expect(state.modalDepth).toBe(1)
+    expect(state.toasts.some((t) => t.message === '兑换成功')).toBe(false)
+  })
+
+  it('demoteIslandNotice protects order_success from ever demoting to a detached toast', () => {
+    useAppStore.getState().triggerIslandActivity({
+      kind: 'order_success',
+      title: '兑换成功',
+      subtitle: '已扣除 3 积分',
+    })
+
+    useAppStore.getState().demoteIslandNotice()
+
+    const state = useAppStore.getState()
+    expect(state.islandNotice).not.toBeNull()
+    expect(state.islandNotice?.kind).toBe('order_success')
+    expect(state.toasts).toHaveLength(0)
+  })
+
+  it('leaving the layout clears the order activity instead of replaying a stale action', () => {
+    useAppStore.getState().triggerIslandActivity({
+      kind: 'order_success',
+      title: '兑换成功',
+      subtitle: '已扣除 3 积分',
+    })
+
+    useAppStore.getState().setIslandNoticeAvailable(false)
+
+    const state = useAppStore.getState()
+    expect(state.islandNotice).toBeNull()
+    expect(state.toasts).toHaveLength(0)
+  })
+
+  it('preserves the order action when a favorite activity or error arrives', () => {
+    const onAction = vi.fn()
+    useAppStore.getState().triggerIslandActivity({ kind: 'order_success', title: '兑换成功', onAction })
+    const order = useAppStore.getState().islandNotice
+
+    useAppStore.getState().triggerIslandActivity({ kind: 'favorite', title: '已加入收藏' })
+    useAppStore.getState().showToast('网络异常', 'error')
+
+    expect(useAppStore.getState().islandNotice).toBe(order)
+    expect(useAppStore.getState().toasts.map((toast) => toast.message)).toEqual(['已加入收藏', '网络异常'])
+    useAppStore.getState().islandNotice?.onAction?.()
+    expect(onAction).toHaveBeenCalledOnce()
+  })
+})

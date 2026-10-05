@@ -649,6 +649,7 @@ test('logout aborts the old stream and a subsequent user receives only their own
   await waitForStreamReady(page)
   await page.getByRole('button', { name: '个人中心' }).click()
   await expect(page).toHaveURL(/\/profile/)
+  await page.getByRole('tab', { name: '账号设置' }).click()
   await expect(page.getByTestId('profile-logout')).toBeVisible()
   const aSnapshot = await probeSnapshot(page)
   const aAuthorization = aSnapshot.requests.at(-1)?.authorization

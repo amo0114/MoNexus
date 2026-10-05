@@ -25,7 +25,7 @@ export const SPEC_SECTION_IDS = {
   faq: 'product-section-faq',
 } as const
 
-const SECTION_SCROLL_MARGIN = 'scroll-mt-[calc(var(--navbar-h)+var(--safe-top)+3.25rem)]'
+const SECTION_SCROLL_MARGIN = 'scroll-mt-[calc(var(--navbar-h)+var(--safe-top)+3.5rem)]'
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -210,25 +210,25 @@ export default function ProductSpecSections({
   const showFaq = hasFaq(resolvedDetails)
 
   return (
-    <div className="max-md:space-y-8 space-y-12" data-testid="product-spec-sections">
+    <div className="max-md:space-y-6 space-y-8" data-testid="product-spec-sections">
       {specRows.length > 0 && (
         <section id={SPEC_SECTION_IDS.parameters} className={SECTION_SCROLL_MARGIN} data-testid={SPEC_SECTION_IDS.parameters}>
-          <SectionHeading icon={List}>参数</SectionHeading>
-          <dl className="bg-[var(--color-background)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+          <SectionHeading icon={List}>参数规格</SectionHeading>
+          <dl className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] shadow-xs divide-y divide-[var(--color-border)] overflow-hidden">
             {specRows.map((row, index) => (
               <div
                 key={`${row.key}-${row.source ?? 'unique'}-${index}`}
-                className="grid grid-cols-[minmax(5.5rem,8.5rem)_minmax(0,1fr)] gap-3 px-4 py-3 text-sm"
+                className="grid grid-cols-[minmax(5.5rem,8.5rem)_minmax(0,1fr)] gap-3 px-5 py-3.5 text-sm hover:bg-[var(--color-background)]/50 transition-colors"
                 data-testid="product-spec-row"
                 data-key={row.key}
                 data-source={row.source ?? 'unique'}
               >
                 <dt className="text-[var(--color-text-muted)] font-medium break-words">{row.label}</dt>
-                <dd className="m-0 text-[var(--color-text)] break-words flex flex-wrap items-center gap-2 justify-start">
+                <dd className="m-0 text-[var(--color-text)] break-words flex flex-wrap items-center gap-2 justify-start font-medium">
                   <span>{row.value}</span>
                   {row.source ? (
                     <span
-                      className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)]"
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text-muted)]"
                       data-testid="product-spec-source"
                     >
                       {sourceLabel(row.source)}
@@ -244,9 +244,9 @@ export default function ProductSpecSections({
       {showUsage && (
         <section id={SPEC_SECTION_IDS.usage} className={SECTION_SCROLL_MARGIN} data-testid={SPEC_SECTION_IDS.usage}>
           <SectionHeading icon={FileText}>使用说明</SectionHeading>
-          <p className="text-sm md:text-base text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words bg-[var(--color-background)] p-4 sm:p-6 rounded-xl border border-[var(--color-border)]">
+          <div className="text-sm sm:text-base text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words bg-[var(--color-surface)] p-5 sm:p-6 rounded-2xl border border-[var(--color-border)] shadow-xs">
             {resolvedDetails.usageInstructions}
-          </p>
+          </div>
         </section>
       )}
 
@@ -257,9 +257,9 @@ export default function ProductSpecSections({
           data-testid={SPEC_SECTION_IDS.purchaseNotes}
         >
           <SectionHeading icon={Info}>购买须知</SectionHeading>
-          <p className="text-sm md:text-base text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words bg-[var(--color-background)] p-4 sm:p-6 rounded-xl border border-[var(--color-border)]">
+          <div className="text-sm sm:text-base text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words bg-[var(--color-surface)] p-5 sm:p-6 rounded-2xl border border-[var(--color-border)] shadow-xs">
             {resolvedDetails.purchaseNotes}
-          </p>
+          </div>
         </section>
       )}
 
@@ -272,19 +272,22 @@ export default function ProductSpecSections({
           <SectionHeading icon={ShieldCheck}>售后与平台保障</SectionHeading>
           <div className="space-y-4">
             {resolvedDetails.afterSalesInstructions.trim() ? (
-              <p className="text-sm md:text-base text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words bg-[var(--color-background)] p-4 sm:p-6 rounded-xl border border-[var(--color-border)]">
+              <div className="text-sm sm:text-base text-[var(--color-text)] leading-relaxed whitespace-pre-wrap break-words bg-[var(--color-surface)] p-5 sm:p-6 rounded-2xl border border-[var(--color-border)] shadow-xs">
                 {resolvedDetails.afterSalesInstructions}
-              </p>
+              </div>
             ) : null}
             {assurance ? (
               <div
-                className="text-sm text-[var(--color-text)] leading-relaxed bg-[var(--color-primary)]/5 p-4 sm:p-6 rounded-xl border border-[var(--color-primary)]/20"
+                className="text-sm text-[var(--color-text)] leading-relaxed bg-[var(--color-primary-tint)] p-5 sm:p-6 rounded-2xl border border-[var(--color-primary)]/20 shadow-xs"
                 data-testid="product-spec-assurance"
               >
-                <p className="font-bold text-[var(--color-primary)]">{assurance.label}</p>
-                <p className="mt-2 text-[var(--color-text-muted)] whitespace-pre-wrap break-words">{assurance.policyText}</p>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  有效期至 {new Date(assurance.validUntil).toLocaleDateString()}
+                <p className="font-bold text-base text-[var(--color-primary)] flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 shrink-0" />
+                  {assurance.label}
+                </p>
+                <p className="mt-2 text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">{assurance.policyText}</p>
+                <p className="mt-3 text-xs text-[var(--color-text-muted)] font-mono">
+                  保障有效期至：{new Date(assurance.validUntil).toLocaleDateString()}
                 </p>
               </div>
             ) : null}
@@ -294,16 +297,17 @@ export default function ProductSpecSections({
 
       {showFaq && (
         <section id={SPEC_SECTION_IDS.faq} className={SECTION_SCROLL_MARGIN} data-testid={SPEC_SECTION_IDS.faq}>
-          <SectionHeading icon={HelpCircle}>FAQ</SectionHeading>
-          <div className="bg-[var(--color-background)] rounded-xl border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+          <SectionHeading icon={HelpCircle}>常见问题（FAQ）</SectionHeading>
+          <div className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] shadow-xs divide-y divide-[var(--color-border)] overflow-hidden">
             {resolvedDetails.faq
               .filter((item) => item.question.trim() && item.answer.trim())
               .map((item, index) => (
-                <details key={`${item.question}-${index}`} className="px-4 py-1" data-testid={`product-spec-faq-${index}`}>
-                  <summary className="cursor-pointer min-h-[44px] flex items-center text-sm font-medium text-[var(--color-text)]">
-                    {item.question}
+                <details key={`${item.question}-${index}`} className="group px-5 py-2 hover:bg-[var(--color-background)]/40 transition-colors" data-testid={`product-spec-faq-${index}`}>
+                  <summary className="cursor-pointer min-h-[44px] flex items-center justify-between text-sm font-semibold text-[var(--color-text)] list-none">
+                    <span>{item.question}</span>
+                    <span className="text-[var(--color-text-muted)] group-open:rotate-180 transition-transform text-xs font-mono ml-2">▼</span>
                   </summary>
-                  <p className="pb-3 text-sm text-[var(--color-text-muted)] leading-relaxed whitespace-pre-wrap break-words">
+                  <p className="pb-3 pt-1 text-sm text-[var(--color-text-muted)] leading-relaxed whitespace-pre-wrap break-words">
                     {item.answer}
                   </p>
                 </details>

@@ -1,9 +1,10 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Search, SearchX, Coins, Store, Star } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { Search, SearchX, Coins, Store, Star, X } from 'lucide-react'
 import api from '../api/client'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
+import { usePageView } from '../hooks/usePageView'
 import {
   getStorePageCache,
   setStorePageCache,
@@ -24,6 +25,10 @@ import {
   type SponsoredFeedCandidate,
 } from '../components/merchandising/storeFeed'
 import type { MerchandisingProjection, SponsoredShelfItem } from '../types/merchandising'
+import CategorySlidingNav from '../components/catalog/CategorySlidingNav'
+import FluidOrb from '../components/ui/FluidOrb'
+import BackToTop from '../components/BackToTop'
+import { useTheme } from '../lib/ThemeProvider'
 
 interface Product {
   id: number
@@ -149,18 +154,22 @@ function ProductCard({
       aria-label={disclosure ? `${disclosure.label}，${product.name}` : product.name}
       className={`relative overflow-hidden group cursor-pointer flex flex-col min-w-0 h-[256px] md:h-[372px]
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
-        shadow-md hover:shadow-lg hover:border-[var(--color-primary)]/35
-        hover:-translate-y-0.5 transition-all duration-200
-        max-md:rounded-2xl max-md:shadow-sm max-md:active:scale-[0.98] max-md:active:shadow-sm
+        shadow-sm hover:shadow-xl hover:border-[var(--color-primary)]/50
+        shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.75)] dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12)]
+        hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
+        max-md:rounded-2xl max-md:shadow-sm max-md:hover:translate-y-0 max-md:active:scale-[0.98]
         ${isSoldOut ? 'opacity-60 grayscale' : ''}`}
     >
+      {/* 物理光泽反射扫光层：鼠标悬停时一道通透的高光掠过卡面，极具实体玻璃/金属卡片质感 */}
+      <div aria-hidden="true" className="card-shine-glare" />
+
       {/* 电商惯例：固定槽位 + cover 铺满；完整原图在详情灯箱查看。 */}
       <ProductMediaFrame
         src={product.images?.[0] || product.imageUrl}
         alt={product.name}
-        frameClassName="h-36 md:h-44"
+        frameClassName="h-36 md:h-44 overflow-hidden"
         className="shrink-0 border-b border-[var(--color-border)]"
-        imageClassName="transition-opacity duration-200 group-hover:opacity-90"
+        imageClassName="transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 group-hover:opacity-95"
         fit="cover"
         imageProps={{
           loading: 'lazy',
@@ -185,9 +194,9 @@ function ProductCard({
           className="absolute top-2 right-2 z-10 justify-end max-w-[calc(100%-1rem)]"
         />
 
-        <div className="absolute bottom-2 left-2 right-2 md:bottom-2.5 md:left-2.5 md:right-2.5 z-10 flex gap-2 min-w-0">
+        <div className="absolute bottom-2 left-2 right-2 md:bottom-2.5 md:left-2.5 md:right-2.5 z-10 flex gap-1.5 md:gap-2 min-w-0">
           <span
-            className="text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 max-w-[48%] truncate"
+            className="text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 max-w-[85%] sm:max-w-[48%] truncate"
             style={{
               background: 'var(--color-glass-bg)',
               border: '1px solid var(--color-glass-border)',
@@ -197,7 +206,7 @@ function ProductCard({
             {product.category?.label ?? product.type}
           </span>
           <span
-            className="text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-primary)] shadow-sm flex items-center gap-1.5 max-w-[48%] truncate"
+            className="hidden sm:flex text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-primary)] shadow-sm items-center gap-1.5 max-w-[48%] truncate"
             style={{
               background: 'var(--color-glass-bg)',
               border: '1px solid var(--color-glass-border)',
@@ -211,11 +220,11 @@ function ProductCard({
       </ProductMediaFrame>
 
       <div className="p-3 md:p-5 flex flex-col flex-grow min-h-0 bg-[var(--color-surface)]">
-        <h3 className="text-sm md:text-base font-bold leading-snug group-hover:text-[var(--color-primary)] transition-colors text-[var(--color-text)] mb-1 md:mb-1.5 line-clamp-2 min-h-[2.375rem] md:min-h-[2.5rem]">
+        <h3 className="product-text-readable text-sm md:text-base font-semibold leading-snug group-hover:text-[var(--color-primary)] transition-colors text-[var(--color-text)] mb-1 md:mb-1.5 line-clamp-2 min-h-[2.375rem] md:min-h-[2.5rem]">
           {product.name}
         </h3>
         {disclosure?.kind === 'editorial' && disclosure.publicReason && (
-          <p className="text-xs text-[var(--color-text-muted)] mb-1 line-clamp-1">
+          <p className="product-text-readable text-xs text-[var(--color-text-muted)] mb-1 line-clamp-1">
             {truncateEditorialReason(disclosure.publicReason)}
           </p>
         )}
@@ -224,19 +233,22 @@ function ProductCard({
             <MerchantPartnerMark merchantPartner={product.merchandising.merchantPartner} />
           </div>
         )}
-        <p className="hidden md:block text-[var(--color-text-muted)] text-xs flex-grow mb-4 leading-relaxed line-clamp-2">
+        <p className="product-text-readable hidden md:block text-[var(--color-text-muted)] text-xs flex-grow mb-4 leading-relaxed line-clamp-2">
           {product.description}
         </p>
         <div className="flex items-end justify-between mt-auto gap-2 md:gap-3">
           <div className="flex flex-col min-w-0">
             {product.originalPrice && product.originalPrice > product.price && (
-              <span className="text-xs text-[var(--color-text-muted)] line-through mb-0.5">
+              <span className="product-text-readable text-xs text-[var(--color-text-muted)] line-through mb-0.5 tabular-nums">
                 {product.originalPrice}
               </span>
             )}
-            <div className="flex items-center gap-1 text-[var(--color-cta)] font-bold text-lg md:text-xl tracking-tight">
-              <Coins className="w-4 h-4 shrink-0" />
-              {product.price}
+            <div className="flex items-baseline gap-1 text-[var(--color-cta)] font-bold text-lg md:text-xl tracking-tight">
+              <Coins className="w-4 h-4 shrink-0 self-center" />
+              <span className="tabular-nums font-semibold" style={{ fontFeatureSettings: '"tnum" 1' }}>
+                {product.price}
+              </span>
+              <span className="product-text-readable text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
             </div>
           </div>
           <div className="flex flex-col items-end gap-0.5 text-[10px] md:text-xs text-[var(--color-text-muted)] shrink-0">
@@ -261,13 +273,60 @@ function ProductCard({
 
 
 export default function StorePage() {
+  usePageView('/')
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()
+  const urlCategory = params.get('category')?.trim() || null
+  const storedCategory = useAppStore((s) => s.storeCategory)
+  const appliedUrlCategory = useRef<string | null | undefined>(undefined)
+  const urlCategoryChanged = appliedUrlCategory.current !== urlCategory
+  const rawCategory = urlCategoryChanged && urlCategory ? urlCategory : storedCategory
+  const category = registry?.productCategories?.find(item => item.code === rawCategory || item.label === rawCategory)?.code ?? rawCategory
+  const setStoreCategory = useAppStore((s) => s.setStoreCategory)
+  const setCategory = (value: string) => {
+    setStoreCategory(value)
+    setParams(current => {
+      const next = new URLSearchParams(current)
+      if (value === '全部') next.delete('category')
+      else next.set('category', value)
+      return next
+    }, { replace: true })
+  }
+  useLayoutEffect(() => {
+    appliedUrlCategory.current = urlCategory
+    if (storedCategory !== category) setStoreCategory(category)
+    // The search panel also changes appStore directly. Reflect those changes
+    // in the URL after applying an incoming link, rather than pinning the filter.
+    if (!urlCategoryChanged && urlCategory && urlCategory !== category) {
+      setParams(current => {
+        const next = new URLSearchParams(current)
+        if (category === '全部') next.delete('category')
+        else next.set('category', category)
+        return next
+      }, {replace: true})
+    }
+  }, [category, storedCategory, setStoreCategory, urlCategory, urlCategoryChanged, setParams])
+  const { theme } = useTheme()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const audience: 'guest' | 'member' = isLoggedIn ? 'member' : 'guest'
-  const initialCacheRef = useRef(readMatchingStoreCache())
-  const restoreScrollRef = useRef<number | null>(initialCacheRef.current?.scrollY ?? null)
+  const initialCacheRef = useRef((() => {
+    const cached = readMatchingStoreCache()
+    return urlCategory && cached?.category !== category ? null : cached
+  })())
+  const restoreScrollRef = useRef<number | null>(
+    initialCacheRef.current?.scrollY ??
+      (!urlCategory && typeof window !== 'undefined'
+        ? Number(window.sessionStorage.getItem('monexus:restore-scroll-y')) || null
+        : null),
+  )
+  const restoreProductIdRef = useRef<number | null>(
+    initialCacheRef.current?.lastProductId ??
+      (!urlCategory && typeof window !== 'undefined'
+        ? Number(window.sessionStorage.getItem('monexus:restore-product-id')) || null
+        : null),
+  )
   const hydratedQueryKeyRef = useRef<string | null>(
     initialCacheRef.current?.feedItems.length
       ? getProductQueryKey(
@@ -281,8 +340,6 @@ export default function StorePage() {
   const [feedItems, setFeedItems] = useState<FeedOutputItem<Product>[]>(() => initialCacheRef.current?.feedItems ?? [])
   // V3 灵动岛：搜索/分类上提至 appStore，岛内交互与本页网格共享；
   // store 在 SPA 生命周期内持续，详情页返回时状态自然保留
-  const category = useAppStore((s) => s.storeCategory)
-  const setCategory = useAppStore((s) => s.setStoreCategory)
   const searchQuery = useAppStore((s) => s.storeQuery)
   const setSearchQuery = useAppStore((s) => s.setStoreQuery)
   const [loading, setLoading] = useState(() => initialCacheRef.current?.feedItems.length === 0)
@@ -337,6 +394,7 @@ export default function StorePage() {
     composedRef.current = false
     candidatesSettledRef.current = false
     restoreScrollRef.current = null
+    restoreProductIdRef.current = null
     hydratedQueryKeyRef.current = null
   }
   // A cached pre-Catalog session may still hold a legacy label. Once the
@@ -346,8 +404,10 @@ export default function StorePage() {
     if (!dynamic?.length || category === '全部') return
     if (dynamic.some(item => item.code === category)) return
     const mapped = dynamic.find(item => item.label === category)
-    setCategory(mapped?.code ?? '全部')
-  }, [category, registry?.productCategories, setCategory])
+    // Unknown URL categories must not silently broaden to all products.
+    if (mapped) setStoreCategory(mapped.code)
+    else if (!urlCategory) setStoreCategory('全部')
+  }, [category, registry?.productCategories, setStoreCategory, urlCategory])
 
   /** Compose the first screen once both page-1 organic and candidates are ready. */
   const maybeComposePage1 = useCallback(() => {
@@ -507,9 +567,10 @@ export default function StorePage() {
     }
   }, [audience, category, registry?.productCategories, searchQuery, maybeComposePage1])
 
-  const saveStorePageCache = useCallback((scrollY = window.scrollY) => {
+  const saveStorePageCache = useCallback((scrollY = window.scrollY, lastProductId?: number | null) => {
     const liveAudience = currentStoreAudience()
     if (liveAudience !== feedAudience) return
+    const prevCache = getStorePageCache<StorePageCache>()
     setStorePageCache({
       feedItems,
       seenIds: [...seenRef.current],
@@ -519,11 +580,13 @@ export default function StorePage() {
       hasMore,
       scrollY,
       audience: liveAudience,
+      lastProductId: lastProductId !== undefined ? lastProductId : (prevCache?.lastProductId ?? null),
     })
   }, [category, feedAudience, feedItems, hasMore, nextCursor, searchQuery])
 
   useEffect(() => {
     const queryKey = getProductQueryKey(category, searchQuery, audience)
+    if (urlCategory && !registry) return
 
     if (hydratedQueryKeyRef.current === queryKey) {
       setLoading(false)
@@ -544,12 +607,22 @@ export default function StorePage() {
     // settle would block the first-page compose.
     composedRef.current = false
     restoreScrollRef.current = null
+    restoreProductIdRef.current = null
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem('monexus:restore-store-scroll')
+      window.sessionStorage.removeItem('monexus:restore-product-id')
+      window.sessionStorage.removeItem('monexus:restore-scroll-y')
+    }
     window.scrollTo?.({ top: 0, behavior: 'instant' })
     const timer = setTimeout(() => fetchProducts(null, false, queryKey), 300)
     return () => clearTimeout(timer)
-  }, [audience, category, fetchProducts, searchQuery])
+  }, [audience, category, fetchProducts, searchQuery, urlCategory, registry])
 
   useEffect(() => {
+    // 关键守卫：挂载时如果当前有在途的滚动恢复意图，严禁以首帧的 window.scrollY(0) 冲刷缓存
+    if (restoreScrollRef.current !== null || restoreProductIdRef.current !== null) {
+      return
+    }
     saveStorePageCache()
   }, [saveStorePageCache])
 
@@ -575,6 +648,10 @@ export default function StorePage() {
   useEffect(() => {
     const updateViewport = () => {
       scrollFrameRef.current = null
+      // 正在执行滚动恢复时，避免首帧原生滚动位置 0 冲掉虚拟列表视口
+      if ((restoreScrollRef.current !== null || restoreProductIdRef.current !== null) && window.scrollY === 0) {
+        return
+      }
       const gridTop = gridRef.current
         ? gridRef.current.getBoundingClientRect().top + window.scrollY
         : 0
@@ -642,9 +719,16 @@ export default function StorePage() {
     }))
   }, [searchQuery, loading, feedItems.length])
 
+  const fallbackGridWidth = typeof window === 'undefined' ? 1024 : window.innerWidth
+  const columnCount = getColumnCount(gridWidth || fallbackGridWidth, isMobile)
+  const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT_DESKTOP
+  const gridGap = isMobile ? GRID_GAP_MOBILE : GRID_GAP_DESKTOP
+  const rowStride = cardHeight + gridGap
+
   useLayoutEffect(() => {
     const targetScrollY = restoreScrollRef.current
-    if (targetScrollY === null || loading || feedItems.length === 0) return
+    const targetProductId = restoreProductIdRef.current
+    if ((targetScrollY === null && targetProductId === null) || loading || feedItems.length === 0) return
 
     let frame = 0
     let attempts = 0
@@ -653,20 +737,29 @@ export default function StorePage() {
     const restore = () => {
       if (cancelled) return
 
+      let calculatedTargetY = targetScrollY ?? 0
+      if (targetProductId != null && (targetScrollY == null || targetScrollY === 0)) {
+        const itemIndex = feedItems.findIndex((it) => it.productId === targetProductId)
+        if (itemIndex >= 0) {
+          const row = Math.floor(itemIndex / columnCount)
+          const gridOffset = gridRef.current ? gridRef.current.getBoundingClientRect().top + window.scrollY : 0
+          const estimatedTop = gridOffset + row * rowStride - 80
+          if (estimatedTop > 0) {
+            calculatedTargetY = Math.max(0, estimatedTop)
+          }
+        }
+      }
+
       const maxScrollY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight)
-      if (maxScrollY < targetScrollY && hasMore && attempts < 20) {
-        loadMore()
+      if (maxScrollY < calculatedTargetY && attempts < 15) {
+        if (hasMore) loadMore()
         attempts += 1
         frame = window.requestAnimationFrame(restore)
         return
       }
 
-      const nextScrollY = Math.min(targetScrollY, maxScrollY)
+      const nextScrollY = Math.min(calculatedTargetY, maxScrollY)
       window.scrollTo({ top: nextScrollY, behavior: 'instant' })
-      if (maxScrollY >= targetScrollY || !hasMore || attempts >= 20) {
-        restoreScrollRef.current = null
-        window.sessionStorage.removeItem('monexus:restore-store-scroll')
-      }
 
       if (gridRef.current) {
         setViewport({
@@ -675,10 +768,44 @@ export default function StorePage() {
           gridTop: gridRef.current.getBoundingClientRect().top + window.scrollY,
         })
       }
+
+      // 如果提供了 targetProductId，且卡片已在 DOM 中挂载，检查是否处于视口内
+      if (targetProductId != null) {
+        const cardEl = document.querySelector(`[data-testid="store-product-card-${targetProductId}"]`) as HTMLElement | null
+        if (cardEl) {
+          const rect = cardEl.getBoundingClientRect()
+          // 仅当卡片完全不在可见视口范围内时，微调至最近边界（nearest），避免剧烈居中跳跃
+          if (rect.bottom < 0 || rect.top > window.innerHeight) {
+            cardEl.scrollIntoView({ behavior: 'instant', block: 'nearest' })
+          }
+        }
+      }
+
+      // 允许 3 个动画帧给虚拟列表完成行挂载并校准最终滚动位置
+      if (attempts >= 3) {
+        const finalY = window.scrollY || window.pageYOffset || 0
+        if (gridRef.current) {
+          setViewport({
+            scrollY: finalY,
+            height: window.innerHeight,
+            gridTop: gridRef.current.getBoundingClientRect().top + finalY,
+          })
+        }
+        restoreScrollRef.current = null
+        restoreProductIdRef.current = null
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem('monexus:restore-store-scroll')
+          window.sessionStorage.removeItem('monexus:restore-product-id')
+          window.sessionStorage.removeItem('monexus:restore-scroll-y')
+        }
+      } else {
+        attempts += 1
+        frame = window.requestAnimationFrame(restore)
+      }
     }
 
     restore()
-    if (restoreScrollRef.current !== null) {
+    if (restoreScrollRef.current !== null || restoreProductIdRef.current !== null) {
       frame = window.requestAnimationFrame(restore)
     }
 
@@ -686,11 +813,16 @@ export default function StorePage() {
       cancelled = true
       if (frame) window.cancelAnimationFrame(frame)
     }
-  }, [hasMore, loadMore, loading, feedItems.length])
+  }, [hasMore, loadMore, loading, feedItems.length, columnCount, rowStride])
 
   function openDetail(product: Product) {
-    saveStorePageCache(window.scrollY)
-    window.sessionStorage.setItem('monexus:restore-store-scroll', '1')
+    const currentY = window.scrollY || window.pageYOffset || 0
+    saveStorePageCache(currentY, product.id)
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('monexus:restore-store-scroll', '1')
+      window.sessionStorage.setItem('monexus:restore-product-id', String(product.id))
+      window.sessionStorage.setItem('monexus:restore-scroll-y', String(currentY))
+    }
     navigate(`/product/${product.id}`)
   }
 
@@ -713,11 +845,6 @@ export default function StorePage() {
     return registry?.productTypes.find(type => type.value === value)?.label ?? value
   }
 
-  const fallbackGridWidth = typeof window === 'undefined' ? 1024 : window.innerWidth
-  const columnCount = getColumnCount(gridWidth || fallbackGridWidth, isMobile)
-  const cardHeight = isMobile ? CARD_HEIGHT_MOBILE : CARD_HEIGHT_DESKTOP
-  const gridGap = isMobile ? GRID_GAP_MOBILE : GRID_GAP_DESKTOP
-  const rowStride = cardHeight + gridGap
   const rowCount = Math.ceil(feedItems.length / columnCount)
   const viewportStart = viewport.scrollY - viewport.gridTop
   const viewportEnd = viewportStart + viewport.height
@@ -742,48 +869,61 @@ export default function StorePage() {
   return (
     <div className="fade-in space-y-8 max-w-6xl mx-auto" style={{ animationDelay: '0.1s' }}>
       {/* Header — compacted on mobile (V2-M2) */}
-      <div className="text-center max-md:pt-0 max-md:pb-1 pt-2 pb-2">
-        <h2 className="font-heading text-2xl sm:text-4xl font-bold tracking-tight mb-1.5 sm:mb-3 text-[var(--color-text)]">
+      {/* Header — compacted on mobile, explanatory subtitle preserved */}
+      <div className="flex flex-col items-center justify-center text-center max-md:pt-0 max-md:pb-1 pt-2 pb-2 relative">
+        <div className="mb-2">
+          <FluidOrb
+            size={isMobile ? 44 : 56}
+            color={
+              theme === 'dark'
+                ? '#818CF8'
+                : theme === 'soft'
+                  ? '#F43F5E'
+                  : theme === 'ink'
+                    ? '#475569'
+                    : '#6366F1'
+            }
+          />
+        </div>
+        <h2 className="font-heading text-xl sm:text-4xl font-bold tracking-tight mb-1 sm:mb-2 text-[var(--color-text)]">
           发现实用好物。
         </h2>
-        <p className="text-sm sm:text-base text-[var(--color-text-muted)]">
+        <p className="text-xs sm:text-base text-[var(--color-text-muted)] max-md:line-clamp-1">
           做任务赚积分，在这里免费兑换你需要的数字资源。
         </p>
       </div>
 
-      {/* Search & Categories — ≥md 页内常驻；<md 收纳进灵动岛
-          （V3：navbar 搜索图标 → StoreSearchPanel），页面主体全留给商品流。
-          条件渲染而非 CSS 隐藏：DOM 唯一，placeholder 契约无歧义 */}
-      {!isMobile && (
-      <div className="max-w-3xl mx-auto w-full space-y-4">
+      {/* Search & Categories — 全视口常驻，移动端紧凑直出（与顶栏搜索共用 appStore 状态） */}
+      <div className="max-w-3xl mx-auto w-full space-y-2.5 md:space-y-4">
         <div className="relative group">
-          <Search className="w-5 h-5 absolute left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] transition-colors" />
+          <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition-all duration-200 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜账号、卡密、教程..."
-            className="w-full pl-12 pr-6 max-md:py-3 py-4 glass max-md:bg-[var(--color-surface)] max-md:shadow-md border border-[var(--color-border)] rounded-2xl shadow-sm hover:shadow-md focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition-all text-base text-[var(--color-text)]"
+            placeholder={isMobile ? '搜索商品、服务...' : '搜账号、卡密、教程...'}
+            aria-label="搜索商品"
+            className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[var(--color-primary)]/40 focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition-all text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
           />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:scale-90 rounded-full hover:bg-[var(--color-border)]/50 transition-all duration-150 cursor-pointer animate-in fade-in zoom-in-75"
+              aria-label="清除搜索词"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
-        <div className="flex gap-2.5 overflow-x-auto hide-scrollbar px-1 py-1">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setCategory(cat)}
-              className={`px-5 py-2 btn-sm rounded-full text-sm font-medium cursor-pointer transition-colors whitespace-nowrap border ${
-                category === cat
-                  ? 'bg-[var(--color-text)] text-[var(--color-background)] border-transparent shadow-sm'
-                  : 'max-md:bg-[var(--color-surface)] max-md:shadow-sm bg-transparent text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] hover:border-[var(--color-primary)]'
-              }`}
-            >
-              {getCategoryLabel(cat)}
-            </button>
-          ))}
-        </div>
+        <CategorySlidingNav
+          categories={categories}
+          activeCategory={category}
+          onSelectCategory={setCategory}
+          getCategoryLabel={getCategoryLabel}
+        />
       </div>
-      )}
 
       {/* Product Grid — one blended feed (SPEC-CMI-UX-001 §4): sponsored/
           editorial cards carry a text+aria disclosure, organic cards unchanged. */}
@@ -862,6 +1002,7 @@ export default function StorePage() {
           )}
         </>
       )}
+      <BackToTop />
     </div>
   )
 }

@@ -1,14 +1,17 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { config } from '../config/index.js'
-import { createOrder } from '../modules/orders/service.js'
+import { closeOrder, createOrder, disputeOrder } from '../modules/orders/service.js'
+import { __runAutoCloseBatchForTests } from '../modules/orders/cron.js'
+import { batchSettle, resolveOrder } from '../modules/admin/service.js'
 import { prisma } from '../lib/prisma.js'
 import {
   __setFakaClientOverridesForTests,
   processFakaBridgeTask,
+  runFakaReconcileBatch,
 } from '../lib/fakaBridge/index.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
-import { createTestUser } from './helpers.js'
+import { createTestMerchant, createTestUser } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 const ORIG_FAKA = { ...config.fakaBridge }
@@ -35,7 +38,7 @@ async function createVerifiedBuyer(balance = 1000) {
   return { user, email }
 }
 
-async function createFakaOffer(price = 200) {
+async function createFakaOffer(price = 200, merchantId?: number) {
   const product = await prisma.product.create({
     data: {
       name: 'Aster 月卡',
@@ -46,6 +49,7 @@ async function createFakaOffer(price = 200) {
       stock: 0,
       deliveryMode: 'manual_service',
       stockMode: 'unlimited',
+      merchantId,
     },
   })
   const offer = await prisma.offer.create({
@@ -63,6 +67,45 @@ async function createFakaOffer(price = 200) {
     },
   })
   return { product, offer }
+}
+
+async function createHeldFakaOrder(merchantId?: number) {
+  const { user } = await createVerifiedBuyer(1000)
+  const { product, offer } = await createFakaOffer(200, merchantId)
+  const created = await createOrder(user.id, product.id, {
+    offerId: offer.id,
+    expectedPrice: 200,
+    idempotencyKey: randomUUID(),
+  })
+  const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+  __setFakaClientOverridesForTests({
+    url: config.fakaBridge.url,
+    secret: config.fakaBridge.secret,
+    transport: async () => ({
+      status: 200,
+      text: JSON.stringify({
+        success: true,
+        order_no: task.requestOrderNo,
+        status: 'completed',
+        trade_no: `TEST-XBOARD-${created.orderId}`,
+      }),
+    }),
+  })
+  return { user, orderId: created.orderId, task }
+}
+
+async function expectSingleCapture(orderId: number, userId: number) {
+  const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+  expect(order.holdingPoints).toBeNull()
+  expect(order.fundsHeld).toBe(false)
+  const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId } })
+  expect(account.balance).toBe(800)
+  expect(account.frozenBalance).toBe(0)
+  const logs = await prisma.pointLog.findMany({ where: { orderId }, orderBy: { id: 'asc' } })
+  expect(logs.map(({ type, amount }) => ({ type, amount }))).toEqual([
+    { type: 'hold', amount: 200 },
+    { type: 'out', amount: 200 },
+  ])
 }
 
 describe('M4 FakaBridge worker', () => {
@@ -174,10 +217,137 @@ describe('M4 FakaBridge worker', () => {
     expect(structured?.values?.action).toBe('续费成功')
     expect(structured?.values?.expiredAfter).toBeTruthy()
 
-    // Points remain frozen until buyer confirm / auto-close (manual_service model)
+    // Xboard success captures payment without closing the buyer's dispute window.
+    expect(order.confirmedAt).toBeNull()
+    await expectSingleCapture(created.orderId, user.id)
+  })
+
+  it('captures only once when two workers race for the same order', async () => {
+    const { user, orderId, task } = await createHeldFakaOrder()
+    const outcomes = await Promise.all([
+      processFakaBridgeTask(task.id),
+      processFakaBridgeTask(task.id),
+    ])
+    expect(outcomes.sort()).toEqual(['skipped', 'succeeded'])
+    await expectSingleCapture(orderId, user.id)
+  })
+
+  it.each(['buyer', 'cron'] as const)('does not capture twice on retry or %s confirmation', async (confirmation) => {
+    const { merchant } = await createTestMerchant('faka-confirmation-merchant@example.com')
+    const { user, orderId, task } = await createHeldFakaOrder(merchant.id)
+    expect(await processFakaBridgeTask(task.id)).toBe('succeeded')
+    expect(await processFakaBridgeTask(task.id)).toBe('skipped')
+    expect((await prisma.settlement.findUniqueOrThrow({ where: { orderId } })).status).toBe('holding')
+
+    if (confirmation === 'buyer') {
+      await closeOrder(orderId, user.id)
+    } else {
+      await prisma.deliveryRecord.update({
+        where: { orderId },
+        data: { deliveredAt: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000) },
+      })
+      await __runAutoCloseBatchForTests()
+    }
+
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('closed')
+    await expectSingleCapture(orderId, user.id)
+    expect((await prisma.settlement.findUniqueOrThrow({ where: { orderId } })).status).toBe('pending')
+  })
+
+  it.each(['needs_reconcile', 'succeeded'] as const)('captures exactly once when reconciling a %s task', async (taskStatus) => {
+    const { user, orderId, task } = await createHeldFakaOrder()
+    await prisma.fakaBridgeTask.update({
+      where: { id: task.id },
+      data: {
+        status: taskStatus,
+        attempts: 3,
+        xboardTradeNo: taskStatus === 'succeeded' ? `TEST-XBOARD-${orderId}` : null,
+        createdAt: new Date(Date.now() - 180_000),
+        nextAttemptAt: new Date(0),
+      },
+    })
+
+    expect(await runFakaReconcileBatch()).toBe(1)
+    expect(await runFakaReconcileBatch()).toBe(0)
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    expect(order.status).toBe('delivered')
+    expect(order.confirmedAt).toBeNull()
+    await expectSingleCapture(orderId, user.id)
+  })
+
+  it.each(['worker', 'reconcile'] as const)('rolls back delivery and task success if %s capture fails, then safely retries', async (successPath) => {
+    const { user, orderId, task } = await createHeldFakaOrder()
+    if (successPath === 'reconcile') {
+      await prisma.fakaBridgeTask.update({
+        where: { id: task.id },
+        data: { status: 'needs_reconcile', createdAt: new Date(Date.now() - 180_000), nextAttemptAt: new Date(0) },
+      })
+    }
+    // An inconsistent reservation forces the accounting guard to fail after delivery writes.
+    await prisma.pointAccount.update({ where: { userId: user.id }, data: { frozenBalance: 0 } })
+    if (successPath === 'worker') {
+      expect(await processFakaBridgeTask(task.id)).toBe('retry_scheduled')
+    } else {
+      expect(await runFakaReconcileBatch()).toBe(0)
+    }
+    const failedOrder = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    expect(failedOrder).toMatchObject({ status: 'pending', holdingPoints: 200, fundsHeld: true })
+    expect(await prisma.deliveryRecord.count({ where: { orderId } })).toBe(0)
+    expect(await prisma.pointLog.count({ where: { orderId, type: 'out' } })).toBe(0)
+    expect((await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })).status)
+      .toBe(successPath === 'worker' ? 'pending' : 'needs_reconcile')
+
+    await prisma.pointAccount.update({ where: { userId: user.id }, data: { frozenBalance: 200 } })
+    await prisma.fakaBridgeTask.update({
+      where: { id: task.id },
+      data: { nextAttemptAt: new Date(0), leaseUntil: null },
+    })
+    if (successPath === 'worker') {
+      expect(await processFakaBridgeTask(task.id)).toBe('succeeded')
+    } else {
+      expect(await runFakaReconcileBatch()).toBe(1)
+    }
+    await expectSingleCapture(orderId, user.id)
+  })
+
+  it('refunds captured payment after a dispute and queues Xboard revoke without crediting the merchant', async () => {
+    const { merchant, user: merchantUser } = await createTestMerchant('faka-capture-merchant@example.com', 'pass123', { balance: 0 })
+    const { user: admin } = await createTestUser('faka-capture-admin@example.com', 'pass123', 'admin', 0)
+    const { user, orderId, task } = await createHeldFakaOrder(merchant.id)
+    expect((await prisma.settlement.findUniqueOrThrow({ where: { orderId } })).status).toBe('holding')
+    expect(await processFakaBridgeTask(task.id)).toBe('succeeded')
+    await expectSingleCapture(orderId, user.id)
+    const settlement = await prisma.settlement.findUniqueOrThrow({ where: { orderId } })
+    expect(settlement.status).toBe('holding')
+    await expect(batchSettle(admin.id, [settlement.id])).rejects.toThrow('存在不可结算的记录')
+    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: merchantUser.id } })).balance).toBe(0)
+
+    await disputeOrder(orderId, user.id)
+    await resolveOrder(admin.id, orderId, { result: 'refund', note: 'Test refund after capture' })
+    await expect(resolveOrder(admin.id, orderId, { result: 'refund' })).rejects.toThrow()
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
-    expect(account.balance).toBe(800)
-    expect(account.frozenBalance).toBe(200)
+    expect(account).toMatchObject({ balance: 1000, frozenBalance: 0 })
+    const logs = await prisma.pointLog.findMany({ where: { orderId, userId: user.id }, orderBy: { id: 'asc' } })
+    expect(logs.map(({ type }) => type)).toEqual(['hold', 'out', 'refund'])
+    expect((await prisma.settlement.findUniqueOrThrow({ where: { orderId } })).status).toBe('voided')
+    expect(await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })).toMatchObject({
+      status: 'succeeded', cancelRequested: true, revokeStatus: 'pending',
+    })
+    expect(await processFakaBridgeTask(task.id)).toBe('skipped')
+    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).balance).toBe(1000)
+  })
+
+  it('does not sweep already-delivered historical frozen orders during reconciliation', async () => {
+    const { user, orderId, task } = await createHeldFakaOrder()
+    await prisma.order.update({ where: { id: orderId }, data: { status: 'delivered' } })
+    await prisma.fakaBridgeTask.update({
+      where: { id: task.id },
+      data: { status: 'succeeded', createdAt: new Date(Date.now() - 180_000), nextAttemptAt: new Date(0) },
+    })
+    expect(await runFakaReconcileBatch()).toBe(0)
+    expect(await processFakaBridgeTask(task.id)).toBe('skipped')
+    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).frozenBalance).toBe(200)
+    expect(await prisma.pointLog.count({ where: { orderId, type: 'out' } })).toBe(0)
   })
 
   it('refunds points and marks failed on permanent 400', async () => {
@@ -214,6 +384,7 @@ describe('M4 FakaBridge worker', () => {
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(account.balance).toBe(500)
     expect(account.frozenBalance).toBe(0)
+    expect(await prisma.pointLog.count({ where: { orderId: created.orderId, type: 'out' } })).toBe(0)
   })
 
   it('schedules retry on 5xx without refunding', async () => {
@@ -249,6 +420,7 @@ describe('M4 FakaBridge worker', () => {
 
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(account.frozenBalance).toBe(100)
+    expect(await prisma.pointLog.count({ where: { orderId: created.orderId, type: 'out' } })).toBe(0)
   })
 
   it('skips when task is not due (future nextAttemptAt)', async () => {

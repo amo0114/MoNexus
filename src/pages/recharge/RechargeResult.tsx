@@ -7,6 +7,7 @@ import { fetchMeWithRoleHealing } from '../../api/auth'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import { useAuthStore } from '../../stores/authStore'
 import { getAuthSessionContext } from '../../auth/sessionContext'
+import { useAppStore } from '../../stores/appStore'
 import EmptyState from '../../components/ui/EmptyState'
 import { formatCurrencyAmount, formatPoints } from './money'
 import { buildPayableRecognitionNotice } from './payableCopy'
@@ -18,6 +19,8 @@ import {
 } from './status'
 import { completeIdempotencyKey, peekPendingOrder, takePendingOrder } from './session'
 import BrandedPaymentQr from './BrandedPaymentQr'
+import { parseSafeProductReturnTo } from '../../utils/returnTo'
+import { rememberRechargeReturnTo } from './session'
 
 function displayStatus(orderStatus: string, resumePayment: boolean): string {
   if (resumePayment && (orderStatus === 'created' || orderStatus === 'pending_payment')) {
@@ -52,23 +55,29 @@ function StatusPill({ status }: { status: string }) {
 
 async function refreshCurrentUser() {
   const authContext = getAuthSessionContext(useAuthStore.getState())
-  if (!authContext) return
+  if (!authContext) return false
   try {
     const me = await fetchMeWithRoleHealing()
-    useAuthStore.getState().setUser(me, authContext)
+    return useAuthStore.getState().setUser(me, authContext)
   } catch {
     // Local order is the source of truth; auth refresh is best-effort.
+    return false
   }
 }
 
 export default function RechargeResult({
   orderId,
   resumePayment = false,
+  returnTo,
 }: {
   orderId: string
   resumePayment?: boolean
+  returnTo?: string | null
 }) {
   const navigate = useNavigate()
+  const [returning, setReturning] = useState(false)
+  const productReturnTo = parseSafeProductReturnTo(returnTo)
+  useEffect(() => { rememberRechargeReturnTo(orderId, productReturnTo) }, [orderId, productReturnTo])
   const [order, setOrder] = useState<RechargeOrder | null>(null)
   const [error, setError] = useState('')
   const [pollingPaused, setPollingPaused] = useState(false)
@@ -308,11 +317,18 @@ export default function RechargeResult({
       )}
 
       <div className="flex flex-col sm:flex-row gap-3">
-        <button type="button" className="btn-secondary w-full sm:w-auto" onClick={() => navigate('/recharge')}>
+        <button type="button" className="btn-secondary w-full sm:w-auto" onClick={() => navigate(productReturnTo ? `/recharge?returnTo=${encodeURIComponent(productReturnTo)}` : '/recharge')}>
           继续充值
         </button>
-        <button type="button" className="btn-primary w-full sm:w-auto" onClick={() => navigate('/profile')}>
-          返回个人中心
+        <button type="button" disabled={returning} className="btn-primary w-full sm:w-auto" onClick={async () => {
+          if (order.status !== 'credited' || order.adminSandbox || !productReturnTo) { navigate('/profile'); return }
+          setReturning(true)
+          const refreshed = await refreshCurrentUser()
+          setReturning(false)
+          if (refreshed) navigate(productReturnTo)
+          else useAppStore.getState().showToast('积分已到账，余额刷新失败，请重试', 'warning')
+        }}>
+          {order.status === 'credited' && !order.adminSandbox && productReturnTo ? '返回商品继续兑换' : '返回个人中心'}
         </button>
       </div>
     </div>

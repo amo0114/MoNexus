@@ -4,6 +4,7 @@ import { loginAs, SEED_ACCOUNTS } from './helpers'
 test('a preset avatar persists across refresh and appears in desktop and mobile navigation', async ({ page }) => {
   await loginAs(page, SEED_ACCOUNTS.user)
   await page.goto('/profile')
+  await page.getByRole('tab', { name: '账号设置' }).click()
   await page.getByRole('button', { name: '选择头像', exact: true }).click()
   await page.getByRole('tab', { name: '蜀汉' }).click()
   await page.getByRole('button', { name: '选择赵云', exact: true }).click()
@@ -13,6 +14,7 @@ test('a preset avatar persists across refresh and appears in desktop and mobile 
   expect((await saved).status()).toBe(200)
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.reload()
+  await page.getByRole('tab', { name: '账号设置' }).click()
   const portrait = page.getByTestId('avatar-edit').locator('img')
   await expect(portrait).toHaveAttribute('src', url)
   await expect(portrait).toHaveJSProperty('complete', true)
@@ -22,6 +24,13 @@ test('a preset avatar persists across refresh and appears in desktop and mobile 
   await page.getByRole('button', { name: '打开导航菜单' }).click()
   await expect(page.getByRole('dialog').locator(`img[src="${url}"]`)).toBeVisible()
   await page.getByRole('button', { name: '关闭菜单' }).click()
+  const cleared = page.waitForResponse((r) => r.url().endsWith('/api/auth/me') && r.request().method() === 'PATCH')
   await page.getByRole('button', { name: '清除头像' }).click()
-  await expect(page.getByTestId('avatar-edit').locator('img')).toHaveCount(0)
+  const clearResponse = await cleared
+  expect(clearResponse.status()).toBe(200)
+  expect((await clearResponse.json()).avatarUrl).toBeNull()
+  // A cleared custom avatar falls back to a deterministic preset.
+  await expect(portrait).not.toHaveAttribute('src', url)
+  await expect(portrait).toHaveAttribute('src', /\/assets\/avatars\//)
+  await expect(page.getByRole('button', { name: '清除头像' })).toHaveCount(0)
 })
