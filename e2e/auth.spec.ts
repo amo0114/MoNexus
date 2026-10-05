@@ -23,7 +23,8 @@ test('register a new user, login, see profile', async ({ page }) => {
   })
   expect(persistedEmail).toBe(email)
 
-  await page.getByRole('button', { name: /退出当前账号/ }).click()
+  await page.getByRole('tab', { name: '账号设置' }).click()
+  await page.getByTestId('profile-logout').click()
   await expect(page).toHaveURL(/\/login$/)
 
   await page.getByPlaceholder('邮箱地址').fill(email)

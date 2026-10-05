@@ -50,17 +50,17 @@ export default function KineticBrand({
         onClick={onClick}
         title="MoNexus 首页"
         aria-label="MoNexus 首页"
-        className="min-h-[40px] py-1 flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded text-left select-none"
+        className="min-h-[40px] py-1 flex items-center gap-2 min-[360px]:gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded text-left select-none"
       >
         {/* Brand Mark (Ledger Knot) */}
-        <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
+        <Logo className="w-7 h-7 min-[360px]:w-8 min-[360px]:h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
 
         {/* Wordmark Container with Fixed Layout Box to ensure CLS = 0 on desktop */}
         <div
           className="relative flex items-center overflow-visible md:w-[8.4rem] md:min-w-[8.4rem] h-6"
         >
           <span
-            className="font-heading font-bold text-[var(--color-text)] text-lg leading-none tracking-[0.18em] flex items-center whitespace-nowrap"
+            className="font-heading font-bold text-[var(--color-text)] text-sm min-[360px]:text-lg leading-none tracking-[0.18em] flex items-center whitespace-nowrap"
             style={{
               fontFeatureSettings: '"tnum" 1',
             }}

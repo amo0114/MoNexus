@@ -350,7 +350,7 @@ export default function ProfileIdentityCard() {
               type="button"
               onClick={handleSendVerifyEmail}
               disabled={sendingVerify || verifyCooldown > 0}
-              className="btn-secondary text-xs px-3 py-1.5 shrink-0 self-start sm:self-auto cursor-pointer disabled:opacity-50"
+              className="max-md:min-h-10 btn-secondary text-xs px-3 py-1.5 shrink-0 self-start sm:self-auto cursor-pointer disabled:opacity-50"
             >
               {verifyCooldown > 0 ? `${verifyCooldown}s 后可重发` : '发送验证邮件'}
             </AsyncButton>
@@ -371,7 +371,7 @@ export default function ProfileIdentityCard() {
             type="button"
             onClick={() => setChangingPwd(!changingPwd)}
             disabled={savingPwd}
-            className="btn-secondary text-xs px-3 py-1.5 shrink-0 cursor-pointer"
+            className="max-md:min-h-10 btn-secondary text-xs px-3 py-1.5 shrink-0 cursor-pointer"
           >
             {changingPwd ? '收起表单' : '修改密码'}
           </button>
@@ -427,7 +427,7 @@ export default function ProfileIdentityCard() {
                 type="button"
                 onClick={() => setChangingPwd(false)}
                 disabled={savingPwd}
-                className="btn-secondary text-xs px-3 py-1.5 cursor-pointer"
+                className="max-md:min-h-10 btn-secondary text-xs px-3 py-1.5 cursor-pointer"
               >
                 取消
               </button>
@@ -436,7 +436,7 @@ export default function ProfileIdentityCard() {
                 loadingLabel="提交中…"
                 type="submit"
                 disabled={savingPwd}
-                className="btn-primary text-xs px-4 py-1.5 cursor-pointer"
+                className="max-md:min-h-10 btn-primary text-xs px-4 py-1.5 cursor-pointer"
               >
                 确认修改
               </AsyncButton>

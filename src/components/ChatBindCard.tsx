@@ -87,7 +87,7 @@ export default function ChatBindCard() {
             onClick={handleUnbind}
             disabled={busy}
             data-testid="chat-bind-unbind"
-            className="w-full inline-flex items-center justify-center gap-1.5 btn-secondary px-3 py-1.5 text-xs disabled:opacity-60"
+            className="max-md:min-h-10 w-full inline-flex items-center justify-center gap-1.5 btn-secondary px-3 py-1.5 text-xs disabled:opacity-60"
           >
             <Link2Off className="w-3.5 h-3.5" />
             {busy ? '处理中…' : '解除绑定'}
@@ -109,7 +109,7 @@ export default function ChatBindCard() {
               type="button"
               onClick={loadStatus}
               data-testid="chat-bind-refresh"
-              className="text-xs font-semibold text-[var(--color-primary)] hover:underline shrink-0 cursor-pointer"
+              className="max-md:min-h-10 px-2 text-xs font-semibold text-[var(--color-primary)] hover:underline shrink-0 cursor-pointer"
             >
               刷新绑定状态
             </button>

@@ -22,17 +22,17 @@ test.describe('mobile layout verification @375px', () => {
     await page.getByRole('button', { name: '搜索' }).click()
     const search = page.getByPlaceholder('搜账号、卡密、教程...')
     await expect(search).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByRole('button', { name: '全部', exact: true })).toBeVisible()
+    await expect(page.getByTestId('navbar-shell').getByRole('button', { name: '全部', exact: true })).toBeVisible()
     await page.getByRole('button', { name: '取消搜索' }).click()
     await page.waitForTimeout(600)
 
-    // Tab bar: 4 tabs for plain user (首页/积分/排行/我的), 56px + safe area, pinned to bottom
+    // Tab bar: 4 tabs for plain user (首页/积分/排行/我的), floating dock, 16px above safe area
     const tabBar = page.getByTestId('bottom-tab-bar')
     await expect(tabBar).toBeVisible()
-    const tabs = tabBar.getByRole('button')
+    const tabs = tabBar.getByRole('tab')
     await expect(tabs).toHaveCount(4)
     const barBox = await tabBar.boundingBox()
-    expect(Math.round(barBox!.y + barBox!.height)).toBe(812)
+    expect(Math.round(barBox!.y + barBox!.height)).toBe(796)
     expect(barBox!.height).toBeGreaterThanOrEqual(56)
 
     // Grid: first two product cards sit side by side (2 columns), 256px tall.
@@ -65,7 +65,7 @@ test.describe('mobile layout verification @375px', () => {
     const h1Box = await h1.boundingBox()
     const hero = page.getByTestId('product-gallery-main')
     const heroBox = await hero.boundingBox()
-    expect(h1Box!.y + h1Box!.height).toBeLessThanOrEqual(heroBox!.y) // Header-First: above the image
+    expect(h1Box!.y).toBeGreaterThanOrEqual(heroBox!.y + heroBox!.height) // Mobile overview follows the gallery without overlap
     await expectNoHorizontalOverflow(page, 'product')
   })
 
@@ -106,7 +106,7 @@ test.describe('mobile layout verification @375px', () => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
     await page.goto('/merchant')
     await page.getByText('数据概览').waitFor({ timeout: 10_000 })
-    const tabs = page.getByTestId('bottom-tab-bar').getByRole('button')
+    const tabs = page.getByTestId('bottom-tab-bar').getByRole('tab')
     await expect(tabs).toHaveCount(4) // 商家 tab present
     // Sidebar became a horizontal strip: all nav buttons share one row
     const navStrip = page.locator('aside nav')
@@ -143,6 +143,7 @@ test.describe('mobile layout verification @375px', () => {
   test('profile: no overflow, tab bar covers nothing', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/profile')
+    await page.getByRole('tab', { name: '账号设置' }).click()
     await page.getByTestId('nickname-edit').waitFor({ timeout: 10_000 })
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
     await page.waitForTimeout(400)

@@ -290,7 +290,7 @@ export function FluidSegmentedControl<T extends string | number = string>({
             onPointerUp={() => setIsPressed(false)}
             onPointerCancel={() => setIsPressed(false)}
             onClick={() => handleItemClick(opt)}
-            className={`relative z-10 rounded-full cursor-pointer select-none active:scale-[0.90] active:translate-y-[1px] transition-transform duration-120 ease-out focus-visible:outline-none flex items-center justify-center text-center ${
+            className={`relative z-10 max-md:min-h-10 rounded-full cursor-pointer select-none active:scale-[0.90] active:translate-y-[1px] transition-transform duration-120 ease-out focus-visible:outline-none flex items-center justify-center text-center ${
               fullWidth ? 'flex-1' : 'shrink-0'
             } ${iconLayout === 'vertical' ? 'flex-col' : 'flex-row'} ${sizeStyles.button} ${
               sizeStyles.gap

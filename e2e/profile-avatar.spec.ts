@@ -24,6 +24,13 @@ test('a preset avatar persists across refresh and appears in desktop and mobile 
   await page.getByRole('button', { name: '打开导航菜单' }).click()
   await expect(page.getByRole('dialog').locator(`img[src="${url}"]`)).toBeVisible()
   await page.getByRole('button', { name: '关闭菜单' }).click()
+  const cleared = page.waitForResponse((r) => r.url().endsWith('/api/auth/me') && r.request().method() === 'PATCH')
   await page.getByRole('button', { name: '清除头像' }).click()
-  await expect(page.getByTestId('avatar-edit').locator('img')).toHaveCount(0)
+  const clearResponse = await cleared
+  expect(clearResponse.status()).toBe(200)
+  expect((await clearResponse.json()).avatarUrl).toBeNull()
+  // A cleared custom avatar falls back to a deterministic preset.
+  await expect(portrait).not.toHaveAttribute('src', url)
+  await expect(portrait).toHaveAttribute('src', /\/assets\/avatars\//)
+  await expect(page.getByRole('button', { name: '清除头像' })).toHaveCount(0)
 })

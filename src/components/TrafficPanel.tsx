@@ -107,7 +107,7 @@ export default function TrafficPanel({ audience, range: controlledRange, active 
           {!controlledRange && <select aria-label="访问统计时间范围" value={range} onChange={event => setSelectedRange(event.target.value as TrafficRange)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
             <option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="90d">近 90 天</option>
           </select>}
-          <button type="button" aria-label="刷新访问统计" disabled={loading} onClick={() => setRevision(value => value + 1)} className="rounded-lg border border-[var(--color-border)] p-2.5 disabled:opacity-50"><RefreshCw className="w-4 h-4" /></button>
+          <button type="button" aria-label="刷新访问统计" disabled={loading} onClick={() => setRevision(value => value + 1)} className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] p-2.5 disabled:opacity-50"><RefreshCw className="w-4 h-4" /></button>
         </div>
       </div>
       {loading && <p className="text-sm text-[var(--color-text-muted)] py-8" role="status">正在加载访问统计…</p>}

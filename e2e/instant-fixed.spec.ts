@@ -36,8 +36,8 @@ test.describe.serial('instant_fixed delivery flow', () => {
     await card.click()
     await expect(page).toHaveURL(/\/product\/\d+/, { timeout: 10_000 })
 
-    // 不限库存商品详情页显示「不限」，可购买
-    await expect(page.getByText('不限', { exact: true })).toBeVisible({ timeout: 10_000 })
+    // 不限库存商品详情页显示「库存不限」，可购买
+    await expect(page.getByText('库存不限', { exact: true })).toBeVisible({ timeout: 10_000 })
 
     await page.getByRole('button', { name: '立即兑换' }).click()
     await expect(page.getByText('确认兑换')).toBeVisible({ timeout: 10_000 })

@@ -107,13 +107,13 @@
   --color-toast-warning: #B45309;    /* amber-700 — 5.02:1 */
 
   /* --- Mobile chrome metrics (T1) ---
-     --tabbar-h: bottom tab bar height (icon + label row).
+     --tabbar-h: reserved dock space (up to 64px content + 16px floating gap).
      --navbar-h: expanded navbar content height（py-4×2 + 44px 行高 + 1px border）。
      --navbar-current-h: Layout 通过 ResizeObserver 写入的实时导航高度；Toast
      用它与缩起岛、搜索态保持同一条视觉基线。未挂载 Layout 的公开页则
      回落至展开态 + safe-top。Safe-area insets default to 0 on non-notch
      devices so calc() always works. */
-  --tabbar-h: 56px;
+  --tabbar-h: 80px;
   --navbar-h: 77px;
   --navbar-current-h: calc(var(--navbar-h) + var(--safe-top));
   --safe-top: env(safe-area-inset-top, 0px);

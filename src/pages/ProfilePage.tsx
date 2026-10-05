@@ -565,7 +565,7 @@ export default function ProfilePage() {
               <button
                 onClick={handleCheckin}
                 disabled={hasCheckedIn !== false || checkingIn}
-                className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-all cursor-pointer ${
+                className={`max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-all cursor-pointer ${
                   hasCheckedIn === null
                     ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] opacity-60'
                     : hasCheckedIn
@@ -581,7 +581,7 @@ export default function ProfilePage() {
                 type="button"
                 onClick={() => navigate('/recharge')}
                 data-testid="profile-recharge-entry"
-                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm shadow-xs active:scale-95 cursor-pointer transition-all"
+                className="max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm shadow-xs active:scale-95 cursor-pointer transition-all"
               >
                 <Wallet className="w-4 h-4" /> 充值
               </button>
@@ -589,7 +589,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-[var(--color-background)] hover:bg-[var(--color-border)]/50 text-[var(--color-text)] border border-[var(--color-border)] px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer"
+                className="max-md:min-h-10 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-[var(--color-background)] hover:bg-[var(--color-border)]/50 text-[var(--color-text)] border border-[var(--color-border)] px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer"
               >
                 流水明细
               </button>

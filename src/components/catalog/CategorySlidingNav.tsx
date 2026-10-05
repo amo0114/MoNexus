@@ -128,7 +128,7 @@ export default function CategorySlidingNav({
                 aria-pressed={isSelected}
                 onClick={() => onSelectCategory(cat)}
                 onKeyDown={(e) => handleKeyDown(e, index)}
-                className={`relative z-10 shrink-0 px-4 sm:px-5 py-1.5 md:py-2 rounded-full text-xs md:text-sm cursor-pointer whitespace-nowrap min-h-[32px] md:min-h-[36px] flex items-center justify-center transition-colors duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] border-0 leading-none ${
+                className={`relative z-10 shrink-0 px-4 sm:px-5 py-1.5 md:py-2 rounded-full text-xs md:text-sm cursor-pointer whitespace-nowrap min-h-[40px] md:min-h-[36px] flex items-center justify-center transition-colors duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] border-0 leading-none ${
                   isSelected
                     ? `text-[var(--color-on-primary)] font-semibold ${!pillGeometry.ready ? 'bg-[var(--color-primary)] shadow-sm' : ''}`
                     : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-medium'
