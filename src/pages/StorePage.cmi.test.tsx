@@ -22,7 +22,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ConfigRegistry } from '../types/config'
 import type { MerchandisingProjection } from '../types/merchandising'
@@ -179,8 +179,9 @@ function makeApiGet(organicItems: unknown[]): ApiGet {
  */
 async function renderStorePage(
   apiGet: ApiGet,
-  registry: ConfigRegistry,
+  registry: ConfigRegistry | null,
   seedState?: { storeQuery?: string; storeCategory?: string },
+  path = '/',
 ) {
   vi.resetModules()
   vi.doMock('../api/client', () => ({ default: { get: apiGet } }))
@@ -188,7 +189,7 @@ async function renderStorePage(
   useAppStore.setState({ registry, ...seedState })
   const { default: StorePage } = await import('./StorePage')
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <StorePage />
     </MemoryRouter>,
   )
@@ -203,11 +204,33 @@ function lastProductsParams(apiGet: ApiGet) {
 }
 
 afterEach(() => {
+  cleanup()
   vi.clearAllMocks()
   vi.doUnmock('../api/client')
 })
 
 describe('StorePage CMI — step 1 (T-CMI-001)', () => {
+  it('waits for registry before fetching a URL category, then uses its stable code', async () => {
+    const apiGet = makeApiGet([])
+    await renderStorePage(apiGet, null, {}, '/?category=network_nodes')
+    await new Promise(resolve => setTimeout(resolve, 350))
+    expect(apiGet.mock.calls.filter(([url]) => url === '/products')).toHaveLength(0)
+    const {useAppStore} = await import('../stores/appStore')
+    act(() => useAppStore.setState({registry: DYNAMIC_REGISTRY}))
+    await waitFor(() => expect(lastProductsParams(apiGet).categoryCode).toBe('network_nodes'), {timeout: 2000})
+  })
+  it.each(['network_nodes', '网络节点'])('initializes category %s from URL before the first organic request', async (category) => {
+    const apiGet = makeApiGet([])
+    await renderStorePage(apiGet, DYNAMIC_REGISTRY, {storeCategory: '全部'}, `/?category=${encodeURIComponent(category)}`)
+    await waitFor(() => expect(lastProductsParams(apiGet).categoryCode).toBe('network_nodes'), {timeout: 2000})
+    const calls = apiGet.mock.calls.filter(([url]) => url === '/products')
+    for (const [, options] of calls) expect(options?.params.categoryCode).toBe('network_nodes')
+    const {useAppStore} = await import('../stores/appStore')
+    expect(useAppStore.getState().storeCategory).toBe('network_nodes')
+    if (category === 'network_nodes') act(() => useAppStore.getState().setStoreCategory('全部'))
+    else fireEvent.click(screen.getByRole('button', {name: '全部', exact: true}))
+    await waitFor(() => expect(lastProductsParams(apiGet).categoryCode).toBeUndefined(), {timeout: 2000})
+  })
   it('A: dynamic productCategories drive categoryCode on organic GET /products', async () => {
     const apiGet = makeApiGet([])
     await renderStorePage(apiGet, DYNAMIC_REGISTRY)

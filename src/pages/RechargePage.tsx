@@ -4,6 +4,8 @@ import RechargeCheckout from './recharge/RechargeCheckout'
 import RechargeHistory from './recharge/RechargeHistory'
 import RechargeResult from './recharge/RechargeResult'
 import { isRechargeOrderId, peekPendingOrder } from './recharge/session'
+import { readRechargeReturnTo } from './recharge/session'
+import { parseSafeProductReturnTo } from '../utils/returnTo'
 
 function hasApprovalReturnParams(params: URLSearchParams): boolean {
   return params.has('token')
@@ -26,6 +28,7 @@ export default function RechargePage() {
     return pending
   })
   const orderId = orderParam ?? sessionOrderId
+  const returnTo = parseSafeProductReturnTo(params.get('returnTo')) ?? (orderId ? readRechargeReturnTo(orderId) : null)
   const resumePayment = Boolean(sessionOrderId && orderId === sessionOrderId) || hasApprovalReturnParams(params)
 
   return (
@@ -37,7 +40,9 @@ export default function RechargePage() {
         </div>
         {!orderId && (
           <Link
-            to={history ? '/recharge' : '/recharge?history=1'}
+            to={history
+              ? `/recharge${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`
+              : `/recharge?history=1${returnTo ? `&returnTo=${encodeURIComponent(returnTo)}` : ''}`}
             className="text-sm font-bold text-[var(--color-primary)] hover:underline"
             data-testid="recharge-history-link"
           >
@@ -46,11 +51,11 @@ export default function RechargePage() {
         )}
       </div>
       {orderId ? (
-        <RechargeResult orderId={orderId} resumePayment={resumePayment} />
+        <RechargeResult key={orderId} orderId={orderId} resumePayment={resumePayment} returnTo={returnTo} />
       ) : history ? (
         <RechargeHistory />
       ) : (
-        <RechargeCheckout />
+        <RechargeCheckout returnTo={returnTo} />
       )}
     </div>
   )

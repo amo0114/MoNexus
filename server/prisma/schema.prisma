@@ -8,6 +8,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Traffic attribution is a snapshot, deliberately without Product/Merchant FKs:
+// deleting a product must not delete or reassign its historical visits.
+model TrafficEvent {
+  id          String    @id @db.Uuid
+  visitorId   String    @db.Uuid
+  page        String    @db.VarChar(100)
+  productId   Int?
+  merchantId  Int?
+  receivedAt  DateTime  @default(now()) @db.Timestamptz(3)
+  processedAt DateTime? @db.Timestamptz(3)
+
+  @@index([receivedAt])
+  // The migration adds a partial index for unprocessed events.
+}
+
+// One row per Beijing day/page/browser. Retains exact cross-page and cross-day UV.
+model TrafficDailyVisitor {
+  day        DateTime @db.Date
+  page       String   @db.VarChar(100)
+  visitorId  String   @db.Uuid
+  productId  Int?
+  merchantId Int?
+  pv         Int      @default(0)
+
+  @@id([day, page, visitorId])
+  @@index([merchantId, day])
+}
+
+model TrafficAggregationState {
+  id        Int       @id @default(1)
+  startedAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime? @db.Timestamptz(3)
+}
+
 model User {
   id                 Int       @id @default(autoincrement())
   email              String    @unique

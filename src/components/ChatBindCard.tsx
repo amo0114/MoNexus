@@ -63,7 +63,7 @@ export default function ChatBindCard() {
           <Bot className="w-5 h-5 text-[var(--color-primary)]" />
         </div>
         <div className="min-w-0 flex-1">
-          <h4 className="font-heading font-bold text-[var(--color-text)] text-sm">
+          <h4 className="font-sans font-bold text-[var(--color-text)] text-sm sm:text-base">
             QQ 机器人签到
           </h4>
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
@@ -75,10 +75,10 @@ export default function ChatBindCard() {
       </div>
 
       {status?.bound ? (
-        <div className="mt-4 space-y-3">
-          <div className="flex items-center justify-between rounded-lg bg-[var(--color-background)] px-3 py-2.5">
-            <span className="text-xs text-[var(--color-text-muted)]">已绑定 QQ</span>
-            <span className="font-mono text-sm text-[var(--color-text)]">
+        <div className="mt-3 space-y-2">
+          <div className="flex items-center justify-between rounded-lg bg-[var(--color-background)] px-3 py-2 text-xs">
+            <span className="text-[var(--color-text-muted)]">已绑定 QQ</span>
+            <span className="font-mono font-bold text-[var(--color-text)]">
               {status.platformId}
             </span>
           </div>
@@ -87,36 +87,33 @@ export default function ChatBindCard() {
             onClick={handleUnbind}
             disabled={busy}
             data-testid="chat-bind-unbind"
-            className="w-full inline-flex items-center justify-center gap-2 btn-secondary px-4 py-2 text-sm disabled:opacity-60"
+            className="w-full inline-flex items-center justify-center gap-1.5 btn-secondary px-3 py-1.5 text-xs disabled:opacity-60"
           >
-            <Link2Off className="w-4 h-4" />
-            {busy ? '处理中…' : '解绑'}
+            <Link2Off className="w-3.5 h-3.5" />
+            {busy ? '处理中…' : '解除绑定'}
           </button>
         </div>
       ) : (
-        <div className="mt-4 space-y-2.5">
-          <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-background)] px-3 py-3">
-            <p className="text-[11px] text-[var(--color-text-muted)] mb-1.5">
-              在 QQ 群依次发送
-            </p>
-            <p className="font-mono text-sm text-[var(--color-text)] break-all">
-              /绑定 <span className="text-[var(--color-text-muted)]">你的注册邮箱</span>
-            </p>
-            <p className="font-mono text-sm text-[var(--color-text)] mt-1.5">
-              /确认 <span className="text-[var(--color-text-muted)]">邮箱收到的验证码</span>
-            </p>
+        <div className="mt-3 space-y-2">
+          <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-xs flex items-center justify-between gap-2">
+            <span className="text-[11px] text-[var(--color-text-muted)] shrink-0">群内命令:</span>
+            <code className="font-mono text-xs text-[var(--color-text)] truncate">
+              /绑定 邮箱 → /确认 验证码
+            </code>
           </div>
-          <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-            验证码 10 分钟内有效。绑定后即可在群内或私聊签到、查询积分与会员等级。
-          </p>
-          <button
-            type="button"
-            onClick={loadStatus}
-            data-testid="chat-bind-refresh"
-            className="w-full inline-flex items-center justify-center gap-2 btn-secondary px-4 py-2 text-sm"
-          >
-            绑定成功？点此刷新状态
-          </button>
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <span className="text-[11px] text-[var(--color-text-muted)] truncate">
+              绑定后即可在群内签到与查积分
+            </span>
+            <button
+              type="button"
+              onClick={loadStatus}
+              data-testid="chat-bind-refresh"
+              className="text-xs font-semibold text-[var(--color-primary)] hover:underline shrink-0 cursor-pointer"
+            >
+              刷新绑定状态
+            </button>
+          </div>
         </div>
       )}
     </div>

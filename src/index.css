@@ -120,6 +120,37 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+
+  /* --- Motion tokens (transitions-polish) --- */
+  --duration-stagger: 40ms;
+  --duration-micro: 80ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --duration-medium: 350ms;
+  --duration-slow: 400ms;
+  --duration-very-slow: 500ms;
+
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: ease-in-out;
+  --ease-out: ease-out;
+  --ease-linear: linear;
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-bounce-strong: cubic-bezier(0.34, 1.96, 0.64, 1);
+
+  --distance-micro: 4px;
+  --distance-small: 6px;
+  --distance-base: 8px;
+  --distance-medium: 12px;
+  --distance-large: 30px;
+
+  --scale-large: 0.96;
+  --scale-medium: 0.97;
+  --scale-small: 0.98;
+  --scale-tiny: 0.99;
+
+  --blur-small: 2px;
+  --blur-medium: 3px;
+  --blur-large: 8px;
 }
 
 .dark,
@@ -246,6 +277,109 @@ h1, h2, h3, h4 {
   background-size: 32px 32px;
 }
 
+/* 商城与商品弱化网格背景：线条淡化保持科技品牌调性，但不喧宾夺主争夺商品视线 */
+.store-subtle-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--color-grid-dot) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-grid-dot) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.35;
+}
+
+/* 商品与正文易读字体（覆盖全局 h3 的 Orbitron，回归清晰界面无衬线） */
+.product-text-readable {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif !important;
+  letter-spacing: normal;
+}
+
+/* 微交互动效：数字变动跳字（transitions.dev / 02-number-pop-in） */
+@keyframes numberPopIn {
+  0% {
+    opacity: 0.3;
+    transform: translateY(-4px);
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* 操作成功确认勾选动效（transitions.dev / 10-success-check） */
+@keyframes successCheckDraw {
+  0% {
+    stroke-dashoffset: 48;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.success-check-path {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: successCheckDraw 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+}
+
+/* 高级商品卡片物理反光流光层（实体玻璃/金属反光质感） */
+.card-shine-glare {
+  position: absolute;
+  inset: -50% -50% -50% -50%;
+  pointer-events: none;
+  z-index: 25;
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 42%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0.75) 52%,
+    rgba(255, 255, 255, 0.45) 54%,
+    transparent 62%,
+    transparent 100%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .card-shine-glare {
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 42%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.35) 52%,
+    rgba(255, 255, 255, 0.15) 54%,
+    transparent 62%,
+    transparent 100%
+  );
+}
+
+.group:hover .card-shine-glare {
+  transform: translateX(120%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kinetic-brand * {
+    transition: none !important;
+  }
+  .success-check-path {
+    stroke-dashoffset: 0 !important;
+    animation: none !important;
+  }
+  .card-shine-glare {
+    display: none !important;
+  }
+}
+
 .glass {
   background: var(--color-glass-bg);
   backdrop-filter: blur(16px) saturate(180%);
@@ -268,6 +402,216 @@ h1, h2, h3, h4 {
   .navbar-shell {
     contain: layout;
     will-change: max-width, border-radius;
+  }
+}
+
+/* ==========================================================================
+   Floating Pill Dock (悬浮胶囊底栏 — 磨砂玻璃 / Glassmorphism)
+   ========================================================================== */
+.floating-pill-dock {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 12px 28px -4px rgba(15, 23, 42, 0.10),
+    0 4px 10px -2px rgba(15, 23, 42, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+:is(.dark) .floating-pill-dock {
+  background: rgba(18, 18, 26, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 16px 36px -4px rgba(0, 0, 0, 0.65),
+    0 4px 12px -2px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+:is([data-theme="soft"]) .floating-pill-dock {
+  background: rgba(255, 248, 236, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 12px 28px -4px rgba(92, 64, 40, 0.08),
+    0 4px 10px -2px rgba(92, 64, 40, 0.03),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+:is([data-theme="ink"]) .floating-pill-dock {
+  background: rgba(248, 249, 247, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 12px 28px -4px rgba(20, 24, 20, 0.08),
+    0 4px 10px -2px rgba(20, 24, 20, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* 底栏常态静止；仅在交互按压与切换时产生弹性微动（Press & Transition Dynamics） */
+.floating-pill-dock {
+  transform: scale(1);
+  transform-origin: center center;
+  transition: transform 220ms cubic-bezier(0.25, 1, 0.5, 1), box-shadow 260ms ease;
+  will-change: transform;
+}
+
+.floating-pill-dock.is-dock-pressed {
+  transform: scale(0.982);
+}
+
+@keyframes dockPulseOnce {
+  0% {
+    transform: scale(0.982);
+  }
+  38% {
+    transform: scale(1.022);
+  }
+  72% {
+    transform: scale(0.994);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.floating-pill-dock.is-dock-pulsing {
+  animation: dockPulseOnce 0.44s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* 落地撞击挤压与果冻回弹震颤（Landing Squash & Jelly Recoil，微动阻尼，严格收敛于轨道内） */
+@keyframes jellyLandingRecoil {
+  0% {
+    transform: scale(var(--land-from-x, 1.08), var(--land-from-y, 0.96));
+  }
+  38% {
+    /* 落地轻微受力缓冲，严防垂直或水平溢出 */
+    transform: scale(0.97, 1.02);
+  }
+  72% {
+    /* 柔和微弹归位 */
+    transform: scale(1.01, 0.99);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+.animate-jelly-landing {
+  animation: jellyLandingRecoil 0.22s cubic-bezier(0.25, 1, 0.5, 1) both;
+  transform-origin: center center;
+}
+
+/* 水滴气泡原地点击弹性微弹（In-place Elastic Pop，精细触感，绝不溢出轨道） */
+@keyframes dropletInPlacePop {
+  0% {
+    transform: scale(1, 1);
+  }
+  30% {
+    /* 蓄力微下陷 */
+    transform: scale(1.03, 0.97);
+  }
+  65% {
+    /* 柔和微弹 */
+    transform: scale(0.98, 1.02);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+.animate-droplet-pop {
+  animation: dropletInPlacePop 0.24s cubic-bezier(0.25, 1, 0.5, 1) both;
+  transform-origin: center center;
+}
+
+/* 独立滑动的晶莹水滴气泡（Liquid Dewdrop Indicator） */
+.liquid-droplet-indicator {
+  z-index: 0;
+  will-change: transform, width;
+}
+
+.liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(243, 244, 246, 0.65) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.03),
+    0 4px 14px -1px rgba(0, 0, 0, 0.08),
+    0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  will-change: transform;
+}
+
+:is(.dark) .liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.07) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.4),
+    0 4px 16px -1px rgba(0, 0, 0, 0.4),
+    0 2px 6px -1px rgba(0, 0, 0, 0.25);
+}
+
+:is([data-theme="soft"]) .liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(254, 243, 199, 0.6) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.95),
+    0 4px 14px -1px rgba(180, 83, 9, 0.1);
+}
+
+:is([data-theme="ink"]) .liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(240, 242, 240, 0.65) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.9),
+    0 4px 14px -1px rgba(0, 0, 0, 0.08);
+}
+
+/* 兼容回退通用胶囊 */
+.sliding-pill-indicator {
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* iOS 17+ 原生 SF Symbols 图标弹跳微动（Symbol Bounce & Jump） - 严谨受控范围，防止溢出底栏 */
+@keyframes symbolJumpAndBounce {
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  18% {
+    /* 蓄力微蹲压扁（下压受控在 1.5px，轻柔不撞文字） */
+    transform: translateY(1.5px) scale(1.14, 0.88);
+  }
+  48% {
+    /* 向上轻盈弹起拔高（拔高受控在 -3.5px，严格保留在气泡高光区域内） */
+    transform: translateY(-3.5px) scale(0.92, 1.10);
+  }
+  74% {
+    /* 触地轻柔缓冲 */
+    transform: translateY(0.8px) scale(1.05, 0.96);
+  }
+  88% {
+    /* 微幅回弹平复 */
+    transform: translateY(-0.4px) scale(0.99, 1.01);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+.animate-symbol-jump {
+  animation: symbolJumpAndBounce 0.44s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: center bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tab-bounce {
+    animation: none !important;
+  }
+  .sliding-pill-indicator {
+    transition: none !important;
   }
 }
 
@@ -351,14 +695,111 @@ h1, h2, h3, h4 {
   to { transform: translateX(0); }
 }
 
-/* 灵动岛通知浮现：navbar 内容交叉淡入时给一点缩放呼吸感（Layout 覆盖层）。 */
-@keyframes islandIn {
-  from { opacity: 0; transform: scale(0.94); }
-  to { opacity: 1; transform: scale(1); }
+/* =========================================================
+   Apple Dynamic Island & Live Activity Liquid Morphing
+   ========================================================= */
+
+@supports (corner-shape: squircle) {
+  .apple-island-shell {
+    corner-shape: squircle;
+  }
+}
+
+.apple-island-shell {
+  transition:
+    max-width 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    min-height 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-radius 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 420ms cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 320ms ease,
+    background-color 320ms ease;
+  will-change: max-width, min-height, border-radius;
+}
+
+.apple-island-stadium {
+  border-radius: 9999px;
+  /* Short notices are stadium pills, not squircle cards. Keep semicircular
+     ends even in browsers that support the shell's corner-shape treatment. */
+  corner-shape: round;
+  will-change: transform, opacity;
+}
+
+@keyframes appleIslandMorphIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.88) translateY(-8px);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.018) translateY(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.apple-order-island-morph {
+  animation: appleIslandMorphIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes appleRipple {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+.animate-apple-ripple {
+  animation: appleRipple 1.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes appleCheckDraw {
+  0% {
+    stroke-dashoffset: 24;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+.apple-check-draw {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: appleCheckDraw 0.45s 0.12s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes appleIslandContentIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.apple-island-content-in {
+  animation: appleIslandContentIn 0.35s 0.08s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes heartPop {
+  0% { transform: scale(0.5); }
+  50% { transform: scale(1.25); }
+  100% { transform: scale(1); }
 }
 
 .island-notice-enter {
-  animation: islandIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: appleIslandContentIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.island-activity-enter {
+  animation: appleIslandContentIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .drawer-enter {
@@ -483,6 +924,22 @@ h1, h2, h3, h4 {
 }
 @keyframes shimmer {
   100% { transform: translateX(100%); }
+}
+
+/* Progress Shimmer (from skills-ref/transitions-dev/15-shimmer-text.md) */
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+.animate-progress-shimmer {
+  animation: progress-shimmer 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-progress-shimmer {
+    animation: none;
+  }
 }
 
 @layer components {
@@ -1009,3 +1466,135 @@ h1, h2, h3, h4 {
 }
 
 } /* @layer components */
+
+/* --- Transitions Polish: Like Button (Pattern 23) --- */
+.t-like-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.t-like-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.t-like-heart {
+  transition: color var(--duration-quick, 150ms) var(--ease-smooth-out),
+              transform var(--duration-quick, 150ms) var(--ease-smooth-out);
+}
+.t-like-btn.is-bursting[aria-pressed="true"] .t-like-icon {
+  animation: t-like-pop var(--duration-medium, 350ms) var(--ease-bounce-strong, cubic-bezier(0.34, 1.96, 0.64, 1));
+}
+@keyframes t-like-pop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(0.82); }
+  70%  { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+.t-like-particles {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.t-like-particles i {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  opacity: 0;
+}
+@keyframes t-like-burst {
+  0%   { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  25%  { opacity: 1; transform: translate(calc(var(--px) * 0.4), calc(var(--py) * 0.4)) scale(1.1); }
+  100% { opacity: 0; transform: translate(var(--px), var(--py)) scale(var(--p-end-scale, 0.5)); }
+}
+.t-like-btn.is-bursting .t-like-particles i {
+  animation: t-like-burst 600ms cubic-bezier(0.22, 1, 0.36, 1) var(--pdelay, 0ms) forwards;
+}
+
+/* --- Transitions Polish: Accordion (Pattern 21) --- */
+.t-acc {
+  border-bottom: 1px solid var(--color-border);
+}
+.t-acc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 16px 0;
+  background: transparent;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  gap: 12px;
+}
+.t-acc-head:hover {
+  color: var(--color-primary);
+}
+.t-acc-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+.t-acc-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--duration-fast, 250ms) var(--ease-smooth-out);
+  color: var(--color-text-muted);
+}
+.t-acc[data-open="true"] .t-acc-chevron {
+  transform: scaleY(-1);
+  color: var(--color-primary);
+}
+.t-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration-fast, 250ms) var(--ease-smooth-out);
+}
+.t-acc[data-open="true"] .t-acc-panel {
+  grid-template-rows: 1fr;
+}
+.t-acc-panel-inner {
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(var(--blur-small, 2px));
+  transition: opacity var(--duration-fast, 250ms) var(--ease-smooth-out),
+              filter var(--duration-fast, 250ms) var(--ease-smooth-out);
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.8;
+  padding-bottom: 16px;
+}
+.t-acc[data-open="true"] .t-acc-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-like-btn[aria-pressed="true"] .t-like-icon,
+  .t-like-btn.is-bursting .t-like-particles i,
+  .t-acc-panel,
+  .t-acc-panel-inner,
+  .t-acc-chevron,
+  .odometer-reel-track {
+    animation: none !important;
+    transition: none !important;
+  }
+}

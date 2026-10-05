@@ -1,7 +1,7 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, CheckCircle2, Info, Package, Wallet, ArrowLeft } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, Package, Wallet, ArrowLeft, ChevronRight } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
 import { formatBadgeCount } from '../utils/orderAttention'
 import { subscribeReadInvalidation } from '../realtime/readSyncBroadcast'
@@ -11,16 +11,20 @@ import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
 import AnnouncementCenter, { AnnouncementBellButton } from './AnnouncementCenter'
 import Logo from './ui/Logo'
+import KineticBrand from './ui/KineticBrand'
 import UserAvatar from './ui/UserAvatar'
 import ThemeToggle from './ThemeToggle'
 import MobileNavDrawer from './MobileNavDrawer'
 import BottomTabBar from './BottomTabBar'
 import StoreSearchPanel from './StoreSearchPanel'
+import OrderSuccessIsland, { type OrderIslandPhase } from './OrderSuccessIsland'
+import FavoriteIsland from './FavoriteIsland'
+import QuietIslandNotice from './QuietIslandNotice'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import { useAnnouncements } from '../hooks/useAnnouncements'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import { NotificationRealtimeBridge } from './NotificationRealtimeBridge'
-import { useAppStore } from '../stores/appStore'
+import { isOrderActivity, useAppStore } from '../stores/appStore'
 import { getApiErrorMessage } from '../api/error'
 import {
   getLegalDocumentSummaries,
@@ -33,6 +37,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const location = useLocation()
   const isAdminPage = location.pathname.startsWith('/admin')
+  const isProductDetailPage = /^\/product\/[^/]+\/?$/.test(location.pathname)
   const navRef = useRef<HTMLElement>(null)
   const user = useAuthStore((s) => s.user)
   const storedSessionId = useAuthStore((s) => s.sessionId)
@@ -91,34 +96,44 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // 顶部滚动感知（全视口）：下滑 >36px 触发收敛态（Anthropic 风格收敛为 M · X），
+  // 回顶 <16px 恢复展开态（滞回防抖）。
+  const [isScrolled, setIsScrolled] = useState(false)
+  const isScrolledRef = useRef(false)
+
   // 灵动岛药丸（V3-T3，仅移动视口）：离开顶部 >48px 收缩为居中悬浮
   // 胶囊，回顶 <32px 恢复全宽（滞回防抖）。桌面恒 false，零影响。
   const isMobileViewport = useIsMobileViewport()
   const [navCompact, setNavCompact] = useState(false)
   const navCompactRef = useRef(false)
   useEffect(() => {
-    if (!isMobileViewport) {
-      navCompactRef.current = false
-      setNavCompact(false)
-      return
-    }
     let ticking = false
     const onScroll = () => {
       if (ticking) return
       ticking = true
       window.requestAnimationFrame(() => {
         const y = window.scrollY
-        const nextCompact = y > 48 ? true : y < 32 ? false : navCompactRef.current
-        // Scroll fires every frame. Only cross the React boundary at the two
-        // hysteresis edges; enqueuing an identical state update while the
-        // user is scrolling makes the visual morph contend with main-thread
-        // input work on lower-end mobile devices.
-        if (nextCompact !== navCompactRef.current) {
-          navCompactRef.current = nextCompact
-          setNavCompact(nextCompact)
+        // 1. 全局品牌收敛感知 (y > 36 收敛为 M · X, y < 16 恢复)
+        const nextScrolled = y > 36 ? true : y < 16 ? false : isScrolledRef.current
+        if (nextScrolled !== isScrolledRef.current) {
+          isScrolledRef.current = nextScrolled
+          setIsScrolled(nextScrolled)
+        }
+
+        // 2. 移动端灵动岛胶囊感知
+        if (isMobileViewport) {
+          const nextCompact = y > 48 ? true : y < 32 ? false : navCompactRef.current
+          if (nextCompact !== navCompactRef.current) {
+            navCompactRef.current = nextCompact
+            setNavCompact(nextCompact)
+          }
         }
         ticking = false
       })
+    }
+    if (!isMobileViewport) {
+      navCompactRef.current = false
+      setNavCompact(false)
     }
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
@@ -139,6 +154,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // 点击即散；搜索卡片展开时让位（降级回横幅 toast）。iOS 灵动岛思路：
   // 轻确认融入既有 chrome，不打断视线流；重要/长文仍走横幅（Toast.tsx）。
   const islandNotice = useAppStore((s) => s.islandNotice)
+  const orderNotice = isOrderActivity(islandNotice?.kind) ? islandNotice : null
+  const favoriteNotice = islandNotice?.kind === 'favorite' ? islandNotice : null
+  const quietNotice = islandNotice && !orderNotice && !favoriteNotice ? islandNotice : null
+  const [favoriteIslandOpen, setFavoriteIslandOpen] = useState(false)
+  const favoriteIslandVisible = isMobileViewport && favoriteIslandOpen
+  const [orderIslandOpen, setOrderIslandOpen] = useState(false)
+  const [orderIslandPhase, setOrderIslandPhase] = useState<OrderIslandPhase>('processing')
+  const [orderIslandHeight, setOrderIslandHeight] = useState(132)
+  const orderIslandVisible = isMobileViewport && orderIslandOpen
+  const [quietIslandOpen, setQuietIslandOpen] = useState(false)
+  const quietIslandVisible = isMobileViewport && quietIslandOpen
+  const hideNavbarContent = Boolean(quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible)
   const clearIslandNotice = useAppStore((s) => s.clearIslandNotice)
   const demoteIslandNotice = useAppStore((s) => s.demoteIslandNotice)
   const setIslandNoticeAvailable = useAppStore((s) => s.setIslandNoticeAvailable)
@@ -148,11 +175,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // （见 appStore.showToast 的 modalDepth 分支），模态内反馈不丢失。
   const modalOpen = useAppStore((s) => s.modalDepth > 0)
   useEffect(() => {
-    if (islandNotice && (islandSearch || modalOpen)) demoteIslandNotice()
+    if (islandNotice && !isOrderActivity(islandNotice.kind) && (islandSearch || modalOpen)) {
+      demoteIslandNotice()
+    }
   }, [islandNotice, islandSearch, modalOpen, demoteIslandNotice])
   useEffect(() => {
-    if (!islandNotice) return
-    const t = setTimeout(clearIslandNotice, 2400)
+    if (!islandNotice || isOrderActivity(islandNotice.kind)) return
+    const duration = islandNotice.durationMs ?? 2400
+    const t = setTimeout(clearIslandNotice, duration)
     return () => clearTimeout(t)
   }, [islandNotice, clearIslandNotice])
   // Public/auth routes render Toast without Layout. Only advertise the island
@@ -166,13 +196,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   type ChromeMode = 'expanded' | 'compact' | 'notice' | 'search'
   const chromeMode: ChromeMode = islandSearch
     ? 'search'
-    : islandNotice
+    : quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible
       ? 'notice'
       : navCompact
         ? 'compact'
         : 'expanded'
   const chromeCompact = chromeMode !== 'expanded'
   const compactIsland = chromeMode === 'compact' || chromeMode === 'notice'
+  const isBrandCondensed = isScrolled || compactIsland
+
+  useLayoutEffect(() => {
+    if (orderIslandVisible) {
+      document.documentElement.style.setProperty(
+        '--order-island-bottom', `calc(var(--safe-top) + ${12 + orderIslandHeight}px)`,
+      )
+    }
+    return () => {
+      document.documentElement.style.removeProperty('--order-island-bottom')
+    }
+  }, [orderIslandVisible, orderIslandHeight])
 
   // The navbar is the source of truth for all mobile chrome. A toast that
   // falls back to its own banner reads this variable, so it remains attached
@@ -263,7 +305,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     })
   }, [announcements, showToast])
   return (
-    <div className="bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col overflow-x-clip" style={{ backgroundColor: 'var(--color-background)' }}>
+    <div
+      className={`md:bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col overflow-x-clip ${isProductDetailPage ? 'product-layout' : ''}`}
+      style={{ backgroundColor: 'var(--color-background)' }}
+    >
       <NotificationRealtimeBridge />
       {/* Decorative background — soft indigo glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
@@ -279,16 +324,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <nav
         ref={navRef}
         data-testid="app-navbar"
-        className={`nav-safe-x mobile-navbar-chrome sticky top-0 z-40 w-full py-4 border-b transition-[background-color,border-color,opacity] duration-200 ${
+        data-chrome={chromeMode}
+        className={`nav-safe-x mobile-navbar-chrome sticky top-0 z-40 w-full transition-[background-color,border-color,box-shadow,opacity] duration-200 ${
           chromeMode === 'expanded'
-            ? 'glass border-[var(--color-border)]'
-            : 'border-transparent'
+            ? 'glass border-b border-[var(--color-border)] py-3 sm:py-4 bg-[var(--color-background)]/80 backdrop-blur-xl'
+            : 'max-md:border-transparent max-md:bg-transparent max-md:py-2 max-md:pointer-events-none md:glass md:border-b md:border-[var(--color-border)] md:py-4'
+        } ${
+          isScrolled
+            ? 'md:shadow-[0_4px_20px_-2px_rgba(0,0,0,0.04)] md:dark:shadow-[0_4px_24px_-2px_rgba(0,0,0,0.35)]'
+            : ''
         } ${modalOpen ? 'opacity-0 pointer-events-none' : ''}`}
         style={{
-          transitionTimingFunction: 'var(--ease-standard)',
+          transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
           /* P1:消费 safe-top(viewport-fit=cover 后页面延伸至刘海区)。
              固定外层高度,避免灵动岛切换改变页面的滚动锚点。 */
-          paddingTop: 'calc(var(--safe-top) + 1rem)',
+          paddingTop: chromeCompact ? 'calc(var(--safe-top) + 0.5rem)' : 'calc(var(--safe-top) + 0.75rem)',
         }}
       >
         {islandSearch && (
@@ -298,25 +348,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             className="md:hidden fixed inset-0 bg-black/25 animate-[overlayIn_0.25s_ease-out]"
           />
         )}
-        {/* 胶囊皮肤:以可插值的 max-width 收缩,不能从 width:100% 直接
-            过渡到 width:fit-content(后者会离散跳变)。外层高度固定,
-            所以动画只影响这一小块 chrome,而非整页布局。 */}
+        {/* 顶部 Chrome 容器：
+            - 顶部常驻态（expanded）：标准全宽贴顶导航栏，纯净贴边，无漂浮药丸圆角，完美符合直觉；
+            - 下滑感知态（compact）：收缩为居中灵动岛品牌药丸；
+            - 搜索模式（search）：展开为商城搜索面板；
+            - 灵动岛通知：直接在岛内丝滑承载 Apple Live Activity。 */}
         <div
           data-testid="navbar-shell"
-          className={`navbar-shell ${
+          data-chrome={chromeMode}
+          data-order-open={orderIslandVisible}
+          data-order-phase={orderIslandPhase}
+          data-favorite-open={favoriteIslandVisible}
+          className={`navbar-shell ${isMobileViewport ? 't-resize' : ''} pointer-events-auto ${
             isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : 'max-w-7xl'
-          } mx-auto flex justify-between items-center relative w-full max-md:border max-md:border-transparent transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-[220ms] ${
+          } mx-auto flex justify-between items-center relative w-full
+          transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-200 ${
             chromeMode === 'search'
-              ? 'max-md:max-w-[calc(100vw-2rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl'
-              : compactIsland
-                ? 'max-md:max-w-[18.5rem] max-md:rounded-full max-md:px-3 max-md:py-0 max-md:shadow-lg'
-                : 'max-md:max-w-[calc(100vw-1.5rem)]'
-          } ${
-            chromeCompact
-              ? 'max-md:bg-[var(--color-surface)] max-md:border-[var(--color-glass-border)]'
-              : ''
+              ? 'max-md:max-w-[calc(100vw-1.5rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl max-md:bg-[var(--color-surface)]/95 max-md:backdrop-blur-2xl max-md:border max-md:border-[var(--color-border)]'
+              : chromeMode === 'compact'
+                ? 'max-md:max-w-[18.5rem] max-md:min-h-[42px] max-md:rounded-full max-md:px-3.5 max-md:py-0 max-md:bg-[var(--color-surface)]/95 max-md:backdrop-blur-2xl max-md:border max-md:border-[var(--color-border)] max-md:shadow-lg'
+                : 'px-4 sm:px-6'
           }`}
-          style={{ transitionTimingFunction: 'var(--ease-standard)' }}
+          style={{
+            transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
+            '--order-island-height': `${orderIslandHeight}px`,
+          } as React.CSSProperties}
         >
         {islandSearch ? (
           <StoreSearchPanel onClose={() => setSearchOpen(false)} />
@@ -326,54 +382,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div
           ref={(element) => {
             if (!element) return
-            if (islandNotice) element.setAttribute('inert', '')
+            if (hideNavbarContent) element.setAttribute('inert', '')
             else element.removeAttribute('inert')
           }}
-          aria-hidden={islandNotice ? true : undefined}
-          className={`flex items-center justify-between w-full transition-opacity duration-200 ${
-            islandNotice ? 'opacity-0 pointer-events-none' : 'opacity-100'
+          aria-hidden={hideNavbarContent ? true : undefined}
+          className={`navbar-default-content flex items-center justify-between w-full ${
+            hideNavbarContent ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
           }`}
         >
 
-          {/* Brand mark + Orbitron wordmark. See design-system/monexus/LOGO-BRIEF.md. */}
-          {isAdminPage ? (
-            <div className="flex items-center gap-2.5">
-              <button
-                type="button"
-                className="min-h-[40px] py-1 flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded"
-                onClick={() => navigate('/')}
-                title="MoNexus 首页"
-                aria-label="MoNexus 首页"
-              >
-                <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
-                <span className="font-heading font-bold text-[var(--color-text)] leading-none text-lg tracking-[0.18em]">
-                  MONEXUS
-                </span>
-              </button>
-              <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/20 whitespace-nowrap">
-                管理后台
-              </span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="min-h-[40px] py-1 flex items-center gap-2.5 cursor-pointer group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] rounded text-left"
-              onClick={() => navigate('/')}
-              title="MoNexus 首页"
-              aria-label="MoNexus 首页"
-            >
-              <Logo className="w-8 h-8 text-[var(--color-primary)] transition-transform duration-300 group-hover:scale-105 shrink-0" />
-              {/* compact 时压缩字宽,为右侧三个 40px 触控目标留出空间。字号
-                  立即切换而非逐帧插值,避免动画期间反复触发布局。 */}
-              <span
-                className={`font-heading font-bold text-[var(--color-text)] leading-none ${
-                  compactIsland ? 'max-md:text-sm max-md:tracking-[0.1em]' : 'max-md:text-base max-md:tracking-[0.18em]'
-                } text-lg tracking-[0.18em]`}
-              >
-                MONEXUS
-              </span>
-            </button>
-          )}
+          {/* Brand mark + Orbitron wordmark with Anthropic-style kinetic convergence (MONEXUS → M · X). */}
+          <KineticBrand
+            isCondensed={isBrandCondensed}
+            isAdminPage={isAdminPage}
+            onClick={() => navigate('/')}
+          />
 
           {/* Right Actions */}
           <div className="flex items-center gap-1.5 lg:gap-3">
@@ -619,24 +642,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        {/* 灵动岛通知覆盖层：胶囊/全宽条几何不变，仅内容交叉淡入 */}
-        {islandNotice && (
-          <div role="status" className="absolute inset-0 island-notice-enter">
-            <button
-              type="button"
-              onClick={clearIslandNotice}
-              className="w-full h-full flex items-center justify-center gap-1.5 rounded-[inherit] cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-            >
-              {islandNotice.type === 'success' ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0 text-[var(--color-toast-success)]" aria-hidden="true" />
-              ) : (
-                <Info className="w-4 h-4 shrink-0 text-[var(--color-toast-info)]" aria-hidden="true" />
-              )}
-              <span className="min-w-0 text-sm font-medium text-[var(--color-text)] truncate">{islandNotice.message}</span>
-            </button>
-          </div>
-        )}
         </>
+        )}
+        <QuietIslandNotice
+          notice={quietNotice}
+          suppressed={!isMobileViewport || islandSearch || modalOpen || Boolean(orderNotice || favoriteNotice)}
+          onDismiss={clearIslandNotice}
+          onVisibleChange={setQuietIslandOpen}
+        />
+        <FavoriteIsland
+          notice={favoriteNotice}
+          suppressed={islandSearch || modalOpen || Boolean(orderNotice || quietNotice)}
+          onOpenChange={setFavoriteIslandOpen}
+        />
+        {isMobileViewport && (
+          <OrderSuccessIsland
+            notice={orderNotice}
+            obscured={modalOpen || islandSearch}
+            onOpenChange={setOrderIslandOpen}
+            onHeightChange={setOrderIslandHeight}
+            onPhaseChange={setOrderIslandPhase}
+          />
         )}
         </div>
       </nav>
@@ -676,11 +702,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           P2-2：商品详情页 Tab Bar 不渲染（购买条接管），豁免该预留——
           购买条空间由 ProductDetailPage 根部自行预留，避免双重预留。 */}
       <main className={`flex-grow ${
-        isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : 'max-w-7xl px-4 sm:px-6'
-      } mx-auto w-full pt-6 sm:pt-8 ${
+        isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : isProductDetailPage ? 'max-w-7xl px-0 md:px-6' : 'max-w-7xl px-4 sm:px-6'
+      } mx-auto w-full ${isProductDetailPage ? 'pt-0 md:pt-4' : 'pt-6 sm:pt-8'} ${
         location.pathname.startsWith('/product')
           ? 'max-md:pb-6 md:pb-8'
-          : 'pb-[calc(var(--tabbar-h)+var(--safe-bottom)+2rem)] md:pb-8'
+          : 'pb-[calc(var(--tabbar-h)+var(--safe-bottom)+3rem)] md:pb-8'
       } relative`}>
         {children}
       </main>

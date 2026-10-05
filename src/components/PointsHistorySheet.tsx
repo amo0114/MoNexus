@@ -81,7 +81,7 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
             积分变动明细
           </DialogTitle>
           <DialogDescription>
-            入账 / 待支付 / 已支付 / 已返还。人工服务下单后，积分会暂时锁定；订单完成后才正式支付，取消或退款后会自动返还。
+            流水按时间记录入账、积分冻结、支付扣款、解除冻结与退款。历史冻结记录不代表当前仍待付款；当前状态请查看关联订单。
           </DialogDescription>
 
           <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-[var(--color-text-muted)]">
@@ -89,13 +89,13 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
               入账 +
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/8 text-[var(--color-danger)]">
-              已支付 −
+              支付扣款 −
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
-              待支付
+              积分冻结
             </span>
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
-              已返还
+              解除冻结
             </span>
           </div>
 
@@ -192,7 +192,7 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
                   >
                     <TypeIcon type={selected.type} />
                   </span>
-                  积分{visual.typeLabel}详情
+                  {visual.typeLabel}详情
                 </DialogTitle>
                 <DialogDescription className="sr-only">单笔积分流水详情</DialogDescription>
 
@@ -247,11 +247,10 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
                       onClick={() => {
                         setSelected(null)
                         onOpenChange(false)
-                        // 独立 /orders 页上线后可改为 /orders?highlight=
-                        navigate('/profile')
+                        navigate(`/orders?focus=${selected.orderId}`)
                       }}
                     >
-                      <ExternalLink className="w-4 h-4" /> 去个人中心查看订单
+                      <ExternalLink className="w-4 h-4" /> 查看订单当前状态
                     </button>
                   )}
                   <button type="button" className="btn-secondary w-full" onClick={() => setSelected(null)}>

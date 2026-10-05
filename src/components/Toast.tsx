@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckCircle2, XCircle, Info, AlertTriangle, X } from 'lucide-react'
+import { X } from 'lucide-react'
+import FeedbackIcon, { FEEDBACK_TONES } from './ui/FeedbackIcon'
 import { useAppStore, type Toast as ToastItem } from '../stores/appStore'
 
 /**
@@ -36,13 +37,6 @@ type Tone = ToastItem['type']
 function isInteractiveTarget(target: EventTarget | null) {
   return target instanceof Element
     && target.closest('button, a, input, textarea, select, [role="button"]') !== null
-}
-
-const TONE: Record<Tone, { token: string; label: string; icon: typeof CheckCircle2 }> = {
-  success: { token: 'var(--color-toast-success)', label: '成功', icon: CheckCircle2 },
-  error: { token: 'var(--color-toast-error)', label: '错误', icon: XCircle },
-  info: { token: 'var(--color-toast-info)', label: '提示', icon: Info },
-  warning: { token: 'var(--color-toast-warning)', label: '注意', icon: AlertTriangle },
 }
 
 const DURATION: Record<Tone, number> = {
@@ -142,7 +136,7 @@ function ToastCard({ toast }: { toast: ToastItem }) {
     cardRef.current.style.transform = ''
   }
 
-  const { token, label, icon: Icon } = TONE[toast.type]
+  const { token, label } = FEEDBACK_TONES[toast.type]
 
   return (
     <div
@@ -178,7 +172,7 @@ function ToastCard({ toast }: { toast: ToastItem }) {
           className="inline-flex w-7 h-7 shrink-0 items-center justify-center rounded-full"
           style={{ color: token, background: `color-mix(in srgb, ${token} 12%, transparent)` }}
         >
-          <Icon className="w-4 h-4" />
+          <FeedbackIcon tone={toast.type} />
         </span>
         {/* role=status/alert 播报的是内容文本：类型前缀走 sr-only，不能
             aria-label 覆盖容器（否则只读出"成功"而丢了正文）。 */}
@@ -214,6 +208,16 @@ function ToastCard({ toast }: { toast: ToastItem }) {
 
 export default function Toast() {
   const toasts = useAppStore((s) => s.toasts)
+  const islandNotice = useAppStore((s) => s.islandNotice)
+
+  // 灵动岛接管所有「兑换成功」及与灵动岛同源的反馈，绝不在 nav 下方单独弹出游离 toast
+  const visibleToasts = toasts.filter((t) => {
+    if (t.message === '兑换成功') return false
+    if (islandNotice && (t.message === islandNotice.title || t.message === islandNotice.message)) {
+      return false
+    }
+    return true
+  })
 
   return (
     // <md：紧贴 Layout 测得的实时 navbar 下缘；compact / notice / search
@@ -221,12 +225,12 @@ export default function Toast() {
     // ≥md：右下角，最新贴屏幕底缘。
     <div
       className="fixed z-[80] flex pointer-events-none
-        top-[calc(var(--navbar-current-h)+0.5rem)] left-1/2 -translate-x-1/2
+        top-[calc(max(var(--navbar-current-h),var(--order-island-bottom,0px))+0.5rem)] left-1/2 -translate-x-1/2
         w-[calc(100vw-2rem)] max-w-[26rem] flex-col-reverse items-center gap-2
         md:top-auto md:bottom-6 md:right-6 md:left-auto md:translate-x-0
         md:w-[22rem] md:max-w-none md:flex-col md:items-end"
     >
-      {toasts.map((t) => (
+      {visibleToasts.map((t) => (
         <ToastCard key={t.id} toast={t} />
       ))}
     </div>

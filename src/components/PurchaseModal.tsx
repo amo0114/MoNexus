@@ -11,6 +11,7 @@ import {
 import { getApiErrorMessage } from '../api/error'
 import { newIdempotencyKey } from '../utils/idempotencyKey'
 import { useAuthStore } from '../stores/authStore'
+import AnimatedNumber from './ui/AnimatedNumber'
 
 export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed' | 'agreement_stale'
 
@@ -51,6 +52,7 @@ export default function PurchaseModal({
   currentExpiresAt = null,
   renewMode = false,
   submitting = false,
+  hideWhileSubmitting = false,
   onClose,
   onConfirm,
 }: {
@@ -64,6 +66,8 @@ export default function PurchaseModal({
   /** 续费结算：标题与提示改为续费语境。 */
   renewMode?: boolean
   submitting?: boolean
+  /** Mobile checkout hands pending feedback to the island without losing form state. */
+  hideWhileSubmitting?: boolean
   onClose: () => void
   onConfirm: (
     preview: CheckoutPreview,
@@ -271,7 +275,7 @@ export default function PurchaseModal({
         : null
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
+    <Dialog open={!(hideWhileSubmitting && submitting)} onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
       <DialogContent className="max-w-sm" data-testid="purchase-modal">
         <DialogTitle className="text-xl mb-2">{renewMode ? '确认续费' : '确认兑换'}</DialogTitle>
         <DialogDescription className="text-[var(--color-text-muted)] mb-6 text-sm">
@@ -353,24 +357,27 @@ export default function PurchaseModal({
               </div>
             )}
             <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">
-              <span className="text-[var(--color-text-muted)]">{isHold ? '本次待支付' : '本次已支付'}</span>
+              <span className="text-[var(--color-text-muted)]">{isHold ? '本次冻结积分' : '本次支付积分'}</span>
               <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1 text-lg" data-testid="preview-price">
-                <Coins className="w-4 h-4" /> {preview.price}
+                <Coins className="w-4 h-4 shrink-0" />
+                <AnimatedNumber value={preview.price} />
               </span>
             </div>
             <div className="flex justify-between items-center text-sm mt-2" data-testid="balance-before">
               <span className="text-[var(--color-text-muted)]">当前可用余额</span>
-              <span className="text-[var(--color-text)]">{preview.balanceBefore}</span>
+              <span className="text-[var(--color-text)]">
+                <AnimatedNumber value={preview.balanceBefore} />
+              </span>
             </div>
             <div className="flex justify-between items-center text-sm mt-1" data-testid="balance-after">
-              <span className="text-[var(--color-text-muted)]">支付后可用余额</span>
+              <span className="text-[var(--color-text-muted)]">{isHold ? '冻结后可用余额' : '支付后可用余额'}</span>
               <span className={preview.sufficient ? 'text-[var(--color-text)]' : 'text-[var(--color-danger-text)] font-medium'}>
-                {preview.balanceAfter}
+                <AnimatedNumber value={preview.balanceAfter} />
               </span>
             </div>
             {isHold && (
               <p className="text-xs text-[var(--color-text-muted)] mt-3 pt-3 border-t border-[var(--color-border)] border-dashed" data-testid="hold-explain">
-                人工服务下单后，积分会暂时锁定；订单完成后才正式支付，取消或退款后会自动返还。
+                下单时先冻结积分；Xboard 确认开通成功后转为支付扣款，人工服务在确认完成后扣款。失败或退款按订单结果返还，冻结与扣款不会重复扣减可用余额。
               </p>
             )}
             {capacityHint && (

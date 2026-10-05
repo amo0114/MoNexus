@@ -68,10 +68,10 @@ describe('AdminPointLogPanel', () => {
     expect(screen.getByText('6,000')).toBeInTheDocument()
     expect(badges[0]).toHaveTextContent('入账')
 
-    // Row 2: out, −2,500, 3,500, 已支付, 关联订单 #888
+    // Row 2: out, −2,500, 3,500, 支付扣款, 关联订单 #888
     expect(screen.getByText('−2,500')).toBeInTheDocument()
     expect(screen.getByText('3,500')).toBeInTheDocument()
-    expect(badges[1]).toHaveTextContent('已支付')
+    expect(badges[1]).toHaveTextContent('支付扣款')
     expect(screen.getByText('关联订单 #888')).toBeInTheDocument()
 
     // Row 3: sandbox_in, +5,000, 5,000, 沙箱入账
@@ -275,9 +275,9 @@ describe('AdminPointLogPanel', () => {
     expect(optionLabels).toEqual([
       '全部类型',
       '入账',
-      '已支付',
-      '待支付',
-      '已返还',
+      '支付扣款',
+      '积分冻结',
+      '解除冻结',
       '退款',
       '沙箱入账',
     ])

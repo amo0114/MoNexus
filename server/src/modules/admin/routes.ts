@@ -44,6 +44,8 @@ import { adminSourceDescriptionRouter } from '../catalog/sourceDescriptionRoutes
 import { rechargeAdminRoutes } from '../recharge/adminRoutes.js'
 import { getBuildInfo } from './buildInfo.js'
 import { z } from 'zod'
+import { platformReport } from '../traffic/controller.js'
+import { trafficQuerySchema } from '../traffic/schema.js'
 
 const router = Router()
 
@@ -66,6 +68,7 @@ router.use(adminSourceDescriptionRouter)
 router.use(rechargeAdminRoutes)
 
 router.get('/stats', controller.stats)
+router.get('/reports/traffic', validate({ query: trafficQuerySchema }), platformReport)
 router.get('/config', controller.listConfig)
 router.get('/system/build-info', getBuildInfo)
 router.put('/config/:key', validate({ params: systemConfigKeyParamSchema, body: updateSystemConfigSchema }), controller.updateConfig)

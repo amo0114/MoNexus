@@ -42,6 +42,13 @@ import {
 } from '../../types/catalog'
 import type { DeliveryField, DeliveryMode, PurchaseFormField, StockMode } from '../../types/merchant'
 
+import FieldLabel from '../../components/catalog/wizard/FieldLabel'
+import DeliveryFieldsEditor from '../../components/catalog/wizard/DeliveryFieldsEditor'
+import StructuredContentEditor from '../../components/catalog/wizard/StructuredContentEditor'
+import { DELIVERY_FIELDS_MAX, serializeDeliveryFields, serializeStructuredContent, validateStructuredRows } from '../../components/catalog/wizard/deliveryFields'
+import { deliveryModeFor } from '../../components/catalog/wizard/fulfillment'
+import { pickFileFromInput } from '../../utils/pickFileFromInput'
+
 const RichTextEditor = lazy(() => import('../../components/catalog/RichTextEditor'))
 
 /** 主规格默认名（与服务端 lib/offers.ts 的 DEFAULT_OFFER_NAME 一致）。 */
@@ -73,7 +80,6 @@ const DELIVERY_FALLBACK_LABEL: Record<DeliveryMode, string> = {
   manual_service: '人工服务',
 }
 
-const DELIVERY_FIELDS_MAX = 8
 const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
 
 type FixedContentType = 'text' | 'url' | 'file'
@@ -340,7 +346,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
             const structuredError = validateStructuredRows(
               offer.structuredFields,
               offer.structuredValues,
-              `${label}：`,
+              `${label}：`, validateDeliveryFieldRows,
             )
             if (structuredError) return structuredError
           } else {
@@ -360,7 +366,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
       }
       if (form.deliveryMode === 'instant_fixed' && form.fixedContentType !== 'file') {
         if (primaryStructuredRequirement === 'fixed_fields') {
-          const structuredError = validateStructuredRows(form.structuredFields, form.structuredValues, '')
+          const structuredError = validateStructuredRows(form.structuredFields, form.structuredValues, '', validateDeliveryFieldRows)
           if (structuredError) return structuredError
         } else {
           if (!form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
@@ -1001,7 +1007,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                         )}
                         {showStructured && (
                           <div className="sm:col-span-2">
-                            <StructuredContentEditor
+                            <StructuredContentEditor variant="create"
                               fields={offer.structuredFields}
                               values={offer.structuredValues}
                               onFieldsChange={(structuredFields) => update({ structuredFields })}
@@ -1013,7 +1019,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                         )}
                         {showDeliveryFields && (
                           <div className="sm:col-span-2">
-                            <DeliveryFieldsEditor
+                            <DeliveryFieldsEditor variant="create"
                               fields={offer.deliveryFields}
                               onChange={(deliveryFields) => update({ deliveryFields })}
                               disabled={busy}
@@ -1095,7 +1101,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
             )}
 
             {primaryStructuredRequirement === 'inventory_fields' && (
-              <DeliveryFieldsEditor
+              <DeliveryFieldsEditor variant="create"
                 fields={form.deliveryFields}
                 onChange={(deliveryFields) => setForm(prev => ({ ...prev, deliveryFields }))}
                 disabled={busy}
@@ -1126,7 +1132,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                     草稿允许暂不绑定文件；发布前再在编辑中挂载交付文件。
                   </p>
                 ) : primaryStructuredRequirement === 'fixed_fields' ? (
-                  <StructuredContentEditor
+                  <StructuredContentEditor variant="create"
                     fields={form.structuredFields}
                     values={form.structuredValues}
                     onFieldsChange={(structuredFields) => setForm(prev => ({ ...prev, structuredFields }))}
@@ -1227,7 +1233,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                   <div className="font-bold text-sm line-clamp-1">{form.name || '（商品名称）'}</div>
                   <div className="flex justify-between items-center text-sm mt-2 pt-2 border-t border-dashed border-[var(--color-border)]">
                     <span className="text-[var(--color-text-muted)]">
-                      {form.deliveryMode === 'manual_service' ? '本次待支付' : '本次已支付'}
+                      {form.deliveryMode === 'manual_service' ? '本次冻结积分' : '本次支付积分'}
                     </span>
                     <span className="font-bold text-[var(--color-cta)] flex items-center gap-1">
                       <Coins className="w-4 h-4" /> {form.price || '0'}
@@ -1347,14 +1353,6 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   )
 }
 
-function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
-      {children} {required && <span className="text-red-500 normal-case">*</span>}
-    </label>
-  )
-}
-
 function getErrorMessage(err: unknown, fallback: string): string {
   const e = err as { response?: { data?: { error?: { message?: unknown } } } } | undefined
   const message = e?.response?.data?.error?.message
@@ -1380,9 +1378,8 @@ function allowedDeliveryModes(configs: FulfillmentConfiguration[]): DeliveryMode
   const modes: DeliveryMode[] = []
   const push = (mode: DeliveryMode) => { if (!modes.includes(mode)) modes.push(mode) }
   for (const config of configs) {
-    if (config === 'inventory') push('instant_inventory')
-    else if (config === 'fixed_text' || config === 'fixed_url' || config === 'fixed_file') push('instant_fixed')
-    else if (config === 'manual' || config === 'merchant_webhook' || config === 'faka_bridge') push('manual_service')
+    const mode = deliveryModeFor(config)
+    if (mode) push(mode)
   }
   return modes
 }
@@ -1465,31 +1462,6 @@ function structuredRequirementFor(
   return 'none'
 }
 
-function serializeDeliveryFields(fields: DeliveryField[]): DeliveryField[] | null {
-  const cleaned = fields
-    .map(field => ({
-      key: field.key.trim(),
-      label: field.label.trim(),
-      sensitive: field.sensitive === true,
-      ...(field.placeholder?.trim() ? { placeholder: field.placeholder.trim() } : {}),
-    }))
-    .filter(field => field.key !== '' && field.label !== '')
-  return cleaned.length > 0 ? cleaned : null
-}
-
-function serializeStructuredContent(
-  fields: DeliveryField[],
-  values: Record<string, string>,
-): { fields: DeliveryField[]; values: Record<string, string> } | null {
-  const cleaned = serializeDeliveryFields(fields)
-  if (!cleaned) return null
-  const nextValues: Record<string, string> = {}
-  for (const field of cleaned) {
-    nextValues[field.key] = (values[field.key] ?? '').trim()
-  }
-  return { fields: cleaned, values: nextValues }
-}
-
 function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): string | null {
   if (fields.length === 0) return null
   if (fields.length > DELIVERY_FIELDS_MAX) return `${prefix}交付字段最多 ${DELIVERY_FIELDS_MAX} 个`
@@ -1502,237 +1474,4 @@ function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): str
     if (!field.label.trim()) return `${label}：名称不能为空`
   }
   return null
-}
-
-function validateStructuredRows(
-  fields: DeliveryField[],
-  values: Record<string, string>,
-  prefix: string,
-): string | null {
-  const fieldsError = validateDeliveryFieldRows(fields, prefix)
-  if (fieldsError) return fieldsError
-  if (fields.length === 0) return null
-  for (const [index, field] of fields.entries()) {
-    const value = (values[field.key] ?? '').trim()
-    if (!value) return `${prefix}第 ${index + 1} 个字段：内容不能为空`
-    if (/[\r\n]/.test(value)) return `${prefix}第 ${index + 1} 个字段：内容不能包含换行`
-  }
-  return null
-}
-
-function DeliveryFieldsEditor({
-  fields,
-  onChange,
-  disabled,
-  testIdPrefix,
-}: {
-  fields: DeliveryField[]
-  onChange: (fields: DeliveryField[]) => void
-  disabled?: boolean
-  testIdPrefix: string
-}) {
-  return (
-    <div className="space-y-2" data-testid={`${testIdPrefix}-fields`}>
-      <div className="flex items-center justify-between">
-        <FieldLabel>交付字段模板</FieldLabel>
-        <span className="text-xs text-[var(--color-text-muted)]">{fields.length}/{DELIVERY_FIELDS_MAX}</span>
-      </div>
-      <p className="text-xs text-[var(--color-text-muted)]">
-        独享账号发布前需定义 1-8 个交付字段；草稿可先留空。买家购前可见字段名。
-      </p>
-      {fields.map((field, index) => (
-        <div
-          key={index}
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2"
-        >
-          <input
-            className="input flex-1 min-w-[7rem] py-1.5 font-mono"
-            placeholder="key（如 account）"
-            maxLength={32}
-            value={field.key}
-            onChange={(event) => onChange(fields.map((item, i) => (
-              i === index ? { ...item, key: event.target.value } : item
-            )))}
-            disabled={disabled}
-            data-testid={`${testIdPrefix}-field-key-${index}`}
-          />
-          <input
-            className="input flex-1 min-w-[7rem] py-1.5"
-            placeholder="显示名称（如 账号）"
-            maxLength={30}
-            value={field.label}
-            onChange={(event) => onChange(fields.map((item, i) => (
-              i === index ? { ...item, label: event.target.value } : item
-            )))}
-            disabled={disabled}
-            data-testid={`${testIdPrefix}-field-label-${index}`}
-          />
-          <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] cursor-pointer whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={field.sensitive}
-              onChange={(event) => onChange(fields.map((item, i) => (
-                i === index ? { ...item, sensitive: event.target.checked } : item
-              )))}
-              disabled={disabled}
-              data-testid={`${testIdPrefix}-field-sensitive-${index}`}
-            />
-            敏感
-          </label>
-          <button
-            type="button"
-            onClick={() => onChange(fields.filter((_, i) => i !== index))}
-            disabled={disabled}
-            className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
-            aria-label="删除字段"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      ))}
-      {fields.length < DELIVERY_FIELDS_MAX && (
-        <button
-          type="button"
-          onClick={() => onChange([...fields, { key: '', label: '', sensitive: false }])}
-          disabled={disabled}
-          className="btn-secondary w-full py-1.5 text-xs"
-          data-testid={`${testIdPrefix}-field-add`}
-        >
-          + 添加交付字段
-        </button>
-      )}
-    </div>
-  )
-}
-
-function StructuredContentEditor({
-  fields,
-  values,
-  onFieldsChange,
-  onValuesChange,
-  disabled,
-  testIdPrefix,
-}: {
-  fields: DeliveryField[]
-  values: Record<string, string>
-  onFieldsChange: (fields: DeliveryField[]) => void
-  onValuesChange: (values: Record<string, string>) => void
-  disabled?: boolean
-  testIdPrefix: string
-}) {
-  function updateField(index: number, patch: Partial<DeliveryField>) {
-    const current = fields[index]
-    if (!current) return
-    const next = fields.map((item, i) => (i === index ? { ...item, ...patch } : item))
-    onFieldsChange(next)
-    if (typeof patch.key === 'string' && patch.key !== current.key) {
-      const nextValues = { ...values }
-      nextValues[patch.key] = nextValues[current.key] ?? ''
-      delete nextValues[current.key]
-      onValuesChange(nextValues)
-    }
-  }
-
-  return (
-    <div className="space-y-2" data-testid={`${testIdPrefix}-content`}>
-      <div className="flex items-center justify-between">
-        <FieldLabel>共享账号固定内容</FieldLabel>
-        <span className="text-xs text-[var(--color-text-muted)]">{fields.length}/{DELIVERY_FIELDS_MAX}</span>
-      </div>
-      <p className="text-xs text-[var(--color-text-muted)]">
-        每位买家收到同一份结构化内容。草稿可先留空，发布前需填写 1-8 个字段及对应值。
-      </p>
-      {fields.map((field, index) => (
-        <div
-          key={index}
-          className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              className="input flex-1 min-w-[7rem] py-1.5 font-mono"
-              placeholder="key（如 user）"
-              maxLength={32}
-              value={field.key}
-              onChange={(event) => updateField(index, { key: event.target.value })}
-              disabled={disabled}
-              data-testid={`${testIdPrefix}-field-key-${index}`}
-            />
-            <input
-              className="input flex-1 min-w-[7rem] py-1.5"
-              placeholder="显示名称（如 账号）"
-              maxLength={30}
-              value={field.label}
-              onChange={(event) => updateField(index, { label: event.target.value })}
-              disabled={disabled}
-              data-testid={`${testIdPrefix}-field-label-${index}`}
-            />
-            <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] cursor-pointer whitespace-nowrap">
-              <input
-                type="checkbox"
-                checked={field.sensitive}
-                onChange={(event) => updateField(index, { sensitive: event.target.checked })}
-                disabled={disabled}
-                data-testid={`${testIdPrefix}-field-sensitive-${index}`}
-              />
-              敏感
-            </label>
-            <button
-              type="button"
-              onClick={() => {
-                const removed = fields[index]
-                onFieldsChange(fields.filter((_, i) => i !== index))
-                if (removed) {
-                  const nextValues = { ...values }
-                  delete nextValues[removed.key]
-                  onValuesChange(nextValues)
-                }
-              }}
-              disabled={disabled}
-              className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
-              aria-label="删除字段"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-          <input
-            className="input py-1.5 font-mono"
-            placeholder="交付值"
-            maxLength={2000}
-            value={values[field.key] ?? ''}
-            onChange={(event) => onValuesChange({ ...values, [field.key]: event.target.value })}
-            disabled={disabled}
-            data-testid={`${testIdPrefix}-field-value-${index}`}
-          />
-        </div>
-      ))}
-      {fields.length < DELIVERY_FIELDS_MAX && (
-        <button
-          type="button"
-          onClick={() => onFieldsChange([...fields, { key: '', label: '', sensitive: false }])}
-          disabled={disabled}
-          className="btn-secondary w-full py-1.5 text-xs"
-          data-testid={`${testIdPrefix}-field-add`}
-        >
-          + 添加固定字段
-        </button>
-      )}
-    </div>
-  )
-}
-
-function pickFileFromInput(input: HTMLInputElement | null): Promise<File | null> {
-  if (!input) return Promise.resolve(null)
-  return new Promise((resolve) => {
-    const done = (file: File | null) => {
-      input.removeEventListener('change', onChange)
-      input.removeEventListener('cancel', onCancel)
-      input.value = ''
-      resolve(file)
-    }
-    const onChange = () => done(input.files?.[0] ?? null)
-    const onCancel = () => done(null)
-    input.addEventListener('change', onChange, { once: true })
-    input.addEventListener('cancel', onCancel, { once: true })
-    input.click()
-  })
 }

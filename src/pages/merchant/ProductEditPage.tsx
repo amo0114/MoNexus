@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Eye, Loader2, Package, Trash2 } from 'lucide-react'
+import { ArrowLeft, Eye, Loader2, Package } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
   catalogApi,
@@ -45,6 +45,18 @@ import PurchaseFormFieldsEditor, {
 } from '../../components/merchant/PurchaseFormFieldsEditor'
 import EmptyState from '../../components/ui/EmptyState'
 
+import FieldLabel from '../../components/catalog/wizard/FieldLabel'
+import OfferDeliveryFieldsEditor from '../../components/catalog/wizard/DeliveryFieldsEditor'
+import OfferStructuredContentEditor from '../../components/catalog/wizard/StructuredContentEditor'
+import { DELIVERY_FIELDS_MAX, serializeDeliveryFields, serializeStructuredContent, validateStructuredRows } from '../../components/catalog/wizard/deliveryFields'
+import { deliveryModeFor } from '../../components/catalog/wizard/fulfillment'
+import { pickFileFromInput } from '../../utils/pickFileFromInput'
+
+import {
+  draftsFromOffers, reconcileOfferDrafts, cloneOfferStructuredDraft,
+  parseDeliveryFields, parseStructuredContent, type OfferStructuredDraft,
+} from './productEditor/offerDrafts'
+
 const RichTextEditor = lazy(() => import('../../components/catalog/RichTextEditor'))
 
 const STATUS_LABEL: Record<string, string> = {
@@ -53,16 +65,9 @@ const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.INACTIVE]: '已下架',
 }
 
-const DELIVERY_FIELDS_MAX = 8
 const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
 
 type StructuredRequirement = FulfillmentRule['requireStructuredDelivery']
-
-type OfferStructuredDraft = {
-  deliveryFields: DeliveryField[]
-  structuredFields: DeliveryField[]
-  structuredValues: Record<string, string>
-}
 
 type EditorForm = {
   name: string
@@ -358,7 +363,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           const structuredError = validateStructuredRows(
             draft.structuredFields,
             draft.structuredValues,
-            `规格「${offer.name}」`,
+            `规格「${offer.name}」`, validateDeliveryFieldRows,
           )
           if (structuredError) {
             showToast(structuredError, 'error')
@@ -459,8 +464,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             workingDrafts,
             workingOffers,
             fresh.offers,
-            selectedTemplate,
-            form.attributes,
+            (offer) => offerStructuredRequirement(offer, selectedTemplate, form.attributes),
           )
           setContentVersion(fresh.product.contentVersion)
           setStatus(fresh.product.status)
@@ -836,7 +840,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
                         return (
                           <div className="mt-3 space-y-3">
                             {showDeliveryFields && (
-                              <OfferDeliveryFieldsEditor
+                              <OfferDeliveryFieldsEditor variant="edit"
                                 fields={draft.deliveryFields}
                                 onChange={(deliveryFields) => setOfferDrafts(prev => ({
                                   ...prev,
@@ -847,7 +851,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
                               />
                             )}
                             {showStructured && (
-                              <OfferStructuredContentEditor
+                              <OfferStructuredContentEditor variant="edit"
                                 fields={draft.structuredFields}
                                 values={draft.structuredValues}
                                 onFieldsChange={(structuredFields) => setOfferDrafts(prev => ({
@@ -914,14 +918,6 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         </aside>
       </div>
     </div>
-  )
-}
-
-function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
-  return (
-    <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5 uppercase tracking-wider">
-      {children} {required && <span className="text-red-500 normal-case">*</span>}
-    </label>
   )
 }
 
@@ -1016,38 +1012,8 @@ function writableImage(image: ProductEditorImage, keys?: Record<string, string>)
   return Boolean(image.ref) || image.url.startsWith('/assets/') || Boolean(keys?.[image.url])
 }
 
-function pickFileFromInput(input: HTMLInputElement | null): Promise<File | null> {
-  if (!input) return Promise.resolve(null)
-  return new Promise((resolve) => {
-    const done = (file: File | null) => {
-      input.removeEventListener('change', onChange)
-      input.removeEventListener('cancel', onCancel)
-      input.value = ''
-      resolve(file)
-    }
-    const onChange = () => done(input.files?.[0] ?? null)
-    const onCancel = () => done(null)
-    input.addEventListener('change', onChange, { once: true })
-    input.addEventListener('cancel', onCancel, { once: true })
-    input.click()
-  })
-}
-
 function isTemplateKey(value: string | null | undefined): value is TemplateKey {
   return typeof value === 'string' && (TEMPLATE_KEYS as readonly string[]).includes(value)
-}
-
-function draftsFromOffers(offers: ProductEditorOffer[]): Record<number, OfferStructuredDraft> {
-  const drafts: Record<number, OfferStructuredDraft> = {}
-  for (const offer of offers) {
-    const structured = parseStructuredContent(offer.fixedStructuredContent)
-    drafts[offer.id] = {
-      deliveryFields: parseDeliveryFields(offer.deliveryFields),
-      structuredFields: structured.fields,
-      structuredValues: structured.values,
-    }
-  }
-  return drafts
 }
 
 function offerStructuredRequirement(
@@ -1058,296 +1024,6 @@ function offerStructuredRequirement(
   return template
     ? structuredRequirementFor(template, productAttributes, offer.deliveryMode)
     : 'none'
-}
-
-function reconcileOfferDrafts(
-  previousDrafts: Record<number, OfferStructuredDraft>,
-  previousOffers: ProductEditorOffer[],
-  freshOffers: ProductEditorOffer[],
-  template: ProductTemplateDefinition | null,
-  productAttributes: TemplateAttributes,
-): { drafts: Record<number, OfferStructuredDraft>; conflictLabels: string[] } {
-  const previousById = new Map(previousOffers.map(offer => [offer.id, offer]))
-  const baselineDrafts = draftsFromOffers(previousOffers)
-  const serverDrafts = draftsFromOffers(freshOffers)
-  const next: Record<number, OfferStructuredDraft> = {}
-  const conflictLabels: string[] = []
-  for (const offer of freshOffers) {
-    const previousOffer = previousById.get(offer.id)
-    const previousDraft = previousDrafts[offer.id]
-    const serverDraft = serverDrafts[offer.id]
-    if (!previousOffer || !previousDraft) {
-      next[offer.id] = serverDraft
-      continue
-    }
-    const previousRequirement = offerStructuredRequirement(previousOffer, template, productAttributes)
-    const nextRequirement = offerStructuredRequirement(offer, template, productAttributes)
-    if (previousRequirement !== nextRequirement) {
-      next[offer.id] = serverDraft
-      continue
-    }
-    next[offer.id] = mergeOfferStructuredDraft(
-      previousDraft,
-      baselineDrafts[offer.id] ?? serverDraft,
-      serverDraft,
-      conflictLabels,
-    )
-  }
-  return { drafts: next, conflictLabels }
-}
-
-function mergeOfferStructuredDraft(
-  local: OfferStructuredDraft,
-  baseline: OfferStructuredDraft,
-  server: OfferStructuredDraft,
-  conflictLabels: string[],
-): OfferStructuredDraft {
-  const structured = mergeKeyedStructured(local, baseline, server, conflictLabels)
-  const deliveryFields = mergeFieldList(
-    local.deliveryFields,
-    baseline.deliveryFields,
-    server.deliveryFields,
-    conflictLabels,
-  )
-  return {
-    deliveryFields,
-    structuredFields: structured.fields,
-    structuredValues: structured.values,
-  }
-}
-
-function mergeKeyedStructured(
-  local: OfferStructuredDraft,
-  baseline: OfferStructuredDraft,
-  server: OfferStructuredDraft,
-  conflictLabels: string[],
-): { fields: DeliveryField[]; values: Record<string, string> } {
-  const localByKey = indexFieldsByKey(local.structuredFields)
-  const baselineByKey = indexFieldsByKey(baseline.structuredFields)
-  const serverByKey = indexFieldsByKey(server.structuredFields)
-  const fields: DeliveryField[] = []
-  const values: Record<string, string> = {}
-  for (const key of orderedFieldKeys(server.structuredFields, local.structuredFields, baseline.structuredFields)) {
-    const localField = localByKey.get(key)
-    const baselineField = baselineByKey.get(key)
-    const serverField = serverByKey.get(key)
-    const localVal = local.structuredValues[key] ?? ''
-    const baselineVal = baseline.structuredValues[key] ?? ''
-    const serverVal = server.structuredValues[key] ?? ''
-    const localPresent = localField != null
-    const baselinePresent = baselineField != null
-    const serverPresent = serverField != null
-    const label = localField?.label || serverField?.label || baselineField?.label || key
-    const localChanged = localPresent !== baselinePresent
-      || !sameJson(localField ?? null, baselineField ?? null)
-      || localVal !== baselineVal
-    const serverChanged = serverPresent !== baselinePresent
-      || !sameJson(serverField ?? null, baselineField ?? null)
-      || serverVal !== baselineVal
-
-    if (!localChanged && !serverChanged) {
-      if (serverPresent && serverField) {
-        fields.push(serverField)
-        values[key] = serverVal
-      }
-      continue
-    }
-    if (localChanged && !serverChanged) {
-      if (localPresent && localField) {
-        fields.push(localField)
-        values[key] = localVal
-      }
-      continue
-    }
-    if (!localChanged && serverChanged) {
-      if (serverPresent && serverField) {
-        fields.push(serverField)
-        values[key] = serverVal
-      }
-      continue
-    }
-    if (localPresent && serverPresent && localField && serverField
-      && sameJson(localField, serverField) && localVal === serverVal) {
-      fields.push(serverField)
-      values[key] = serverVal
-      continue
-    }
-    rememberConflictLabel(conflictLabels, label)
-    if (serverPresent && serverField) {
-      fields.push(serverField)
-      values[key] = serverVal
-    } else if (localPresent && localField) {
-      fields.push(localField)
-      values[key] = localVal
-    }
-  }
-  return { fields, values }
-}
-
-function mergeFieldList(
-  localFields: DeliveryField[],
-  baselineFields: DeliveryField[],
-  serverFields: DeliveryField[],
-  conflictLabels: string[],
-): DeliveryField[] {
-  const localByKey = indexFieldsByKey(localFields)
-  const baselineByKey = indexFieldsByKey(baselineFields)
-  const serverByKey = indexFieldsByKey(serverFields)
-  const merged: DeliveryField[] = []
-  for (const key of orderedFieldKeys(serverFields, localFields, baselineFields)) {
-    const localField = localByKey.get(key)
-    const baselineField = baselineByKey.get(key)
-    const serverField = serverByKey.get(key)
-    const localPresent = localField != null
-    const baselinePresent = baselineField != null
-    const serverPresent = serverField != null
-    const label = localField?.label || serverField?.label || baselineField?.label || key
-
-    if (localPresent && !baselinePresent && !serverPresent) {
-      merged.push(localField)
-      continue
-    }
-    if (!localPresent && !baselinePresent && serverPresent) {
-      merged.push(serverField)
-      continue
-    }
-    if (localPresent && !baselinePresent && serverPresent) {
-      const result = threeWayMerge(localField, null, serverField)
-      if (result.conflict) rememberConflictLabel(conflictLabels, label)
-      merged.push(result.value ?? serverField)
-      continue
-    }
-    if (!localPresent && baselinePresent && serverPresent) {
-      if (sameJson(serverField, baselineField)) continue
-      rememberConflictLabel(conflictLabels, label)
-      merged.push(serverField)
-      continue
-    }
-    if (localPresent && baselinePresent && !serverPresent) {
-      if (sameJson(localField, baselineField)) continue
-      rememberConflictLabel(conflictLabels, label)
-      merged.push(localField)
-      continue
-    }
-    if (!localPresent && baselinePresent && !serverPresent) continue
-    if (localPresent && baselinePresent && serverPresent) {
-      const result = threeWayMerge(localField, baselineField, serverField)
-      if (result.conflict) rememberConflictLabel(conflictLabels, label)
-      merged.push(result.value ?? serverField)
-    }
-  }
-  return merged
-}
-
-function orderedFieldKeys(
-  serverFields: DeliveryField[],
-  localFields: DeliveryField[],
-  baselineFields: DeliveryField[],
-): string[] {
-  const keys: string[] = []
-  const seen = new Set<string>()
-  for (const field of [...serverFields, ...localFields, ...baselineFields]) {
-    if (!field.key || seen.has(field.key)) continue
-    seen.add(field.key)
-    keys.push(field.key)
-  }
-  return keys
-}
-
-function cloneOfferStructuredDraft(draft: OfferStructuredDraft): OfferStructuredDraft {
-  return {
-    deliveryFields: draft.deliveryFields.map(field => ({ ...field })),
-    structuredFields: draft.structuredFields.map(field => ({ ...field })),
-    structuredValues: { ...draft.structuredValues },
-  }
-}
-
-function threeWayMerge<T>(
-  local: T,
-  baseline: T,
-  server: T,
-): { value: T; conflict: boolean } {
-  if (sameJson(local, server)) return { value: server, conflict: false }
-  if (!sameJson(local, baseline) && sameJson(server, baseline)) {
-    return { value: local, conflict: false }
-  }
-  if (sameJson(local, baseline) && !sameJson(server, baseline)) {
-    return { value: server, conflict: false }
-  }
-  return { value: server, conflict: true }
-}
-
-function sameJson(left: unknown, right: unknown): boolean {
-  if (left === right) return true
-  return JSON.stringify(left) === JSON.stringify(right)
-}
-
-function indexFieldsByKey(fields: DeliveryField[]): Map<string, DeliveryField> {
-  const byKey = new Map<string, DeliveryField>()
-  for (const field of fields) {
-    if (field.key) byKey.set(field.key, field)
-  }
-  return byKey
-}
-
-function rememberConflictLabel(labels: string[], label: string) {
-  const text = label.trim()
-  if (!text || labels.includes(text)) return
-  labels.push(text)
-}
-
-function parseDeliveryFields(raw: unknown): DeliveryField[] {
-  if (!Array.isArray(raw)) return []
-  const fields: DeliveryField[] = []
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue
-    const record = item as Record<string, unknown>
-    if (typeof record.key !== 'string' || typeof record.label !== 'string') continue
-    fields.push({
-      key: record.key,
-      label: record.label,
-      sensitive: record.sensitive === true,
-      ...(typeof record.placeholder === 'string' ? { placeholder: record.placeholder } : {}),
-    })
-  }
-  return fields
-}
-
-function parseStructuredContent(raw: unknown): { fields: DeliveryField[]; values: Record<string, string> } {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { fields: [], values: {} }
-  const record = raw as { fields?: unknown; values?: unknown }
-  const values: Record<string, string> = {}
-  if (record.values && typeof record.values === 'object' && !Array.isArray(record.values)) {
-    for (const [key, value] of Object.entries(record.values as Record<string, unknown>)) {
-      if (typeof value === 'string') values[key] = value
-    }
-  }
-  return { fields: parseDeliveryFields(record.fields), values }
-}
-
-function serializeDeliveryFields(fields: DeliveryField[]): DeliveryField[] | null {
-  const cleaned = fields
-    .map(field => ({
-      key: field.key.trim(),
-      label: field.label.trim(),
-      sensitive: field.sensitive === true,
-      ...(field.placeholder?.trim() ? { placeholder: field.placeholder.trim() } : {}),
-    }))
-    .filter(field => field.key !== '' && field.label !== '')
-  return cleaned.length > 0 ? cleaned : null
-}
-
-function serializeStructuredContent(
-  fields: DeliveryField[],
-  values: Record<string, string>,
-): { fields: DeliveryField[]; values: Record<string, string> } | null {
-  const cleaned = serializeDeliveryFields(fields)
-  if (!cleaned) return null
-  const nextValues: Record<string, string> = {}
-  for (const field of cleaned) {
-    nextValues[field.key] = (values[field.key] ?? '').trim()
-  }
-  return { fields: cleaned, values: nextValues }
 }
 
 function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): string | null {
@@ -1364,22 +1040,6 @@ function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): str
   return null
 }
 
-function validateStructuredRows(
-  fields: DeliveryField[],
-  values: Record<string, string>,
-  prefix: string,
-): string | null {
-  const fieldsError = validateDeliveryFieldRows(fields, prefix)
-  if (fieldsError) return fieldsError
-  if (fields.length === 0) return null
-  for (const [index, field] of fields.entries()) {
-    const value = (values[field.key] ?? '').trim()
-    if (!value) return `${prefix}第 ${index + 1} 个字段：内容不能为空`
-    if (/[\r\n]/.test(value)) return `${prefix}第 ${index + 1} 个字段：内容不能包含换行`
-  }
-  return null
-}
-
 function structuredRequirementFor(
   template: ProductTemplateDefinition,
   productAttributes: TemplateAttributes,
@@ -1392,11 +1052,7 @@ function structuredRequirementFor(
   for (const rule of template.fulfillmentRules) {
     if (rule.requireStructuredDelivery === 'none') continue
     const modes = rule.configurations.flatMap(configuration => {
-      if (configuration === 'inventory') return ['instant_inventory' as const]
-      if (configuration === 'fixed_text' || configuration === 'fixed_url' || configuration === 'fixed_file') {
-        return ['instant_fixed' as const]
-      }
-      return ['manual_service' as const]
+      return [deliveryModeFor(configuration) ?? 'manual_service']
     })
     if (modes.includes(deliveryMode)) return rule.requireStructuredDelivery
   }
@@ -1412,189 +1068,6 @@ function shouldEditStructuredContent(offer: ProductEditorOffer, requirement: Str
   if (offer.fixedContentType === 'file') return false
   if (requirement === 'fixed_fields') return offer.deliveryMode === 'instant_fixed'
   return parseStructuredContent(offer.fixedStructuredContent).fields.length > 0
-}
-
-function OfferDeliveryFieldsEditor({
-  fields,
-  onChange,
-  disabled,
-  testIdPrefix,
-}: {
-  fields: DeliveryField[]
-  onChange: (fields: DeliveryField[]) => void
-  disabled?: boolean
-  testIdPrefix: string
-}) {
-  return (
-    <div className="space-y-2" data-testid={`${testIdPrefix}-fields`}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">交付字段模板</span>
-        <span className="text-xs text-[var(--color-text-muted)]">{fields.length}/{DELIVERY_FIELDS_MAX}</span>
-      </div>
-      {fields.map((field, index) => (
-        <div
-          key={index}
-          className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
-        >
-          <input
-            className="input flex-1 min-w-[7rem] py-1.5 font-mono"
-            placeholder="key"
-            maxLength={32}
-            value={field.key}
-            onChange={(event) => onChange(fields.map((item, i) => (
-              i === index ? { ...item, key: event.target.value } : item
-            )))}
-            disabled={disabled}
-            data-testid={`${testIdPrefix}-field-key-${index}`}
-          />
-          <input
-            className="input flex-1 min-w-[7rem] py-1.5"
-            placeholder="显示名称"
-            maxLength={30}
-            value={field.label}
-            onChange={(event) => onChange(fields.map((item, i) => (
-              i === index ? { ...item, label: event.target.value } : item
-            )))}
-            disabled={disabled}
-            data-testid={`${testIdPrefix}-field-label-${index}`}
-          />
-          <label className="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] cursor-pointer whitespace-nowrap">
-            <input
-              type="checkbox"
-              checked={field.sensitive}
-              onChange={(event) => onChange(fields.map((item, i) => (
-                i === index ? { ...item, sensitive: event.target.checked } : item
-              )))}
-              disabled={disabled}
-            />
-            敏感
-          </label>
-          <button
-            type="button"
-            onClick={() => onChange(fields.filter((_, i) => i !== index))}
-            disabled={disabled}
-            className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
-            aria-label="删除字段"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </div>
-      ))}
-      {fields.length < DELIVERY_FIELDS_MAX && (
-        <button
-          type="button"
-          onClick={() => onChange([...fields, { key: '', label: '', sensitive: false }])}
-          disabled={disabled}
-          className="btn-secondary w-full py-1.5 text-xs"
-          data-testid={`${testIdPrefix}-field-add`}
-        >
-          + 添加交付字段
-        </button>
-      )}
-    </div>
-  )
-}
-
-function OfferStructuredContentEditor({
-  fields,
-  values,
-  onFieldsChange,
-  onValuesChange,
-  disabled,
-  testIdPrefix,
-}: {
-  fields: DeliveryField[]
-  values: Record<string, string>
-  onFieldsChange: (fields: DeliveryField[]) => void
-  onValuesChange: (values: Record<string, string>) => void
-  disabled?: boolean
-  testIdPrefix: string
-}) {
-  function updateField(index: number, patch: Partial<DeliveryField>) {
-    const current = fields[index]
-    if (!current) return
-    onFieldsChange(fields.map((item, i) => (i === index ? { ...item, ...patch } : item)))
-    if (typeof patch.key === 'string' && patch.key !== current.key) {
-      const nextValues = { ...values }
-      nextValues[patch.key] = nextValues[current.key] ?? ''
-      delete nextValues[current.key]
-      onValuesChange(nextValues)
-    }
-  }
-
-  return (
-    <div className="space-y-2" data-testid={`${testIdPrefix}-content`}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">共享固定内容</span>
-        <span className="text-xs text-[var(--color-text-muted)]">{fields.length}/{DELIVERY_FIELDS_MAX}</span>
-      </div>
-      {fields.map((field, index) => (
-        <div
-          key={index}
-          className="space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2"
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              className="input flex-1 min-w-[7rem] py-1.5 font-mono"
-              placeholder="key"
-              maxLength={32}
-              value={field.key}
-              onChange={(event) => updateField(index, { key: event.target.value })}
-              disabled={disabled}
-              data-testid={`${testIdPrefix}-field-key-${index}`}
-            />
-            <input
-              className="input flex-1 min-w-[7rem] py-1.5"
-              placeholder="显示名称"
-              maxLength={30}
-              value={field.label}
-              onChange={(event) => updateField(index, { label: event.target.value })}
-              disabled={disabled}
-              data-testid={`${testIdPrefix}-field-label-${index}`}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                const removed = fields[index]
-                onFieldsChange(fields.filter((_, i) => i !== index))
-                if (removed) {
-                  const nextValues = { ...values }
-                  delete nextValues[removed.key]
-                  onValuesChange(nextValues)
-                }
-              }}
-              disabled={disabled}
-              className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
-              aria-label="删除字段"
-              data-testid={`${testIdPrefix}-field-remove-${index}`}
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-          <input
-            className="input py-1.5 font-mono"
-            placeholder="交付值"
-            maxLength={2000}
-            value={values[field.key] ?? ''}
-            onChange={(event) => onValuesChange({ ...values, [field.key]: event.target.value })}
-            disabled={disabled}
-            data-testid={`${testIdPrefix}-field-value-${index}`}
-          />
-        </div>
-      ))}
-      {fields.length < DELIVERY_FIELDS_MAX && (
-        <button
-          type="button"
-          onClick={() => onFieldsChange([...fields, { key: '', label: '', sensitive: false }])}
-          disabled={disabled}
-          className="btn-secondary w-full py-1.5 text-xs"
-          data-testid={`${testIdPrefix}-field-add`}
-        >
-          + 添加固定字段
-        </button>
-      )}
-    </div>
-  )
 }
 
 function isNotFoundError(error: unknown): boolean {

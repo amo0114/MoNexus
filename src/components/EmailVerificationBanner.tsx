@@ -78,29 +78,33 @@ export default function EmailVerificationBanner() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 pt-4 sm:px-6">
-      <div className="flex items-center gap-3 rounded-xl border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-4 py-3 text-[var(--color-warning-text)] fade-in">
-        <MailWarning className="h-5 w-5 shrink-0 text-[var(--color-warning-accent)]" />
-        <div className="min-w-0 flex-1 text-sm">
-          <span className="font-semibold">邮箱尚未验证。</span>
-          <span className="hidden sm:inline">验证后可购买、签到、申请商家与上传文件；注册奖励将在验证后发放。</span>
+    <div className="mx-auto w-full max-w-7xl px-4 pt-2.5 sm:px-6">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs px-3.5 py-2 text-[var(--color-text)] fade-in">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <MailWarning className="h-4 w-4 shrink-0 text-amber-500" />
+          <div className="min-w-0 text-xs sm:text-sm leading-normal">
+            <span className="font-medium text-[var(--color-text)]">邮箱尚未验证</span>
+            <span className="text-[var(--color-text-muted)] ml-1.5">验证后即可正常购买与签到</span>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={sending || cooldownSeconds > 0}
-          className="min-h-[40px] whitespace-nowrap rounded-lg bg-[var(--color-warning-accent)] px-3 text-xs font-bold text-white transition-colors hover:bg-[var(--color-warning-accent-hover)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-60"
-        >
-          {sending ? '发送中…' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重发` : '发送验证邮件'}
-        </button>
-        <button
-          type="button"
-          onClick={handleDismiss}
-          className="icon-btn min-h-[40px] min-w-[40px] rounded transition-colors hover:bg-[var(--color-warning-border)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-          aria-label="关闭邮箱验证提示"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={sending || cooldownSeconds > 0}
+            className="min-h-[44px] px-3.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
+          >
+            {sending ? '发送中…' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重发` : '发送验证邮件'}
+          </button>
+          <button
+            type="button"
+            onClick={handleDismiss}
+            className="icon-btn min-h-[44px] min-w-[44px] rounded-lg transition-colors hover:bg-[var(--color-border)]/50 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] inline-flex items-center justify-center text-[var(--color-text-muted)] cursor-pointer"
+            aria-label="关闭邮箱验证提示"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   )

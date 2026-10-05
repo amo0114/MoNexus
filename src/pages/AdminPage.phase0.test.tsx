@@ -186,14 +186,14 @@ describe('AdminPage Phase 0 verification', () => {
     expect(badges[0]).toHaveTextContent('退款')
     expect(screen.getByText('550')).toBeInTheDocument()
 
-    // Row 2: out (should be −100 with 已支付 badge and balanceAfter 450)
+    // Row 2: out (should be −100 with 支付扣款 badge and balanceAfter 450)
     expect(screen.getByText('−100')).toBeInTheDocument()
-    expect(badges[1]).toHaveTextContent('已支付')
+    expect(badges[1]).toHaveTextContent('支付扣款')
     expect(screen.getByText('450')).toBeInTheDocument()
 
-    // Row 3: release (should be +30 with 已返还 badge and balanceAfter 480)
+    // Row 3: release (should be +30 with 解除冻结 badge and balanceAfter 480)
     expect(screen.getByText('+30')).toBeInTheDocument()
-    expect(badges[2]).toHaveTextContent('已返还')
+    expect(badges[2]).toHaveTextContent('解除冻结')
     expect(screen.getByText('480')).toBeInTheDocument()
   })
 
@@ -325,4 +325,3 @@ describe('AdminPage Phase 0 verification', () => {
     expect(within(table).queryByText('封禁用户')).not.toBeInTheDocument()
   })
 })
-
