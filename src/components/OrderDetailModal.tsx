@@ -548,95 +548,99 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           </div>
         </div>
 
-        {/* 底部操作栏：响应式自适应（移动端两行分流，桌面端左右单行） */}
-        <div className="pt-3.5 mt-2 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
-          {/* 流程与状态次要操作（发起争议 / 结束订单 / 评价商品 / 续费） */}
-          {(canDispute || canClose || canReview || (subscriptionExpiresAt && !order.hasActiveRenewal)) ? (
-            <div className="flex items-center gap-2 flex-wrap order-2 sm:order-1">
-              {canDispute && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction('dispute')}
-                  disabled={loadingAction === 'dispute'}
-                  data-testid="order-dispute-button"
-                  className="btn-secondary h-8 sm:h-9 px-3 text-xs whitespace-nowrap border-[var(--color-warning)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10 font-medium cursor-pointer transition-colors"
-                >
-                  {loadingAction === 'dispute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isAcceptance ? '验收异议' : '发起争议'}
-                </button>
-              )}
-              {canClose && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmAction('close')}
-                  disabled={loadingAction === 'close'}
-                  data-testid="order-close-button"
-                  className="btn-secondary h-8 sm:h-9 px-3 text-xs whitespace-nowrap border-[var(--color-cta)] text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-medium cursor-pointer transition-colors"
-                >
-                  {loadingAction === 'close' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isAcceptance ? '验收通过' : '结束订单'}
-                </button>
-              )}
-              {canReview && (
-                <button
-                  type="button"
-                  onClick={() => setReviewOpen(true)}
-                  data-testid="review-create-button"
-                  className="btn-secondary h-8 sm:h-9 px-3 text-xs whitespace-nowrap border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-medium cursor-pointer transition-colors"
-                >
-                  评价商品
-                </button>
-              )}
-              {subscriptionExpiresAt && !order.hasActiveRenewal && (
-                <button
-                  type="button"
-                  onClick={startRenew}
-                  disabled={renewLoading}
-                  data-testid="order-renew-button"
-                  className="btn-primary h-8 sm:h-9 px-3 text-xs whitespace-nowrap flex items-center gap-1 cursor-pointer"
-                >
-                  {renewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  续费
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="hidden sm:block order-1" />
-          )}
-
-          {/* 主操作组：关闭 + 复制发货内容 */}
-          <div className="flex items-center gap-2.5 order-1 sm:order-2 w-full sm:w-auto sm:ml-auto">
+        {/* 底部操作栏：极简单行流（Plan 1：高度仅 36px/40px，轻量清爽，绝无堆叠拥挤感） */}
+        <div className="pt-3 mt-1.5 border-t border-[var(--color-border)] flex items-center justify-between gap-2 shrink-0">
+          {/* 左侧：关闭 + 弱化争议/异常入口 */}
+          <div className="flex items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="btn-secondary h-10 px-4 sm:px-5 text-sm whitespace-nowrap shrink-0 cursor-pointer"
+              className="btn-secondary h-8 sm:h-9 px-3 text-xs sm:text-sm text-[var(--color-text)] cursor-pointer"
               data-testid="order-detail-close"
             >
               关闭
             </button>
+            {canDispute && (
+              <button
+                type="button"
+                onClick={() => setConfirmAction('dispute')}
+                disabled={loadingAction === 'dispute'}
+                data-testid="order-dispute-button"
+                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-warning)] hover:underline cursor-pointer py-1 px-1 transition-colors whitespace-nowrap"
+              >
+                {loadingAction === 'dispute' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin inline" />
+                ) : (
+                  isAcceptance ? '验收异议' : '发起争议'
+                )}
+              </button>
+            )}
+          </div>
+
+          {/* 右侧：紧凑业务操作组（评价 / 续费 / 结束 / 复制） */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {canReview && (
+              <button
+                type="button"
+                onClick={() => setReviewOpen(true)}
+                data-testid="review-create-button"
+                className="btn-secondary h-8 sm:h-9 px-2.5 sm:px-3 text-xs whitespace-nowrap cursor-pointer text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-medium"
+              >
+                评价
+              </button>
+            )}
+            {subscriptionExpiresAt && !order.hasActiveRenewal && (
+              <button
+                type="button"
+                onClick={startRenew}
+                disabled={renewLoading}
+                data-testid="order-renew-button"
+                className="btn-primary h-8 sm:h-9 px-2.5 sm:px-3 text-xs whitespace-nowrap flex items-center gap-1 cursor-pointer font-medium"
+              >
+                {renewLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                续费
+              </button>
+            )}
+            {canClose && (
+              <button
+                type="button"
+                onClick={() => setConfirmAction('close')}
+                disabled={loadingAction === 'close'}
+                data-testid="order-close-button"
+                className="btn-secondary h-8 sm:h-9 px-2.5 sm:px-3 text-xs whitespace-nowrap text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-cta)] hover:text-[var(--color-cta)] cursor-pointer font-medium"
+              >
+                {loadingAction === 'close' ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  isAcceptance ? '验收通过' : '结束订单'
+                )}
+              </button>
+            )}
             {Boolean(order.delivery?.content?.trim()) && !contentMasked ? (
               <button
                 type="button"
                 onClick={copyContent}
-                className="btn-primary flex-1 sm:flex-initial h-10 px-5 text-sm whitespace-nowrap flex items-center justify-center gap-1.5 cursor-pointer shadow-xs font-medium"
+                className="btn-primary h-8 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm whitespace-nowrap flex items-center justify-center gap-1.5 cursor-pointer shadow-xs font-medium"
                 data-testid="order-detail-copy"
               >
                 {copiedContent ? (
                   <>
-                    <Check className="w-4 h-4 text-[var(--color-on-primary)]" />
+                    <Check className="w-3.5 h-3.5 text-[var(--color-on-primary)]" />
                     <span>已复制</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4" />
+                    <Copy className="w-3.5 h-3.5" />
                     <span>复制内容</span>
                   </>
                 )}
               </button>
             ) : subscriptionExpiresAt && order.hasActiveRenewal ? (
               <span
-                className="text-xs text-[var(--color-text-muted)] flex-1 sm:flex-initial text-center py-2"
+                className="text-xs text-[var(--color-text-muted)] py-1"
                 data-testid="order-renewed-hint"
               >
-                已续费，请在新订单中查看
+                已续费
               </span>
             ) : null}
           </div>
