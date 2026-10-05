@@ -81,7 +81,7 @@ export default function SessionManager() {
   // current device visible even if the API's natural order changes, then show
   // the next two entries until the user explicitly expands the list.
   const prioritizedSessions = [...sessions].sort((a, b) => Number(b.current) - Number(a.current))
-  const visibleSessions = showAllSessions ? prioritizedSessions : prioritizedSessions.slice(0, 3)
+  const visibleSessions = showAllSessions ? prioritizedSessions : prioritizedSessions.slice(0, 1)
   const hiddenSessionCount = sessions.length - visibleSessions.length
   const dialogTitle = pendingAction?.kind === 'single' ? '退出此设备？' : '退出其他设备？'
   const dialogDescription = pendingAction?.kind === 'single'
@@ -160,11 +160,11 @@ export default function SessionManager() {
               </div>
             </article>
           ))}
-          {sessions.length > 3 && (
+          {sessions.length > 1 && (
             <button
               type="button"
               onClick={() => setShowAllSessions((current) => !current)}
-              className="btn-secondary btn-sm w-full px-3 py-2 text-xs"
+              className="btn-secondary btn-sm w-full px-3 py-2 text-xs cursor-pointer"
               data-testid="session-toggle-all"
             >
               {showAllSessions ? '收起设备列表' : `查看其余 ${hiddenSessionCount} 台设备`}

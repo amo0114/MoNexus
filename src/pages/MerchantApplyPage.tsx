@@ -4,6 +4,7 @@ import { applyMerchant } from '../api/merchant'
 import { getMe } from '../api/auth'
 import { useAuthStore } from '../stores/authStore'
 import { getApiErrorMessage } from '../api/error'
+import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
 
 export default function MerchantApplyPage() {
   const navigate = useNavigate()
@@ -57,6 +58,8 @@ export default function MerchantApplyPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
+    const requestContext = getAuthSessionContext(useAuthStore.getState())
+    if (!requestContext) return
     setLoading(true)
     setError(null)
 
@@ -68,9 +71,11 @@ export default function MerchantApplyPage() {
         contactPhone: contactPhone || undefined
       })
       const latestUser = await getMe()
-      setUser(latestUser)
+      setUser(latestUser, requestContext)
     } catch (err: any) {
-      setError(getApiErrorMessage(err, '入驻申请失败'))
+      if (matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))) {
+        setError(getApiErrorMessage(err, '入驻申请失败'))
+      }
     } finally {
       setLoading(false)
     }

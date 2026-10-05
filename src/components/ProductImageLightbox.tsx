@@ -72,14 +72,14 @@ export default function ProductImageLightbox({
       aria-modal="true"
       aria-label={`${alt} 全图预览`}
       data-testid="product-image-lightbox"
-      className="fixed inset-0 z-[80] flex flex-col bg-black/92 backdrop-blur-sm fade-in"
+      className="fixed inset-0 z-[100] flex flex-col bg-black/98 backdrop-blur-md fade-in select-none"
       onClick={onClose}
     >
-      <div className="flex items-center justify-between gap-3 px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 shrink-0 pr-16 sm:pr-20">
-        <p className="min-w-0 truncate text-sm font-medium text-white/90">
+      <div className="flex items-center justify-between gap-3 px-6 pt-[max(0.875rem,env(safe-area-inset-top))] pb-3 shrink-0 pr-20 sm:pr-24 bg-black/80 border-b border-white/10 z-30">
+        <p className="min-w-0 truncate text-sm font-semibold text-white/95">
           {alt}
           {hasMultiple ? (
-            <span className="ml-2 tabular-nums text-white/60">
+            <span className="ml-2.5 font-mono text-xs text-white/60 bg-white/10 px-2 py-0.5 rounded-full">
               {safeIndex + 1} / {count}
             </span>
           ) : null}
@@ -95,10 +95,10 @@ export default function ProductImageLightbox({
         }}
         data-testid="product-image-lightbox-close"
         aria-label="关闭全图预览"
-        className="absolute right-3 top-[max(0.75rem,env(safe-area-inset-top))] z-20 inline-flex h-12 min-w-12 items-center justify-center gap-1 rounded-full border-2 border-white/70 bg-black/60 px-3 text-white shadow-xl backdrop-blur-md transition-colors hover:bg-red-600/80 hover:border-white focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.55)] sm:right-5 sm:top-5"
+        className="absolute right-3 top-[max(0.625rem,env(safe-area-inset-top))] z-40 inline-flex h-10 sm:h-11 min-w-10 sm:min-w-11 items-center justify-center gap-1.5 rounded-full border border-white/40 bg-white/10 px-3 text-white shadow-xl backdrop-blur-md transition-all hover:bg-white/25 hover:border-white focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.55)] sm:right-6"
       >
-        <X className="h-6 w-6 shrink-0" aria-hidden="true" strokeWidth={2.5} />
-        <span className="hidden sm:inline text-sm font-semibold pr-0.5">关闭</span>
+        <X className="h-5 w-5 shrink-0" aria-hidden="true" strokeWidth={2.5} />
+        <span className="hidden sm:inline text-xs font-semibold pr-0.5">关闭</span>
       </button>
 
       <div

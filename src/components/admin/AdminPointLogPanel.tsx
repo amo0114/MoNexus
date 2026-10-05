@@ -19,9 +19,9 @@ const PAGE_SIZE = 20
 export const POINT_LOG_TYPE_OPTIONS = [
   { value: '', label: '全部类型' },
   { value: 'in', label: '入账' },
-  { value: 'out', label: '已支付' },
-  { value: 'hold', label: '待支付' },
-  { value: 'release', label: '已返还' },
+  { value: 'out', label: '支付扣款' },
+  { value: 'hold', label: '积分冻结' },
+  { value: 'release', label: '解除冻结' },
   { value: 'refund', label: '退款' },
   { value: 'sandbox_in', label: '沙箱入账' },
 ]

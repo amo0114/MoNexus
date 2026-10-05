@@ -12,10 +12,9 @@
  */
 import { randomUUID } from 'node:crypto'
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
 import { prisma } from '../src/lib/prisma.js'
-import { config } from '../src/config/index.js'
 import { ensureSeedCategories } from '../src/modules/catalog/bootstrap.js'
+import { loginUser } from '../src/modules/auth/service.js'
 
 const databaseUrl = process.env.DATABASE_URL ?? ''
 let databaseName = ''
@@ -204,11 +203,16 @@ if (scenario === 'announcement') {
   announcementId = announcement.id
 }
 
-const sign = (userId, role) => jwt.sign(
-  { userId, role },
-  config.jwtSecret,
-  { expiresIn: '15m' },
-)
+async function issueFixtureAccessToken(email) {
+  const session = await loginUser(email, password, '127.0.0.1', 'notification-realtime-e2e')
+  if (session.kind !== 'authenticated') throw new Error('Expected a non-admin fixture session')
+  return session.accessToken
+}
+
+// Browser session ownership requires a real sid and persisted refresh family.
+const merchantToken = await issueFixtureAccessToken(merchantEmail)
+const buyerToken = await issueFixtureAccessToken(buyerEmail)
+const buyerBToken = await issueFixtureAccessToken(buyerBEmail)
 
 console.log(JSON.stringify({
   scenario,
@@ -216,15 +220,15 @@ console.log(JSON.stringify({
   merchantUserId: merchantUser.id,
   merchantEmail,
   merchantNickname: merchantUser.nickname,
-  merchantToken: sign(merchantUser.id, 'merchant'),
+  merchantToken,
   buyerUserId: buyer.id,
   buyerEmail,
   buyerNickname: buyer.nickname,
-  buyerToken: sign(buyer.id, 'user'),
+  buyerToken,
   buyerBUserId: buyerB.id,
   buyerBEmail,
   buyerBNickname: buyerB.nickname,
-  buyerBToken: sign(buyerB.id, 'user'),
+  buyerBToken,
   productId: manualProduct.id,
   offerId: manualOffer.id,
   productName: manualProduct.name,

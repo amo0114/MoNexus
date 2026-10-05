@@ -24,6 +24,7 @@ import { getNotificationRealtimeHub } from './modules/notifications/realtime/hub
 import { getNotificationRealtimeLifecycle } from './modules/notifications/realtime/lifecycle.js'
 import { startPaymentWorkers, stopPaymentWorkers } from './modules/payment/workers/index.js'
 import { startPaymentPayloadRetentionCron, stopPaymentPayloadRetentionCron } from './modules/payment/payloadRetention.js'
+import { startTrafficCron, stopTrafficCron } from './modules/traffic/cron.js'
 
 const server = app.listen(config.port, () => {
   logger.info(
@@ -51,6 +52,7 @@ const server = app.listen(config.port, () => {
   startPartnerEntitlementCron()
   startPaymentWorkers()
   startPaymentPayloadRetentionCron()
+  startTrafficCron()
   if (config.notificationRealtime.enabled) {
     // Start the dedicated LISTEN listener once realtime is enabled.
     void getNotificationRealtimeLifecycle().start()
@@ -104,6 +106,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopPartnerEntitlementCron()
   stopPaymentWorkers()
   stopPaymentPayloadRetentionCron()
+  stopTrafficCron()
 
   // 4. Drain SSE within the configured grace, then force-destroy leftovers.
   const drainPromise = (async () => {

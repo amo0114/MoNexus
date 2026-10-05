@@ -3,7 +3,7 @@ import { config } from '../../config/index.js'
 import { logger } from '../logger.js'
 import { prisma } from '../prisma.js'
 import { transitionOrderStatus } from '../../modules/orders/fulfillment.js'
-import { releaseHeldOrder } from '../../modules/orders/accounting.js'
+import { captureHeldOrder, releaseHeldOrder } from '../../modules/orders/accounting.js'
 import {
   fakaProvisionTotal,
   fakaRevokePendingGauge,
@@ -585,7 +585,7 @@ async function finalizeProvisionSuccess(
                 : subscription?.action === 'new'
                   ? 'Xboard 新购开通成功'
                   : 'Xboard 订阅已开通'
-        await transitionOrderStatus(
+        const deliveredOrder = await transitionOrderStatus(
           {
             orderId: claimed.orderId,
             toStatus: 'delivered',
@@ -601,6 +601,9 @@ async function finalizeProvisionSuccess(
           },
           tx
         )
+        // Capture only after authoritative success, atomically with delivery.
+        // Keep the order delivered so the existing dispute/refund flow remains available.
+        await captureHeldOrder(tx, deliveredOrder, `Xboard 开通成功扣款: #${deliveredOrder.id}`)
       }
     })
   } catch (err) {

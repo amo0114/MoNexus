@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { createMockAccessToken } from './auth-fixtures'
 
 test.use({
   viewport: { width: 390, height: 844 },
@@ -79,12 +80,12 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
     return route.fulfill({ status: 404, json: { error: { message: 'not mocked' } } })
   })
 
-  await page.addInitScript((user) => {
+  await page.addInitScript(({ user, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
-      state: { user, accessToken: 'mobile-chrome-test-token', isLoggedIn: true },
+      state: { user, accessToken, isLoggedIn: true },
       version: 0,
     }))
-  }, TEST_USER)
+  }, { user: TEST_USER, accessToken: createMockAccessToken(TEST_USER) })
   await page.goto('/profile')
 
   const navbar = page.getByTestId('app-navbar')
@@ -137,13 +138,15 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
   // A real quiet success action is absorbed by the island, not rendered as a
   // second top banner. The request is mocked solely to keep the E2E fixture
   // independent from the shared local check-in state.
-  await page.getByRole('button', { name: '每日打卡' }).click()
-  await expect(shell.getByText('打卡成功！积分 +50', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '签到打卡' }).click()
+  await expect(shell.getByTestId('quiet-island-notice')).toContainText('打卡成功！积分 +50')
+  await expect(shell.getByTestId('quiet-island-notice')).toBeVisible()
   await expect(page.locator('[data-toast-card]')).toHaveCount(0)
 
   // A regular error preempts the island and uses the same measured navbar
   // edge, rather than the former hard-coded 77px offset. This validation is
   // local and does not need a network request.
+  await page.getByRole('tab', { name: '账号设置' }).click()
   await page.getByTestId('nickname-edit').scrollIntoViewIfNeeded()
   await page.getByTestId('nickname-edit').click()
   await page.getByTestId('nickname-input').fill('')
@@ -199,16 +202,16 @@ test('mobile admin has a direct leaderboard tab', async ({ page }) => {
     return route.fulfill({ status: 404, json: { error: { message: 'not mocked' } } })
   })
 
-  await page.addInitScript((user) => {
+  await page.addInitScript(({ user, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
-      state: { user, accessToken: 'mobile-admin-chrome-test-token', isLoggedIn: true },
+      state: { user, accessToken, isLoggedIn: true },
       version: 0,
     }))
-  }, TEST_ADMIN)
+  }, { user: TEST_ADMIN, accessToken: createMockAccessToken(TEST_ADMIN) })
   await page.goto('/leaderboard')
 
   const tab = page.getByTestId('tab-bar-leaderboard')
   await expect(tab).toBeVisible()
-  await expect(tab).toHaveAttribute('aria-current', 'page')
-  await expect(page.getByTestId('bottom-tab-bar').getByRole('button')).toHaveCount(4)
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByTestId('bottom-tab-bar').getByRole('tab')).toHaveCount(4)
 })

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import type { RechargeConfig, RechargeOrder, RechargeQuote } from '../api/recharge'
 import { useAuthStore } from '../stores/authStore'
 
@@ -54,8 +54,21 @@ vi.mock('./recharge/paymentActions', async (importOriginal) => {
 })
 
 import RechargePage from './RechargePage'
+import { readRechargeReturnTo, rememberRechargeReturnTo } from './recharge/session'
 
 const ORDER_ID = '11111111-1111-4111-8111-111111111111'
+
+function createAccessToken(userId: number, sessionId: string) {
+  const payload = btoa(JSON.stringify({
+    userId,
+    sid: sessionId,
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `header.${payload}.signature`
+}
 
 function apiError(code: string, message = code, status = 409) {
   return Object.assign(new Error(message), {
@@ -157,9 +170,15 @@ function renderAt(path: string) {
     <MemoryRouter initialEntries={[path]}>
       <Routes>
         <Route path="/recharge" element={<RechargePage />} />
+        <Route path="/product/:id" element={<ReturnDestination />} />
       </Routes>
     </MemoryRouter>,
   )
+}
+
+function ReturnDestination() {
+  const location = useLocation()
+  return <div data-testid="returned-product">{location.pathname}{location.search}</div>
 }
 
 async function readyCheckout() {
@@ -167,6 +186,48 @@ async function readyCheckout() {
 }
 
 describe('RechargePage', () => {
+  it.each(['redirect', 'form_post', 'none'] as const)('preserves product and offer through %s payment and an order-only return', async (type) => {
+    const target = '/product/42?offerId=7'
+    const action = type === 'redirect' ? { type, url: 'https://payment.example/approve' }
+      : type === 'form_post' ? { type, url: 'https://payment.example/pay', fields: { token: 'mock' } }
+      : { type }
+    createRechargeOrder.mockResolvedValue(order('pending_payment', { action }))
+    getRechargeOrder.mockResolvedValue(order('pending_payment'))
+    const mounted = renderAt(`/recharge?returnTo=${encodeURIComponent(target)}`)
+    await readyCheckout()
+    await userEvent.click(screen.getByTestId('recharge-suggested-1000'))
+    await waitFor(() => expect(screen.getByTestId('recharge-pay')).toBeEnabled())
+    await userEvent.click(screen.getByTestId('recharge-pay'))
+    await waitFor(() => expect(readRechargeReturnTo(ORDER_ID)).toBe(target))
+    if (type === 'redirect') expect(goToRedirect).toHaveBeenCalled()
+    if (type === 'form_post') expect(submitFormPost).toHaveBeenCalled()
+    mounted.unmount()
+    getRechargeOrder.mockResolvedValue(order('credited'))
+    renderAt(`/recharge?order=${ORDER_ID}`)
+    await userEvent.click(await screen.findByRole('button', {name: '返回商品继续兑换'}))
+    expect(await screen.findByTestId('returned-product')).toHaveTextContent(target)
+    expect(useAuthStore.getState().user?.points).toBe(1500)
+  })
+
+  it('does not offer a product return for uncredited or sandbox orders, or unsafe targets', async () => {
+    rememberRechargeReturnTo(ORDER_ID, '/product/42?offerId=7')
+    getRechargeOrder.mockResolvedValue(order('pending_payment'))
+    completeRechargeOrder.mockResolvedValue(order('pending_payment'))
+    let mounted = renderAt(`/recharge?order=${ORDER_ID}&success=1`)
+    await screen.findByTestId('recharge-result')
+    expect(screen.queryByRole('button', {name: '返回商品继续兑换'})).toBeNull()
+    mounted.unmount()
+    sessionStorage.clear()
+    getRechargeOrder.mockResolvedValue(order('credited'))
+    mounted = renderAt(`/recharge?order=${ORDER_ID}&returnTo=https%3A%2F%2Fevil.example%2Fproduct%2F42`)
+    await screen.findByTestId('recharge-result')
+    expect(screen.queryByRole('button', {name: '返回商品继续兑换'})).toBeNull()
+    mounted.unmount()
+    getRechargeOrder.mockResolvedValue(order('credited', {adminSandbox: true}))
+    renderAt(`/recharge?order=${ORDER_ID}&returnTo=%2Fproduct%2F42`)
+    await screen.findByTestId('recharge-result')
+    expect(screen.queryByRole('button', {name: '返回商品继续兑换'})).toBeNull()
+  })
   beforeEach(() => {
     sessionStorage.clear()
     useAuthStore.setState({
@@ -178,8 +239,10 @@ describe('RechargePage', () => {
         points: 500,
         merchant: null,
       },
-      accessToken: 'token',
+      accessToken: createAccessToken(1, 'recharge-test-session'),
+      sessionId: 'recharge-test-session',
       isLoggedIn: true,
+      authEpoch: 1,
     })
     getRechargeConfig.mockImplementation(async (currency: string) => configFor(currency as 'CNY' | 'USD'))
     createRechargeQuote.mockImplementation(async (body: { amountMinor: string; currency: string }) =>

@@ -6,6 +6,7 @@ import { useAppStore } from '../stores/appStore'
 import {
   getMeWithAccessToken,
   getRegistrationStatus,
+  finalizePendingAuthSession,
   isMfaLoginChallenge,
   loginWithPassword,
   registerAccount,
@@ -23,10 +24,13 @@ import HumanVerificationWidget from '../components/auth/HumanVerificationWidget'
 import type { HumanVerificationHandle } from '../components/auth/humanVerificationTypes'
 import Logo from '../components/ui/Logo'
 import { parseSafeProductReturnTo } from '../utils/returnTo'
+import type { PendingAuthSessionCommit } from '../auth/pendingAuthSession'
+import { AuthSessionChangedError } from '../auth/sessionContext'
 
 type PendingRecoveryConfirmation = {
   accessToken: string
   recoveryCodes: string[]
+  commitProof: PendingAuthSessionCommit
 }
 
 type RegistrationViewState =
@@ -70,8 +74,11 @@ export default function LoginPage() {
   const [searchParams] = useSearchParams()
   const returnTo = parseSafeProductReturnTo(searchParams.get('returnTo')) ?? '/'
   const login = useAuthStore((state) => state.login)
+  const currentAuthEpoch = useAuthStore((state) => state.authEpoch)
+  const beginUnpersistedIdentityTransition = useAuthStore((state) => state.beginUnpersistedIdentityTransition)
   const showToast = useAppStore((state) => state.showToast)
   const humanVerificationRef = useRef<HumanVerificationHandle>(null)
+  const pendingAuthEpochRef = useRef<number | null>(null)
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -135,7 +142,27 @@ export default function LoginPage() {
   function cancelMfaFlow() {
     clearMfaState()
     setPassword('')
+    pendingAuthEpochRef.current = null
   }
+
+  function beginPendingSessionTransition(): number | null {
+    const expectedAuthEpoch = pendingAuthEpochRef.current
+    if (expectedAuthEpoch === null || useAuthStore.getState().authEpoch !== expectedAuthEpoch) return null
+
+    const transitionAuthEpoch = beginUnpersistedIdentityTransition()
+    pendingAuthEpochRef.current = transitionAuthEpoch
+    return transitionAuthEpoch
+  }
+
+  useEffect(() => {
+    const pendingAuthEpoch = pendingAuthEpochRef.current
+    if (pendingAuthEpoch === null || pendingAuthEpoch === currentAuthEpoch) return
+
+    pendingAuthEpochRef.current = null
+    clearMfaState()
+    setPassword('')
+    showToast('登录状态已变化，请重新开始登录', 'error')
+  }, [currentAuthEpoch, showToast])
 
   function switchToLogin() {
     humanVerificationRef.current?.reset()
@@ -151,20 +178,47 @@ export default function LoginPage() {
     setIsRegister(true)
   }
 
-  async function establishSession(accessToken: string, successMessage: string) {
+  async function establishSession(
+    accessToken: string,
+    successMessage: string,
+    commitProof: PendingAuthSessionCommit,
+    identityTransitionAlreadyStarted = false,
+  ) {
     setFinalizing(true)
+    let committingAuthEpoch: number | null = null
     try {
+      let expectedAuthEpoch: number | undefined = pendingAuthEpochRef.current ?? undefined
+      if (expectedAuthEpoch === undefined || useAuthStore.getState().authEpoch !== expectedAuthEpoch) {
+        return false
+      }
+
+      if (!identityTransitionAlreadyStarted) {
+        expectedAuthEpoch = beginPendingSessionTransition() ?? undefined
+      }
+      if (expectedAuthEpoch === undefined) return false
+      committingAuthEpoch = expectedAuthEpoch
+
       // Do not write a pending MFA access token into Zustand until the caller
       // has completed any one-time recovery-code acknowledgement.
       const profile = await getMeWithAccessToken(accessToken)
-      login(profile, accessToken)
+      if (useAuthStore.getState().authEpoch !== expectedAuthEpoch) return false
+      if (!login(profile, accessToken, expectedAuthEpoch, commitProof)) {
+        return false
+      }
+      pendingAuthEpochRef.current = null
       clearMfaState()
       setPassword('')
       showToast(successMessage)
       navigate(returnTo)
       return true
     } catch (error) {
-      showToast(getApiErrorMessage(error, '登录状态同步失败，请再试一次'), 'error')
+      if (
+        committingAuthEpoch !== null
+        && useAuthStore.getState().authEpoch === committingAuthEpoch
+        && pendingAuthEpochRef.current === committingAuthEpoch
+      ) {
+        showToast(getApiErrorMessage(error, '登录状态同步失败，请再试一次'), 'error')
+      }
       return false
     } finally {
       setFinalizing(false)
@@ -225,6 +279,8 @@ export default function LoginPage() {
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
+    const requestAuthEpoch = useAuthStore.getState().authEpoch
+    pendingAuthEpochRef.current = null
     setLoading(true)
     try {
       if (isRegister) {
@@ -256,7 +312,8 @@ export default function LoginPage() {
           }
         }
 
-        const result = await registerAccount({
+        pendingAuthEpochRef.current = requestAuthEpoch
+        await registerAccount({
           email,
           password,
           ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
@@ -264,12 +321,22 @@ export default function LoginPage() {
           ...(humanVerification ? { humanVerification } : {}),
           // 只提交用户真实勾选确认过的版本（记录模式下未勾选即不留证）。
           ...(legalRequirement && agreementsChecked ? { agreements: agreementVersionsOf(legalRequirement) } : {}),
+        }, requestAuthEpoch, async (accessToken, commitProof) => {
+          const committed = await establishSession(
+            accessToken,
+            '注册成功。请验证邮箱以领取注册奖励。',
+            commitProof,
+          )
+          if (!committed) throw new AuthSessionChangedError()
         })
-        await establishSession(result.accessToken, '注册成功。请验证邮箱以领取注册奖励。')
         return
       }
 
-      const result = await loginWithPassword({ email, password })
+      pendingAuthEpochRef.current = requestAuthEpoch
+      const result = await loginWithPassword({ email, password }, requestAuthEpoch, async (accessToken, commitProof) => {
+        const committed = await establishSession(accessToken, '登录成功！', commitProof)
+        if (!committed) throw new AuthSessionChangedError()
+      })
       if (isMfaLoginChallenge(result)) {
         // Password is no longer needed after the server has issued the
         // pre-auth challenge. The challenge itself remains React memory only.
@@ -277,37 +344,78 @@ export default function LoginPage() {
         setMfaChallenge(result)
         return
       }
-
-      await establishSession(result.accessToken, '登录成功！')
     } catch (error) {
-      if (isRegister) handleRegistrationError(error)
-      else showToast(getApiErrorMessage(error, '操作失败'), 'error')
+      const requestStillOwnsAuthState = useAuthStore.getState().authEpoch === requestAuthEpoch
+      if (pendingAuthEpochRef.current === requestAuthEpoch) pendingAuthEpochRef.current = null
+      if (requestStillOwnsAuthState) {
+        if (isRegister) handleRegistrationError(error)
+        else showToast(getApiErrorMessage(error, '操作失败'), 'error')
+      }
     } finally {
       setLoading(false)
     }
   }
 
-  function handleEnrollmentCompleted(result: MfaEnrollmentConfirmResponse) {
+  function handleEnrollmentCompleted(
+    result: MfaEnrollmentConfirmResponse,
+    commitProof: PendingAuthSessionCommit,
+  ) {
+    const expectedAuthEpoch = pendingAuthEpochRef.current
+    if (
+      expectedAuthEpoch === null
+      || useAuthStore.getState().authEpoch !== expectedAuthEpoch
+    ) {
+      clearMfaState()
+      return
+    }
+
+    if (beginPendingSessionTransition() === null) {
+      clearMfaState()
+      throw new AuthSessionChangedError()
+    }
+
     if (!Array.isArray(result.recoveryCodes) || result.recoveryCodes.length === 0) {
       clearMfaState()
       showToast('恢复码生成失败，请重新登录后完成 MFA 设置', 'error')
-      return
+      throw new Error('MFA recovery codes are unavailable')
     }
 
     // The only copy of recovery codes stays in this page's React state until
     // the user acknowledges saving them. It is never written to authStore.
     setMfaChallenge(null)
-    setPendingRecovery({ accessToken: result.accessToken, recoveryCodes: result.recoveryCodes })
+    setPendingRecovery({ accessToken: result.accessToken, recoveryCodes: result.recoveryCodes, commitProof })
   }
 
-  async function handleMfaVerified(result: MfaVerifyResponse) {
-    const completed = await establishSession(result.accessToken, '登录成功！')
-    if (!completed) cancelMfaFlow()
+  async function handleMfaVerified(result: MfaVerifyResponse, commitProof: PendingAuthSessionCommit) {
+    const completed = await establishSession(result.accessToken, '登录成功！', commitProof)
+    if (!completed) throw new AuthSessionChangedError()
   }
 
   async function handleRecoveryConfirmation() {
     if (!pendingRecovery) return
-    await establishSession(pendingRecovery.accessToken, 'MFA 已启用，登录成功！')
+    const expectedAuthEpoch = pendingAuthEpochRef.current
+    if (expectedAuthEpoch === null) return
+
+    try {
+      await finalizePendingAuthSession(
+        pendingRecovery.accessToken,
+        expectedAuthEpoch,
+        pendingRecovery.commitProof,
+        async (accessToken, commitProof) => {
+          const completed = await establishSession(
+            accessToken,
+            'MFA 已启用，登录成功！',
+            commitProof,
+            true,
+          )
+          if (!completed) throw new AuthSessionChangedError()
+        },
+      )
+    } catch (error) {
+      if (useAuthStore.getState().authEpoch === expectedAuthEpoch) {
+        showToast(getApiErrorMessage(error, '登录状态已变化，请重新开始登录'), 'error')
+      }
+    }
   }
 
   if (pendingRecovery) {
@@ -327,6 +435,7 @@ export default function LoginPage() {
       <LoginShell>
         <MfaEnrollment
           challengeId={mfaChallenge.challengeId}
+          expectedAuthEpoch={pendingAuthEpochRef.current ?? currentAuthEpoch}
           onCompleted={handleEnrollmentCompleted}
           onCancel={cancelMfaFlow}
         />
@@ -339,6 +448,7 @@ export default function LoginPage() {
       <LoginShell>
         <MfaVerification
           challengeId={mfaChallenge.challengeId}
+          expectedAuthEpoch={pendingAuthEpochRef.current ?? currentAuthEpoch}
           onCompleted={handleMfaVerified}
           onCancel={cancelMfaFlow}
         />

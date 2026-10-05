@@ -1,20 +1,22 @@
 import { useState } from 'react'
-import { Check, Loader2, Upload } from 'lucide-react'
+import { Check, Upload } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/Tabs'
-import { AVATAR_FACTIONS, AVATAR_PRESETS, getAvatarPreset, type AvatarFaction } from '../../lib/avatarPresets'
+import { AVATAR_FACTIONS, AVATAR_PRESETS, getAvatarPreset, getDefaultAvatarPreset, type AvatarFaction } from '../../lib/avatarPresets'
 import UserAvatar from '../ui/UserAvatar'
+import AsyncButton from '../ui/AsyncButton'
 
 type Props = {
   currentUrl?: string | null
+  defaultSeed?: string | number | null
   busy: boolean
   onClose: () => void
   onSave: (url: string) => Promise<void>
   onUpload: () => void
 }
 
-export default function AvatarPresetDialog({ currentUrl, busy, onClose, onSave, onUpload }: Props) {
-  const initial = getAvatarPreset(currentUrl)
+export default function AvatarPresetDialog({ currentUrl, defaultSeed, busy, onClose, onSave, onUpload }: Props) {
+  const initial = getAvatarPreset(currentUrl) || getDefaultAvatarPreset(defaultSeed)
   const [faction, setFaction] = useState<AvatarFaction>((initial?.faction as AvatarFaction) || 'wei')
   const [selected, setSelected] = useState(initial)
   return (
@@ -50,9 +52,9 @@ export default function AvatarPresetDialog({ currentUrl, busy, onClose, onSave, 
         </div>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <button type="button" disabled={busy} onClick={onUpload} className="btn-secondary inline-flex items-center gap-2 px-3 py-2 text-sm"><Upload className="h-4 w-4" />上传图片</button>
-          <button type="button" disabled={busy || !selected || selected.url === currentUrl} onClick={() => { if (selected) void onSave(selected.url) }} className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm">
-            {busy && <Loader2 className="h-4 w-4 animate-spin" />} {busy ? '保存中…' : '使用此头像'}
-          </button>
+          <AsyncButton loading={busy} loadingLabel="保存中…" type="button" disabled={busy || !selected || selected.url === currentUrl} onClick={() => { if (selected) void onSave(selected.url) }} className="btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm">
+            使用此头像
+          </AsyncButton>
         </div>
       </DialogContent>
     </Dialog>

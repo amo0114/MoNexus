@@ -242,6 +242,7 @@ describe('administrator MFA enrollment and login', () => {
     await api
       .post(`/api/announcements/${adminAnnouncement.id}/read`)
       .set(authHeader(missingMfa))
+      .send({ version: 1 })
       .expect(404)
 
     expect(

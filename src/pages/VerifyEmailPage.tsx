@@ -4,6 +4,7 @@ import { Loader2, CheckCircle2, XCircle, LogIn } from 'lucide-react'
 import { getMe, verifyEmail } from '../api/auth'
 import { getApiErrorCode } from '../api/error'
 import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionContext } from '../auth/sessionContext'
 
 type Status = 'checking' | 'success' | 'error' | 'login_required'
 
@@ -37,6 +38,7 @@ export default function VerifyEmailPage() {
   const requiresFreshLoginRef = useRef(false)
 
   useEffect(() => {
+    const verificationAuthContext = getAuthSessionContext(useAuthStore.getState())
     if (!locationHandledRef.current) {
       tokenRef.current = takeVerificationTokenFromLocation()
       locationHandledRef.current = true
@@ -86,7 +88,11 @@ export default function VerifyEmailPage() {
         // before the next protected action. A transient profile-read failure
         // does not turn a successful, already-claimed verification into UI
         // failure.
-        void getMe().then(setUser).catch(() => undefined)
+        if (verificationAuthContext) {
+          void getMe()
+            .then((profile) => setUser(profile, verificationAuthContext))
+            .catch(() => undefined)
+        }
         redirectTimer = window.setTimeout(() => navigate('/profile'), 2500)
       })
       .catch((error) => {

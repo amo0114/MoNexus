@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { createMockAccessToken } from './auth-fixtures'
 
 type MfaFixture = {
   challengeId: string
@@ -40,9 +41,7 @@ const memberTier = {
   pointsToNextTier: 1_000,
 }
 
-// This is intentionally unsigned and only exercises the browser's role
-// decoder after a mocked UI login; it is never sent to a real auth endpoint.
-const uiOnlyAdminAccessToken = 'eyJhbGciOiJub25lIn0.eyJyb2xlIjoiYWRtaW4ifQ.test-signature'
+const uiOnlyAdminAccessToken = createMockAccessToken(profile)
 
 // Do not use broad glob patterns such as **/api/orders** here: Vite serves
 // source modules under /src/api/*, and a glob can accidentally fulfill a
@@ -130,7 +129,9 @@ async function goToProfile(page: Page) {
   // Navbar / Tab Bar 入口会落到隐藏的「个人中心」上并超时；登录后直达 /profile。
   await page.goto('/profile')
   await expect(page).toHaveURL(/\/profile$/)
+  await page.getByRole('tab', { name: '账号设置' }).click()
   await expect(page.getByTestId('session-manager')).toBeVisible()
+  await page.getByTestId('session-toggle-all').click()
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -143,6 +144,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 
 test('keeps the enrollment challenge and recovery codes in memory, without refreshing or replaying MFA factor failures', async ({ page }) => {
   const fixture = createMfaFixture()
+  const enrollmentAccessToken = createMockAccessToken(profile)
   let refreshRequests = 0
   let confirmAttempts = 0
 
@@ -169,7 +171,7 @@ test('keeps the enrollment challenge and recovery codes in memory, without refre
     }
     return route.fulfill({
       status: 201,
-      json: { user: profile, accessToken: 'm3-enrollment-access-token', recoveryCodes: fixture.recoveryCodes },
+      json: { user: profile, accessToken: enrollmentAccessToken, recoveryCodes: fixture.recoveryCodes },
     })
   })
   await page.route(apiRoute('/auth/refresh'), route => {
@@ -207,7 +209,7 @@ test('keeps the enrollment challenge and recovery codes in memory, without refre
   const storageWithRecoveryCodes = await page.evaluate(() => localStorage.getItem('monexus-auth') ?? '')
   // Completion has created a server-side session, but the UI must not persist
   // its access token until the one-time recovery-code acknowledgement.
-  expect(storageWithRecoveryCodes).not.toContain('m3-enrollment-access-token')
+  expect(storageWithRecoveryCodes).not.toContain(enrollmentAccessToken)
   for (const recoveryCode of fixture.recoveryCodes) {
     expect(storageWithRecoveryCodes).not.toContain(recoveryCode)
   }
@@ -226,6 +228,7 @@ test('keeps the enrollment challenge and recovery codes in memory, without refre
 
 test('lets an enrolled administrator switch to a recovery code without refreshing a factor error', async ({ page }) => {
   const fixture = createMfaFixture()
+  const verifiedAccessToken = createMockAccessToken(profile)
   let refreshRequests = 0
   let verifyAttempts = 0
 
@@ -245,7 +248,7 @@ test('lets an enrolled administrator switch to a recovery code without refreshin
         json: { error: { code: 'MFA_VERIFICATION_FAILED', message: 'MFA 验证失败' } },
       })
     }
-    return route.fulfill({ json: { user: profile, accessToken: 'm3-verified-access-token', recoveryCodeRemaining: 9 } })
+    return route.fulfill({ json: { user: profile, accessToken: verifiedAccessToken, recoveryCodeRemaining: 9 } })
   })
   await page.route(apiRoute('/auth/refresh'), route => {
     refreshRequests += 1

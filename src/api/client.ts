@@ -2,6 +2,12 @@ import axios from 'axios'
 import { useAuthStore } from '../stores/authStore'
 import { refreshAccessToken } from './authRefresh'
 import { showEmailVerificationGuide } from '../lib/emailVerificationGuide'
+import {
+  AuthSessionChangedError,
+  getAuthSessionContext,
+  matchesAuthSessionContext,
+  type AuthSessionContext,
+} from '../auth/sessionContext'
 
 declare module 'axios' {
   interface AxiosRequestConfig {
@@ -11,6 +17,7 @@ declare module 'axios' {
      */
     skipAuthRefresh?: boolean
     _retry?: boolean
+    _authContext?: AuthSessionContext | null
   }
 }
 
@@ -33,21 +40,44 @@ const api = axios.create({
 
 // 请求拦截 - 注入 Access Token
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken
+  const authState = useAuthStore.getState()
+  const token = authState.accessToken
   if (token && !authorizationHeader(config.headers)) {
     config.headers.Authorization = `Bearer ${token}`
+  }
+  const authorization = authorizationHeader(config.headers)
+  if (authorization === `Bearer ${token}`) {
+    config._authContext = getAuthSessionContext(authState)
   }
   return config
 })
 
 // 响应拦截 - Token 过期自动续签
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const requestContext = response.config._authContext
+    if (
+      requestContext
+      && !matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))
+    ) {
+      return Promise.reject(new AuthSessionChangedError())
+    }
+    return response
+  },
   async (error) => {
     const originalRequest = error.config
     // Credential / MFA factor failures are business errors, not expired
     // sessions. They must not rotate a cookie or replay an attempted factor.
     const errorCode = error.response?.data?.error?.code
+    if (
+      originalRequest?._authContext
+      && !matchesAuthSessionContext(
+        originalRequest._authContext,
+        getAuthSessionContext(useAuthStore.getState()),
+      )
+    ) {
+      return Promise.reject(new AuthSessionChangedError())
+    }
     if (errorCode === 'EMAIL_VERIFICATION_REQUIRED') {
       showEmailVerificationGuide()
     }
@@ -76,7 +106,17 @@ api.interceptors.response.use(
         const staleToken = typeof authorization === 'string' && authorization.startsWith('Bearer ')
           ? authorization.slice('Bearer '.length)
           : useAuthStore.getState().accessToken
-        const accessToken = await refreshAccessToken(staleToken)
+        const requestContext = originalRequest._authContext
+        const currentAuthState = useAuthStore.getState()
+        const currentContext = getAuthSessionContext(currentAuthState)
+        if (!requestContext || !matchesAuthSessionContext(requestContext, currentContext)) {
+          return Promise.reject(new AuthSessionChangedError())
+        }
+
+        const accessToken = await refreshAccessToken(staleToken, requestContext)
+        if (!matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))) {
+          return Promise.reject(new AuthSessionChangedError())
+        }
         originalRequest.headers.Authorization = `Bearer ${accessToken}`
         return api(originalRequest)
       } catch (refreshError) {

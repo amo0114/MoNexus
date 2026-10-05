@@ -1,0 +1,438 @@
+/* Container resize recipe from skills-ref/transitions-dev/01-card-resize.md. */
+:root {
+  --resize-dur: 500ms;
+  --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --order-island-close: 350ms;
+  --order-island-confirm: 800ms;
+  --order-island-spin: 800ms;
+}
+
+.t-resize {
+  transition:
+    width var(--resize-dur) var(--resize-ease),
+    height var(--resize-dur) var(--resize-ease);
+  will-change: width, height;
+}
+
+@media (max-width: 767px) {
+  /* The document never moves when chrome or an order changes state. */
+  .mobile-navbar-chrome:not([data-chrome='search']) {
+    height: calc(65px + var(--safe-top));
+    padding-top: var(--safe-top) !important;
+    padding-bottom: 0;
+    display: flex;
+    align-items: center;
+    border-bottom-width: 0;
+  }
+
+  .navbar-shell.t-resize:not([data-chrome='search']) {
+    position: absolute;
+    top: calc(var(--safe-top) + 12px);
+    left: 0;
+    right: 0;
+    width: calc(100% - 24px);
+    max-width: 100%;
+    height: 40px;
+    min-height: 0;
+    border: 1px solid transparent;
+    transition-property: width, height, max-width, border-radius, background-color, border-color, box-shadow;
+    transition-duration: var(--order-island-close);
+    transition-timing-function: var(--resize-ease) !important;
+  }
+
+  .navbar-shell.t-resize[data-chrome='compact'] {
+    --island-glass-tint: 76%;
+    width: min(calc(100vw - 24px), 296px);
+    height: 42px;
+    border-radius: 21px;
+    backdrop-filter: none;
+    background: transparent;
+    border-color: color-mix(in srgb, var(--color-border) 70%, transparent);
+    box-shadow: 0 8px 24px -8px rgb(0 0 0 / 16%), 0 2px 6px rgb(0 0 0 / 4%);
+  }
+
+  .navbar-shell.t-resize[data-order-open='true'] {
+    width: min(calc(100vw - 24px), 420px);
+    height: var(--order-island-height);
+    padding-inline: 0;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    border-radius: 28px;
+    background: transparent;
+    box-shadow: 0 12px 32px -8px rgb(0 0 0 / 18%), 0 2px 6px rgb(0 0 0 / 4%);
+    transition-duration: var(--resize-dur);
+  }
+
+  .navbar-shell.t-resize[data-favorite-open='true'] {
+    width: 112px;
+    height: 112px;
+    padding-inline: 0;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    border-radius: 34px;
+    background: transparent;
+    box-shadow: 0 10px 28px -8px rgb(0 0 0 / 18%), 0 2px 6px rgb(0 0 0 / 4%);
+    transition-duration: var(--resize-dur);
+  }
+
+  .navbar-shell.t-resize[data-order-open='true']:not([data-order-phase='details']) {
+    width: 112px;
+    height: 112px;
+    border-radius: 34px;
+  }
+
+  .navbar-shell:has(.order-island-panel, .favorite-island-feedback) { overflow: hidden; }
+
+  /* A separate glass surface stays behind the text through the whole morph.
+     Blur is constant; only its opacity changes, including on the way out. */
+  .navbar-shell.t-resize::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: var(--color-surface);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 24%);
+    opacity: 0;
+    transition: opacity var(--order-island-close) var(--resize-ease);
+  }
+
+  .navbar-shell.t-resize[data-chrome='compact']::before,
+  .navbar-shell.t-resize[data-favorite-open='true']::before,
+  .navbar-shell.t-resize[data-order-open='true']::before { opacity: 1; }
+
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .navbar-shell.t-resize[data-chrome='compact']::before,
+    .navbar-shell:has(.order-island-panel, .favorite-island-feedback)::before {
+      background: linear-gradient(135deg, rgb(255 255 255 / 12%), transparent 65%),
+        color-mix(in srgb, var(--color-surface) var(--island-glass-tint, 82%), transparent);
+      -webkit-backdrop-filter: blur(20px) saturate(1.25);
+      backdrop-filter: blur(20px) saturate(1.25);
+    }
+  }
+
+  :root:is([data-theme='dark'], [data-theme='ink']) .navbar-shell.t-resize[data-chrome='compact']::before,
+  :root:is([data-theme='dark'], [data-theme='ink']) .navbar-shell:has(.order-island-panel, .favorite-island-feedback)::before {
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 10%);
+  }
+}
+
+.navbar-default-content {
+  position: relative;
+  transition: opacity 150ms ease-in-out, transform 150ms ease-in-out;
+}
+
+.order-island-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  opacity: 0;
+  transform: translateY(-4px);
+  pointer-events: none;
+  transition: opacity 150ms ease-in-out, transform var(--order-island-close) var(--resize-ease);
+}
+
+.order-island-layer[data-open='true'] {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition: opacity 250ms ease-in-out 80ms, transform var(--resize-dur) var(--resize-ease);
+}
+
+.order-island-panel {
+  /* Measure at the final width: the text never reflows through the square. */
+  width: min(calc(100vw - 26px), 418px);
+  flex-shrink: 0;
+  padding: 18px 20px 20px;
+  color: var(--color-text);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 150ms ease-in-out, transform 150ms var(--resize-ease), visibility 0s 150ms;
+}
+
+.order-island-layer[data-open='true'][data-phase='details'] .order-island-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 250ms ease-in-out 100ms, transform 350ms var(--resize-ease) 100ms, visibility 0s;
+}
+
+.order-island-payment {
+  position: absolute;
+  top: 23px;
+  left: calc(50% - 32px);
+  width: 64px;
+  height: 64px;
+  color: #15803d;
+  transition: opacity 150ms ease-in-out, transform 250ms var(--resize-ease);
+}
+
+:root:is([data-theme='dark'], [data-theme='ink']) .order-island-payment { color: #4ade80; }
+
+.order-island-layer[data-phase='details'] .order-island-payment {
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+}
+
+.order-island-payment-symbol { width: 100%; height: 100%; }
+.order-island-payment-mark { position: relative; display: block; width: 100%; height: 100%; }
+.order-island-payment-halo,
+.order-island-icon-halo {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, currentColor 24%, transparent), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.order-island-layer[data-open='true'][data-phase='processing'] .order-island-payment-halo {
+  animation: orderIslandBreathe 2600ms ease-in-out infinite;
+}
+
+/* Use the favorite's pop and particle rhythm only after a confirmed result. */
+.order-island-layer[data-open='true']:is([data-phase='confirmed'], [data-phase='details']) .order-island-payment-mark {
+  animation: t-like-pop 500ms var(--resize-ease) 80ms both;
+}
+.order-island-layer[data-open='true']:is([data-phase='confirmed'], [data-phase='details']) .order-island-payment-halo {
+  animation: orderIslandBloom 700ms var(--resize-ease) 80ms both;
+}
+.order-island-layer[data-open='true']:is([data-phase='confirmed'], [data-phase='details']) .order-island-payment .t-like-particles i {
+  animation: orderIslandBurst 600ms var(--resize-ease) var(--pdelay) both;
+}
+
+.order-island-payment .t-like-particles i,
+.order-island-icon .t-like-particles i {
+  width: 3px;
+  height: 3px;
+  left: -1.5px;
+  top: -1.5px;
+}
+
+.order-island-payment-symbol circle,
+.order-island-payment-check {
+  stroke: currentColor;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.order-island-ring-track { opacity: 0.14; }
+.order-island-spinner { transform-origin: 32px 32px; }
+.order-island-layer[data-open='true'][data-phase='processing'] .order-island-spinner {
+  animation: orderIslandSpin var(--order-island-spin) linear infinite;
+}
+.order-island-ring {
+  transform: rotate(-90deg);
+  transform-origin: 32px 32px;
+  stroke-dasharray: 0.24 1;
+  transition: stroke-dasharray 250ms var(--resize-ease);
+}
+.order-island-payment-check {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
+/* Keep the completed symbol intact while it fades into the detail panel. */
+.order-island-layer:is([data-phase='confirmed'], [data-phase='details']) .order-island-ring { stroke-dasharray: 1 1; }
+.order-island-layer:is([data-phase='confirmed'], [data-phase='details']) .order-island-payment-check {
+  opacity: 1;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 350ms var(--resize-ease) 180ms, opacity 150ms ease-in-out 180ms;
+}
+
+@keyframes orderIslandSpin { to { transform: rotate(360deg); } }
+
+.order-island-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.order-island-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 150ms ease-in-out, transform 150ms var(--resize-ease);
+}
+
+.order-island-layer[data-open='true'][data-phase='details'] .order-island-footer {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 250ms ease-in-out 140ms, transform 350ms var(--resize-ease) 140ms;
+}
+
+.order-island-footer > span {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--color-text-muted);
+}
+
+.order-island-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 44px;
+  flex-shrink: 0;
+  padding: 10px 12px;
+  border-radius: 22px;
+  background: var(--color-text);
+  color: var(--color-surface);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 150ms ease-in-out;
+}
+
+.order-island-action:hover { opacity: 0.85; }
+.order-island-action:active { opacity: 0.7; }
+
+.order-island-dismiss {
+  width: 32px;
+  height: 36px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background-color 150ms ease-in-out;
+}
+
+.order-island-dismiss:hover { background: var(--color-background); }
+
+.order-island-action:focus-visible,
+.order-island-dismiss:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+}
+
+.order-island-icon {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  color: #15803d;
+}
+
+.order-island-icon-face {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  color: #fff;
+  background: linear-gradient(145deg, #22a35a, #15803d);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+}
+
+:root:is([data-theme='dark'], [data-theme='ink']) .order-island-icon { color: #4ade80; }
+.order-island-icon[data-pending='true'] { color: var(--color-primary); }
+.order-island-icon[data-pending='true'] .order-island-icon-face {
+  color: inherit;
+  background: var(--color-primary-tint);
+  box-shadow: none;
+}
+
+.order-island-orbit {
+  position: absolute;
+  inset: -4px;
+  pointer-events: none;
+}
+.order-island-orbit svg { display: block; width: 100%; height: 100%; }
+.order-island-orbit circle {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 0.18 0.82;
+  opacity: 0.6;
+}
+
+.order-island-check path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+/* The detail panel is mounted for measurement before it is visible.
+   Gate every effect on visibility so the reveal never consumes the animation. */
+.order-island-icon[data-animate='true'][data-pending='false'] .order-island-icon-face {
+  animation: t-like-pop 500ms var(--resize-ease) 180ms both;
+}
+.order-island-icon[data-animate='true'][data-pending='false'] .order-island-check path {
+  animation: orderIslandCheck 400ms var(--resize-ease) 260ms both;
+}
+.order-island-icon[data-animate='true'][data-pending='false'] .order-island-icon-halo {
+  animation: orderIslandBloom 700ms var(--resize-ease) 260ms both;
+}
+.order-island-icon[data-animate='true'][data-pending='false'] .t-like-particles i {
+  animation: orderIslandBurst 600ms var(--resize-ease) var(--pdelay) both;
+}
+.order-island-icon[data-animate='true'][data-pending='true'] .order-island-orbit {
+  animation: orderIslandSpin 2400ms linear infinite;
+}
+.order-island-icon[data-animate='true'][data-pending='true'] .order-island-icon-halo {
+  animation: orderIslandBreathe 2600ms ease-in-out infinite;
+}
+
+@keyframes orderIslandCheck { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+/* Start near the circular badge's edge so its fill cannot swallow the bloom. */
+@keyframes orderIslandBurst {
+  0% { opacity: 0; transform: translate(calc(var(--px) * 0.58), calc(var(--py) * 0.58)) scale(0.4); }
+  25% { opacity: 0.85; transform: translate(calc(var(--px) * 0.84), calc(var(--py) * 0.84)) scale(1); }
+  100% { opacity: 0; transform: translate(var(--px), var(--py)) scale(var(--p-end-scale)); }
+}
+@keyframes orderIslandBloom {
+  0% { opacity: 0; transform: scale(0.8); }
+  40% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.35); }
+}
+@keyframes orderIslandBreathe {
+  0%, 100% { opacity: 0.25; transform: scale(0.96); }
+  50% { opacity: 0.65; transform: scale(1.08); }
+}
+
+.order-island-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.order-island-copy strong { font-size: 16px; line-height: 24px; font-weight: 600; }
+.order-island-copy > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-resize { transition: none !important; }
+  .navbar-default-content,
+  .order-island-layer,
+  .order-island-panel,
+  .order-island-payment,
+  .order-island-ring,
+  .order-island-payment-check,
+  .order-island-footer { transition: none !important; transform: none; }
+  .navbar-shell.t-resize::before { transition: none !important; }
+  .order-island-check path { stroke-dashoffset: 0; }
+  .order-island-payment *,
+  .order-island-icon * { animation: none !important; }
+}

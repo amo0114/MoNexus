@@ -23,7 +23,8 @@ import {
 } from './money'
 import { paymentChannelLabel } from './status'
 import { goToRedirect, submitFormPost } from './paymentActions'
-import { newIdempotencyKey, rememberPendingOrder } from './session'
+import { newIdempotencyKey, rememberPendingOrder, rememberRechargeReturnTo } from './session'
+import { parseSafeProductReturnTo } from '../../utils/returnTo'
 
 const QUOTE_DEBOUNCE_MS = 400
 
@@ -43,7 +44,7 @@ function boundMessage(code: 'below_min' | 'above_max' | 'step', config: Recharge
   return `金额必须按 ${formatCurrencyAmount(config.amountStepMinor, config.currency)} 递增`
 }
 
-export default function RechargeCheckout() {
+export default function RechargeCheckout({ returnTo }: { returnTo?: string | null }) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const showToast = useAppStore((s) => s.showToast)
@@ -223,6 +224,8 @@ export default function RechargeCheckout() {
     setSubmitting(true)
     try {
       const order = await createRechargeOrder(quote.quoteId, newIdempotencyKey())
+      const target = parseSafeProductReturnTo(returnTo)
+      rememberRechargeReturnTo(order.orderId, target)
       const action = order.action
       if (action?.type === 'redirect') {
         rememberPendingOrder(order.orderId)
@@ -234,7 +237,7 @@ export default function RechargeCheckout() {
         submitFormPost(action)
         return
       }
-      navigate(`/recharge?order=${encodeURIComponent(order.orderId)}`)
+      navigate(`/recharge?order=${encodeURIComponent(order.orderId)}${target ? `&returnTo=${encodeURIComponent(target)}` : ''}`)
     } catch (err) {
       const code = getApiErrorCode(err)
       if (code === 'RECHARGE_QUOTE_EXPIRED') {

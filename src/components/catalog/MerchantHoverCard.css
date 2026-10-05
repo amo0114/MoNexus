@@ -1,0 +1,386 @@
+.pd-merchant-hovercard-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pd-byline-store-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  padding: 2px 4px;
+  margin: 0;
+  cursor: pointer;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: opacity 150ms ease;
+}
+
+.pd-byline-store-trigger:hover {
+  opacity: 0.88;
+}
+
+.pd-byline-store-trigger:focus-visible {
+  outline: 2px solid var(--pd-blue);
+  outline-offset: 2px;
+}
+
+.pd-byline-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.pd-byline-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.pd-byline-initial {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  font-size: 11px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  line-height: 1;
+}
+
+/* HoverCard Dialog Popover */
+.pd-merchant-hovercard-dialog {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  width: 320px;
+  padding: 18px;
+  background: var(--pd-surface, #ffffff);
+  border: 1px solid var(--pd-border, #e2e8f0);
+  border-radius: 14px;
+  box-shadow: 0 14px 34px -8px rgba(0, 0, 0, 0.16), 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  animation: pd-card-pop 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top left;
+}
+
+@keyframes pd-card-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.pd-hovercard-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pd-hovercard-avatar-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.pd-hovercard-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--pd-border, #e2e8f0);
+}
+
+.pd-hovercard-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--color-primary, #2563eb), #1d4ed8);
+  color: #ffffff;
+  font-size: 18px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.pd-hovercard-online-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 2px solid var(--pd-surface, #ffffff);
+}
+
+.pd-hovercard-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.pd-hovercard-name-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pd-hovercard-name-row h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pd-text);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pd-hovercard-verified-icon {
+  color: var(--pd-blue, #2563eb);
+  flex-shrink: 0;
+}
+
+.pd-hovercard-sub {
+  font-size: 11.5px;
+  color: var(--pd-muted);
+  margin: 3px 0 0;
+}
+
+/* Badges Wall & Honor Badges */
+.pd-hovercard-badges-wall {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.pd-honor-badge,
+.pd-hovercard-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  line-height: 1.25;
+  border: 1px solid transparent;
+  user-select: none;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.pd-honor-badge:hover {
+  transform: translateY(-0.5px);
+}
+
+.pd-honor-badge-icon {
+  flex-shrink: 0;
+}
+
+/* Gold / Certified / Official (平台认证 / 官方自营) */
+.pd-honor-badge--gold {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+.dark .pd-honor-badge--gold,
+[data-theme='dark'] .pd-honor-badge--gold {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+/* Cyan / Speed / Instant fulfillment (秒级履约 / 极速直发) */
+.pd-honor-badge--cyan {
+  background: #f0f9ff;
+  color: #0284c7;
+  border-color: #bae6fd;
+}
+.dark .pd-honor-badge--cyan,
+[data-theme='dark'] .pd-honor-badge--cyan {
+  background: rgba(14, 165, 233, 0.12);
+  color: #38bdf8;
+  border-color: rgba(14, 165, 233, 0.28);
+}
+
+/* Emerald / Escrow / Security (全额存管 / 资金存管 / 履约保障) */
+.pd-honor-badge--emerald {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
+}
+.dark .pd-honor-badge--emerald,
+[data-theme='dark'] .pd-honor-badge--emerald {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.28);
+}
+
+/* Purple / Quality / Diamond (优质商户 / 旗舰服务) */
+.pd-honor-badge--purple {
+  background: #f5f3ff;
+  color: #7c3aed;
+  border-color: #ddd6fe;
+}
+.dark .pd-honor-badge--purple,
+[data-theme='dark'] .pd-honor-badge--purple {
+  background: rgba(168, 85, 247, 0.12);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.28);
+}
+
+/* Amber / Store Age / Award (5年老店 / 荣誉商户) */
+.pd-honor-badge--amber {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fed7aa;
+}
+.dark .pd-honor-badge--amber,
+[data-theme='dark'] .pd-honor-badge--amber {
+  background: rgba(234, 88, 12, 0.12);
+  color: #fb923c;
+  border-color: rgba(234, 88, 12, 0.28);
+}
+
+/* Rose / Hot / Trending (热卖店铺) */
+.pd-honor-badge--rose {
+  background: #fff1f2;
+  color: #e11d48;
+  border-color: #fecdd3;
+}
+.dark .pd-honor-badge--rose,
+[data-theme='dark'] .pd-honor-badge--rose {
+  background: rgba(225, 29, 72, 0.12);
+  color: #fb7185;
+  border-color: rgba(225, 29, 72, 0.28);
+}
+
+/* Default / Neutral fallback */
+.pd-honor-badge--default,
+.pd-hovercard-badge-pill {
+  background: var(--pd-soft, #f8fafc);
+  color: var(--pd-text, #334155);
+  border-color: var(--pd-border, #e2e8f0);
+}
+.dark .pd-honor-badge--default,
+[data-theme='dark'] .pd-honor-badge--default,
+.dark .pd-hovercard-badge-pill,
+[data-theme='dark'] .pd-hovercard-badge-pill {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--pd-text, #e2e8f0);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Performance Metrics */
+.pd-hovercard-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px;
+  background: var(--pd-soft, #f8fafc);
+  border-radius: 9px;
+  border: 1px solid var(--pd-border, #e2e8f0);
+}
+
+.pd-hovercard-metric-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+}
+
+.pd-hovercard-metric-item strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--pd-text);
+}
+
+.pd-hovercard-metric-item strong svg {
+  color: #f59e0b;
+}
+
+.pd-hovercard-metric-item span {
+  font-size: 10.5px;
+  color: var(--pd-muted);
+}
+
+/* Actions */
+.pd-hovercard-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pd-hovercard-btn-support {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--pd-blue, #2251d7);
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.pd-hovercard-btn-support:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.pd-hovercard-btn-shop {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--pd-text);
+  background: var(--pd-surface);
+  border: 1px solid var(--pd-border);
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.pd-hovercard-btn-shop:hover {
+  background: var(--pd-soft);
+  color: var(--pd-blue);
+  border-color: #93c5fd;
+}
+
+.dark .pd-merchant-hovercard-dialog,
+[data-theme='dark'] .pd-merchant-hovercard-dialog {
+  box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.5), 0 4px 12px -2px rgba(0, 0, 0, 0.3);
+}

@@ -1,5 +1,6 @@
-import { AlertTriangle, Loader2 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from './Dialog'
+import AsyncButton from './AsyncButton'
 
 /**
  * Designed replacement for window.confirm. Async-safe: while `loading`
@@ -14,6 +15,7 @@ export default function ConfirmDialog({
   cancelLabel = '取消',
   tone = 'danger',
   loading = false,
+  loadingLabel = '处理中…',
   onConfirm,
   testId,
   confirmTestId = 'confirm-dialog-confirm',
@@ -27,6 +29,7 @@ export default function ConfirmDialog({
   cancelLabel?: string
   tone?: 'danger' | 'primary'
   loading?: boolean
+  loadingLabel?: string
   onConfirm: () => void
   testId?: string
   confirmTestId?: string
@@ -40,7 +43,7 @@ export default function ConfirmDialog({
         onOpenChange(o)
       }}
     >
-      <DialogContent className="max-w-sm" data-testid={testId}>
+      <DialogContent className="max-w-sm" data-testid={testId} hideClose={loading}>
         <div className="flex items-start gap-3">
           {tone === 'danger' && (
             <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] flex items-center justify-center shrink-0">
@@ -62,7 +65,9 @@ export default function ConfirmDialog({
           >
             {cancelLabel}
           </button>
-          <button
+          <AsyncButton
+            loading={loading}
+            loadingLabel={loadingLabel}
             type="button"
             className={
               tone === 'danger'
@@ -73,8 +78,8 @@ export default function ConfirmDialog({
             onClick={onConfirm}
             data-testid={confirmTestId}
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : confirmLabel}
-          </button>
+            {confirmLabel}
+          </AsyncButton>
         </div>
       </DialogContent>
     </Dialog>

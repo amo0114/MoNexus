@@ -1,4 +1,18 @@
+import { parseSafeProductReturnTo } from '../../utils/returnTo'
+
 const ORDER_KEY = 'monexus:recharge:pendingOrderId'
+const RETURN_PREFIX = 'monexus:recharge:returnTo:'
+
+export function rememberRechargeReturnTo(orderId: string, value: string | null): void {
+  const target = parseSafeProductReturnTo(value)
+  if (!isRechargeOrderId(orderId) || !target) return
+  try { sessionStorage.setItem(`${RETURN_PREFIX}${orderId}`, target) } catch { /* Storage may be disabled. */ }
+}
+
+export function readRechargeReturnTo(orderId: string): string | null {
+  if (!isRechargeOrderId(orderId)) return null
+  try { return parseSafeProductReturnTo(sessionStorage.getItem(`${RETURN_PREFIX}${orderId}`)) } catch { return null }
+}
 const COMPLETE_PREFIX = 'monexus:recharge:completeKey:'
 
 export const RECHARGE_ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

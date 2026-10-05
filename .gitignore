@@ -79,3 +79,6 @@ design-system/monexus/generated/
 # AstrBot 签到插件（独立分发件，不属于 MoNexus 代码库）
 # 通过 zip 单独交付，版本节奏与后端解耦，避免插件代码混进主仓库的 PR。
 docs/integrations/
+
+outputs/
+skills-ref/

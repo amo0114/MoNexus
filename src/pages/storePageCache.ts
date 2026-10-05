@@ -7,6 +7,7 @@ export interface StorePageCache {
   hasMore: boolean
   scrollY: number
   audience: 'guest' | 'member'
+  lastProductId?: number | null
 }
 
 let storePageCache: StorePageCache | null = null

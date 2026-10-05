@@ -93,7 +93,7 @@ test.describe.serial('P4b structured delivery chain', () => {
     await page.goto('/profile')
 
     const orderCard = page
-      .locator('div.shadow-sm')
+      .locator('[data-testid^="profile-order-card-"]')
       .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
       .first()
     await expect(orderCard).toBeVisible({ timeout: 10_000 })

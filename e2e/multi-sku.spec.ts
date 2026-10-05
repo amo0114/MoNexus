@@ -56,9 +56,9 @@ async function importInventory(
   expect(res.ok(), await res.text()).toBeTruthy()
 }
 
-/** 详情页主价格：锚定「兑换需要」标签后紧邻的价格块，避免误匹配库存/余额里的数字。 */
+/** 读主价格的无障碍值，避免把动画滚轮的全部数字当作当前价格。 */
 function displayPrice(page: import('@playwright/test').Page) {
-  return page.getByText('兑换需要').locator('xpath=following-sibling::div[1]')
+  return page.getByTestId('desktop-selected-price').getByRole('img')
 }
 
 test.describe.serial('P4a multi-SKU purchase chain', () => {
@@ -115,14 +115,14 @@ test.describe.serial('P4a multi-SKU purchase chain', () => {
     await expect(selector).toBeVisible({ timeout: 10_000 })
     await expect(selector.getByTestId(`sku-option-${state.basicOfferId}`)).toBeVisible()
     await expect(selector.getByTestId(`sku-option-${state.premiumOfferId}`)).toBeVisible()
-    await expect(displayPrice(page)).toHaveText(String(BASIC_PRICE))
+    await expect(displayPrice(page)).toHaveAttribute('aria-label', String(BASIC_PRICE))
 
     // 切换到贵的那一档：主价格随选中规格变化
     await selector.getByTestId(`sku-option-${state.premiumOfferId}`).click()
-    await expect(displayPrice(page)).toHaveText(String(PREMIUM_PRICE))
+    await expect(displayPrice(page)).toHaveAttribute('aria-label', String(PREMIUM_PRICE))
     // 再切回来确认双向生效，然后正式选中高级版下单
     await selector.getByTestId(`sku-option-${state.basicOfferId}`).click()
-    await expect(displayPrice(page)).toHaveText(String(BASIC_PRICE))
+    await expect(displayPrice(page)).toHaveAttribute('aria-label', String(BASIC_PRICE))
     await selector.getByTestId(`sku-option-${state.premiumOfferId}`).click()
 
     await page.getByRole('button', { name: '立即兑换' }).click()
@@ -144,7 +144,7 @@ test.describe.serial('P4a multi-SKU purchase chain', () => {
     await page.goto('/profile')
 
     const orderCard = page
-      .locator('div.shadow-sm')
+      .locator('[data-testid^="profile-order-card-"]')
       .filter({ has: page.getByRole('heading', { name: MULTI_SKU_PRODUCT }) })
       .first()
     await expect(orderCard).toBeVisible({ timeout: 10_000 })

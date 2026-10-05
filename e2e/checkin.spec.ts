@@ -16,7 +16,7 @@ test('logged-in user can claim daily check-in', async ({ page }) => {
   await expect(page).toHaveURL(/\/$/)
   await page.goto('/profile')
 
-  const checkinButton = page.getByRole('button', { name: '每日打卡' })
+  const checkinButton = page.getByRole('button', { name: '签到打卡' })
   await expect(checkinButton).toBeVisible({ timeout: 10_000 })
   await checkinButton.click()
 

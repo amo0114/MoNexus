@@ -3,6 +3,21 @@ import { useAuthStore } from '../stores/authStore'
 import { AuthUser, UserRole } from '../types/merchant'
 import { refreshAccessToken } from './authRefresh'
 import type { LegalRequirement } from './legal'
+import { withAuthCookieMutationLock } from './authCookieLock'
+import { broadcastAuthSessionChange } from '../auth/sessionStorageSync'
+import {
+  beginPendingAuthSessionCommit,
+  isPendingAuthSessionCommitCurrent,
+  readPendingAuthSessionCommit,
+  type PendingAuthSessionCommit,
+} from '../auth/pendingAuthSession'
+import {
+  AuthSessionChangedError,
+  getAuthSessionContext,
+  matchesAuthSessionContext,
+  readAccessTokenIdentity,
+  readPersistedAuthIdentity,
+} from '../auth/sessionContext'
 
 export { refreshAccessToken }
 
@@ -45,6 +60,10 @@ export type MfaLoginChallenge = {
 }
 
 export type LoginResponse = AuthenticatedAuthResponse | MfaLoginChallenge
+export type AuthenticatedSessionHandler = (
+  accessToken: string,
+  commitProof: PendingAuthSessionCommit,
+) => Promise<void>
 
 export type MfaEnrollmentStartResponse = {
   provisioningUri: string
@@ -73,13 +92,37 @@ function preAuthRequestConfig() {
   return { skipAuthRefresh: true }
 }
 
+function assertAuthEpochCurrent(expectedAuthEpoch?: number): void {
+  if (
+    expectedAuthEpoch !== undefined
+    && useAuthStore.getState().authEpoch !== expectedAuthEpoch
+  ) {
+    throw new AuthSessionChangedError()
+  }
+}
+
 export function isMfaLoginChallenge(response: LoginResponse): response is MfaLoginChallenge {
   return 'status' in response
 }
 
-export async function loginWithPassword(payload: { email: string; password: string }): Promise<LoginResponse> {
-  const { data } = await api.post<LoginResponse>('/auth/login', payload, preAuthRequestConfig())
-  return data
+export async function loginWithPassword(
+  payload: { email: string; password: string },
+  expectedAuthEpoch: number,
+  onAuthenticated: AuthenticatedSessionHandler,
+): Promise<LoginResponse> {
+  return withAuthCookieMutationLock(async () => {
+    assertAuthEpochCurrent(expectedAuthEpoch)
+    const { data } = await api.post<LoginResponse>('/auth/login', payload, preAuthRequestConfig())
+    assertAuthEpochCurrent(expectedAuthEpoch)
+    if (!isMfaLoginChallenge(data)) {
+      const identity = readAccessTokenIdentity(data.accessToken)
+      if (!identity) throw new AuthSessionChangedError()
+      const commitProof = beginPendingAuthSessionCommit(data.accessToken)
+      broadcastAuthSessionChange({ userId: identity.userId, sessionId: identity.sessionId })
+      await onAuthenticated(data.accessToken, commitProof)
+    }
+    return data
+  })
 }
 
 export async function getRegistrationStatus(): Promise<RegistrationStatus> {
@@ -104,39 +147,133 @@ export async function registerAccount(payload: {
   turnstileToken?: string
   /** SPEC-LEGAL-001:协议确认 { document: version },来自 registration-status。 */
   agreements?: Record<string, string>
-}): Promise<AuthenticatedAuthResponse> {
-  const { data } = await api.post<AuthenticatedAuthResponse>('/auth/register', payload, preAuthRequestConfig())
-  return data
+}, expectedAuthEpoch: number, onAuthenticated: AuthenticatedSessionHandler): Promise<AuthenticatedAuthResponse> {
+  return withAuthCookieMutationLock(async () => {
+    assertAuthEpochCurrent(expectedAuthEpoch)
+    const { data } = await api.post<AuthenticatedAuthResponse>('/auth/register', payload, preAuthRequestConfig())
+    const identity = readAccessTokenIdentity(data.accessToken)
+    if (!identity) throw new AuthSessionChangedError()
+    const commitProof = beginPendingAuthSessionCommit(data.accessToken)
+    broadcastAuthSessionChange({ userId: identity.userId, sessionId: identity.sessionId })
+    await onAuthenticated(data.accessToken, commitProof)
+    return data
+  })
 }
 
-export async function startMfaEnrollment(challengeId: string): Promise<MfaEnrollmentStartResponse> {
+export async function startMfaEnrollment(
+  challengeId: string,
+  expectedAuthEpoch?: number,
+): Promise<MfaEnrollmentStartResponse> {
+  assertAuthEpochCurrent(expectedAuthEpoch)
   const { data } = await api.post<MfaEnrollmentStartResponse>(
     '/auth/mfa/enrollment/start',
     { challengeId },
     preAuthRequestConfig(),
   )
+  assertAuthEpochCurrent(expectedAuthEpoch)
   return data
 }
 
 export async function confirmMfaEnrollment(payload: {
   challengeId: string
   code: string
-}): Promise<MfaEnrollmentConfirmResponse> {
-  const { data } = await api.post<MfaEnrollmentConfirmResponse>(
-    '/auth/mfa/enrollment/confirm',
-    payload,
-    preAuthRequestConfig(),
-  )
-  return data
+}, expectedAuthEpoch: number, onPendingSession: (
+  result: MfaEnrollmentConfirmResponse,
+  commitProof: PendingAuthSessionCommit,
+) => void): Promise<MfaEnrollmentConfirmResponse> {
+  return withAuthCookieMutationLock(async () => {
+    assertAuthEpochCurrent(expectedAuthEpoch)
+    const { data } = await api.post<MfaEnrollmentConfirmResponse>(
+      '/auth/mfa/enrollment/confirm',
+      payload,
+      preAuthRequestConfig(),
+    )
+    const identity = readAccessTokenIdentity(data.accessToken)
+    if (!identity) throw new AuthSessionChangedError()
+    const commitProof = beginPendingAuthSessionCommit(data.accessToken)
+    broadcastAuthSessionChange({ userId: identity.userId, sessionId: identity.sessionId })
+    onPendingSession(data, commitProof)
+    return data
+  })
 }
 
 export async function verifyMfaLogin(payload: {
   challengeId: string
   method: 'totp' | 'recovery'
   code: string
-}): Promise<MfaVerifyResponse> {
-  const { data } = await api.post<MfaVerifyResponse>('/auth/mfa/verify', payload, preAuthRequestConfig())
-  return data
+}, expectedAuthEpoch: number, onAuthenticated: (
+  result: MfaVerifyResponse,
+  commitProof: PendingAuthSessionCommit,
+) => Promise<void>): Promise<MfaVerifyResponse> {
+  return withAuthCookieMutationLock(async () => {
+    assertAuthEpochCurrent(expectedAuthEpoch)
+    const { data } = await api.post<MfaVerifyResponse>('/auth/mfa/verify', payload, preAuthRequestConfig())
+    const identity = readAccessTokenIdentity(data.accessToken)
+    if (!identity) throw new AuthSessionChangedError()
+    const commitProof = beginPendingAuthSessionCommit(data.accessToken)
+    broadcastAuthSessionChange({ userId: identity.userId, sessionId: identity.sessionId })
+    await onAuthenticated(data, commitProof)
+    return data
+  })
+}
+
+export async function finalizePendingAuthSession(
+  accessToken: string,
+  expectedAuthEpoch: number,
+  commitProof: PendingAuthSessionCommit,
+  onAuthenticated: AuthenticatedSessionHandler,
+): Promise<void> {
+  await withAuthCookieMutationLock(async () => {
+    assertAuthEpochCurrent(expectedAuthEpoch)
+    if (!isPendingAuthSessionCommitCurrent(commitProof, accessToken)) {
+      throw new AuthSessionChangedError()
+    }
+    await onAuthenticated(accessToken, commitProof)
+  })
+}
+
+export async function logoutCurrentSession(): Promise<void> {
+  const authContext = getAuthSessionContext(useAuthStore.getState())
+  if (!authContext) return
+
+  await withAuthCookieMutationLock(async () => {
+    const currentContext = getAuthSessionContext(useAuthStore.getState())
+    if (!matchesAuthSessionContext(authContext, currentContext)) {
+      throw new AuthSessionChangedError()
+    }
+
+    const pendingAuthSession = readPendingAuthSessionCommit()
+    if (
+      pendingAuthSession
+      && (
+        pendingAuthSession.userId !== authContext.userId
+        || pendingAuthSession.sessionId !== authContext.sessionId
+      )
+    ) {
+      useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
+      throw new AuthSessionChangedError()
+    }
+
+    let persistedIdentity: ReturnType<typeof readPersistedAuthIdentity> = null
+    try {
+      persistedIdentity = readPersistedAuthIdentity(window.localStorage.getItem('monexus-auth'))
+    } catch {
+      // The server-side expected session check remains authoritative.
+    }
+    if (
+      persistedIdentity
+      && (
+        persistedIdentity.userId !== authContext.userId
+        || persistedIdentity.sessionId !== authContext.sessionId
+      )
+    ) {
+      useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
+      throw new AuthSessionChangedError()
+    }
+
+    await api.post('/auth/logout', { expectedSessionId: authContext.sessionId }, preAuthRequestConfig())
+    broadcastAuthSessionChange(null)
+  })
 }
 
 export async function getMeWithAccessToken(accessToken: string): Promise<AuthUser> {
@@ -205,12 +342,29 @@ export function decodeAccessTokenRole(token: string | null): UserRole | null {
  * One retry max — if it still disagrees or refresh fails, the caller should logout.
  */
 export async function fetchMeWithRoleHealing(): Promise<AuthUser> {
+  const initialAuthState = useAuthStore.getState()
+  const requestContext = getAuthSessionContext(initialAuthState)
+  if (!requestContext) throw new AuthSessionChangedError()
+
   const me = await getMe()
+  if (!matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))) {
+    throw new AuthSessionChangedError()
+  }
+
   const tokenRole = decodeAccessTokenRole(useAuthStore.getState().accessToken)
   if (tokenRole && tokenRole === me.role) return me
 
-  await refreshAccessToken()
-  return getMe()
+  const staleToken = useAuthStore.getState().accessToken
+  if (!staleToken) throw new AuthSessionChangedError()
+  await refreshAccessToken(staleToken, requestContext)
+  if (!matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))) {
+    throw new AuthSessionChangedError()
+  }
+  const refreshedProfile = await getMe()
+  if (!matchesAuthSessionContext(requestContext, getAuthSessionContext(useAuthStore.getState()))) {
+    throw new AuthSessionChangedError()
+  }
+  return refreshedProfile
 }
 
 // --- Password reset + email verification (P0-D) ---

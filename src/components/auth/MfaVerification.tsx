@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { KeyRound, Loader2, ShieldCheck } from 'lucide-react'
 import { verifyMfaLogin, type MfaVerifyResponse } from '../../api/auth'
+import type { PendingAuthSessionCommit } from '../../auth/pendingAuthSession'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 
 type Props = {
   challengeId: string
-  onCompleted: (result: MfaVerifyResponse) => Promise<void>
+  expectedAuthEpoch: number
+  onCompleted: (result: MfaVerifyResponse, commitProof: PendingAuthSessionCommit) => Promise<void>
   onCancel: () => void
 }
 
@@ -14,7 +16,7 @@ function isTerminalChallengeError(error: unknown) {
   return code === 'MFA_CHALLENGE_INVALID' || code === 'MFA_TOO_MANY_ATTEMPTS'
 }
 
-export default function MfaVerification({ challengeId, onCompleted, onCancel }: Props) {
+export default function MfaVerification({ challengeId, expectedAuthEpoch, onCompleted, onCancel }: Props) {
   const [method, setMethod] = useState<'totp' | 'recovery'>('totp')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
@@ -32,9 +34,12 @@ export default function MfaVerification({ challengeId, onCompleted, onCancel }: 
     setSubmitting(true)
     setError('')
     try {
-      const result = await verifyMfaLogin({ challengeId, method, code: code.trim() })
+      await verifyMfaLogin(
+        { challengeId, method, code: code.trim() },
+        expectedAuthEpoch,
+        onCompleted,
+      )
       clearSecrets()
-      await onCompleted(result)
     } catch (requestError) {
       clearSecrets()
       setError(getApiErrorMessage(requestError, 'MFA 验证失败'))

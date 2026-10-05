@@ -4,6 +4,9 @@ import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
 import { authenticate, requireActiveUser, requireMerchant } from '../../middlewares/auth.js'
 import * as controller from './controller.js'
+import { merchantReport } from '../traffic/controller.js'
+import { trafficQuerySchema } from '../traffic/schema.js'
+import { validate } from '../../middlewares/validate.js'
 
 declare module '../../middlewares/auth.js' {
   interface AuthPayload {
@@ -37,5 +40,6 @@ router.use(authenticate, requireActiveUser, requireMerchant, attachMerchantId)
 router.get('/summary', controller.summary)
 router.get('/timeseries', controller.timeseries)
 router.get('/offers', controller.offers)
+router.get('/traffic', validate({ query: trafficQuerySchema }), merchantReport)
 
 export { router as dashboardRoutes }

@@ -1,28 +1,34 @@
 import { expect, test, type Page } from '@playwright/test'
 import { loginAs, SEED_ACCOUNTS } from './helpers'
 
-const staleAccessToken = 'intentionally-expired-access-token'
+const staleTokenSignature = 'intentionally-invalid-test-signature'
 
 async function makeAccessTokenStaleOnNextLoad(page: Page) {
-  await page.addInitScript((staleToken) => {
+  await page.addInitScript((signature) => {
     const raw = window.localStorage.getItem('monexus-auth')
     if (!raw) return
     const persisted = JSON.parse(raw)
-    persisted.state.accessToken = staleToken
+    const originalToken = persisted.state.accessToken
+    const [header, encodedPayload] = originalToken.split('.')
+    const payload = JSON.parse(atob(encodedPayload.replace(/-/g, '+').replace(/_/g, '/')))
+    // Retain identity for the client guard while forcing a real server 401.
+    const stalePayload = btoa(JSON.stringify({ ...payload, exp: 1 }))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+    persisted.state.accessToken = `${header}.${stalePayload}.${signature}`
     window.localStorage.setItem('monexus-auth', JSON.stringify(persisted))
-  }, staleAccessToken)
+  }, staleTokenSignature)
 }
 
 async function expectSessionRecovered(page: Page) {
   await expect
-    .poll(() => page.evaluate((expectedStaleToken) => {
+    .poll(() => page.evaluate((expectedStaleSignature) => {
       const raw = window.localStorage.getItem('monexus-auth')
       if (!raw) return false
       const persisted = JSON.parse(raw)
       return persisted.state?.isLoggedIn === true
         && typeof persisted.state?.accessToken === 'string'
-        && persisted.state.accessToken !== expectedStaleToken
-    }, staleAccessToken))
+        && !persisted.state.accessToken.endsWith(`.${expectedStaleSignature}`)
+    }, staleTokenSignature))
     .toBe(true)
   await expect(page).not.toHaveURL(/\/login$/)
 }

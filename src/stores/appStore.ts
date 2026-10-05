@@ -4,6 +4,7 @@ import { getConfigRegistry } from '../api/registry'
 import { getOrderAttentionCount } from '../api/orders'
 import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
 import { useAuthStore } from './authStore'
+import { readAccessTokenIdentity } from '../auth/sessionContext'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -13,11 +14,25 @@ export interface Toast {
   type: ToastType
 }
 
-/** 灵动岛通知：仅安静级（success/info），由 navbar 胶囊短暂承载。 */
+export type IslandActivityKind = 'order_processing' | 'order_success' | 'favorite' | 'copy' | 'points' | 'general'
+
+export function isOrderActivity(kind?: IslandActivityKind) {
+  return kind === 'order_processing' || kind === 'order_success'
+}
+
+/** 灵动岛通知与 Live Activity 实时活动（iOS 灵动岛沉浸交互） */
 export interface IslandNotice {
   id: number
   message: string
-  type: 'success' | 'info'
+  type: 'success' | 'info' | 'warning' | 'error'
+  kind?: IslandActivityKind
+  title?: string
+  subtitle?: string
+  badge?: string
+  actionLabel?: string
+  onAction?: () => void
+  payload?: Record<string, any>
+  durationMs?: number
 }
 
 /** Keep at most this many toasts on screen; oldest is dropped. */
@@ -70,6 +85,18 @@ interface AppState {
   showToast: (message: string, type?: ToastType) => void
   removeToast: (id: number) => void
   clearIslandNotice: () => void
+  triggerIslandActivity: (activity: {
+    title: string
+    subtitle?: string
+    message?: string
+    type?: 'success' | 'info' | 'warning' | 'error'
+    kind?: IslandActivityKind
+    badge?: string
+    actionLabel?: string
+    onAction?: () => void
+    payload?: Record<string, any>
+    durationMs?: number
+  }) => void
   setIslandNoticeAvailable: (available: boolean) => void
   /** 灵动岛不可用（如搜索卡片展开中）时把通知降级回横幅 toast。 */
   demoteIslandNotice: () => void
@@ -78,6 +105,7 @@ interface AppState {
   loadRegistry: () => Promise<void>
   /** SPEC-NOTIFY-001：事务消息未读数（与公告未读独立） */
   notificationUnreadCount: number
+  notificationUnreadStatus: 'unknown' | 'known'
   refreshNotificationUnread: () => Promise<void>
   /** SPEC-NOTIFY-RT-001：realtime stream 状态（observability / UI glue） */
   notificationStreamState: string
@@ -93,9 +121,16 @@ let orderAttentionRequestSeq = 0
 let orderAttentionLastFetchAt = 0
 /** 通知未读刷新的请求代次：A 的慢响应不得写入 B 的界面（PR-3 复审）。 */
 let notificationUnreadRequestSeq = 0
+let previousAuthUserId = useAuthStore.getState().user?.id ?? null
+let previousAuthSessionId = getCurrentSessionId(useAuthStore.getState())
+let previousAuthEpoch = useAuthStore.getState().authEpoch
 /** 补拉性质刷新的最小间隔：合并首次挂载时「登录初始化」与「stream ready」
     的双重触发；事件驱动（buyer.orders / 下单成功）永不节流。 */
 const ORDER_ATTENTION_IF_STALE_MIN_INTERVAL_MS = 1_000
+
+function getCurrentSessionId(authState: ReturnType<typeof useAuthStore.getState>): string | null {
+  return readAccessTokenIdentity(authState.accessToken)?.sessionId ?? authState.sessionId
+}
 
 export const useAppStore = create<AppState>()((set, get) => ({
   activeTab: 'store',
@@ -110,6 +145,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   tabbarHidden: false,
   orderAttentionCount: -1,
   notificationUnreadCount: 0,
+  notificationUnreadStatus: 'unknown',
   notificationStreamState: 'disabled',
   setActiveTab: (tab) => set({ activeTab: tab }),
   setNotificationStreamState: (state) => set({ notificationStreamState: state }),
@@ -173,14 +209,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
     // 模态打开期间灵动岛随 navbar 淡出，通知必须降级为横幅（z-80 高于
     // 模态 z-50，反馈可见）——如兑换成功弹窗内「复制发货信息」。
-    if (quiet && short && mobile && get().modalDepth === 0 && get().islandNoticeAvailable) {
+    if (quiet && short && mobile && get().modalDepth === 0 && get().islandNoticeAvailable
+      && !isOrderActivity(get().islandNotice?.kind)) {
       set({ islandNotice: { id, message, type } })
       return
     }
     set((state) => ({
-      // A normal banner must take ownership of the feedback lane. Keeping a
-      // prior island notice alive would produce two competing status regions.
-      islandNotice: null,
+      // A purchase owns its actionable slot until dismissed. Other feedback
+      // can still appear below it without discarding the order action.
+      islandNotice: isOrderActivity(state.islandNotice?.kind) ? state.islandNotice : null,
       toasts: [
         ...state.toasts.filter((t) => !(t.message === message && t.type === type)).slice(-(MAX_TOASTS - 1)),
         { id, message, type },
@@ -193,12 +230,45 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   clearIslandNotice: () => set({ islandNotice: null }),
 
+  triggerIslandActivity: (activity) => {
+    if (isOrderActivity(get().islandNotice?.kind) && !isOrderActivity(activity.kind)) {
+      get().showToast(activity.message || activity.title, activity.type)
+      return
+    }
+    const id = ++toastId
+    set((state) => ({
+      islandNoticeAvailable: true,
+      toasts: state.toasts.filter(
+        (t) => t.message !== '兑换成功' && t.message !== activity.title && t.message !== activity.message
+      ),
+      islandNotice: {
+        id,
+        message: activity.message || activity.title,
+        type: activity.type ?? 'success',
+        kind: activity.kind ?? 'general',
+        title: activity.title,
+        subtitle: activity.subtitle,
+        badge: activity.badge,
+        actionLabel: activity.actionLabel,
+        onAction: activity.onAction,
+        payload: activity.payload,
+        durationMs: activity.durationMs ?? (activity.kind === 'order_success' ? 7000 : 3000),
+      },
+    }))
+  },
+
   // Layout unmounts on public/auth routes. A notice must never stay in an
   // unrendered island there, so downgrade any in-flight one atomically.
   setIslandNoticeAvailable: (available) =>
     set((state) => {
-      if (available || !state.islandNotice) return { islandNoticeAvailable: available }
+      if (available || !state.islandNotice) {
+        return { islandNoticeAvailable: available }
+      }
       const n = state.islandNotice
+      // Do not resurrect a purchase callback after leaving its layout.
+      if (isOrderActivity(n.kind)) {
+        return { islandNoticeAvailable: false, islandNotice: null }
+      }
       return {
         islandNoticeAvailable: false,
         islandNotice: null,
@@ -212,7 +282,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   demoteIslandNotice: () =>
     set((state) => {
       const n = state.islandNotice
-      if (!n) return {}
+      // Live Activities (like order_success) are hero island interactions and must NEVER demote to a banner toast.
+      if (!n || isOrderActivity(n.kind)) return {}
       return {
         islandNotice: null,
         toasts: [...state.toasts.slice(-(MAX_TOASTS - 1)), { id: n.id, message: n.message, type: n.type }],
@@ -233,7 +304,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // A 的慢响应绝不写入 B 的界面；登出立即清零并作废在途响应。
     if (!useAuthStore.getState().user) {
       notificationUnreadRequestSeq++
-      set({ notificationUnreadCount: 0 })
+      set({ notificationUnreadCount: 0, notificationUnreadStatus: 'unknown' })
       return
     }
     const seq = ++notificationUnreadRequestSeq
@@ -241,7 +312,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     try {
       const count = await fetchNotificationUnreadCount()
       if (seq === notificationUnreadRequestSeq && useAuthStore.getState().user?.id === userId) {
-        set({ notificationUnreadCount: Math.max(0, count) })
+        set({ notificationUnreadCount: Math.max(0, count), notificationUnreadStatus: 'known' })
       }
     } catch (err) {
       // Feature flag off (404) or network: keep last known count quietly.
@@ -251,8 +322,34 @@ export const useAppStore = create<AppState>()((set, get) => ({
         && seq === notificationUnreadRequestSeq
         && useAuthStore.getState().user?.id === userId
       ) {
-        set({ notificationUnreadCount: 0 })
+        set({ notificationUnreadCount: 0, notificationUnreadStatus: 'known' })
       }
     }
   },
 }))
+
+useAuthStore.subscribe((authState) => {
+  const nextAuthUserId = authState.user?.id ?? null
+  const nextAuthSessionId = getCurrentSessionId(authState)
+  const sameIdentity = previousAuthEpoch === authState.authEpoch
+    && previousAuthUserId === nextAuthUserId
+    && previousAuthSessionId === nextAuthSessionId
+
+  if (sameIdentity) return
+
+  previousAuthUserId = nextAuthUserId
+  previousAuthSessionId = nextAuthSessionId
+  previousAuthEpoch = authState.authEpoch
+  orderAttentionRequestSeq++
+  orderAttentionTrailing = false
+  orderAttentionLastFetchAt = 0
+  notificationUnreadRequestSeq++
+  useAppStore.setState({
+    orderAttentionCount: authState.user ? -1 : 0,
+    notificationUnreadCount: 0,
+    notificationUnreadStatus: 'unknown',
+    notificationStreamState: 'disabled',
+    toasts: [],
+    islandNotice: null,
+  })
+})

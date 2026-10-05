@@ -1,9 +1,16 @@
 import { Request, Response, NextFunction } from 'express'
 import { prisma } from '../../lib/prisma.js'
+import { announcementVersionRequired } from '../../lib/httpError.js'
 import { getAdminMfaSessionState, type AuthPayload } from '../../middlewares/auth.js'
 import * as announcementService from './service.js'
 
 type AnnouncementAudience = 'user' | 'merchant' | 'admin'
+
+function getDisplayedVersion(req: Request): number {
+  const version = req.body?.version
+  if (!Number.isSafeInteger(version) || version <= 0) throw announcementVersionRequired()
+  return version
+}
 
 /**
  * This endpoint remains public, so an invalid current account is deliberately
@@ -52,7 +59,12 @@ export async function markRead(req: Request, res: Response, next: NextFunction) 
   try {
     const audience = await resolveCurrentAudience(req.user)
     const id = req.params.id as unknown as number
-    res.json(await announcementService.markAnnouncementRead(id, req.user!.userId, audience))
+    res.json(await announcementService.markAnnouncementRead(
+      id,
+      req.user!.userId,
+      getDisplayedVersion(req),
+      audience,
+    ))
   } catch (err) {
     next(err)
   }
@@ -62,7 +74,12 @@ export async function acknowledge(req: Request, res: Response, next: NextFunctio
   try {
     const audience = await resolveCurrentAudience(req.user)
     const id = req.params.id as unknown as number
-    res.json(await announcementService.acknowledgeAnnouncement(id, req.user!.userId, audience))
+    res.json(await announcementService.acknowledgeAnnouncement(
+      id,
+      req.user!.userId,
+      getDisplayedVersion(req),
+      audience,
+    ))
   } catch (err) {
     next(err)
   }

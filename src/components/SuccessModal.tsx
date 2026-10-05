@@ -205,11 +205,13 @@ export default function SuccessModal({
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md text-center flex flex-col max-h-[90dvh] overflow-hidden">
-        <div className="w-16 h-16 bg-[var(--color-success-bg)] border-2 border-[var(--color-success-border)] text-[var(--color-success-text)] rounded-full flex items-center justify-center mx-auto mb-5">
+        <div className={`w-16 h-16 bg-[var(--color-success-bg)] border-2 border-[var(--color-success-border)] text-[var(--color-success-text)] rounded-full flex items-center justify-center mx-auto mb-5 ${
+          !showSpinner ? 'animate-in zoom-in-75 duration-300 ease-[cubic-bezier(0.34,1.3,0.64,1)]' : ''
+        }`}>
           {showSpinner ? (
             <Loader2 className="w-8 h-8 text-[var(--color-cta)] animate-spin" data-testid="success-provision-spinner" />
           ) : (
-            <Check className="w-8 h-8" data-testid="success-check-icon" />
+            <Check className="w-8 h-8 stroke-[2.5] success-check-path" data-testid="success-check-icon" />
           )}
         </div>
         <DialogTitle className="text-2xl mb-2" data-testid="success-modal-title">

@@ -117,6 +117,54 @@ describe('ProductOfferSelector', () => {
     expect(screen.getByText('仅剩 3 件')).toBeDefined()
   })
 
+  it('uses external remaining capacity instead of local stock for low stock check', () => {
+    const externalOffers: OfferItem[] = [
+      {
+        id: 201,
+        name: '外部充值套餐 (高名额)',
+        price: 100,
+        stock: 3, // local stock is 3, but external has 40
+        stockMode: 'finite',
+        status: 'active',
+        fakaCapacity: {
+          source: 'xboard',
+          sellable: true,
+          remaining: 40,
+          capacityLimit: 50,
+        },
+      },
+      {
+        id: 202,
+        name: '外部充值套餐 (紧缺名额)',
+        price: 200,
+        stock: 100, // local stock is 100, but external has only 2
+        stockMode: 'finite',
+        status: 'active',
+        fakaCapacity: {
+          source: 'xboard',
+          sellable: true,
+          remaining: 2,
+          capacityLimit: 50,
+        },
+      },
+    ]
+
+    render(
+      <ProductOfferSelector
+        offers={externalOffers}
+        selectedOfferId={201}
+        onSelectOffer={vi.fn()}
+      />
+    )
+
+    // 201 has remaining 40 -> should NOT show low stock
+    expect(screen.queryByText('仅剩 3 件')).toBeNull()
+    expect(screen.queryByText('仅剩 40 名额')).toBeNull()
+
+    // 202 has remaining 2 -> should show '仅剩 2 名额'
+    expect(screen.getByText('仅剩 2 名额')).toBeDefined()
+  })
+
   it('strictly contains no quantity stepper elements', () => {
     const { container } = render(
       <ProductOfferSelector

@@ -1,0 +1,154 @@
+{
+  "source": "/root/program/shopexample/shopinfo.png",
+  "sourceSize": [
+    1536,
+    1024
+  ],
+  "coordinateConvention": "[left, top, right, bottom], right/bottom exclusive",
+  "method": "Exact screenshot crops, original resolution, no redraw or upscaling.",
+  "assets": [
+    {
+      "name": "hero",
+      "url": "/assets/mock/product-detail/hero.png",
+      "width": 515,
+      "height": 444,
+      "crop": [
+        158,
+        98,
+        673,
+        542
+      ],
+      "note": "商品主图；已含宣传文字、左右切换按钮及 1 / 6 页码。"
+    },
+    {
+      "name": "thumb-mountain",
+      "url": "/assets/mock/product-detail/thumb-mountain.png",
+      "width": 72,
+      "height": 59,
+      "crop": [
+        69,
+        102,
+        141,
+        161
+      ],
+      "note": "雪山缩略图；避开外层蓝色选中描边。"
+    },
+    {
+      "name": "thumb-video",
+      "url": "/assets/mock/product-detail/thumb-video.png",
+      "width": 74,
+      "height": 55,
+      "crop": [
+        68,
+        170,
+        142,
+        225
+      ],
+      "note": "视频封面占位图；已含播放按钮，无视频文件。"
+    },
+    {
+      "name": "thumb-app",
+      "url": "/assets/mock/product-detail/thumb-app.png",
+      "width": 74,
+      "height": 59,
+      "crop": [
+        68,
+        233,
+        142,
+        292
+      ],
+      "note": "软件界面缩略图。"
+    },
+    {
+      "name": "thumb-map",
+      "url": "/assets/mock/product-detail/thumb-map.png",
+      "width": 74,
+      "height": 59,
+      "crop": [
+        68,
+        300,
+        142,
+        359
+      ],
+      "note": "世界地图缩略图。"
+    },
+    {
+      "name": "thumb-landscape",
+      "url": "/assets/mock/product-detail/thumb-landscape.png",
+      "width": 74,
+      "height": 59,
+      "crop": [
+        68,
+        367,
+        142,
+        426
+      ],
+      "note": "风景缩略图。"
+    },
+    {
+      "name": "thumb-more",
+      "url": "/assets/mock/product-detail/thumb-more.png",
+      "width": 74,
+      "height": 59,
+      "crop": [
+        68,
+        434,
+        142,
+        493
+      ],
+      "note": "更多图片占位图；已含暗色遮罩及 +3 文字。"
+    },
+    {
+      "name": "related-basic",
+      "url": "/assets/mock/product-detail/related-basic.png",
+      "width": 77,
+      "height": 78,
+      "crop": [
+        1169,
+        377,
+        1246,
+        455
+      ],
+      "note": "Aster Link 基础套餐封面。"
+    },
+    {
+      "name": "related-pro",
+      "url": "/assets/mock/product-detail/related-pro.png",
+      "width": 77,
+      "height": 78,
+      "crop": [
+        1169,
+        473,
+        1246,
+        551
+      ],
+      "note": "全球加速 Pro 封面。"
+    },
+    {
+      "name": "related-gaming",
+      "url": "/assets/mock/product-detail/related-gaming.png",
+      "width": 77,
+      "height": 80,
+      "crop": [
+        1169,
+        568,
+        1246,
+        648
+      ],
+      "note": "轻量游戏专线封面。"
+    },
+    {
+      "name": "platform-banner-visible",
+      "url": "/assets/mock/product-detail/platform-banner-visible.png",
+      "width": 1037,
+      "height": 119,
+      "crop": [
+        81,
+        905,
+        1118,
+        1024
+      ],
+      "note": "多设备·全平台支持横幅；截图底部截断，仅包含可见部分，已含文字及平台图标。"
+    }
+  ]
+}

@@ -13,6 +13,8 @@ describe('parseSafeProductReturnTo', () => {
     expect(parseSafeProductReturnTo('/\\evil')).toBeNull()
     expect(parseSafeProductReturnTo('/product/12/../admin')).toBeNull()
     expect(parseSafeProductReturnTo('/product/abc')).toBeNull()
+    expect(parseSafeProductReturnTo('/product/0')).toBeNull()
+    expect(parseSafeProductReturnTo('/product/1?offerId=2&offerId=3')).toBeNull()
     expect(parseSafeProductReturnTo('/orders')).toBeNull()
     expect(parseSafeProductReturnTo('/product/1?offerId=7&next=/admin')).toBeNull()
     expect(parseSafeProductReturnTo('/product/1#token')).toBeNull()

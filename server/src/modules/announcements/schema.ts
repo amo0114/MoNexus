@@ -5,4 +5,8 @@ import { z } from 'zod'
 // callers attempting to select another audience explicitly.
 export const listPublicAnnouncementsQuerySchema = z.object({}).strict()
 
+export const announcementReceiptBodySchema = z.object({
+  version: z.number().int().positive().optional(),
+}).strict().optional().default({})
+
 export type ListPublicAnnouncementsQuery = z.infer<typeof listPublicAnnouncementsQuerySchema>

@@ -1,6 +1,6 @@
 /**
  * PointLog 买家展示：类型语义 + 配色（SPEC-CMI-UX-001 §6.1，D-UX-18）。
- * 冻结词汇：入账 / 待支付 / 已支付 / 已返还。底层 in/out/hold/release 不变。
+ * 流水记录的是历史动作，不代表订单当前支付状态。底层 in/out/hold/release 不变。
  */
 
 export type PointLogType = 'in' | 'out' | 'hold' | 'release' | 'refund' | string
@@ -30,30 +30,30 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
       }
     case 'out':
       return {
-        typeLabel: '已支付',
+        typeLabel: '支付扣款',
         amountPrefix: '−',
         amountClass: 'text-[var(--color-danger)]',
         iconWrapClass:
           'bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/25 text-[var(--color-danger)]',
-        hint: '已从可用积分中支付',
+        hint: '已完成支付扣款；此前有冻结记录时，本次消耗冻结积分，不会再次扣减可用余额',
       }
     case 'hold':
       return {
-        typeLabel: '待支付',
-        amountPrefix: '待',
+        typeLabel: '积分冻结',
+        amountPrefix: '冻',
         amountClass: 'text-[var(--color-warning)]',
         iconWrapClass:
           'bg-[var(--color-warning)]/12 border border-[var(--color-warning)]/30 text-[var(--color-warning)]',
-        hint: '人工服务下单后，积分会暂时锁定；订单完成后才正式支付，取消或退款后会自动返还',
+        hint: '这是下单时的历史冻结记录，不表示当前仍冻结或待付款；后续扣款、解除冻结会另记流水，当前状态请查看关联订单',
       }
     case 'release':
       return {
-        typeLabel: '已返还',
+        typeLabel: '解除冻结',
         amountPrefix: '+',
         amountClass: 'text-[var(--color-primary)]',
         iconWrapClass:
           'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/25 text-[var(--color-primary)]',
-        hint: '待支付的积分已返还到可用余额',
+        hint: '此前冻结的积分已解除冻结并返还到可用余额，不属于新增收入',
       }
     case 'refund':
       return {
@@ -88,7 +88,7 @@ export function formatPointLogAmount(type: PointLogType, amount: number): string
   const v = pointLogVisual(type)
   const absAmount = Math.abs(amount)
   const formatted = absAmount.toLocaleString('en-US')
-  if (type === 'hold') return `待 ${formatted}`
+  if (type === 'hold') return `冻 ${formatted}`
   if (type === 'out') return `−${formatted}`
   if (type === 'in' || type === 'release' || type === 'refund' || type === 'sandbox_in') return `+${formatted}`
   return `${v.amountPrefix}${formatted}`

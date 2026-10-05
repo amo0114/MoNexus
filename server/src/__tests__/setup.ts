@@ -13,6 +13,9 @@ afterAll(async () => {
 beforeEach(async () => {
   await __resetCacheForTests()
   await prisma.$executeRawUnsafe(`TRUNCATE TABLE
+    "TrafficEvent",
+    "TrafficDailyVisitor",
+    "TrafficAggregationState",
     "RechargeIdempotencyRecord",
     "RechargeCreditTask",
     "RechargeLimitReservation",

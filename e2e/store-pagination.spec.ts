@@ -145,9 +145,7 @@ test('store loads the next cursor page; detail page has gallery and no review se
     .toBeGreaterThan(scrollBeforeDetail - 200)
 
   await page.goto(`/product/${introProductId}`)
-  await expect(page.getByTestId('product-section-intro')).toBeVisible({ timeout: 10_000 })
-  await expect(
-    page.getByTestId('product-section-intro').getByRole('heading', { name: '介绍', exact: true }),
-  ).toBeVisible()
-  await expect(page.getByText('E2E 明确介绍正文')).toBeVisible()
+  const details = page.getByRole('tabpanel', { name: '商品详情', exact: true })
+  await expect(details).toBeVisible({ timeout: 10_000 })
+  await expect(details.getByText('E2E 明确介绍正文')).toBeVisible()
 })

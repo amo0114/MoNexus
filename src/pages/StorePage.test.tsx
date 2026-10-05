@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { AuthUser } from '../types/merchant'
+import { beginPendingAuthSessionCommit } from '../auth/pendingAuthSession'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import { clearStorePageCache, getStorePageCache } from './storePageCache'
@@ -107,24 +108,48 @@ function cachedProductIds() {
   return (cached?.feedItems ?? []).map((item) => item.productId)
 }
 
+function createMemberAccessToken(): string {
+  const payload = btoa(JSON.stringify({
+    userId: MEMBER_USER.id,
+    sid: 'store-page-member-session',
+    exp: Math.floor(Date.now() / 1000) + 60,
+  }))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `header.${payload}.signature`
+}
+
+function loginMemberForTest(): void {
+  const accessToken = createMemberAccessToken()
+  const authEpoch = useAuthStore.getState().beginIdentityTransition()
+  const loginSucceeded = useAuthStore.getState().login(
+    MEMBER_USER,
+    accessToken,
+    authEpoch,
+    beginPendingAuthSessionCommit(accessToken),
+  )
+  if (!loginSucceeded) throw new Error('Expected the member test session to start')
+}
+
 beforeEach(() => {
   apiGet.mockReset()
   clearStorePageCache()
   localStorage.clear()
-  useAuthStore.setState({ user: null, accessToken: null, isLoggedIn: false })
+  useAuthStore.setState({ user: null, accessToken: null, sessionId: null, isLoggedIn: false, authEpoch: 0 })
   useAppStore.setState({ storeQuery: '', storeCategory: '全部', registry: null })
 })
 
 afterEach(() => {
   apiGet.mockReset()
   clearStorePageCache()
-  useAuthStore.setState({ user: null, accessToken: null, isLoggedIn: false })
+  useAuthStore.setState({ user: null, accessToken: null, sessionId: null, isLoggedIn: false, authEpoch: 0 })
 })
 
 describe('StorePage audience on logout', () => {
   it('clears a rendered member feed after logout and reloads the guest page-1 list', async () => {
     mockListByAudience()
-    useAuthStore.getState().login(MEMBER_USER, 'member-token')
+    loginMemberForTest()
 
     render(
       <MemoryRouter>
@@ -175,7 +200,7 @@ describe('StorePage audience on logout', () => {
       throw new Error(`unexpected api.get url: ${url}`)
     })
 
-    useAuthStore.getState().login(MEMBER_USER, 'member-token')
+    loginMemberForTest()
     render(
       <MemoryRouter>
         <StorePage />
@@ -205,5 +230,53 @@ describe('StorePage audience on logout', () => {
       expect(cached?.audience).toBe('guest')
       expect(cachedProductIds()).not.toContain(101)
     })
+  })
+})
+
+describe('StorePage scroll restoration and BackToTop', () => {
+  beforeEach(() => {
+    installJsdomStubs()
+    clearStorePageCache()
+    useAuthStore.setState({ isLoggedIn: false, user: null, token: null })
+    useAppStore.setState({ storeQuery: '', storeCategory: '全部', registry: null, tabbarHidden: false })
+    apiGet.mockReset()
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products') {
+        return Promise.resolve({
+          data: {
+            items: [
+              {
+                id: 1,
+                name: '商品1',
+                price: 10,
+                stock: 10,
+                imageUrl: 'http://cdn/1.png',
+              },
+            ],
+            nextCursor: null,
+            hasMore: false,
+          },
+        })
+      }
+      if (url === '/products/sponsored' || url === '/products/editorial') {
+        return Promise.resolve({ data: { items: [] } })
+      }
+      return Promise.reject(new Error(`unexpected: ${url}`))
+    })
+  })
+
+  afterEach(() => {
+    clearStorePageCache()
+  })
+
+  it('renders BackToTop button inside StorePage', async () => {
+    render(
+      <MemoryRouter>
+        <StorePage />
+      </MemoryRouter>,
+    )
+
+    await screen.findByTestId('back-to-top-button')
+    expect(screen.getByTestId('back-to-top-button')).toBeInTheDocument()
   })
 })
