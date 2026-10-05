@@ -22,6 +22,7 @@ test.describe.serial('product reviews flow', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
 
     await page.goto('/profile')
+    await page.getByRole('tab', { name: '账号设置' }).click()
     const card = page.getByTestId('nickname-card')
     await expect(card).toBeVisible({ timeout: 10_000 })
 
@@ -58,7 +59,7 @@ test.describe.serial('product reviews flow', () => {
     // 打开订单详情，提交 4 星评价
     await page.goto('/profile')
     const orderCard = page
-      .locator('div.shadow-sm')
+      .locator('[data-testid^="profile-order-card-"]')
       .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
       .first()
     await expect(orderCard).toBeVisible({ timeout: 10_000 })
@@ -85,6 +86,7 @@ test.describe.serial('product reviews flow', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
 
     await page.goto(productUrl)
+    await page.getByRole('tab', { name: /用户评价/ }).click()
     await expect(page.getByTestId('rating-summary')).toContainText('4.0', { timeout: 10_000 })
 
     const reviewList = page.getByTestId('review-list')
@@ -98,7 +100,7 @@ test.describe.serial('product reviews flow', () => {
 
     await page.goto('/profile')
     const orderCard = page
-      .locator('div.shadow-sm')
+      .locator('[data-testid^="profile-order-card-"]')
       .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
       .first()
     await expect(orderCard).toBeVisible({ timeout: 10_000 })
@@ -122,6 +124,7 @@ test.describe.serial('product reviews flow', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
 
     await page.goto(productUrl)
+    await page.getByRole('tab', { name: /用户评价/ }).click()
     await expect(page.getByTestId('rating-summary')).toContainText('5.0', { timeout: 10_000 })
     await expect(page.getByTestId('review-list')).toContainText(COMMENT)
   })

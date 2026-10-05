@@ -707,7 +707,7 @@ export default function ProfilePage() {
             <div className="space-y-3">
               {filteredOrders.slice(0, 5).map((order, i) => (
                 <Reveal key={order.id} delay={Math.min(i, 8) * 50}>
-                  <div className="bg-[var(--color-background)] rounded-xl p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-2xs hover:shadow-xs transition-shadow">
+                  <div data-testid={`profile-order-card-${order.id}`} className="bg-[var(--color-background)] rounded-xl p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-2xs hover:shadow-xs transition-shadow">
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
                         <div className="flex items-center gap-2 flex-wrap min-w-0">

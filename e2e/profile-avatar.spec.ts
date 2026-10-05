@@ -4,6 +4,7 @@ import { loginAs, SEED_ACCOUNTS } from './helpers'
 test('a preset avatar persists across refresh and appears in desktop and mobile navigation', async ({ page }) => {
   await loginAs(page, SEED_ACCOUNTS.user)
   await page.goto('/profile')
+  await page.getByRole('tab', { name: '账号设置' }).click()
   await page.getByRole('button', { name: '选择头像', exact: true }).click()
   await page.getByRole('tab', { name: '蜀汉' }).click()
   await page.getByRole('button', { name: '选择赵云', exact: true }).click()
@@ -13,6 +14,7 @@ test('a preset avatar persists across refresh and appears in desktop and mobile 
   expect((await saved).status()).toBe(200)
   await expect(page.getByRole('dialog')).toHaveCount(0)
   await page.reload()
+  await page.getByRole('tab', { name: '账号设置' }).click()
   const portrait = page.getByTestId('avatar-edit').locator('img')
   await expect(portrait).toHaveAttribute('src', url)
   await expect(portrait).toHaveJSProperty('complete', true)

@@ -82,7 +82,7 @@ test.describe.serial('P6c booking', () => {
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/profile')
     const orderCard = page
-      .locator('div.shadow-sm')
+      .locator('[data-testid^="profile-order-card-"]')
       .filter({ has: page.getByRole('heading', { name: PRODUCT_NAME }) })
       .first()
     await orderCard.getByRole('button', { name: '查看发货内容' }).click()
