@@ -54,11 +54,12 @@ export async function holdAvailablePoints(
 }
 
 /**
- * Complete a held order exactly once after its status CAS has succeeded.
+ * Capture the buyer's reservation without releasing merchant payout.
+ * Caller must hold the order lock and use fresh state after its status/task CAS.
  * `fundsHeld=false` is a deliberately narrow compatibility path for orders
  * created before frozenBalance existed; new orders never take this branch.
  */
-export async function settleHeldOrder(
+export async function captureHeldOrder(
   client: AccountingClient,
   order: HeldOrder,
   reason: string
@@ -87,6 +88,16 @@ export async function settleHeldOrder(
     where: { id: order.id },
     data: { holdingPoints: null, fundsHeld: false },
   })
+  return balanceAfter
+}
+
+/** Close/confirm an order and release merchant funds, even if payment was captured earlier. */
+export async function settleHeldOrder(
+  client: AccountingClient,
+  order: HeldOrder,
+  reason: string
+): Promise<number | null> {
+  const balanceAfter = await captureHeldOrder(client, order, reason)
   await client.settlement.updateMany({
     where: { orderId: order.id, status: 'holding' },
     data: { status: 'pending' },
