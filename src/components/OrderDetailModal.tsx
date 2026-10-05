@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw } from 'lucide-react'
+import { Copy, Check, Package, Store, Clock, Coins, Info, Loader2, RefreshCw, Ticket } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
@@ -58,6 +58,14 @@ const ACCEPTANCE_ACTION_COPY: Record<OrderAction, { title: string; description: 
   },
 }
 
+function formatOrderDate(iso?: string | null) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return iso
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
   const showToast = useAppStore((s) => s.showToast)
   // The parent replaces this authoritative REST projection after realtime or
@@ -84,9 +92,13 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   const [copiedContent, setCopiedContent] = useState(false)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const [copiedOrderId, setCopiedOrderId] = useState(false)
+  const orderIdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      if (orderIdTimerRef.current) clearTimeout(orderIdTimerRef.current)
     }
   }, [])
 
@@ -101,6 +113,17 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       showToast('发货信息已复制')
     } else {
       showToast('复制失败，请长按或手动选中文本复制', 'error')
+    }
+  }
+
+  async function copyOrderId() {
+    if (!order.id) return
+    const success = await copyToClipboard(String(order.id))
+    if (success) {
+      if (orderIdTimerRef.current) clearTimeout(orderIdTimerRef.current)
+      setCopiedOrderId(true)
+      orderIdTimerRef.current = setTimeout(() => setCopiedOrderId(false), 2000)
+      showToast('订单号已复制')
     }
   }
 
@@ -123,19 +146,18 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     }
   }
 
-  /** P6a：续费预检；规格已下架等 400 直接以文案提示，通过后进入结算弹窗。 */
   async function startRenew() {
-    if (renewLoading) return
     setRenewLoading(true)
     try {
-      setRenewInfo(await renewOrder(order.id))
+      const info = await renewOrder(order.id)
+      setRenewInfo(info)
     } catch (e: any) {
       const code = getApiErrorCode(e)
-      if (code === 'RENEW_OFFER_UNAVAILABLE') {
-        showToast('该规格已下架，无法续费', 'error')
+      if (code === 'RENEW_NOT_AVAILABLE') {
+        showToast('该商品或规格已下架，无法续费', 'error')
       } else if (code === 'RENEW_ALREADY_RENEWED') {
-        // 陈旧详情兜底：本单已续费，续费须在最新订单上发起。
-        showToast('该订单已续费，请在最新的续费订单上操作', 'error')
+        showToast('该订单已有生效中的续费单，请查看最新订单', 'error')
+        onUpdated?.()
       } else {
         showToast(getApiErrorMessage(e, '暂无法续费，请稍后再试'), 'error')
       }
@@ -272,13 +294,20 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-w-lg flex flex-col max-h-[90dvh] overflow-hidden">
+      <DialogContent className="w-full max-w-lg sm:max-w-xl md:max-w-2xl flex flex-col max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden p-4 sm:p-6 rounded-2xl">
 
-        <div className="flex justify-between items-center mb-3.5 pr-8 shrink-0">
-          <DialogTitle className="text-lg font-bold flex items-center gap-2">
-            <Info className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-            <span>订单详情</span>
-            <span data-testid="order-detail-status" data-order-status={order.status} className="inline-flex items-center">
+        {/* 顶部凭据概览区（Header Receipt Bar） */}
+        <div className="mb-3 sm:mb-4 pr-7 sm:pr-8 shrink-0 space-y-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            <DialogTitle className="text-base sm:text-lg font-bold flex items-center gap-1.5 text-[var(--color-text)]">
+              <Info className="w-4 h-4 sm:w-5 sm:h-5 text-[var(--color-primary)] shrink-0" />
+              <span>订单详情</span>
+            </DialogTitle>
+            <span
+              data-testid="order-detail-status"
+              data-order-status={order.status}
+              className="inline-flex items-center"
+            >
               <RegistryPill value={order.status} category="orderStatuses" />
             </span>
             {subscriptionExpired && (
@@ -297,30 +326,94 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 自动开通中
               </span>
             )}
-          </DialogTitle>
+          </div>
+
+          {/* 订单凭据元数据栏 */}
+          <div className="text-xs text-[var(--color-text-muted)] flex items-center gap-2 sm:gap-3 flex-wrap">
+            <button
+              type="button"
+              onClick={copyOrderId}
+              title="点击复制订单号"
+              className="font-mono flex items-center gap-1 hover:text-[var(--color-text)] transition-colors cursor-pointer select-all group"
+            >
+              <span>单号 #{order.id}</span>
+              {copiedOrderId ? (
+                <Check className="w-3 h-3 text-[var(--color-points)]" />
+              ) : (
+                <Copy className="w-3 h-3 opacity-40 group-hover:opacity-100 transition-opacity" />
+              )}
+            </button>
+            {typeof order.price === 'number' && (
+              <>
+                <span className="text-[var(--color-border)] select-none">·</span>
+                <span>
+                  实付 <strong className="text-[var(--color-cta)] font-semibold">{order.price}</strong> 积分
+                </span>
+              </>
+            )}
+            {order.createdAt && (
+              <>
+                <span className="text-[var(--color-border)] select-none">·</span>
+                <span className="hidden sm:inline">下单时间：{formatOrderDate(order.createdAt)}</span>
+                <span className="sm:hidden">{new Date(order.createdAt).toLocaleDateString()}</span>
+              </>
+            )}
+          </div>
           <DialogDescription className="sr-only">订单详细信息与发货内容</DialogDescription>
         </div>
 
-        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-3 pr-0.5">
-          {/* 商品信息 */}
-          <div className="bg-[var(--color-background)] rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)]">
-            <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] mb-2.5 flex items-center gap-1.5">
-              <Package className="w-3.5 h-3.5" /> 商品信息
-            </h3>
-            <div className="flex items-start gap-3">
+        <div className="flex-1 overflow-y-auto hide-scrollbar space-y-3.5 pr-0.5">
+          {/* ① 核心交付凭证（置顶提权，去掉多层外层套娃） */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between px-0.5">
+              <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] flex items-center gap-1.5">
+                <Ticket className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+                <span>
+                  {order.delivery?.structuredContent?.values?.action
+                    ? '开通结果'
+                    : '交付内容与凭证'}
+                </span>
+              </h3>
+            </div>
+            <DeliveryContent {...deliverySlice} />
+            {order.delivery?.publicNote && (
+              <div className="text-xs text-[var(--color-text-muted)] px-1 pt-0.5">
+                <span className="font-bold text-[var(--color-text)]">附言：</span>
+                {order.delivery.publicNote}
+              </div>
+            )}
+          </div>
+
+          {/* ② 商品信息（精简扁平 Row，高度大幅缩减） */}
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)]/60 p-3 sm:p-3.5">
+            <div className="flex items-center gap-3">
               {order.product.imageUrl ? (
-                <SafeImage src={order.product.imageUrl} alt={order.product.name} className="w-14 h-14 rounded-lg object-cover shrink-0 border border-[var(--color-border)]" loading="lazy" />
+                <SafeImage
+                  src={order.product.imageUrl}
+                  alt={order.product.name}
+                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg object-cover shrink-0 border border-[var(--color-border)] bg-[var(--color-surface)]"
+                  loading="lazy"
+                />
               ) : (
-                <div className="w-14 h-14 rounded-lg bg-[var(--color-image-placeholder)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-[var(--color-image-placeholder)] border border-[var(--color-border)] flex items-center justify-center shrink-0">
                   <Package className="w-5 h-5 text-[var(--color-text-muted)]" />
                 </div>
               )}
               <div className="flex flex-col gap-1 min-w-0 flex-1">
-                <span className="font-bold text-[var(--color-text)] text-sm leading-snug line-clamp-2">{order.product.name}</span>
-                <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-bold text-[var(--color-text)] text-sm leading-snug line-clamp-2">
+                    {order.product.name}
+                  </span>
+                  {typeof order.price === 'number' && (
+                    <span className="text-xs sm:text-sm font-semibold text-[var(--color-cta)] shrink-0 hidden sm:inline-block">
+                      {order.price} 积分
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
                   {order.offerNameSnapshot && order.offerNameSnapshot !== '默认规格' && (
                     <span
-                      className="text-xs text-[var(--color-text)] bg-[var(--color-background)] px-2 py-0.5 rounded border border-[var(--color-border)] font-bold"
+                      className="text-xs text-[var(--color-text)] bg-[var(--color-surface)] px-2 py-0.5 rounded border border-[var(--color-border)] font-bold"
                       data-testid="order-offer-name"
                     >
                       {order.offerNameSnapshot}
@@ -337,13 +430,15 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           </div>
 
+          {/* ③ 积分说明（条件展示） */}
           {(showHolding || isRefunded) && (
             <div
-              className="bg-[var(--color-background)] rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)]"
+              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50"
               data-testid="order-holding-points"
             >
-              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-2 flex items-center gap-2">
-                <Coins className="w-4 h-4 text-[var(--color-text-muted)]" /> 积分说明
+              <h3 className="font-heading text-xs font-bold text-[var(--color-text)] mb-1.5 flex items-center gap-1.5">
+                <Coins className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                <span>积分说明</span>
               </h3>
               {isRefunded ? (
                 <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
@@ -358,19 +453,23 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
-          {/* 购买前填写信息 */}
+          {/* ④ 购买前填写信息（条件展示，响应式网格） */}
           {order.purchaseFormAnswers && Object.keys(order.purchaseFormAnswers).length > 0 && (
-            <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]" data-testid="order-purchase-form">
-              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3 flex items-center gap-2">
-                <Info className="w-4 h-4 text-[var(--color-text-muted)]" /> 购买时填写的信息
+            <div
+              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50"
+              data-testid="order-purchase-form"
+            >
+              <h3 className="font-heading text-xs font-bold text-[var(--color-text)] mb-2 flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                <span>购买时填写的信息</span>
               </h3>
-              <dl className="space-y-1.5 text-xs">
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 {Object.entries(order.purchaseFormAnswers).map(([key, value]) => {
-                  const label = order.purchaseFormSnapshot?.find(f => f.key === key)?.label ?? key
+                  const label = order.purchaseFormSnapshot?.find((f) => f.key === key)?.label ?? key
                   return (
-                    <div key={key} className="flex gap-2">
+                    <div key={key} className="flex gap-1.5 bg-[var(--color-surface)] p-2 rounded-lg border border-[var(--color-border)]/60">
                       <dt className="text-[var(--color-text-muted)] shrink-0">{label}：</dt>
-                      <dd className="text-[var(--color-text)] break-all">{value}</dd>
+                      <dd className="text-[var(--color-text)] break-all font-mono">{value}</dd>
                     </div>
                   )
                 })}
@@ -378,37 +477,28 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
-          {/* 发货内容 / Xboard 开通结果 */}
-          <div className="bg-[var(--color-background)] rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)]">
-            <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] mb-2.5 flex items-center gap-1.5">
-              <Info className="w-3.5 h-3.5" />
-              {order.delivery?.structuredContent?.values?.action
-                ? '开通结果'
-                : '发货内容'}
-            </h3>
-            <DeliveryContent {...deliverySlice} />
-            {order.delivery?.publicNote && (
-              <div className="mt-2 text-xs text-[var(--color-text-muted)]">
-                <span className="font-bold">附言：</span>{order.delivery.publicNote}
-              </div>
-            )}
-          </div>
-
-          {/* 我的评价 */}
+          {/* ⑤ 我的评价 */}
           {review && (
-            <div className="bg-[var(--color-background)] rounded-lg p-5 border border-[var(--color-border)]" data-testid="own-review">
-              <h3 className="font-heading text-sm font-bold text-[var(--color-text)] mb-3">我的评价</h3>
+            <div
+              className="rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)] bg-[var(--color-background)]/50"
+              data-testid="own-review"
+            >
+              <h3 className="font-heading text-xs font-bold text-[var(--color-text)] mb-2.5">我的评价</h3>
               {review.status === 'removed' ? (
                 <p className="text-xs text-[var(--color-text-muted)]">评价已被移除</p>
               ) : (
                 <>
                   <StarRating value={review.rating} />
-                  {review.comment && <p className="mt-2 text-xs text-[var(--color-text)] whitespace-pre-wrap">{review.comment}</p>}
+                  {review.comment && (
+                    <p className="mt-2 text-xs text-[var(--color-text)] whitespace-pre-wrap leading-relaxed">
+                      {review.comment}
+                    </p>
+                  )}
                   {!review.editedAt && new Date(review.editableUntil) > new Date() && (
                     <button
                       type="button"
                       onClick={() => setReviewOpen(true)}
-                      className="mt-3 text-xs text-[var(--color-primary)] underline cursor-pointer"
+                      className="mt-2.5 text-xs text-[var(--color-primary)] hover:underline cursor-pointer"
                       data-testid="review-edit-button"
                     >
                       修改评价（可修改至 {new Date(review.editableUntil).toLocaleDateString()}）
@@ -419,43 +509,57 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
-          {/* 订单时间线 */}
-          <div className="bg-[var(--color-background)] rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)]">
-            <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] mb-2.5 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" /> 订单动态
+          {/* ⑥ 订单动态时间线 */}
+          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)]/50 p-3.5 sm:p-4">
+            <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] mb-3 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+              <span>订单动态</span>
             </h3>
-            <div className="space-y-3">
-              {statusTimeline.map((event, idx) => (
-                <div key={idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
-                  <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-[var(--color-primary)] ring-2 ring-[var(--color-background)]" />
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text)] mb-0.5 flex-wrap">
-                    <span>{event.actorRole === 'user' ? '用户' : event.actorRole === 'merchant' ? '商家' : event.actorRole === 'admin' ? '管理员' : '系统'}</span>
-                    <span className="text-[11px] font-normal text-[var(--color-text-muted)]">状态变更为</span>
-                    <RegistryPill value={event.toStatus} category="orderStatuses" />
-                  </div>
-                  <div className="text-[11px] text-[var(--color-text-muted)]">{event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}</div>
-                  {event.publicNote && (
-                    <div className="mt-1 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded border border-[var(--color-border)]">
-                      {event.publicNote}
+            <div className="space-y-3 pl-1">
+              {statusTimeline.map((event, idx) => {
+                const roleLabel =
+                  event.actorRole === 'merchant'
+                    ? '商家'
+                    : event.actorRole === 'user'
+                      ? '买家'
+                      : event.actorRole === 'admin'
+                        ? '平台管理'
+                        : '系统'
+                return (
+                  <div key={idx} className="relative pl-4 border-l-2 border-[var(--color-border)] pb-1 last:pb-0">
+                    <div className="absolute -left-[5px] top-1.5 w-2 h-2 rounded-full bg-[var(--color-primary)] ring-2 ring-[var(--color-background)]" />
+                    <div className="flex items-center gap-1.5 text-xs text-[var(--color-text)] flex-wrap">
+                      <span className="font-medium">{roleLabel}</span>
+                      <span className="text-[11px] text-[var(--color-text-muted)]">状态变更为</span>
+                      <RegistryPill value={event.toStatus} category="orderStatuses" />
                     </div>
-                  )}
-                </div>
-              ))}
+                    <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
+                      {event.createdAt ? formatOrderDate(event.createdAt) : ''}
+                    </div>
+                    {event.publicNote && (
+                      <div className="mt-1.5 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded-lg border border-[var(--color-border)] leading-relaxed">
+                        {event.publicNote}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
           </div>
         </div>
 
-        <div className="pt-3.5 mt-2 border-t border-[var(--color-border)] flex flex-col gap-2 shrink-0">
-          {/* 流程与状态操作行（发起争议 / 结束订单 / 评价商品 / 续费） */}
-          {(canDispute || canClose || canReview || (subscriptionExpiresAt && !order.hasActiveRenewal)) && (
-            <div className="flex items-center justify-end gap-2 flex-wrap">
+        {/* 底部操作栏：响应式自适应（移动端两行分流，桌面端左右单行） */}
+        <div className="pt-3.5 mt-2 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
+          {/* 流程与状态次要操作（发起争议 / 结束订单 / 评价商品 / 续费） */}
+          {(canDispute || canClose || canReview || (subscriptionExpiresAt && !order.hasActiveRenewal)) ? (
+            <div className="flex items-center gap-2 flex-wrap order-2 sm:order-1">
               {canDispute && (
                 <button
                   type="button"
                   onClick={() => setConfirmAction('dispute')}
                   disabled={loadingAction === 'dispute'}
                   data-testid="order-dispute-button"
-                  className="btn-secondary h-8 px-3 text-xs whitespace-nowrap border-[var(--color-warning)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10 font-medium cursor-pointer"
+                  className="btn-secondary h-8 sm:h-9 px-3 text-xs whitespace-nowrap border-[var(--color-warning)] text-[var(--color-warning)] hover:bg-[var(--color-warning)]/10 font-medium cursor-pointer transition-colors"
                 >
                   {loadingAction === 'dispute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isAcceptance ? '验收异议' : '发起争议'}
                 </button>
@@ -466,7 +570,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   onClick={() => setConfirmAction('close')}
                   disabled={loadingAction === 'close'}
                   data-testid="order-close-button"
-                  className="btn-secondary h-8 px-3 text-xs whitespace-nowrap border-[var(--color-cta)] text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-medium cursor-pointer"
+                  className="btn-secondary h-8 sm:h-9 px-3 text-xs whitespace-nowrap border-[var(--color-cta)] text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-medium cursor-pointer transition-colors"
                 >
                   {loadingAction === 'close' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isAcceptance ? '验收通过' : '结束订单'}
                 </button>
@@ -476,7 +580,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   type="button"
                   onClick={() => setReviewOpen(true)}
                   data-testid="review-create-button"
-                  className="btn-secondary h-8 px-3 text-xs whitespace-nowrap border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-medium cursor-pointer"
+                  className="btn-secondary h-8 sm:h-9 px-3 text-xs whitespace-nowrap border-[var(--color-primary)] text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-medium cursor-pointer transition-colors"
                 >
                   评价商品
                 </button>
@@ -487,21 +591,23 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   onClick={startRenew}
                   disabled={renewLoading}
                   data-testid="order-renew-button"
-                  className="btn-primary h-8 px-3 text-xs whitespace-nowrap flex items-center gap-1 cursor-pointer"
+                  className="btn-primary h-8 sm:h-9 px-3 text-xs whitespace-nowrap flex items-center gap-1 cursor-pointer"
                 >
                   {renewLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                   续费
                 </button>
               )}
             </div>
+          ) : (
+            <div className="hidden sm:block order-1" />
           )}
 
-          {/* 主操作行：关闭 + 复制发货内容 */}
-          <div className="flex items-center gap-2.5">
+          {/* 主操作组：关闭 + 复制发货内容 */}
+          <div className="flex items-center gap-2.5 order-1 sm:order-2 w-full sm:w-auto sm:ml-auto">
             <button
               type="button"
               onClick={onClose}
-              className="btn-secondary h-10 px-5 text-sm whitespace-nowrap shrink-0 cursor-pointer"
+              className="btn-secondary h-10 px-4 sm:px-5 text-sm whitespace-nowrap shrink-0 cursor-pointer"
               data-testid="order-detail-close"
             >
               关闭
@@ -510,7 +616,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               <button
                 type="button"
                 onClick={copyContent}
-                className="btn-primary flex-1 h-10 text-sm whitespace-nowrap flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                className="btn-primary flex-1 sm:flex-initial h-10 px-5 text-sm whitespace-nowrap flex items-center justify-center gap-1.5 cursor-pointer shadow-xs font-medium"
                 data-testid="order-detail-copy"
               >
                 {copiedContent ? (
@@ -527,7 +633,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               </button>
             ) : subscriptionExpiresAt && order.hasActiveRenewal ? (
               <span
-                className="text-xs text-[var(--color-text-muted)] flex-1 text-center py-2"
+                className="text-xs text-[var(--color-text-muted)] flex-1 sm:flex-initial text-center py-2"
                 data-testid="order-renewed-hint"
               >
                 已续费，请在新订单中查看
