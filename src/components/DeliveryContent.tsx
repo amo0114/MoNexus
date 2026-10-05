@@ -243,7 +243,7 @@ export default function DeliveryContent({
             )}
 
             {showUrl && (
-              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-3.5 space-y-2">
+              <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 space-y-2 shadow-xs">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-[var(--color-text-muted)] flex items-center gap-1.5">
                     <ExternalLink className="w-3.5 h-3.5 text-[var(--color-primary)]" />
