@@ -1,37 +1,50 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Loader2, Sparkles, Plus, Copy, Link as LinkIcon } from 'lucide-react'
 import { useAppStore } from '../../stores/appStore'
 import { getApiErrorMessage } from '../../api/error'
 import { getMyInvites, createInviteCode, type MyInvitesResponse } from '../../api/invites'
 import { copyToClipboard } from '../../utils/clipboard'
+import { useAuthStore } from '../../stores/authStore'
+import { readAccessTokenIdentity } from '../../auth/sessionContext'
+import { captureFeedbackOwner, showCompletionActivity } from '../../lib/completionFeedback'
 
 // 邀请返佣卡片
 export default function InviteCard() {
   const showToast = useAppStore((s) => s.showToast)
+  const userId = useAuthStore((s) => s.user?.id)
+  const authEpoch = useAuthStore((s) => s.authEpoch)
+  const sessionId = useAuthStore((s) => readAccessTokenIdentity(s.accessToken)?.sessionId ?? s.sessionId)
   const [inviteData, setInviteData] = useState<MyInvitesResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
-
-  async function loadInvites() {
-    setLoading(true)
-    try {
-      const data = await getMyInvites()
-      setInviteData(data)
-    } catch {
-      setInviteData(null)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const creatingRef = useRef(false)
 
   useEffect(() => {
-    loadInvites()
-  }, [])
+    const isCurrent = captureFeedbackOwner()
+    let cancelled = false
+    setInviteData(null)
+    creatingRef.current = false
+    setCreating(false)
+    setLoading(Boolean(userId))
+    if (!userId) return
+    void getMyInvites().then((data) => {
+      if (!cancelled && isCurrent()) setInviteData(data)
+    }).catch(() => {
+      // Keep the existing unavailable state; don't restore another session's codes.
+    }).finally(() => {
+      if (!cancelled && isCurrent()) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [userId, authEpoch, sessionId])
 
   async function handleCreateInvite() {
+    if (creatingRef.current || !inviteData?.eligible || (inviteData.quota !== null && inviteData.quota.remaining <= 0)) return
+    creatingRef.current = true
+    const isCurrent = captureFeedbackOwner()
     setCreating(true)
     try {
       const code = await createInviteCode()
+      if (!isCurrent()) return
       setInviteData((current) => {
         if (!current) return current
         return {
@@ -47,22 +60,35 @@ export default function InviteCard() {
                 },
         }
       })
-      showToast('邀请码已生成')
+      showCompletionActivity({
+        title: '邀请码已生成',
+        subtitle: '单次使用，复制链接即可邀请好友',
+        groupKey: 'invite:created',
+        actionLabel: '复制邀请链接',
+        onAction: () => { void copyLink(code.code) },
+      })
     } catch (err: unknown) {
-      showToast(getApiErrorMessage(err, '生成邀请码失败'), 'error')
+      if (isCurrent()) showToast(getApiErrorMessage(err, '生成邀请码失败'), 'error')
     } finally {
-      setCreating(false)
+      if (isCurrent()) {
+        creatingRef.current = false
+        setCreating(false)
+      }
     }
   }
 
   async function copyCode(code: string) {
+    const isCurrent = captureFeedbackOwner()
     const copied = await copyToClipboard(code)
+    if (!isCurrent()) return
     showToast(copied ? '邀请码已复制' : '复制失败，请手动复制', copied ? 'success' : 'error')
   }
 
   async function copyLink(code: string) {
+    const isCurrent = captureFeedbackOwner()
     const link = `${window.location.origin}/i/${code}`
     const copied = await copyToClipboard(link)
+    if (!isCurrent()) return
     showToast(copied ? '邀请链接已复制' : '复制失败，请手动复制', copied ? 'success' : 'error')
   }
 

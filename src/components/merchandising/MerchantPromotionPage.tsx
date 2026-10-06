@@ -1,9 +1,7 @@
 // T-MERCH-FE-002 — MerchantPromotionPage: standalone, independently-mountable
 // page composing PromotionPackagePicker + MerchantCampaignPanel.
 //
-// It is deliberately NOT wired into App.tsx / MerchantDashboardPage.tsx / any
-// shared host — the CMI Integration Owner mounts this page (or its two child
-// components) after host release H (PAR-CMI-001 §5.4).
+// Mounted at /merchant/promotions; ?view=records opens the unfiltered list.
 //
 // Behaviour:
 //  - fetches packages, active merchant products and the campaign list;
@@ -14,7 +12,13 @@
 //    normalization; the list is reloaded after each mutation keeping
 //    filter/page; empty/loading/error states are recoverable.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { captureFeedbackOwner, showCompletionActivity } from '../../lib/completionFeedback'
+import { useAppStore } from '../../stores/appStore'
+import { useAuthStore } from '../../stores/authStore'
+import { getMe } from '../../api/auth'
+import { getAuthSessionContext } from '../../auth/sessionContext'
 import type {
   CampaignStatusFilter,
   PromotionCampaignDTO,
@@ -33,6 +37,7 @@ import {
 } from '../../api/merchandising'
 import { getMerchantProducts } from '../../api/merchant'
 import { isKnownCampaignStatus } from './promotionCopy'
+import { promotionCompletion } from './promotionFeedback'
 import PromotionPackagePicker from './PromotionPackagePicker'
 import MerchantCampaignPanel from './MerchantCampaignPanel'
 import './merchandising.css'
@@ -74,10 +79,25 @@ export interface MerchantPromotionPageProps {
   className?: string
 }
 
-export default function MerchantPromotionPage({
+export default function MerchantPromotionPage(props: MerchantPromotionPageProps) {
+  const authEpoch = useAuthStore((state) => state.authEpoch)
+  const userId = useAuthStore((state) => state.user?.id)
+  const sessionId = useAuthStore((state) => state.sessionId)
+  return <MerchantPromotionContent key={`${authEpoch}:${userId}:${sessionId}`} {...props} />
+}
+
+function MerchantPromotionContent({
   fetchProducts = defaultFetchProducts,
   className = '',
 }: MerchantPromotionPageProps) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const viewRecords = new URLSearchParams(location.search).get('view') === 'records'
+  const recordsRef = useRef<HTMLDivElement>(null)
+  const focusRecords = useRef(viewRecords)
+  const mounted = useRef(false)
+  const listRequest = useRef(0)
+  const actionInFlight = useRef<number | null>(null)
   const [packages, setPackages] = useState<PromotionPackageDTO[]>([])
   const [products, setProducts] = useState<PromotionProductOption[]>([])
   const [packagesLoading, setPackagesLoading] = useState(true)
@@ -85,12 +105,31 @@ export default function MerchantPromotionPage({
 
   const [campaigns, setCampaigns] = useState<PromotionCampaignDTO[]>([])
   const [total, setTotal] = useState(0)
-  const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>(readStoredFilter)
-  const [page, setPage] = useState<number>(readStoredPage)
+  const [statusFilter, setStatusFilter] = useState<CampaignStatusFilter>(() => viewRecords ? 'all' : readStoredFilter())
+  const [page, setPage] = useState<number>(() => viewRecords ? 1 : readStoredPage())
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionBusyId, setActionBusyId] = useState<number | null>(null)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false; listRequest.current++ }
+  }, [])
+
+  useEffect(() => {
+    if (!viewRecords) return
+    setStatusFilter('all')
+    setPage(1)
+    focusRecords.current = true
+  }, [location.key, viewRecords])
+
+  useEffect(() => {
+    if (!focusRecords.current || packagesLoading || loading || statusFilter !== 'all' || page !== 1) return
+    focusRecords.current = false
+    recordsRef.current?.scrollIntoView({ block: 'start' })
+    recordsRef.current?.focus({ preventScroll: true })
+  }, [packagesLoading, loading, statusFilter, page, location.key])
 
   // Persist filter/page so a hard refresh keeps them (SPEC "刷新列表保留当前
   // filter/page"). Harmless in jsdom/private mode (wrapped in try/catch).
@@ -112,19 +151,20 @@ export default function MerchantPromotionPage({
   // Initial load of packages + products.
   useEffect(() => {
     let mounted = true
+    const isCurrent = captureFeedbackOwner()
     setPackagesLoading(true)
     setPackagesError(null)
     Promise.all([listPromotionPackages(), fetchProducts()])
       .then(([pkg, prod]) => {
-        if (!mounted) return
+        if (!mounted || !isCurrent()) return
         setPackages(pkg)
         setProducts(prod)
       })
       .catch((e) => {
-        if (mounted) setPackagesError(normalizePromotionError(e).message)
+        if (mounted && isCurrent()) setPackagesError(normalizePromotionError(e).message)
       })
       .finally(() => {
-        if (mounted) setPackagesLoading(false)
+        if (mounted && isCurrent()) setPackagesLoading(false)
       })
     return () => {
       mounted = false
@@ -134,6 +174,9 @@ export default function MerchantPromotionPage({
 
   // Reload the campaign list, preserving the current filter/page.
   const reload = useCallback(async () => {
+    const request = ++listRequest.current
+    const isOwner = captureFeedbackOwner()
+    const isCurrent = () => mounted.current && isOwner() && request === listRequest.current
     setLoading(true)
     setLoadError(null)
     try {
@@ -142,18 +185,34 @@ export default function MerchantPromotionPage({
         page,
         pageSize: DEFAULT_PAGE_SIZE,
       })
-      setCampaigns(data.items)
-      setTotal(data.total)
+      if (isCurrent()) {
+        setCampaigns(data.items)
+        setTotal(data.total)
+      }
     } catch (e) {
-      setLoadError(normalizePromotionError(e).message)
+      if (isCurrent()) setLoadError(normalizePromotionError(e).message)
     } finally {
-      setLoading(false)
+      if (isCurrent()) setLoading(false)
     }
-  }, [statusFilter, page])
+  }, [statusFilter, page, location.key])
+  const reloadRef = useRef(reload)
 
   useEffect(() => {
+    reloadRef.current = reload
     void reload()
+    return () => { listRequest.current++ }
   }, [reload])
+
+  function notifyResult(campaign: PromotionCampaignDTO) {
+    // This page already has persistent desktop results. Only mobile adds an island.
+    if (!window.matchMedia('(max-width: 767px)').matches || !useAppStore.getState().islandNoticeAvailable) return
+    showCompletionActivity({
+      ...promotionCompletion(campaign),
+      groupKey: `merchant-promotion:${campaign.id}`,
+      actionLabel: '查看推广列表',
+      onAction: () => navigate('/merchant/promotions?view=records'),
+    })
+  }
 
   function handleFilterChange(filter: CampaignStatusFilter) {
     setStatusFilter(filter)
@@ -166,36 +225,63 @@ export default function MerchantPromotionPage({
   }
 
   async function handleCreate(payload: PromotionCreatePayload, idempotencyKey: string) {
+    const isCurrent = captureFeedbackOwner()
     const campaign = await createPromotionCampaign(payload, idempotencyKey)
     // Creation is already authoritative once POST succeeds. A failed list
     // calibration must not turn that successful mutation into a retry prompt
     // (and accidentally suggest that the merchant should submit it again).
-    void reload()
+    if (mounted.current && isCurrent()) {
+      notifyResult(campaign)
+      void reloadRef.current()
+    }
     return campaign
   }
 
   async function handleCancel(campaign: PromotionCampaignDTO) {
+    if (actionInFlight.current !== null) return
+    actionInFlight.current = campaign.id
+    const isCurrent = captureFeedbackOwner()
     setActionBusyId(campaign.id)
     setActionError(null)
     try {
-      await cancelPromotionCampaign(campaign.id, newPromotionIdempotencyKey())
-      await reload()
+      const result = await cancelPromotionCampaign(campaign.id, newPromotionIdempotencyKey())
+      if (!mounted.current || !isCurrent()) return
+      notifyResult(result)
+      await reloadRef.current()
     } catch (e) {
-      setActionError(normalizePromotionError(e).message)
+      if (mounted.current && isCurrent()) setActionError(normalizePromotionError(e).message)
     } finally {
+      actionInFlight.current = null
       setActionBusyId(null)
     }
   }
 
   async function handleRetryPayment(campaign: PromotionCampaignDTO) {
+    if (actionInFlight.current !== null) return
+    actionInFlight.current = campaign.id
+    const isCurrent = captureFeedbackOwner()
     setActionBusyId(campaign.id)
     setActionError(null)
     try {
-      await retryPromotionPayment(campaign.id, newPromotionIdempotencyKey())
-      await reload()
+      const result = await retryPromotionPayment(campaign.id, newPromotionIdempotencyKey())
+      if (!mounted.current || !isCurrent()) return
+      if (result.status === 'payment_failed') setActionError('积分余额不足，推广尚未扣费，请补充积分后重试。')
+      notifyResult(result)
+      if (result.status === 'active' || result.status === 'scheduled') {
+        const context = getAuthSessionContext(useAuthStore.getState())
+        if (context) {
+          void getMe().then(user => {
+            if (isCurrent()) useAuthStore.getState().setUser(user, context)
+          }).catch(() => {
+            if (mounted.current && isCurrent()) setActionError('推广已扣费，但余额刷新失败，请刷新页面。')
+          })
+        }
+      }
+      await reloadRef.current()
     } catch (e) {
-      setActionError(normalizePromotionError(e).message)
+      if (mounted.current && isCurrent()) setActionError(normalizePromotionError(e).message)
     } finally {
+      actionInFlight.current = null
       setActionBusyId(null)
     }
   }
@@ -221,23 +307,25 @@ export default function MerchantPromotionPage({
         />
       )}
 
-      <MerchantCampaignPanel
-        campaigns={campaigns}
-        total={total}
-        page={page}
-        pageSize={DEFAULT_PAGE_SIZE}
-        statusFilter={statusFilter}
-        loading={loading}
-        loadError={loadError}
-        actionError={actionError}
-        actionBusyId={actionBusyId}
-        onFilterChange={handleFilterChange}
-        onPageChange={handlePageChange}
-        onRetryLoad={() => void reload()}
-        onCancel={(c) => void handleCancel(c)}
-        onRetryPayment={(c) => void handleRetryPayment(c)}
-        onDismissActionError={() => setActionError(null)}
-      />
+      <div ref={recordsRef} tabIndex={-1} aria-label="推广记录" className="scroll-mt-[calc(var(--navbar-h)+1rem)] focus:outline-none" data-testid="merchant-promotion-records">
+        <MerchantCampaignPanel
+          campaigns={campaigns}
+          total={total}
+          page={page}
+          pageSize={DEFAULT_PAGE_SIZE}
+          statusFilter={statusFilter}
+          loading={loading}
+          loadError={loadError}
+          actionError={actionError}
+          actionBusyId={actionBusyId}
+          onFilterChange={handleFilterChange}
+          onPageChange={handlePageChange}
+          onRetryLoad={() => void reload()}
+          onCancel={(c) => void handleCancel(c)}
+          onRetryPayment={(c) => void handleRetryPayment(c)}
+          onDismissActionError={() => setActionError(null)}
+        />
+      </div>
     </div>
   )
 }

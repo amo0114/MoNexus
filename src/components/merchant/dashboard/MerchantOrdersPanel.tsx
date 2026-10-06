@@ -32,6 +32,7 @@ export interface MerchantOrdersPanelProps {
   todo: MerchantStats['todo'] | undefined
   registry: ConfigRegistry | null
   onOrderAction: (action: MerchantOrderAction, order: MerchantOrder) => void
+  pendingOrderIds?: ReadonlySet<number>
 }
 
 export default function MerchantOrdersPanel({
@@ -47,6 +48,7 @@ export default function MerchantOrdersPanel({
   todo,
   registry,
   onOrderAction,
+  pendingOrderIds,
 }: MerchantOrdersPanelProps) {
   return (
     <div className="fade-in">
@@ -182,13 +184,14 @@ export default function MerchantOrdersPanel({
                   </td>
                   <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
                     {o.availableActions?.includes('start_fulfillment') && (
-                      <button onClick={() => onOrderAction('start_fulfillment', o)} className="btn-secondary btn-sm mr-2">
-                        开始履约
+                      <button onClick={() => onOrderAction('start_fulfillment', o)} disabled={pendingOrderIds?.has(o.id)} className="btn-secondary btn-sm mr-2" data-testid={`merchant-start-order-${o.id}`}>
+                        {pendingOrderIds?.has(o.id) ? '接单中…' : '开始履约'}
                       </button>
                     )}
                     {o.availableActions?.includes('reject') && (
                       <button
                         onClick={() => onOrderAction('reject', o)}
+                        disabled={pendingOrderIds?.has(o.id)}
                         className="btn-secondary btn-sm mr-2 border-[var(--color-danger)] text-[var(--color-danger)]"
                         data-testid={`merchant-reject-order-${o.id}`}
                       >

@@ -1,4 +1,5 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import ConfirmDialog from '../ui/ConfirmDialog'
 import { ArchiveRestore, Minus, PackageOpen, Plus } from 'lucide-react'
 import {
   getCapacityLabel,
@@ -18,6 +19,8 @@ interface Props {
   onAdjustCapacity?: (request: CapacityAdjustRequest) => Promise<void> | void
   /** Offer-scoped inventory void callback (instant_inventory). */
   onVoidInventory?: (request: VoidInventoryRequest) => Promise<void> | void
+  /** Merchant resource management requires explicit confirmation before voiding. */
+  confirmInventoryVoid?: boolean
   /** Open the delivery-inventory import flow for a specific Offer. */
   onOpenImport?: (offerId: number) => void
   /** Product-level aggregate of available instant-inventory units (display only). */
@@ -43,6 +46,7 @@ export default function ProductAvailabilityStep({
   offers,
   onAdjustCapacity,
   onVoidInventory,
+  confirmInventoryVoid = false,
   onOpenImport,
   productAvailableStock,
   busy = false,
@@ -60,6 +64,8 @@ export default function ProductAvailabilityStep({
   const [voidCount, setVoidCount] = useState('')
   const [voidReason, setVoidReason] = useState('')
   const [submitting, setSubmitting] = useState<'capacity' | 'void' | null>(null)
+  const inFlight = useRef(false)
+  const [pendingVoid, setPendingVoid] = useState<(VoidInventoryRequest & { offerName: string }) | null>(null)
 
   // Keep a valid selection when the offers list refreshes.
   useEffect(() => {
@@ -72,7 +78,7 @@ export default function ProductAvailabilityStep({
   const selectedOffer = offers.find((offer) => offer.id === selectedOfferId) ?? offers[0] ?? null
   const action = selectedOffer ? getOfferAvailabilityAction(selectedOffer) : null
   const anyBusy = busy || submitting != null
-  const lock = disabled || anyBusy
+  const lock = disabled || anyBusy || pendingVoid != null
 
   function resetForms() {
     setCapacityDelta('')
@@ -83,7 +89,7 @@ export default function ProductAvailabilityStep({
 
   async function handleCapacity(event: React.FormEvent) {
     event.preventDefault()
-    if (!selectedOffer || !onAdjustCapacity) return
+    if (lock || inFlight.current || !selectedOffer || !onAdjustCapacity) return
     const delta = Number(capacityDelta)
     if (capacityDelta.trim() === '' || !Number.isInteger(delta) || delta === 0) return
     const reason = capacityReason.trim()
@@ -91,6 +97,7 @@ export default function ProductAvailabilityStep({
     const current = selectedOffer.stock ?? selectedOffer.availableStock ?? 0
     if (current + delta < 0) return
 
+    inFlight.current = true
     setSubmitting('capacity')
     try {
       await onAdjustCapacity({ offerId: selectedOffer.id, delta, reason })
@@ -99,27 +106,41 @@ export default function ProductAvailabilityStep({
     } catch {
       // Parent owns the user-facing error toast. Preserve inputs for retry.
     } finally {
+      inFlight.current = false
       setSubmitting(null)
     }
   }
 
   async function handleVoid(event: React.FormEvent) {
     event.preventDefault()
-    if (!selectedOffer || !onVoidInventory) return
+    if (lock || inFlight.current || !selectedOffer || !onVoidInventory) return
     const count = Number(voidCount)
     if (voidCount.trim() === '' || !Number.isInteger(count) || count <= 0) return
     const reason = voidReason.trim()
     if (!reason) return
 
+    const request = { offerId: selectedOffer.id, count, reason }
+    if (confirmInventoryVoid) {
+      setPendingVoid({ ...request, offerName: selectedOffer.name })
+      return
+    }
+    await executeVoid(request)
+  }
+
+  async function executeVoid(request: VoidInventoryRequest) {
+    if (disabled || busy || inFlight.current || !onVoidInventory) return
+    inFlight.current = true
     setSubmitting('void')
     try {
-      await onVoidInventory({ offerId: selectedOffer.id, count, reason })
+      await onVoidInventory(request)
       setVoidCount('')
       setVoidReason('')
     } catch {
       // Parent owns the user-facing error toast. Preserve inputs for retry.
     } finally {
+      inFlight.current = false
       setSubmitting(null)
+      setPendingVoid(null)
     }
   }
 
@@ -342,6 +363,23 @@ export default function ProductAvailabilityStep({
             </div>
           )}
         </>
+      )}
+      {confirmInventoryVoid && (
+        <ConfirmDialog
+          open={pendingVoid != null}
+          onOpenChange={(open) => { if (!open && !inFlight.current) setPendingVoid(null) }}
+          title="确认作废交付库存"
+          description={pendingVoid
+            ? `将作废「${pendingVoid.offerName}」的 ${pendingVoid.count} 个可用交付单元。作废后不能恢复，请确认数量与目标规格。`
+            : undefined}
+          confirmLabel="确认作废"
+          loading={submitting === 'void'}
+          loadingLabel="作废中…"
+          onConfirm={() => { if (pendingVoid) void executeVoid(pendingVoid) }}
+          testId="availability-void-confirmation"
+          confirmTestId="availability-void-confirm"
+          cancelTestId="availability-void-cancel"
+        />
       )}
     </section>
   )

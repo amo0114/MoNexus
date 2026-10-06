@@ -9,6 +9,8 @@ export default defineConfig({
   // notification realtime suites have the same isolation requirement; the
   // latter owns dedicated ports plus monexus_test_notification_realtime.
   testIgnore: [
+    // This source-level UI harness owns its isolated Vite server and mocks.
+    '**/mobile-island-quality.spec.ts',
     '**/m3-identity-security-hardening.real.spec.ts',
     '**/legal-pages.spec.ts',
     '**/notification-realtime-client.spec.ts',

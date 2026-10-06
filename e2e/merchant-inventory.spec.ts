@@ -8,7 +8,8 @@ const SEED_PRODUCT_NAME = '商家自营高速节点包'
  * 数据策略：先导入 1 条唯一内容的库存，再作废 1 条（按入库时间先进先出），
  * 库存净变化为 0，保证测试可重复执行。
  */
-test('merchant filters products, imports then voids inventory with log entry', async ({ page }) => {
+test('merchant filters products, imports then voids inventory with log entry', async ({ page }, testInfo) => {
+  const mobile = (page.viewportSize()?.width ?? 1280) < 768
   await loginAs(page, SEED_ACCOUNTS.merchant)
 
   await page.goto('/merchant')
@@ -55,10 +56,12 @@ test('merchant filters products, imports then voids inventory with log entry', a
   await page.getByRole('button', { name: '预览导入内容' }).click()
   await expect(page.getByText('预览结果')).toBeVisible({ timeout: 10_000 })
   await page.getByRole('button', { name: '确认导入 1 个' }).click()
-  await expect(page.getByText('成功导入 1 个交付单元', { exact: true })).toBeVisible({ timeout: 10_000 })
+  await expect(mobile
+    ? page.getByTestId('action-island-notice').locator('strong').filter({ hasText: '成功导入 1 个交付单元' })
+    : page.getByTitle('成功导入 1 个交付单元')).toBeVisible({ timeout: 10_000 })
   await expect(availability).toContainText(`商品交付库存汇总：${stockBefore + 1}`, { timeout: 10_000 })
 
-  if ((page.viewportSize()?.width ?? 1280) < 768) {
+  if (mobile) {
     await page.getByRole('button', { name: '查看库存记录', exact: true }).click()
     const importedLog = page.getByTestId('inventory-log-modal')
     await expect(importedLog).toBeVisible()
@@ -75,12 +78,30 @@ test('merchant filters products, imports then voids inventory with log entry', a
   await page.getByTestId('availability-void-count').fill('1')
   await page.getByTestId('availability-void-reason').fill(voidReason)
   await page.getByTestId('availability-void-submit').click()
+  const confirmation = page.getByTestId('availability-void-confirmation')
+  await expect(confirmation).toContainText('1 个可用交付单元')
+  await page.screenshot({ path: testInfo.outputPath('void-confirmation.png'), animations: 'disabled' })
+  const voidResponse = page.waitForResponse(response => /\/offers\/\d+\/inventory\/void$/.test(new URL(response.url()).pathname) && response.request().method() === 'POST')
+  await page.getByTestId('availability-void-confirm').click()
+  const response = await voidResponse
+  expect(response.ok()).toBe(true)
+  const result = await response.json()
 
-  await expect(page.getByText(/已作废 1 个交付单元；当前规格剩余 .*商品汇总/)).toBeVisible({ timeout: 10_000 })
+  await expect(mobile
+    ? page.getByTestId('action-island-notice').locator('strong').filter({ hasText: `已作废 ${result.voided} 个，规格剩余 ${result.availableStock} 个` })
+    : page.getByTitle(/已作废 1 个交付单元；当前规格剩余 .*商品汇总/)).toBeVisible({ timeout: 10_000 })
   await expect(availability).toContainText(`商品交付库存汇总：${stockBefore}`, { timeout: 10_000 })
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.evaluate(async () => {
+    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))
+  })
+  await page.screenshot({ path: testInfo.outputPath('void-completion.png'), animations: 'disabled' })
 
   // 资源记录只做安全投影，显示 Offer 而不显示交付内容。
-  await row.getByText('可售资源记录').click()
+  if (mobile) {
+    await page.getByTestId('action-island-notice').getByRole('button', { name: '查看记录', exact: true }).click()
+    await expect(page).toHaveURL(new RegExp(`inventoryLog=${productId}`))
+  } else await row.getByText('可售资源记录').click()
   const logModal = page.getByTestId('inventory-log-modal')
   await expect(logModal).toBeVisible({ timeout: 10_000 })
   const logTable = page.getByTestId('inventory-log-table')

@@ -21,7 +21,7 @@ async function tokenOf(request: APIRequestContext, account: { email: string; pas
 }
 
 test.describe.serial('P6b progress & acceptance', () => {
-  test('setup: manual product, buyer order, merchant starts fulfillment', async ({ request }) => {
+  test('setup: manual product and buyer order', async ({ request }) => {
     const merchantToken = await tokenOf(request, SEED_ACCOUNTS.merchant)
     const created = await request.post(`${API_BASE}/api/merchant/products`, {
       headers: { Authorization: `Bearer ${merchantToken}` },
@@ -39,16 +39,20 @@ test.describe.serial('P6b progress & acceptance', () => {
     expect(order.ok(), await order.text()).toBeTruthy()
     state.orderId = (await order.json()).orderId
 
-    const start = await request.post(`${API_BASE}/api/merchant/orders/${state.orderId}/fulfillment/start`, {
-      headers: { Authorization: `Bearer ${merchantToken}` },
-    })
-    expect(start.ok(), await start.text()).toBeTruthy()
   })
 
-  test('merchant posts a progress update via UI', async ({ page }) => {
+  test('merchant starts fulfillment and posts a progress update via UI', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
     await page.goto('/merchant')
     await page.getByRole('button', { name: '订单管理' }).click()
+
+    await page.getByTestId(`merchant-start-order-${state.orderId}`).click()
+    if ((page.viewportSize()?.width ?? 1280) < 768) {
+      const notice = page.getByTestId('action-island-notice')
+      await expect(notice).toContainText('已开始履约')
+      await notice.getByRole('button', { name: '查看订单', exact: true }).click()
+      await expect(page).toHaveURL(new RegExp(`/merchant/orders/${state.orderId}$`))
+    }
 
     await page.getByTestId(`merchant-post-progress-${state.orderId}`).click()
     await page.getByTestId('merchant-progress-note').fill(PROGRESS_NOTE)
@@ -103,5 +107,16 @@ test.describe.serial('P6b progress & acceptance', () => {
         return ((await detail.json()) as { status: string }).status
       }, { timeout: 10_000 })
       .toBe('closed')
+
+    if ((page.viewportSize()?.width ?? 1280) < 768) {
+      const notice = page.getByTestId('action-island-notice')
+      await expect(notice).toContainText('验收已通过')
+      await expect(notice).toContainText(`订单 #${state.orderId}`)
+      await expect(notice).not.toContainText(`服务成果内容-${STAMP}`)
+      await notice.getByRole('button', { name: '查看订单', exact: true }).click()
+      await expect(page).toHaveURL(new RegExp(`/orders\\?focus=${state.orderId}$`))
+      await expect(page.getByTestId('order-detail-status')).toHaveAttribute('data-order-status', 'closed')
+      await expect(page.getByTestId('order-close-button')).toHaveCount(0)
+    }
   })
 })

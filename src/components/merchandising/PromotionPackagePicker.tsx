@@ -28,7 +28,8 @@ import {
   newPromotionIdempotencyKey,
   type PromotionApiError,
 } from '../../api/merchandising'
-import { PLACEMENT_LABEL, PROMOTION_NO_GUARANTEE, toUtcIso } from './promotionCopy'
+import { PLACEMENT_LABEL, PROMOTION_NO_GUARANTEE, campaignStatusDescription, isKnownCampaignStatus, toUtcIso } from './promotionCopy'
+import { captureFeedbackOwner } from '../../lib/completionFeedback'
 import './merchandising.css'
 
 const LOCAL_VALIDATION_MESSAGE = '请选择商品与推广套餐后再提交。'
@@ -130,15 +131,18 @@ export default function PromotionPackagePicker({
     }
 
     submittingRef.current = true
+    const isCurrent = captureFeedbackOwner()
     setSubmitting(true)
     setError(null)
     setSuccess(null)
     try {
       const campaign = await onRequest(payload, key)
+      if (!isCurrent()) return
       pendingKeyRef.current = null
       setSuccess(campaign)
       onCreated?.(campaign)
     } catch (raw) {
+      if (!isCurrent()) return
       const err = normalizePromotionError(raw)
       setError(err)
       // Keep the same key only for safe, same-payload retries.
@@ -167,7 +171,7 @@ export default function PromotionPackagePicker({
       )}
       {success && (
         <p role="status" className="merch-promo-success">
-          申请已提交，等待平台审核。审核通过前不会扣积分。
+          {isKnownCampaignStatus(success.status) ? campaignStatusDescription(success) : '申请状态待确认，请查看推广列表。'}
         </p>
       )}
 
@@ -232,7 +236,7 @@ export default function PromotionPackagePicker({
               }}
               disabled={submitting}
             />
-            尽快开始（审核通过后立即展示）
+            指定开始时间（不选则审核扣费通过后尽快开始）
           </label>
           {specifyStart && (
             <input

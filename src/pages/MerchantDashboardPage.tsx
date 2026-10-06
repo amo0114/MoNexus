@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { blockReasonToUserMessage, PROCESSING_TIMEOUT_LABEL, SETTLEMENT_TERM } from '../utils/settlementCopy'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { captureFeedbackOwner, showCompletionToast, showCompletionActivity } from '../lib/completionFeedback'
-import { showProductPublished } from '../lib/productPublicationFeedback'
+import { captureFeedbackOwner, showCompletionActivity } from '../lib/completionFeedback'
+import { showProductPublished, showProductUnpublished } from '../lib/productPublicationFeedback'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import {
   getMerchantStats,
@@ -20,6 +20,8 @@ import {
   postOrderProgress,
   importMerchantInventory,
   type InventoryImportResult,
+  type CapacityAdjustResult,
+  type InventoryVoidResult,
 } from '../api/merchant'
 import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage } from '../api/error'
@@ -76,12 +78,14 @@ export default function MerchantDashboardPage() {
   const location = useLocation()
   const orderRoute = /^\/merchant\/orders(?:\/(\d+))?\/?$/.exec(location.pathname)
   const focusedOrderId = orderRoute?.[1] ? Number(orderRoute[1]) : null
+  const categoryApplicationRoute = /^\/merchant\/category-applications\/?$/.test(location.pathname)
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
-  const [activeTab, setActiveTab] = useState<TabKey>(orderRoute ? 'orders' : 'dashboard')
+  const [activeTab, setActiveTab] = useState<TabKey>(orderRoute ? 'orders' : categoryApplicationRoute ? 'categoryApplications' : 'dashboard')
   useEffect(() => {
     if (/^\/merchant\/orders(?:\/\d+)?\/?$/.test(location.pathname)) setActiveTab('orders')
-  }, [location.pathname])
+    else if (categoryApplicationRoute) setActiveTab('categoryApplications')
+  }, [location.pathname, location.key, categoryApplicationRoute])
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
   const loadCoordinatorRef = useRef(createLatestRequestCoordinator(true))
@@ -117,6 +121,9 @@ export default function MerchantDashboardPage() {
   const [orderStatusFilter, setOrderStatusFilter] = useState('')
   // P6c：按预约日期排序（bookingDate 升序，无预约的排最后）。
   const [orderSortBooking, setOrderSortBooking] = useState(false)
+  const startingOrderIdsRef = useRef(new Set<number>())
+  const [startingOrderIds, setStartingOrderIds] = useState<ReadonlySet<number>>(new Set())
+  const rejectingRef = useRef(false)
 
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [merchant, setMerchant] = useState<Merchant | null>(null)
@@ -328,9 +335,9 @@ export default function MerchantDashboardPage() {
         if (!isCurrent()) return
         showProductPublished(product, result, navigate, '商品已上架')
       } else {
-        await catalogApi.unpublishProduct(product.id)
+        const result = await catalogApi.unpublishProduct(product.id)
         if (!isCurrent()) return
-        showToast('商品已下架')
+        showProductUnpublished(product, result, navigate)
       }
       loadData()
     } catch (e: unknown) {
@@ -345,10 +352,10 @@ export default function MerchantDashboardPage() {
     }
   }
 
-  async function handleAvailabilityChanged() {
-    await loadData()
+  function handleAvailabilityChanged() {
     setIsAvailabilityOpen(false)
     setAvailabilityProduct(null)
+    return loadData()
   }
 
   async function handleInventorySubmit(items: string[], offerId?: number) {
@@ -372,10 +379,35 @@ export default function MerchantDashboardPage() {
     })
   }
 
+  function notifyCapacityAdjusted(product: MerchantProduct, result: CapacityAdjustResult, offerId: number) {
+    const offer = product.offers?.find((item) => item.id === offerId)
+    const label = offer?.deliveryMode === 'manual_service' ? '服务名额' : '可售名额'
+    showCompletionActivity({
+      title: `${label}已调整，剩余 ${result.stock} 个`,
+      subtitle: [product.name, offer?.name].filter(Boolean).join(' · '),
+      groupKey: `merchant-inventory:${product.id}:${offerId}`,
+      actionLabel: '查看记录',
+      onAction: () => navigate(`/merchant?inventoryLog=${product.id}`, { state: { inventoryLogName: product.name } }),
+    })
+  }
+
+  function notifyInventoryVoided(product: MerchantProduct, result: InventoryVoidResult) {
+    const offer = product.offers?.find((item) => item.id === result.offerId)
+    showCompletionActivity({
+      title: `已作废 ${result.voided} 个，规格剩余 ${result.availableStock} 个`,
+      subtitle: `${[product.name, offer?.name].filter(Boolean).join(' · ')} · 商品库存共 ${result.productAvailableStock} 个`,
+      message: `已作废 ${result.voided} 个交付单元；当前规格剩余 ${result.availableStock}，商品汇总 ${result.productAvailableStock}`,
+      groupKey: `merchant-inventory:${product.id}:${result.offerId}`,
+      actionLabel: '查看记录',
+      onAction: () => navigate(`/merchant?inventoryLog=${product.id}`, { state: { inventoryLogName: product.name } }),
+    })
+  }
+
   async function handleOrderAction(
     action: MerchantOrderAction,
     order: MerchantOrder,
   ) {
+    if (startingOrderIdsRef.current.has(order.id)) return
     if (action === 'deliver') {
       setDeliveringOrder(order)
       return
@@ -393,33 +425,57 @@ export default function MerchantDashboardPage() {
       setRejectNote('')
       return
     }
+    const isCurrent = captureFeedbackOwner()
+    startingOrderIdsRef.current.add(order.id)
+    setStartingOrderIds(new Set(startingOrderIdsRef.current))
     try {
       await startFulfillment(order.id)
-      showToast('已开始履约')
-      loadData()
+      if (!isCurrent()) return
+      showCompletionActivity({
+        title: '已开始履约',
+        subtitle: `订单 #${order.id} · ${order.product?.name ?? ''}`,
+        groupKey: `merchant:order:${order.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${order.id}`),
+      })
+      await loadData()
     } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '操作失败', 'error')
+      if (isCurrent()) showToast(e.response?.data?.error?.message || '操作失败', 'error')
+    } finally {
+      startingOrderIdsRef.current.delete(order.id)
+      setStartingOrderIds(new Set(startingOrderIdsRef.current))
     }
   }
 
   async function handleRejectConfirm() {
-    if (!rejectingOrder) return
+    if (!rejectingOrder || rejectingRef.current) return
+    rejectingRef.current = true
+    const order = rejectingOrder
+    const isCurrent = captureFeedbackOwner()
     setRejecting(true)
     try {
-      await rejectOrder(rejectingOrder.id, {
+      await rejectOrder(order.id, {
         publicNote: rejectNote.trim() || undefined,
       })
-      showToast('已拒单，积分将退还用户；如实际履约能力已释放，请手动补回服务名额')
+      if (!isCurrent()) return
       setRejectingOrder(null)
       setRejectNote('')
+      showCompletionActivity({
+        title: '已拒单，冻结积分已退还',
+        message: '已拒单，冻结积分已退还；服务名额请先核对库存记录，避免重复补充',
+        subtitle: `订单 #${order.id} · 服务名额请先核对库存记录，避免重复补充`,
+        groupKey: `merchant:order:${order.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${order.id}`),
+      })
       loadData()
     } catch (e: any) {
+      if (!isCurrent()) return
       if (isGoneOrForbidden(e)) {
         setRejectingOrder(null)
         setRejectNote('')
       }
       showToast(e.response?.data?.error?.message || '拒单失败', 'error')
     } finally {
+      rejectingRef.current = false
       setRejecting(false)
     }
   }
@@ -466,12 +522,20 @@ export default function MerchantDashboardPage() {
     if (!disputeOrder) return
     const isCurrent = captureFeedbackOwner()
     try {
-      await respondDispute(disputeOrder.id, { resolution })
+      const result = await respondDispute(disputeOrder.id, { resolution })
       if (!isCurrent()) return
       setDisputeOrder(null)
-      showCompletionToast('争议处理成功')
+      showCompletionActivity({
+        title: resolution === 'close' ? '争议已处理，订单已关闭'
+          : result.status === 'delivered' ? '争议已解除，恢复为已交付' : '争议已解除，已恢复履约',
+        message: '争议处理成功',
+        subtitle: `订单 #${disputeOrder.id} · ${disputeOrder.product?.name ?? ''}`,
+        groupKey: `merchant:order:${disputeOrder.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${disputeOrder.id}`),
+      })
       await loadData()
     } catch (e: any) {
+      if (!isCurrent()) return
       if (isGoneOrForbidden(e)) setDisputeOrder(null)
       throw e
     }
@@ -574,6 +638,7 @@ export default function MerchantDashboardPage() {
               todo={stats?.todo}
               registry={registry}
               onOrderAction={handleOrderAction}
+              pendingOrderIds={startingOrderIds}
             />
             </>
           )}
@@ -677,7 +742,10 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'categoryApplications' && (
             <div className="fade-in">
-              <CategoryApplicationPanel />
+              <CategoryApplicationPanel
+                key={categoryApplicationRoute ? location.key : 'category-applications'}
+                onViewApplications={() => navigate('/merchant/category-applications')}
+              />
             </div>
           )}
 
@@ -691,6 +759,12 @@ export default function MerchantDashboardPage() {
         onChanged={handleAvailabilityChanged}
         onImported={(result, offerId) => {
           if (availabilityProduct) notifyInventoryImported(availabilityProduct, result, offerId)
+        }}
+        onCapacityAdjusted={(result, offerId) => {
+          if (availabilityProduct) notifyCapacityAdjusted(availabilityProduct, result, offerId)
+        }}
+        onInventoryVoided={(result) => {
+          if (availabilityProduct) notifyInventoryVoided(availabilityProduct, result)
         }}
       />
 
@@ -722,6 +796,9 @@ export default function MerchantDashboardPage() {
         onClose={() => setIsCapacityAdjustOpen(false)}
         product={capacityProduct}
         onAdjusted={loadData}
+        onCompleted={(result, offerId) => {
+          if (capacityProduct) notifyCapacityAdjusted(capacityProduct, result, offerId)
+        }}
       />
 
       <MerchantOfferManagerModal
@@ -758,12 +835,16 @@ export default function MerchantDashboardPage() {
           <p className="text-sm text-[var(--color-text-muted)] mb-4">
             拒单后订单将标记为已退款，冻结积分退还用户，结算作废。订单 #{rejectingOrder?.id}（{rejectingOrder?.product?.name}）
           </p>
+          <p className="text-xs text-[var(--color-text-muted)] mb-4">
+            未交付的限量服务名额按退款规则回补。请先核对库存记录，避免重复手动补充。
+          </p>
           <label className="block text-xs font-medium text-[var(--color-text)] mb-1">公开备注（可选）</label>
           <textarea
             className="input min-h-[80px] resize-y mb-4"
             value={rejectNote}
             onChange={(e) => setRejectNote(e.target.value)}
             maxLength={1000}
+            disabled={rejecting}
             placeholder="例如：暂无服务档期"
             data-testid="merchant-reject-note"
           />

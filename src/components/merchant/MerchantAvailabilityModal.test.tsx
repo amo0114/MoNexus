@@ -93,6 +93,22 @@ describe('MerchantAvailabilityModal (T-CAT-FE-002)', () => {
     await waitFor(() => expect(apiMocks.importInventory).toHaveBeenCalledWith(7, 42, { items: ['secret-one'] }))
     await waitFor(() => expect(onImported).toHaveBeenCalledWith({ imported: 1 }, 42))
   })
+
+  it('cancels void confirmation without changing inventory or losing the form', async () => {
+    const onChanged = vi.fn(), onInventoryVoided = vi.fn()
+    render(<MerchantAvailabilityModal isOpen onClose={vi.fn()} product={product} onChanged={onChanged} onInventoryVoided={onInventoryVoided} />)
+    fireEvent.change(screen.getByTestId('availability-void-count'), { target: { value: '1' } })
+    fireEvent.change(screen.getByTestId('availability-void-reason'), { target: { value: '库存失效' } })
+    fireEvent.click(screen.getByTestId('availability-void-submit'))
+    expect(screen.getByTestId('availability-void-confirmation')).toHaveTextContent('「月卡」的 1 个可用交付单元')
+    fireEvent.click(screen.getByTestId('availability-void-cancel'))
+    await waitFor(() => expect(screen.queryByTestId('availability-void-confirmation')).not.toBeInTheDocument())
+    expect(apiMocks.voidInventory).not.toHaveBeenCalled()
+    expect(onChanged).not.toHaveBeenCalled()
+    expect(onInventoryVoided).not.toHaveBeenCalled()
+    expect(screen.getByTestId('availability-void-count')).toHaveValue(1)
+    expect(screen.getByTestId('availability-void-reason')).toHaveValue('库存失效')
+  })
 })
 
 

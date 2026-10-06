@@ -22,6 +22,7 @@ import OrderSuccessIsland, { type OrderIslandPhase } from './OrderSuccessIsland'
 import FavoriteIsland from './FavoriteIsland'
 import QuietIslandNotice from './QuietIslandNotice'
 import ActionIslandNotice from './ActionIslandNotice'
+import { useIslandQueuePause } from '../hooks/useIslandQueuePause'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import { useAnnouncements } from '../hooks/useAnnouncements'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
@@ -205,6 +206,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setIslandNoticeAvailable(isMobileViewport)
     return () => setIslandNoticeAvailable(false)
   }, [isMobileViewport, setIslandNoticeAvailable])
+  useIslandQueuePause(searchBusy || modalOpen, isMobileViewport)
 
   type ChromeMode = 'expanded' | 'compact' | 'notice' | 'search'
   const chromeMode: ChromeMode = searchBusy

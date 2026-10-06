@@ -1271,10 +1271,16 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
       exampleProducts: EXAMPLE_PRODUCTS,
     })
 
-    // toast 成功 + 列表行 data-status=pending。
-    await expect(
-      page.locator('[data-toast-card]', { hasText: '分类申请已提交，等待平台审核' }),
-    ).toBeVisible({ timeout: 10_000 })
+    if ((page.viewportSize()?.width ?? 1280) < 768) {
+      const island = page.getByTestId('action-island-notice')
+      await expect(island.getByText('分类申请已提交', { exact: true })).toBeVisible()
+      await island.getByRole('button', { name: '查看申请记录' }).click()
+      await expect(page).toHaveURL(/\/merchant\/category-applications$/)
+    } else {
+      await expect(
+        page.locator('[data-toast-card]', { hasText: '分类申请已提交，等待平台审核' }),
+      ).toBeVisible({ timeout: 10_000 })
+    }
     await expect(page.getByTestId(`application-row-${applicationId}`)).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId(`application-row-${applicationId}`)).toHaveAttribute('data-status', 'pending')
   })
@@ -1380,10 +1386,16 @@ test.describe.serial('PAR-CMI-002 catalog category governance merchant flow', ()
     expect(withdrawn.id).toBe(applicationId)
     expect(withdrawn.status).toBe('withdrawn')
 
-    // toast「申请已撤回」。
-    await expect(
-      page.locator('[data-toast-card]', { hasText: '申请已撤回' }),
-    ).toBeVisible({ timeout: 10_000 })
+    if ((page.viewportSize()?.width ?? 1280) < 768) {
+      const island = page.getByTestId('action-island-notice')
+      await expect(island.getByText('分类申请已撤回', { exact: true })).toBeVisible()
+      await island.getByRole('button', { name: '查看申请记录' }).click()
+      await expect(page).toHaveURL(/\/merchant\/category-applications$/)
+    } else {
+      await expect(
+        page.locator('[data-toast-card]', { hasText: '申请已撤回' }),
+      ).toBeVisible({ timeout: 10_000 })
+    }
 
     // 列表自行刷新（禁止 page.reload）：同一行 data-status=withdrawn，
     // 且 application-withdraw-<id> 消失（非 pending 不再渲染撤回按钮）。

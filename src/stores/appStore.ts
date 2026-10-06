@@ -46,6 +46,9 @@ export interface IslandNotice {
   payload?: Record<string, any>
   durationMs?: number
   groupKey?: string
+  /** User completions may interrupt passive reminders; order activities still win. */
+  priority?: 'completion' | 'reminder'
+  /** Queue deadline on islandQueueNow's clock (hidden time is excluded). */
   expiresAt?: number
 }
 
@@ -61,6 +64,23 @@ const MAX_TOASTS = 3
 /** 灵动岛收纳的短消息上限（CJK 感知字符数）：超出则走横幅 toast。 */
 const ISLAND_MAX_CHARS = 14
 
+const MAX_ISLAND_QUEUE = 4
+const queuePriority = (notice: IslandNotice) => notice.priority === 'completion' ? 0 : notice.priority === 'reminder' ? 2 : 1
+
+/** Keep recent results before passive reminders; display survivors FIFO per priority. */
+function boundIslandQueue(items: IslandNotice[]): IslandNotice[] {
+  const queue = [...items]
+  while (queue.length > MAX_ISLAND_QUEUE) {
+    const lowestPriority = Math.max(...queue.map(queuePriority))
+    queue.splice(queue.findIndex(notice => queuePriority(notice) === lowestPriority), 1)
+  }
+  return queue.sort((a, b) => queuePriority(a) - queuePriority(b))
+}
+
+export function islandQueueNow(state: { islandQueuePausedAt: number | null; islandQueuePausedMs: number }) {
+  return (state.islandQueuePausedAt ?? Date.now()) - state.islandQueuePausedMs
+}
+
 interface AppState {
   activeTab: 'store' | 'profile' | 'admin'
   toasts: Toast[]
@@ -68,6 +88,9 @@ interface AppState {
   islandNotice: IslandNotice | null
   /** Only actionable events queue; bounded and discarded on session/layout exit. */
   islandQueue: IslandNotice[]
+  islandQueuePausedAt: number | null
+  islandQueuePausedMs: number
+  setIslandQueuePaused: (paused: boolean) => void
   /** Layout 在可承载通知的移动 navbar 挂载时打开；公开页必须回退横幅。 */
   islandNoticeAvailable: boolean
   /** 打开中的模态数（DialogOverlay 挂载计数）：>0 时 navbar 淡出、
@@ -149,6 +172,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
   toasts: [],
   islandNotice: null,
   islandQueue: [],
+  islandQueuePausedAt: null,
+  islandQueuePausedMs: 0,
+  setIslandQueuePaused: (paused) => set((state) => {
+    if (paused) return state.islandQueuePausedAt === null ? { islandQueuePausedAt: Date.now() } : {}
+    if (state.islandQueuePausedAt === null) return {}
+    return {
+      islandQueuePausedMs: state.islandQueuePausedMs + Math.max(0, Date.now() - state.islandQueuePausedAt),
+      islandQueuePausedAt: null,
+    }
+  }),
   islandNoticeAvailable: false,
   modalDepth: 0,
   registry: null,
@@ -243,7 +276,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   clearIslandNotice: (id) => set((state) => {
     if (id !== undefined && state.islandNotice?.id !== id) return {}
-    const queue = state.islandQueue.filter((n) => (n.expiresAt ?? 0) > Date.now())
+    const queue = state.islandQueue.filter((n) => (n.expiresAt ?? 0) > islandQueueNow(state))
     return { islandNotice: queue[0] ?? null, islandQueue: queue.slice(1) }
   }),
 
@@ -265,18 +298,22 @@ export const useAppStore = create<AppState>()((set, get) => ({
         message: activity.message || activity.title,
         type: activity.type ?? 'info',
         durationMs: activity.durationMs ?? 8000,
-        expiresAt: Date.now() + 30_000,
+        expiresAt: islandQueueNow(get()) + 30_000,
       }
       set((state) => {
         const current = state.islandNotice
-        const queue = state.islandQueue.filter((n) => (n.expiresAt ?? 0) > Date.now())
+        const queue = state.islandQueue.filter((n) => (n.expiresAt ?? 0) > islandQueueNow(state))
         if (!current || !ownsIsland(current.kind) || (notice.groupKey && notice.groupKey === current.groupKey)) {
-          return { islandNotice: notice, islandQueue: queue }
+          return { islandNotice: notice, islandQueue: queue.filter(n => !notice.groupKey || n.groupKey !== notice.groupKey) }
+        }
+        if (notice.priority === 'completion' && current.priority === 'reminder' && !isOrderActivity(current.kind)) {
+          const remaining = notice.groupKey ? queue.filter((n) => n.groupKey !== notice.groupKey) : queue
+          return { islandNotice: notice, islandQueue: boundIslandQueue([current, ...remaining]) }
         }
         const index = notice.groupKey ? queue.findIndex((n) => n.groupKey === notice.groupKey) : -1
         if (index >= 0) queue[index] = notice
         else queue.push(notice)
-        return { islandQueue: queue.slice(-4) }
+        return { islandQueue: boundIslandQueue(queue) }
       })
       return notice.id
     }
@@ -288,7 +325,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => ({
       islandNoticeAvailable: true,
       islandQueue: isActionableActivity(state.islandNotice?.kind)
-        ? [state.islandNotice!, ...state.islandQueue].slice(0, 4)
+        ? boundIslandQueue([state.islandNotice!, ...state.islandQueue])
         : state.islandQueue,
       toasts: state.toasts.filter(
         (t) => t.message !== '兑换成功' && t.message !== activity.title && t.message !== activity.message
@@ -315,17 +352,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setIslandNoticeAvailable: (available) =>
     set((state) => {
       if (available || !state.islandNotice) {
-        return { islandNoticeAvailable: available, ...(!available ? { islandQueue: [] } : {}) }
+        return { islandNoticeAvailable: available, ...(!available ? { islandQueue: [], islandQueuePausedAt: null, islandQueuePausedMs: 0 } : {}) }
       }
       const n = state.islandNotice
       // Do not resurrect a purchase callback after leaving its layout.
       if (ownsIsland(n.kind)) {
-        return { islandNoticeAvailable: false, islandNotice: null, islandQueue: [] }
+        return { islandNoticeAvailable: false, islandNotice: null, islandQueue: [], islandQueuePausedAt: null, islandQueuePausedMs: 0 }
       }
       return {
         islandNoticeAvailable: false,
         islandNotice: null,
         islandQueue: [],
+        islandQueuePausedAt: null,
+        islandQueuePausedMs: 0,
         toasts: [...state.toasts.slice(-(MAX_TOASTS - 1)), { id: n.id, message: n.message, type: n.type }],
       }
     }),

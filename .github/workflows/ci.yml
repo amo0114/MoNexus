@@ -72,6 +72,9 @@ jobs:
               - 'package-lock.json'
               - 'vite.config.ts'
               - 'vitest.config.ts'
+              - 'playwright.mobile-island.config.ts'
+              - 'e2e/mobile-chrome.spec.ts'
+              - 'e2e/mobile-island*.spec.ts'
               - 'tsconfig.json'
               - 'tailwind.config.js'
               - '.github/workflows/ci.yml'
@@ -98,6 +101,7 @@ jobs:
               - 'tailwind.config.js'
               - 'e2e/**'
               - 'playwright.config.ts'
+              - 'playwright.mobile-island.config.ts'
               - 'playwright.notification-realtime.config.ts'
               - 'playwright.catalog-ops.config.ts'
               - 'scripts/verify-notification-realtime-e2e.sh'
@@ -193,7 +197,7 @@ jobs:
         needs.changes.outputs.frontend == 'true'
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -214,6 +218,21 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+      - name: Install browser for isolated mobile UI checks
+        run: npx playwright install --with-deps chromium
+
+      - name: Check mobile island behavior and accessibility
+        run: npm run e2e:mobile-island
+
+      - name: Upload mobile island diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-island-results
+          path: test-results/mobile-island/
+          if-no-files-found: ignore
+          retention-days: 7
 
   e2e:
     name: Playwright E2E
