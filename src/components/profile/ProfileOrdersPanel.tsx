@@ -227,16 +227,27 @@ export default function ProfileOrdersPanel({
             <button
               type="button"
               onClick={() => navigate('/orders')}
-              className="w-full min-h-12 px-4 py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-primary)]/5 hover:border-[var(--color-primary)]/30 text-xs sm:text-sm font-semibold text-[var(--color-text)] flex items-center justify-between cursor-pointer transition-all group shadow-2xs"
+              className="w-full p-3.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-primary)]/5 hover:border-[var(--color-primary)]/30 transition-all cursor-pointer group shadow-2xs flex items-center justify-between gap-3 text-left"
               data-testid="profile-orders-more"
             >
-              <span className="flex items-center gap-2.5">
-                <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] animate-pulse" />
-                <span>还有 <strong className="text-[var(--color-primary)]">{orders.length - 5}</strong> 笔订单，支持检索、售后保障与发货详情导出</span>
-              </span>
-              <span className="text-[var(--color-primary)] font-bold group-hover:translate-x-1 transition-transform inline-flex items-center gap-1 shrink-0">
-                完整订单中心 <ChevronRight className="w-4 h-4" />
-              </span>
+              <div className="flex items-start gap-2.5 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-[var(--color-primary)] animate-pulse shrink-0 mt-1 sm:mt-1.5" />
+                <div className="flex flex-col min-w-0">
+                  <div className="text-xs sm:text-sm font-semibold text-[var(--color-text)] flex items-center gap-1">
+                    <span>还有</span>
+                    <strong className="text-[var(--color-primary)] tabular-nums">{orders.length - 5}</strong>
+                    <span>笔历史订单</span>
+                  </div>
+                  <div className="text-[11px] sm:text-xs text-[var(--color-text-muted)] font-normal mt-0.5 leading-snug">
+                    支持检索、售后保障与发货详情导出
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs sm:text-sm font-bold text-[var(--color-primary)] group-hover:translate-x-1 transition-transform inline-flex items-center gap-1 shrink-0 whitespace-nowrap">
+                <span>完整订单中心</span>
+                <ChevronRight className="w-4 h-4" />
+              </div>
             </button>
           )}
         </div>
