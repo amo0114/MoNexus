@@ -9,6 +9,11 @@ export default defineConfig({
   // notification realtime suites have the same isolation requirement; the
   // latter owns dedicated ports plus monexus_test_notification_realtime.
   testIgnore: [
+    // The frontend job runs these once via playwright.mobile-island.config.ts,
+    // with its own Vite server and mocked APIs.
+    '**/mobile-chrome.spec.ts',
+    '**/mobile-island-merchant-final.spec.ts',
+    '**/mobile-island-quality.spec.ts',
     '**/m3-identity-security-hardening.real.spec.ts',
     '**/legal-pages.spec.ts',
     '**/notification-realtime-client.spec.ts',
@@ -26,6 +31,9 @@ export default defineConfig({
   ],
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
+  // Keep files/serial journeys together when CI shards the suite. Each
+  // shard owns its database; workers within that database remain serial.
+  fullyParallel: false,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['html'], ['list']] : 'list',
   use: {

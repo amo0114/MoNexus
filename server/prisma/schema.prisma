@@ -48,7 +48,8 @@ model User {
   password           String
   role               String    @default("user") // user | admin | merchant
   status             String    @default("正常")
-  nickname           String? // 1-20 字;注册可选,空则系统生成 mn_XXXXXXXX
+  nickname           String? // 1-20 字；注册可选，空则生成并保存三国风趣味昵称
+  nicknameIsGenerated Boolean @default(false) // 手动保存昵称后为 false
   avatarUrl          String? // 公开图床 URL(POST /uploads/image → OSS/public)
   emailVerified      DateTime?
   // Stops this user from qualifying new invite relations. It never rewrites

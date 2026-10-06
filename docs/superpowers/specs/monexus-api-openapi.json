@@ -3489,7 +3489,9 @@
           "rank",
           "displayName",
           "points",
-          "isMe"
+          "isMe",
+          "avatarUrl",
+          "prevRank"
         ],
         "additionalProperties": false,
         "properties": {
@@ -3500,7 +3502,7 @@
           },
           "displayName": {
             "type": "string",
-            "description": "昵称；缺失时为打码邮箱（如 `ab***@example.com`）"
+            "description": "已保存昵称；缺失时为稳定的三国风趣味昵称（如“爱喝茶的小军师”）"
           },
           "points": {
             "type": "integer",
@@ -3509,6 +3511,16 @@
           "isMe": {
             "type": "boolean",
             "description": "该行是否为请求者本人，供前端高亮"
+          },
+          "avatarUrl": {
+            "type": "string",
+            "description": "用户保存的头像，或按固定用户身份分配的内置默认头像；不暴露用户 ID"
+          },
+          "prevRank": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true,
+            "description": "同一自然周期截至今日北京时间 00:00 的名次；今日首次得分为 null"
           }
         }
       },
@@ -3516,7 +3528,8 @@
         "type": "object",
         "required": [
           "rank",
-          "points"
+          "points",
+          "prevRank"
         ],
         "additionalProperties": false,
         "properties": {
@@ -3526,6 +3539,12 @@
           },
           "points": {
             "type": "integer"
+          },
+          "prevRank": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true,
+            "description": "同一自然周期截至今日北京时间 00:00 的名次；今日首次得分为 null"
           }
         }
       },
@@ -3552,21 +3571,19 @@
           },
           "periodLabel": {
             "type": "string",
-            "description": "总榜 `全部`、月榜 `2026年8月`、周榜 `MM-DD ~ MM-DD`",
-            "example": "07-27 ~ 08-02"
+            "description": "总榜 全部、月榜 YYYY年M月、周榜 YYYY-MM-DD ~ YYYY-MM-DD",
+            "example": "2026-07-27 ~ 2026-08-02"
           },
           "dataThrough": {
             "type": "string",
             "format": "date",
-            "nullable": true,
-            "description": "快照覆盖到的最后一个日历日（业务时区）；尚无快照为 null",
-            "example": "2026-07-31"
+            "description": "当前查询覆盖的北京时间日期，包含今天",
+            "example": "2026-08-01"
           },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
-            "nullable": true,
-            "description": "快照批次时刻；尚无快照为 null"
+            "description": "本次查询过滤流水所用的截止时刻；空榜也返回"
           },
           "top": {
             "type": "array",
@@ -4878,7 +4895,7 @@
           "Leaderboard"
         ],
         "summary": "积分排行榜（总榜 / 本月榜 / 本周榜）",
-        "description": "读取每日刷新一次的积分快照，返回该期 Top 100 与请求者自己的名次。\n\n计分口径 = 窗口内 `PointLog.type='in'` 的 `amount` 之和，与会员等级的 `lifetimeEarnedPoints` 完全同口径；`out` / `hold` / `release` / `refund` 一律不计。\n\n窗口按 Asia/Shanghai：总榜为全历史，月榜为自然月，周榜为自然周且**周一**为起点；右边界是刷新当日 00:00，即数据截至昨日 24:00（`dataThrough`）。榜单不含 admin 与已封禁用户，merchant 正常参与；资格在快照生成时判定，不做读时实时剔除。\n\n`top` 中的他人只有 `rank` / `displayName` / `points`，`isMe` 由服务端计算——响应任何层级都不含他人 `userId` 或 `email`；`displayName` 为昵称，缺失时回退打码邮箱。请求者不合格（admin）或本期无得分时 `me` 为 `null`。\n\n部署后首轮刷新完成前、以及新周期首日窗口为空时，返回 `top: []` 且 `updatedAt` / `dataThrough` 均为 `null`（前端空态）。",
+        "description": "按查询截止时刻统计当前榜单，返回 Top 100 和请求者自己的精确名次。计分口径为窗口内 type=in 且 amount>0 的积分之和，消费、冻结、释放、退款不计。\n\nAsia/Shanghai 自然周期：总榜全历史，月榜从本月1日零点开始，周榜从周一零点开始，均包含今天，右边界为请求截止时刻（不含）。当前排除 admin 与封禁用户，merchant 参与。\n\n公开行只有 rank/displayName/avatarUrl/points/isMe/prevRank，无他人 userId、原始 email 或余额。默认头像按不可变身份分配；prevRank 比较同一周期截至今日零点的名次。\n\n当前接口不依赖每日历史快照。空榜返回空 top、null me 及有效 updatedAt/dataThrough。前端可见时每60秒重新查询，后台失败不得改写上次截止时刻。",
         "security": [
           {
             "bearerAuth": []
@@ -4896,7 +4913,7 @@
         ],
         "responses": {
           "200": {
-            "description": "该期榜单快照。",
+            "description": "截至本次查询时刻的当前自然周期榜单。",
             "content": {
               "application/json": {
                 "schema": {

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Coins, Loader2, ShieldCheck, Info } from 'lucide-react'
+import { AlertTriangle, Loader2, ShieldCheck, Info } from 'lucide-react'
+import PointCoin from './ui/PointCoin'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
 import { agreementVersionsOf, LEGAL_PAGE_PATHS } from '../api/legal'
@@ -359,7 +360,7 @@ export default function PurchaseModal({
             <div className="flex justify-between items-center text-sm mt-3 pt-3 border-t border-[var(--color-border)] border-dashed">
               <span className="text-[var(--color-text-muted)]">{isHold ? '本次冻结积分' : '本次支付积分'}</span>
               <span className="font-heading font-bold text-[var(--color-cta)] flex items-center gap-1 text-lg" data-testid="preview-price">
-                <Coins className="w-4 h-4 shrink-0" />
+                <PointCoin className="w-4 h-4 shrink-0" />
                 <AnimatedNumber value={preview.price} />
               </span>
             </div>

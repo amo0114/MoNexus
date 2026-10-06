@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MailWarning, X } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import { sendVerificationEmail } from '../api/auth'
 import { getApiErrorMessage } from '../api/error'
+import { captureFeedbackOwner } from '../lib/completionFeedback'
+import { useIslandReminder } from '../hooks/useIslandReminder'
 
 // Dismissal lives in sessionStorage so it resets next browser session —
 // we want a nudged user to see it again tomorrow rather than forever.
@@ -20,8 +22,10 @@ function wasDismissed(userId: number) {
 
 export default function EmailVerificationBanner() {
   const user = useAuthStore((state) => state.user)
+  const authEpoch = useAuthStore((state) => state.authEpoch)
   const showToast = useAppStore((state) => state.showToast)
 
+  const sendingRef = useRef(false)
   const [sending, setSending] = useState(false)
   const [dismissed, setDismissed] = useState(false)
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null)
@@ -30,7 +34,9 @@ export default function EmailVerificationBanner() {
   useEffect(() => {
     setDismissed(user ? wasDismissed(user.id) : false)
     setCooldownUntil(null)
-  }, [user?.id])
+    sendingRef.current = false
+    setSending(false)
+  }, [user?.id, authEpoch])
 
   useEffect(() => {
     if (!cooldownUntil) {
@@ -51,23 +57,50 @@ export default function EmailVerificationBanner() {
     return () => window.clearInterval(timer)
   }, [cooldownUntil])
 
-  if (!user || user.emailVerified || dismissed) return null
-  const userId = user.id
+  const userId = user?.id
+  const eligible = user && !user.emailVerified && !dismissed && !wasDismissed(user.id)
+  const onIsland = useIslandReminder(eligible ? `email:${user.id}` : null, {
+    kind: 'notification', title: '邮箱尚未验证', subtitle: '验证后即可正常购买与签到',
+    groupKey: 'email-verification', actionLabel: '发送验证邮件',
+    onAction: () => { void handleSend() }, onDismiss: handleDismiss,
+  })
 
   async function handleSend() {
+    const currentUser = useAuthStore.getState().user
+    if (sendingRef.current || (cooldownUntil ?? 0) > Date.now() || !currentUser || currentUser.emailVerified) return
+    const isCurrent = captureFeedbackOwner()
+    sendingRef.current = true
     setSending(true)
     try {
       await sendVerificationEmail()
+      if (!isCurrent()) return
       setCooldownUntil(Date.now() + RESEND_COOLDOWN_MS)
-      showToast('验证邮件已发送，请到邮箱查收并在 24 小时内完成验证')
+      if (onIsland) {
+        useAppStore.getState().triggerIslandActivity({
+          kind: 'notification', title: '验证邮件已发送',
+          subtitle: '请到邮箱查收，并在 24 小时内完成验证',
+          groupKey: 'email-verification', type: 'success',
+        })
+      } else showToast('验证邮件已发送，请到邮箱查收并在 24 小时内完成验证')
     } catch (error) {
-      showToast(getApiErrorMessage(error, '发送失败，请稍后重试'), 'error')
+      if (isCurrent()) {
+        showToast(getApiErrorMessage(error, '发送失败，请稍后重试'), 'error')
+        if (onIsland) useAppStore.getState().triggerIslandActivity({
+          kind: 'notification', title: '邮箱尚未验证', subtitle: '验证邮件未发送成功，可稍后重试',
+          groupKey: 'email-verification', actionLabel: '重新发送',
+          onAction: () => { if (isCurrent()) void handleSend() }, onDismiss: handleDismiss,
+        })
+      }
     } finally {
-      setSending(false)
+      if (isCurrent()) {
+        sendingRef.current = false
+        setSending(false)
+      }
     }
   }
 
   function handleDismiss() {
+    if (!userId) return
     try {
       sessionStorage.setItem(dismissKey(userId), '1')
     } catch {
@@ -76,6 +109,8 @@ export default function EmailVerificationBanner() {
     }
     setDismissed(true)
   }
+
+  if (!eligible || onIsland) return null
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 pt-2.5 sm:px-6">

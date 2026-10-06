@@ -1,0 +1,209 @@
+/* ==========================================================================
+   Floating Pill Dock (悬浮胶囊底栏 — 磨砂玻璃 / Glassmorphism)
+   ========================================================================== */
+.floating-pill-dock {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow:
+    0 12px 28px -4px rgba(15, 23, 42, 0.10),
+    0 4px 10px -2px rgba(15, 23, 42, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+:is(.dark) .floating-pill-dock {
+  background: rgba(18, 18, 26, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 16px 36px -4px rgba(0, 0, 0, 0.65),
+    0 4px 12px -2px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+:is([data-theme="soft"]) .floating-pill-dock {
+  background: rgba(255, 248, 236, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    0 12px 28px -4px rgba(92, 64, 40, 0.08),
+    0 4px 10px -2px rgba(92, 64, 40, 0.03),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+:is([data-theme="ink"]) .floating-pill-dock {
+  background: rgba(248, 249, 247, 0.85);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    0 12px 28px -4px rgba(20, 24, 20, 0.08),
+    0 4px 10px -2px rgba(20, 24, 20, 0.04),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+/* 底栏常态静止；仅在交互按压与切换时产生弹性微动（Press & Transition Dynamics） */
+.floating-pill-dock {
+  transform: scale(1);
+  transform-origin: center center;
+  transition: transform 220ms cubic-bezier(0.25, 1, 0.5, 1), box-shadow 260ms ease;
+  will-change: transform;
+}
+
+.floating-pill-dock.is-dock-pressed {
+  transform: scale(0.982);
+}
+
+@keyframes dockPulseOnce {
+  0% {
+    transform: scale(0.982);
+  }
+  38% {
+    transform: scale(1.022);
+  }
+  72% {
+    transform: scale(0.994);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.floating-pill-dock.is-dock-pulsing {
+  animation: dockPulseOnce 0.44s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* 落地撞击挤压与果冻回弹震颤（Landing Squash & Jelly Recoil，微动阻尼，严格收敛于轨道内） */
+@keyframes jellyLandingRecoil {
+  0% {
+    transform: scale(var(--land-from-x, 1.08), var(--land-from-y, 0.96));
+  }
+  38% {
+    /* 落地轻微受力缓冲，严防垂直或水平溢出 */
+    transform: scale(0.97, 1.02);
+  }
+  72% {
+    /* 柔和微弹归位 */
+    transform: scale(1.01, 0.99);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+.animate-jelly-landing {
+  animation: jellyLandingRecoil 0.22s cubic-bezier(0.25, 1, 0.5, 1) both;
+  transform-origin: center center;
+}
+
+/* 水滴气泡原地点击弹性微弹（In-place Elastic Pop，精细触感，绝不溢出轨道） */
+@keyframes dropletInPlacePop {
+  0% {
+    transform: scale(1, 1);
+  }
+  30% {
+    /* 蓄力微下陷 */
+    transform: scale(1.03, 0.97);
+  }
+  65% {
+    /* 柔和微弹 */
+    transform: scale(0.98, 1.02);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+.animate-droplet-pop {
+  animation: dropletInPlacePop 0.24s cubic-bezier(0.25, 1, 0.5, 1) both;
+  transform-origin: center center;
+}
+
+/* 独立滑动的晶莹水滴气泡（Liquid Dewdrop Indicator） */
+.liquid-droplet-indicator {
+  z-index: 0;
+  will-change: transform, width;
+}
+
+.liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(243, 244, 246, 0.65) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.03),
+    0 4px 14px -1px rgba(0, 0, 0, 0.08),
+    0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  will-change: transform;
+}
+
+:is(.dark) .liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.07) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1.5px 2px 0 rgba(0, 0, 0, 0.4),
+    0 4px 16px -1px rgba(0, 0, 0, 0.4),
+    0 2px 6px -1px rgba(0, 0, 0, 0.25);
+}
+
+:is([data-theme="soft"]) .liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(254, 243, 199, 0.6) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.95),
+    0 4px 14px -1px rgba(180, 83, 9, 0.1);
+}
+
+:is([data-theme="ink"]) .liquid-droplet-inner {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(240, 242, 240, 0.65) 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow:
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.9),
+    0 4px 14px -1px rgba(0, 0, 0, 0.08);
+}
+
+/* 兼容回退通用胶囊 */
+.sliding-pill-indicator {
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* iOS 17+ 原生 SF Symbols 图标弹跳微动（Symbol Bounce & Jump） - 严谨受控范围，防止溢出底栏 */
+@keyframes symbolJumpAndBounce {
+  0% {
+    transform: translateY(0) scale(1, 1);
+  }
+  18% {
+    /* 蓄力微蹲压扁（下压受控在 1.5px，轻柔不撞文字） */
+    transform: translateY(1.5px) scale(1.14, 0.88);
+  }
+  48% {
+    /* 向上轻盈弹起拔高（拔高受控在 -3.5px，严格保留在气泡高光区域内） */
+    transform: translateY(-3.5px) scale(0.92, 1.10);
+  }
+  74% {
+    /* 触地轻柔缓冲 */
+    transform: translateY(0.8px) scale(1.05, 0.96);
+  }
+  88% {
+    /* 微幅回弹平复 */
+    transform: translateY(-0.4px) scale(0.99, 1.01);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+.animate-symbol-jump {
+  animation: symbolJumpAndBounce 0.44s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: center bottom;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tab-bounce {
+    animation: none !important;
+  }
+  .sliding-pill-indicator {
+    transition: none !important;
+  }
+}

@@ -12,7 +12,11 @@ const PAGE_SIZE = 10
 interface Props {
   isOpen: boolean
   onClose: () => void
-  product: MerchantProduct | null
+  product: InventoryLogProduct | null
+}
+
+export type InventoryLogProduct = Pick<MerchantProduct, 'id' | 'name'> & {
+  offers?: Array<{ id: number; name: string }>
 }
 
 export default function MerchantInventoryLogModal({ isOpen, onClose, product }: Props) {

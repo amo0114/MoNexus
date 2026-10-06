@@ -49,14 +49,26 @@ describe('POST /api/auth/register', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR')
   })
 
-  it('assigns branded default nickname when omitted', async () => {
+  it('persists a friendly default nickname and keeps it across profile reads and login', async () => {
     const res = await api
       .post('/api/auth/register')
       .send({ email: 'auto-nick@test.local', password: 'abcdef' })
       .expect(201)
 
-    expect(res.body.user.nickname).toMatch(/^mn_[2-9A-HJ-NP-Z]{8}$/)
+    expect(res.body.user.nickname).toMatch(/^[\u4e00-\u9fff]+$/)
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: res.body.user.id } })
+    expect(stored.nickname).toBe(res.body.user.nickname)
+    expect(stored.nicknameIsGenerated).toBe(true)
     expect(res.body.user.avatarUrl).toBeNull()
+    const me = await api.get('/api/auth/me').set('Authorization', `Bearer ${res.body.accessToken}`).expect(200)
+    expect(me.body.nickname).toBe(stored.nickname)
+    const login = await api.post('/api/auth/login').send({ email: stored.email, password: 'abcdef' }).expect(200)
+    expect(login.body.user.nickname).toBe(stored.nickname)
+    const cookies = login.headers['set-cookie'] as unknown as string[]
+    const refreshed = await api.post('/api/auth/refresh').set('Cookie', cookies)
+      .send({ expectedSessionId: sessionIdFromAccessToken(login.body.accessToken) }).expect(200)
+    const refreshedMe = await api.get('/api/auth/me').set('Authorization', `Bearer ${refreshed.body.accessToken}`).expect(200)
+    expect(refreshedMe.body.nickname).toBe(stored.nickname)
   })
 
   it('accepts optional nickname on register', async () => {
@@ -66,6 +78,16 @@ describe('POST /api/auth/register', () => {
       .expect(201)
 
     expect(res.body.user.nickname).toBe('小明同学')
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: res.body.user.id } })
+    expect(stored.nicknameIsGenerated).toBe(false)
+  })
+
+  it('keeps a manually chosen legacy-looking nickname on registration', async () => {
+    const res = await api.post('/api/auth/register')
+      .send({ email: 'manual-legacy-nick@test.local', password: 'abcdef', nickname: 'mn_23456789' }).expect(201)
+    expect(res.body.user.nickname).toBe('mn_23456789')
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: res.body.user.id } })
+    expect(stored.nicknameIsGenerated).toBe(false)
   })
 })
 
@@ -243,6 +265,24 @@ describe('GET /api/auth/me', () => {
 })
 
 describe('PATCH /api/auth/me', () => {
+  it('marks an explicit nickname as manual without changing a selected Three Kingdoms avatar', async () => {
+    const { user } = await createTestUser('nickname-avatar-preserved@test.local', 'pass123')
+    await prisma.user.update({ where: { id: user.id }, data: { nickname: '爱喝茶的小军师', nicknameIsGenerated: true } })
+    const { accessToken } = await loginAs(user.email, 'pass123')
+    const authorization = `Bearer ${accessToken}`
+    const avatarUrl = avatarPresetUrls[5]
+    await api.patch('/api/auth/me').set('Authorization', authorization).send({ avatarUrl }).expect(200)
+    expect((await prisma.user.findUniqueOrThrow({ where: { id: user.id } })).nicknameIsGenerated).toBe(true)
+    const saved = await api.patch('/api/auth/me').set('Authorization', authorization).send({ nickname: 'mn_23456789' }).expect(200)
+    expect(saved.body.avatarUrl).toBe(avatarUrl)
+    expect(saved.body.nickname).toBe('mn_23456789')
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } })
+    expect(stored.nicknameIsGenerated).toBe(false)
+    const reloaded = await api.get('/api/auth/me').set('Authorization', authorization).expect(200)
+    expect(reloaded.body.nickname).toBe('mn_23456789')
+    expect(reloaded.body.avatarUrl).toBe(avatarUrl)
+  })
+
   it('persists every published preset and returns it after reloading the profile', async () => {
     await createTestUser('preset-avatar@test.local', 'pass123')
     const { accessToken } = await loginAs('preset-avatar@test.local', 'pass123')

@@ -90,14 +90,17 @@ export default function CategorySlidingNav({
   }
 
   return (
-    <div className="w-full flex justify-center py-1">
-      {/* 外层横向滚动安全容器，保证小屏分类过多时可平滑横滑，不挤压子项 */}
-      <div ref={scrollContainerRef} className="max-w-full overflow-x-auto hide-scrollbar px-1 py-0.5">
-        {/* 统一的胶囊导轨跑道（Segmented Control Track），杜绝各自分离边框错位与失衡 */}
+    <div className="w-full min-w-0 flex justify-center py-1">
+      {/* 移动端外框属于固定视口，仅内部按钮横滑；阻止横向滚动传递到页面。 */}
+      <div
+        ref={scrollContainerRef}
+        className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain hide-scrollbar rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xs md:rounded-none md:bg-transparent md:border-0 md:shadow-none md:px-1 md:py-0.5"
+      >
+        {/* 桌面保留原导轨外观；移动端内容层不绘制随滚动移动的外框。 */}
         <div
           ref={containerRef}
           aria-label="商品分类筛选"
-          className="relative inline-flex items-center p-1 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xs select-none"
+          className="relative flex w-max items-center p-1 md:rounded-full md:bg-[var(--color-surface)] md:border md:border-[var(--color-border)] md:shadow-xs select-none"
         >
           {/* 动态平滑滑动的背景胶囊：显式 left-0，上下直接锚定 top-1 bottom-1，垂直水平严丝合缝 */}
           {pillGeometry.ready && (

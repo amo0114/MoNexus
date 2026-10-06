@@ -25,6 +25,64 @@ const TEST_ADMIN = {
   role: 'admin' as const,
 }
 
+test('search morph preserves the navbar lane and completes both directions', async ({ page }) => {
+  await page.route('**/api/**', (route) => {
+    const { pathname } = new URL(route.request().url())
+    if (!pathname.startsWith('/api/')) return route.fallback()
+    if (pathname === '/api/config/registry') return route.fulfill({ json: {
+      productTypes: ['网络节点', '共享账号', '充值卡密', '邀请码'].map((value) => ({ value, label: value })),
+      capabilities: {},
+    } })
+    if (pathname === '/api/announcements') return route.fulfill({ json: [] })
+    if (pathname === '/api/products') return route.fulfill({ json: { items: [], nextCursor: null, hasMore: false } })
+    return route.fulfill({ status: 404, json: {} })
+  })
+  await page.goto('/')
+  await page.evaluate(() => {
+    const spacer = document.createElement('div')
+    spacer.style.height = '1500px'
+    document.body.append(spacer)
+  })
+  const shell = page.getByTestId('navbar-shell')
+  const panel = page.getByTestId('mobile-search-island')
+  const trigger = page.getByRole('button', { name: '搜索', exact: true })
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 })
+    await page.evaluate(() => window.scrollTo(0, 150))
+    await expect(shell).toHaveAttribute('data-chrome', 'compact')
+    await page.waitForTimeout(400)
+    const height = (await page.getByTestId('app-navbar').boundingBox())!.height
+    await trigger.click()
+    await expect(panel).toHaveAttribute('data-open', 'true')
+    const input = panel.getByRole('textbox', { name: '搜索商品' })
+    await expect(input).toBeFocused()
+    await expect(panel.locator('.mobile-search-surface')).toHaveCSS('transform', 'matrix(1, 0, 0, 1, 0, 0)')
+    expect((await page.getByTestId('app-navbar').boundingBox())!.height).toBe(height)
+    const box = (await panel.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(0)
+    expect(box.x + box.width).toBeLessThanOrEqual(width)
+    expect(await input.evaluate((element) => getComputedStyle(element).transform)).toBe('none')
+    await input.fill('三国')
+    await panel.getByRole('button', { name: '取消搜索' }).click()
+    await expect(panel).toHaveAttribute('data-closing', 'true')
+    await expect(panel.locator('.mobile-search-content')).toHaveAttribute('inert', '')
+    await expect(panel).toHaveCount(0)
+    await expect(trigger).toBeFocused()
+    expect((await page.getByTestId('app-navbar').boundingBox())!.height).toBe(height)
+    // Reopening keeps the query. Backdrop dismissal takes the same exit path.
+    await trigger.click()
+    await expect(input).toHaveValue('三国')
+    await page.mouse.click(4, 220)
+    await expect(panel).toHaveCount(0)
+  }
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await trigger.click()
+  await expect(panel.locator('.mobile-search-surface')).toHaveCSS('transition-duration', '0s')
+  await page.keyboard.press('Escape')
+  await expect(panel).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+})
+
 test('mobile chrome morphs into an island and keeps banners attached', async ({ page }) => {
   // This is a chrome test, not an authentication/API test. Keep it isolated
   // from the shared local API rate limiter while exercising the real Profile
@@ -46,7 +104,7 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
     if (pathname === '/api/orders/attention-count') return route.fulfill({ json: { count: 0 } })
     if (pathname === '/api/points/checkin/status') return route.fulfill({ json: { hasCheckedIn: false } })
     if (pathname === '/api/points/checkin' && method === 'POST') {
-      return route.fulfill({ json: { balanceAfter: 1330, totalReward: 50 } })
+      return route.fulfill({ json: { balanceAfter: 1330, baseReward: 40, bonusReward: 10, totalReward: 50 } })
     }
     if (pathname === '/api/points/tier') {
       return route.fulfill({
@@ -135,15 +193,18 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
   // overflowed island on the narrowest supported phones.
   expect(await shell.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
 
-  // A real quiet success action is absorbed by the island, not rendered as a
+  // A real check-in action is absorbed by the island, not rendered as a
   // second top banner. The request is mocked solely to keep the E2E fixture
   // independent from the shared local check-in state.
   await page.getByRole('button', { name: '签到打卡' }).click()
-  await expect(shell.getByTestId('quiet-island-notice')).toContainText('打卡成功！积分 +50')
-  await expect(shell.getByTestId('quiet-island-notice')).toBeVisible()
+  await expect(shell.getByTestId('action-island-notice')).toContainText('签到成功 +50 积分')
+  await expect(shell.getByTestId('action-island-notice')).toContainText('基础 +40 · 等级加成 +10')
+  await expect(shell.getByRole('button', { name: '查看积分流水' })).toBeVisible()
   await expect(page.locator('[data-toast-card]')).toHaveCount(0)
+  await shell.getByRole('button', { name: '收起通知' }).click()
+  await expect(shell.getByTestId('action-island-notice')).toHaveCount(0)
 
-  // A regular error preempts the island and uses the same measured navbar
+  // A regular error uses the same measured navbar
   // edge, rather than the former hard-coded 77px offset. This validation is
   // local and does not need a network request.
   await page.getByRole('tab', { name: '账号设置' }).click()
@@ -154,7 +215,6 @@ test('mobile chrome morphs into an island and keeps banners attached', async ({ 
 
   const toast = page.locator('[data-toast-card]')
   await expect(toast).toContainText('昵称需为 1-20 个字符')
-  await expect(shell.getByText('打卡成功！积分 +50', { exact: true })).toHaveCount(0)
 
   // The CSS custom property is the layout contract used by the fallback
   // banner; wait for the border-box measurement rather than a fixed delay.

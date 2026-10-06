@@ -377,9 +377,9 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     const adjustResult: unknown = await adjustResponse.json()
     expect(readStock(adjustResult)).toBe(currentStock + 5)
 
-    // UI 成功反馈（role=status）且 modal 关闭；行内名额随服务端刷新。
+    // 桌面成功反馈展示服务端返回的剩余名额；modal 关闭，行内名额随之刷新。
     await expect(
-      page.getByRole('status').filter({ hasText: '规格名额调整成功' })
+      page.getByRole('status').filter({ hasText: `服务名额已调整，剩余 ${currentStock + 5} 个` })
     ).toBeVisible({ timeout: 5_000 })
     await expect(modal).toBeHidden({ timeout: 10_000 })
     await expect(

@@ -2,12 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
-  BadgeCheck,
-  BadgeHelp,
-  Check,
-  ChevronDown,
   ChevronRight,
-  ChevronUp,
   CircleCheck,
   Crown,
   Globe2,
@@ -15,14 +10,9 @@ import {
   Heart,
   Home,
   Laptop,
-  Minus,
   PackageCheck,
-  Plus,
   ShieldCheck,
-  ShoppingBag,
   ShoppingCart,
-  Star,
-  Store,
   Trash2,
   Zap,
 } from 'lucide-react'
@@ -35,17 +25,13 @@ import RichTextHtml from './RichTextHtml'
 import ProductSpecSections, { titlesFromTemplate } from './ProductSpecSections'
 import MerchantSupportModal from './MerchantSupportModal'
 import { isOfferSoldOut } from './ProductOfferSelector'
-import { offerPeriodSubtitle, offerPeriodDetailNote } from '../../utils/offerPeriodDisplay'
-import { formatFileSize } from '../../utils/formatFileSize'
+import { offerPeriodSubtitle } from '../../utils/offerPeriodDisplay'
 import { PRODUCT_MOCK_ASSETS, referenceRelated } from './productDetailMock'
 import { useProductFavorite } from '../../hooks/useProductFavorite'
-import ProductExchangeSummary from './ProductExchangeSummary'
-import FavoriteHeartButton from './FavoriteHeartButton'
-import ProductFaqAccordion from './ProductFaqAccordion'
-import AnimatedCounter from '../ui/AnimatedCounter'
-import ProductFulfillmentTrack from './ProductFulfillmentTrack'
-import { resolveDisplayFaqs } from './productDetailFaq'
-import MerchantHoverCard from './MerchantHoverCard'
+import DesktopDetailContent, {
+  type DesktopDetailTab,
+} from './productDetail/desktop/DesktopDetailContent'
+import DesktopPurchasePanel from './productDetail/desktop/DesktopPurchasePanel'
 import './ProductDetailDesktop.css'
 
 interface Props {
@@ -74,8 +60,7 @@ type CartItem = {
   quantity: number
   preview: boolean
 }
-type DetailTab = 'details' | 'usage' | 'faq' | 'reviews' | 'related'
-const detailSections: DetailTab[] = ['details', 'usage', 'faq', 'reviews', 'related']
+type DetailTab = DesktopDetailTab
 const networkFeatures = [
   {
     icon: Globe2,
@@ -246,7 +231,6 @@ export default function ProductDetailDesktop({
   const price = activeOffer?.price ?? product.price
   const soldOut = !activeOffer || isOfferSoldOut(activeOffer)
   const merchant = product.merchant?.name || 'MoNexus 自营'
-  const period = activeOffer ? offerPeriodDetailNote(activeOffer) : null
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
   const features = preview
     ? networkFeatures
@@ -429,609 +413,53 @@ export default function ProductDetailDesktop({
                   </button>
                 ))}
             </nav>
-            <div className="pd-detail-body">
-              {tab === 'details' && (
-                <section
-                  id="pd-content-details"
-                  className="pd-content-section pd-tab-panel-enter"
-                  aria-label="商品详情"
-                  role="tabpanel"
-                  aria-labelledby="pd-tab-details"
-                  tabIndex={0}
-                >
-                  <>
-                    {preview ? (
-                      <>
-                        <div className="pd-intro">
-                          <p>关于 Aster Link</p>
-                          <h2>更快 · 更稳 · 更自由</h2>
-                          <div>
-                            Aster Link 致力于为用户提供高速、稳定、安全的网络服务，覆盖全球多个优质节点，
-                            <br />
-                            无论是日常上网、办公、娱乐还是开发需求，都能获得更流畅的使用体验。
-                          </div>
-                        </div>
-                        <div className="pd-detail-features">
-                          {[networkFeatures[0], networkFeatures[2], networkFeatures[1], networkFeatures[3]].map(
-                            ({ icon: Icon, detailTitle, description }) => (
-                              <div key={detailTitle}>
-                                <Icon size={30} />
-                                <span>
-                                  <strong>{detailTitle}</strong>
-                                  <small>{description}</small>
-                                </span>
-                              </div>
-                            )
-                          )}
-                        </div>
-                        <img
-                          className="pd-platform-banner"
-                          src={`${PRODUCT_MOCK_ASSETS}/platform-banner-visible.png`}
-                          alt="多设备，全平台支持；Windows、macOS、iOS、Android"
-                        />
-                      </>
-                    ) : (
-                      <>
-                        {product.richDescription ? (
-                          <RichTextHtml
-                            html={product.richDescription}
-                            className="rich-text pd-rich-description"
-                          />
-                        ) : (
-                          <div className="pd-intro">
-                            <p>关于 {product.name}</p>
-                            <h2>商品介绍</h2>
-                            <div>{product.description || '请在右侧选择套餐规格，交付与使用指引请参阅“使用说明”。'}</div>
-                          </div>
-                        )}
-                        {!!product.details?.highlights?.length && (
-                          <div className="pd-live-highlights">
-                            {product.details.highlights.map((text, i) => (
-                              <span key={i}>
-                                <CircleCheck size={18} />
-                                {text}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <div className="pd-specifications">
-                      <ProductSpecSections
-                        productAttributes={product.attributes}
-                        offerAttributes={activeOffer?.attributes}
-                        details={{
-                          ...EMPTY_PRODUCT_DETAILS,
-                          ...product.details,
-                          usageInstructions: '',
-                          purchaseNotes: '',
-                          faq: [],
-                        }}
-                        assurance={product.assurance}
-                        productOrder={template?.ui.productOrder}
-                        offerOrder={template?.ui.offerOrder}
-                        titles={titlesFromTemplate(template)}
-                        enumLabels={template?.ui.enumLabels}
-                      />
-                    </div>
-                  </>
-                </section>
-              )}
-
-              {tab === 'usage' && (
-                <section
-                  id="pd-content-usage"
-                  className="pd-content-section pd-tab-panel-enter"
-                  aria-label="使用说明"
-                  role="tabpanel"
-                  aria-labelledby="pd-tab-usage"
-                  tabIndex={0}
-                >
-                  <div className="pd-text-panel">
-                    <h2>使用说明</h2>
-                    <ProductFulfillmentTrack offer={activeOffer} preview={preview} />
-                    <p>
-                      {product.details?.usageInstructions ||
-                        '兑换后请在订单详情中查看交付内容与使用指引。如需帮助，请联系客服。'}
-                    </p>
-                    {product.details?.purchaseNotes && (
-                      <>
-                        <h3>购买须知</h3>
-                        <p>{product.details.purchaseNotes}</p>
-                      </>
-                    )}
-                  </div>
-                </section>
-              )}
-
-              {tab === 'faq' && (
-                <section
-                  id="pd-content-faq"
-                  className="pd-content-section pd-tab-panel-enter"
-                  aria-label="常见问题"
-                  role="tabpanel"
-                  aria-labelledby="pd-tab-faq"
-                  tabIndex={0}
-                >
-                  <div className="pd-faq-hub" id="product-section-faq">
-                    <div className="pd-faq-hub-header">
-                      <div>
-                        <h2>交付履约与常见解答</h2>
-                        <p className="pd-faq-hub-subtitle">
-                          数字服务自动化秒发、凭据调配与平台争议存管保障
-                        </p>
-                      </div>
-                      <div className="pd-faq-system-status">
-                        <span className="pd-pulse-dot" />
-                        <span>自动直发引擎运行中</span>
-                      </div>
-                    </div>
-
-                    <div className="pd-faq-hub-grid">
-                      {/* Left: 4-Step Fulfillment Pipeline Card */}
-                      <div className="pd-faq-pipeline-card">
-                        <div className="pd-pipeline-title">
-                          <Zap size={15} />
-                          <span>数字资产履约全流程</span>
-                        </div>
-                        <div className="pd-pipeline-stepper">
-                          <div className="pd-pipeline-step">
-                            <div className="pd-step-marker">1</div>
-                            <div className="pd-step-content">
-                              <strong>选择套餐并确认兑换</strong>
-                              <p>积分/资金实时托管，生成防篡改订单号</p>
-                            </div>
-                          </div>
-                          <div className="pd-pipeline-step">
-                            <div className="pd-step-marker">2</div>
-                            <div className="pd-step-content">
-                              <strong>云端智能调配卡密</strong>
-                              <p>独占配发可用凭据，防并发与重复使用</p>
-                            </div>
-                          </div>
-                          <div className="pd-pipeline-step">
-                            <div className="pd-step-marker">3</div>
-                            <div className="pd-step-content">
-                              <strong>订单详情即时查验</strong>
-                              <p>弹窗或「我的订单」直接复制卡密与指引</p>
-                            </div>
-                          </div>
-                          <div className="pd-pipeline-step">
-                            <div className="pd-step-marker">4</div>
-                            <div className="pd-step-content">
-                              <strong>平台争议存管介入</strong>
-                              <p>若遇凭据异常，可一键申请售后仲裁保障</p>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="pd-pipeline-badges">
-                          <div className="pd-pipeline-badge-item">
-                            <ShieldCheck size={13} />
-                            <span>资金平台存管</span>
-                          </div>
-                          <div className="pd-pipeline-badge-item">
-                            <Check size={13} />
-                            <span>凭据不可篡改</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right: Categorized QA Accordions */}
-                      <div className="pd-faq-accordion-column">
-                        <div className="pd-faq-list">
-                          {resolveDisplayFaqs(product.details?.faq).map((item, i) => (
-                            <ProductFaqAccordion
-                              key={i}
-                              question={item.question}
-                              answer={item.answer}
-                              defaultOpen={i === 0}
-                              prefix={<span className="pd-faq-num">0{i + 1}</span>}
-                              className="pd-faq-acc"
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="pd-faq-contact-card">
-                      <div className="pd-faq-contact-info">
-                        <div className="pd-faq-contact-icon">
-                          <Headphones size={22} />
-                        </div>
-                        <div>
-                          <div className="pd-faq-contact-title">仍有关于本商品的其他疑问？</div>
-                          <div className="pd-faq-contact-desc">
-                            售前咨询、卡密核验及争议处理，如有关于本商品的问题，请联系商家客服。
-                          </div>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        className="pd-faq-contact-btn"
-                        onClick={() => setSupportOpen(true)}
-                      >
-                        <Headphones size={15} />
-                        联系在线客服
-                      </button>
-                    </div>
-                  </div>
-                </section>
-              )}
-
-              {tab === 'reviews' && (
-                <section
-                  id="pd-content-reviews"
-                  className="pd-content-section pd-tab-panel-enter"
-                  aria-label="用户评价"
-                  role="tabpanel"
-                  aria-labelledby="pd-tab-reviews"
-                  tabIndex={0}
-                >
-                  {reviews}
-                </section>
-              )}
-
-              {tab === 'related' && preview && (
-                <section
-                  id="pd-content-related"
-                  className="pd-content-section pd-tab-panel-enter"
-                  aria-label="相关推荐"
-                  role="tabpanel"
-                  aria-labelledby="pd-tab-related"
-                  tabIndex={0}
-                >
-                  <section className="pd-related">
-                    <div className="pd-panel-heading">
-                      <h2>相关商品</h2>
-                      <button onClick={() => setShopOpen(true)}>
-                        查看更多
-                        <ChevronRight size={14} />
-                      </button>
-                    </div>
-                    <div className="pd-related-grid">
-                      {referenceRelated.map((item) => (
-                        <div className="pd-related-item" key={item.id}>
-                          <button
-                            className="pd-related-cover"
-                            onClick={() => setShopOpen(true)}
-                            aria-label={`查看${item.name}`}
-                          >
-                            <img src={`${PRODUCT_MOCK_ASSETS}/related-${item.id}.png`} alt={item.name} />
-                          </button>
-                          <div>
-                            <button className="pd-related-title" onClick={() => setShopOpen(true)}>
-                              {item.name}
-                            </button>
-                            <p>
-                              ¥ {item.price.toFixed(2)} <span>起</span>
-                            </p>
-                            <div className="pd-related-meta">
-                              <span>
-                                <Star size={13} fill="currentColor" />
-                                {item.rating}
-                              </span>
-                              <span>已售 {item.sales}</span>
-                            </div>
-                          </div>
-                          <button
-                            className="pd-related-cart"
-                            aria-label={`将${item.name}加入购物车`}
-                            onClick={() => addToCart(item)}
-                          >
-                            <ShoppingCart size={17} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                </section>
-              )}
-            </div>
+            <DesktopDetailContent
+              preview={preview}
+              product={product}
+              reviews={reviews}
+              template={template}
+              activeOffer={activeOffer}
+              networkFeatures={networkFeatures}
+              tab={tab}
+              onOpenSupport={() => setSupportOpen(true)}
+              onOpenShop={() => setShopOpen(true)}
+              onAddRelatedToCart={addToCart}
+            />
           </section>
         </div>
 
-        <section className="pd-purchase" aria-label="商品与购买" ref={purchaseRef}>
-          <div className="pd-purchase-scroll" tabIndex={0} aria-label="套餐与交付信息">
-            <div className="pd-badges">
-              {preview && (
-                <>
-                  <span className="pd-badge-hot">热销</span>
-                  <span>官方推荐</span>
-                </>
-              )}
-              {!preview && <span>{product.type}</span>}
-              <span>{activeOffer?.deliveryMode === 'manual_service' ? '人工服务' : '自动发货'}</span>
-              {preview && (
-                <>
-                  <span className="pd-badge-blue">多地线路</span>
-                  <span className="pd-badge-blue">稳定高速</span>
-                </>
-              )}
-            </div>
-            <h1>{product.name}</h1>
-
-            {/* Merchant Byline (Steam / Vercel Pattern) */}
-            <div className="pd-merchant-byline" role="region" aria-label="商家信息">
-              <MerchantHoverCard
-                merchant={
-                  product.merchant ?? {
-                    id: 0,
-                    name: merchant,
-                  }
-                }
-                preview={preview}
-                onContactSupport={() => setSupportOpen(true)}
-                onEnterShop={preview ? () => setShopOpen(true) : undefined}
-              />
-              <div className="pd-byline-actions">
-                <button
-                  type="button"
-                  className="pd-byline-contact-btn"
-                  onClick={() => setSupportOpen(true)}
-                  aria-label="联系客服"
-                >
-                  <Headphones size={13} />
-                  <span>联系客服</span>
-                </button>
-                {preview && (
-                  <button
-                    type="button"
-                    className="pd-byline-shop-btn"
-                    onClick={() => setShopOpen(true)}
-                    aria-label="进入店铺"
-                  >
-                    <ShoppingBag size={13} />
-                    <span>进店</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <p className="pd-description">
-              {product.description?.trim() || '按需选择套餐，交付后在订单中查看凭据。'}
-            </p>
-            <div className="pd-price-summary" aria-live="polite">
-              <span>{preview ? '套餐价格' : '兑换需要'}</span>
-              <div>
-                <strong data-testid="desktop-selected-price">
-                  {preview && <small>¥ </small>}
-                  <AnimatedCounter
-                    value={price}
-                    decimals={preview ? 2 : 0}
-                    formatFn={(val) => (preview ? val.toFixed(2) : val.toLocaleString())}
-                  />
-                </strong>
-                {activeOffer?.originalPrice != null && activeOffer.originalPrice > price && (
-                  <del>
-                    {preview ? '¥ ' : ''}
-                    {activeOffer.originalPrice}
-                  </del>
-                )}
-              </div>
-              {!preview && <span className="pd-price-unit">积分</span>}
-              <span className="pd-selected-offer">已选：{activeOffer?.name || '暂无可售套餐'}</span>
-            </div>
-            {!preview && (
-              <ProductExchangeSummary
-                offer={activeOffer}
-                stockTitle={stockTitle}
-                stockLabel={stockLabel}
-                shortfall={shortfall}
-              />
-            )}
-            <div className="pd-rating" data-testid="rating-summary">
-              {(product.ratingCount ?? 0) > 0 ? (
-                <>
-                  <StarRating value={product.ratingAvg ?? 0} />
-                  <strong>{(product.ratingAvg ?? 0).toFixed(1)}</strong>
-                  <button onClick={() => scrollToSection('reviews')}>
-                    （{product.ratingCount?.toLocaleString()} 条评价）
-                  </button>
-                </>
-              ) : (
-                <span>暂无评分</span>
-              )}
-              <i />
-              <span>
-                已售 {(product.sales ?? 0).toLocaleString()}
-                {preview ? '+' : ''}
-              </span>
-            </div>
-            <div className="pd-features">
-              {features.map(({ icon: Icon, title, note }) => (
-                <div key={title}>
-                  <Icon size={24} strokeWidth={1.8} />
-                  <strong>{title}</strong>
-                  <span>{note}</span>
-                </div>
-              ))}
-            </div>
-
-            {(offers.length > 1 || preview) && (
-              <>
-                <div className="pd-offer-heading">
-                  <h2>套餐类型</h2>
-                  <button onClick={() => setCompareOpen(true)} disabled={!offers.length}>
-                    <ShieldCheck size={14} />
-                    套餐对比
-                  </button>
-                </div>
-                <div className="pd-offers" data-testid="sku-selector" data-dense={offers.length > 6}>
-                  {visibleOffers.map((offer, index) => {
-                    const selected = offer.id === (selectedOfferId ?? activeOffer?.id)
-                    const unavailable = isOfferSoldOut(offer)
-                    const discount =
-                      offer.originalPrice && offer.originalPrice > offer.price
-                        ? Math.round((1 - offer.price / offer.originalPrice) * 100)
-                        : 0
-                    return (
-                      <button
-                        key={offer.id}
-                        className="pd-offer"
-                        aria-pressed={selected}
-                        disabled={unavailable}
-                        data-testid={`sku-option-${offer.id}`}
-                        onClick={() => {
-                          onSelectOffer(offer.id)
-                          setQuantity(1)
-                        }}
-                      >
-                        {preview && index === 0 ? (
-                          <span className="pd-offer-ribbon pd-ribbon-hot">热销</span>
-                        ) : (
-                          discount > 0 && (
-                            <span className={`pd-offer-ribbon ${index === 1 ? 'pd-ribbon-green' : ''}`}>
-                              -{preview ? (index === 1 ? 10 : 20) : discount}%
-                            </span>
-                          )
-                        )}
-                        <strong>{offer.name}</strong>
-                        {selected && <Check className="pd-offer-check" size={15} />}
-                        <b>
-                          {preview ? '¥ ' : ''}
-                          {preview ? offer.price.toFixed(2) : offer.price.toLocaleString()}
-                          {!preview && <small> 积分</small>}
-                        </b>
-                        <span>
-                          {unavailable
-                            ? '已售罄'
-                            : preview
-                              ? ['灵活体验，按月订阅', '约 ¥ 26.3 / 月', '约 ¥ 24.9 / 月'][index]
-                              : offerPeriodSubtitle(offer) || '按套餐说明交付'}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                {offers.length > COLLAPSE_THRESHOLD && (
-                  <button
-                    type="button"
-                    onClick={() => setOffersExpanded((v) => !v)}
-                    className="pd-offers-toggle"
-                    aria-expanded={offersExpanded}
-                    data-testid="desktop-offers-toggle"
-                  >
-                    <span>
-                      {offersExpanded ? '收起部分套餐' : `展开更多套餐 (共 ${offers.length} 种可选)`}
-                    </span>
-                    {offersExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                  </button>
-                )}
-              </>
-            )}
-            {!offers.length && <p className="pd-muted">暂无可售套餐</p>}
-
-            {preview && (
-              <div className="pd-assurances">
-                {[
-                  {
-                    icon: BadgeHelp,
-                    title: activeOffer?.deliveryMode === 'manual_service' ? '人工服务' : '自动发货',
-                    note: '依套餐方式交付',
-                  },
-                  { icon: ShieldCheck, title: '安全可靠', note: '订单记录保障' },
-                  { icon: CircleCheck, title: '售后支持', note: '平台协助处理' },
-                  { icon: BadgeCheck, title: '商家服务', note: '联系商家咨询' },
-                ].map(({ icon: Icon, title, note }) => (
-                  <div key={title}>
-                    <Icon size={17} />
-                    <span>
-                      <strong>{title}</strong>
-                      <small>{note}</small>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            {!preview && (
-              <div className="pd-disclosures">
-                {period && (
-                  <p data-testid="validity-days-preview">
-                    <strong>{period.title}</strong> · {period.hint}
-                  </p>
-                )}
-                {activeOffer?.fixedContentType === 'file' && (
-                  <p data-testid="file-delivery-preview">
-                    文件交付
-                    {activeOffer.deliveryFileSize != null
-                      ? ` · 约 ${formatFileSize(activeOffer.deliveryFileSize)}`
-                      : ''}
-                  </p>
-                )}
-                {!!activeOffer?.deliveryFields?.length && (
-                  <p data-testid="delivery-template-preview">
-                    包含交付字段：{activeOffer.deliveryFields.map((field) => field.label).join('、')}
-                  </p>
-                )}
-                {activeOffer?.autoProvision && (
-                  <p data-testid="auto-provision-disclosure">
-                    交付方式：商家自动开通。下单后将自动发起开通，自动开通中请稍候…如有疑问可咨询客服。
-                  </p>
-                )}
-                <p>平台协助售后与争议处理，不另作先行垫付承诺。</p>
-              </div>
-            )}
-          </div>
-          <div className="pd-purchase-footer">
-            {preview && (
-              <div className="pd-quantity-heading">
-                <h2>购买数量</h2>
-              </div>
-            )}
-            <div className="pd-quantity-row">
-              {preview && (
-                <div className="pd-stepper">
-                  <button
-                    aria-label="减少购买数量"
-                    disabled={quantity <= 1 || soldOut}
-                    onClick={() => setQuantity((n) => n - 1)}
-                  >
-                    <Minus size={15} />
-                  </button>
-                  <output aria-label="购买数量" data-testid="purchase-quantity">
-                    {quantity}
-                  </output>
-                  <button
-                    aria-label="增加购买数量"
-                    disabled={quantity >= 99 || soldOut}
-                    onClick={() => setQuantity((n) => Math.min(99, n + 1))}
-                  >
-                    <Plus size={15} />
-                  </button>
-                </div>
-              )}
-              <span className={`pd-stock ${soldOut ? 'pd-stock-empty' : ''}`} data-testid="product-stock">
-                <i />
-                {soldOut ? '暂时售罄' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
-              </span>
-            </div>
-            <div className="pd-actions" style={!preview ? { gridTemplateColumns: '1fr auto' } : undefined}>
-              <button
-                className="pd-buy"
-                data-testid="desktop-buy-cta"
-                disabled={purchaseDisabled}
-                onClick={buy}
-              >
-                <Zap size={20} />
-                {preview ? '立即购买' : redeemLabel}
-              </button>
-              {preview && (
-                <button disabled={soldOut} onClick={() => addToCart()}>
-                  <ShoppingCart size={19} />
-                  加入购物车
-                </button>
-              )}
-              <FavoriteHeartButton
-                favorite={favorite}
-                onClick={toggleFavorite}
-                showLabel
-                size={19}
-                className={favorite ? 'pd-favorited' : ''}
-              />
-            </div>
-          </div>
-        </section>
+        <DesktopPurchasePanel
+          product={product}
+          preview={preview}
+          merchant={merchant}
+          offers={offers}
+          visibleOffers={visibleOffers}
+          offersExpanded={offersExpanded}
+          collapseThreshold={COLLAPSE_THRESHOLD}
+          selectedOfferId={selectedOfferId}
+          activeOffer={activeOffer}
+          onSelectOffer={onSelectOffer}
+          onToggleOffersExpanded={() => setOffersExpanded((v) => !v)}
+          onOpenCompare={() => setCompareOpen(true)}
+          onOpenShop={() => setShopOpen(true)}
+          onOpenSupport={() => setSupportOpen(true)}
+          onScrollToReviews={() => scrollToSection('reviews')}
+          price={price}
+          soldOut={soldOut}
+          quantity={quantity}
+          onQuantityChange={setQuantity}
+          features={features}
+          favorite={favorite}
+          onToggleFavorite={toggleFavorite}
+          redeemLabel={redeemLabel}
+          purchaseDisabled={purchaseDisabled}
+          onBuy={buy}
+          onAddToCart={() => addToCart()}
+          shortfall={shortfall}
+          stockLabel={stockLabel}
+          stockTitle={stockTitle}
+          sectionRef={purchaseRef}
+        />
       </div>
 
       <MerchantSupportModal

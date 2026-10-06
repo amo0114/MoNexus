@@ -1,23 +1,21 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, Coins, CreditCard, Eye, FileText, Globe, Loader2,
-  Package, Trash2, UserRound, Wrench,
+  ArrowLeft, ArrowRight, CalendarDays, Check, CreditCard, Eye, FileText, Globe, Loader2,
+  Package, UserRound, Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
-import ProductCategorySelect from '../../components/catalog/ProductCategorySelect'
+import { captureFeedbackOwner } from '../../lib/completionFeedback'
+import { showProductPublished } from '../../lib/productPublicationFeedback'
 import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
-import ProductImageUploader from '../../components/merchant/ProductImageUploader'
-import PurchaseFormFieldsEditor, {
+import {
   serializePurchaseFormFields,
   validatePurchaseFormFields,
 } from '../../components/merchant/PurchaseFormFieldsEditor'
-import TemplateAttributeFields from '../../components/catalog/TemplateAttributeFields'
-import ProductDetailsFields from '../../components/catalog/ProductDetailsFields'
 import {
   buildCreateProductV2Request, catalogApi, mapInsertedEditorImageToWriteRef, readinessErrorToIssues,
   type CatalogAdapter,
@@ -42,17 +40,20 @@ import {
 } from '../../types/catalog'
 import type { DeliveryField, DeliveryMode, PurchaseFormField, StockMode } from '../../types/merchant'
 
-import FieldLabel from '../../components/catalog/wizard/FieldLabel'
-import DeliveryFieldsEditor from '../../components/catalog/wizard/DeliveryFieldsEditor'
-import StructuredContentEditor from '../../components/catalog/wizard/StructuredContentEditor'
 import { DELIVERY_FIELDS_MAX, serializeDeliveryFields, serializeStructuredContent, validateStructuredRows } from '../../components/catalog/wizard/deliveryFields'
 import { deliveryModeFor } from '../../components/catalog/wizard/fulfillment'
+import PricingStep from '../../components/catalog/wizard/steps/PricingStep'
+import DeliveryStep from '../../components/catalog/wizard/steps/DeliveryStep'
+import PresentationStep from '../../components/catalog/wizard/steps/PresentationStep'
+import DraftReviewStep from '../../components/catalog/wizard/steps/DraftReviewStep'
+import {
+  DEFAULT_OFFER_NAME,
+  type DeliverySelection,
+  type ExtraOffer,
+  type FixedContentType,
+  type StructuredRequirement,
+} from '../../components/catalog/wizard/steps/wizardStepTypes'
 import { pickFileFromInput } from '../../utils/pickFileFromInput'
-
-const RichTextEditor = lazy(() => import('../../components/catalog/RichTextEditor'))
-
-/** 主规格默认名（与服务端 lib/offers.ts 的 DEFAULT_OFFER_NAME 一致）。 */
-const DEFAULT_OFFER_NAME = '默认规格'
 
 const TEMPLATE_ICONS: Record<TemplateKey, LucideIcon> = {
   redemption_code: CreditCard,
@@ -81,31 +82,6 @@ const DELIVERY_FALLBACK_LABEL: Record<DeliveryMode, string> = {
 }
 
 const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
-
-type FixedContentType = 'text' | 'url' | 'file'
-type StructuredRequirement = FulfillmentRule['requireStructuredDelivery']
-
-/** 附加规格：主规格由定价 + 交付两步的商品级字段构成。 */
-interface ExtraOffer {
-  name: string
-  price: string
-  originalPrice: string
-  deliveryMode: DeliveryMode
-  stockMode: StockMode
-  fixedContent: string
-  fixedContentType: FixedContentType
-  validityDays: string
-  attributes: TemplateAttributes
-  deliveryFields: DeliveryField[]
-  structuredFields: DeliveryField[]
-  structuredValues: Record<string, string>
-}
-
-interface DeliverySelection {
-  deliveryMode: DeliveryMode
-  stockMode: StockMode
-  fixedContentType: FixedContentType
-}
 
 /**
  * 步骤拆分（REQ-CAT-F-003）：目录/规格 → 保存草稿 → 可售量 → 发布。
@@ -199,6 +175,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const [readiness, setReadiness] = useState<PublicationReadiness | null>(null)
   const [readinessLoading, setReadinessLoading] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const publishingRef = useRef(false)
   const [activeViewTab, setActiveViewTab] = useState<'wizard' | 'preview'>('wizard')
 
   function loadTemplates() {
@@ -295,6 +272,108 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
       structuredFields: [],
       structuredValues: {},
     }))
+  }
+
+  /**
+   * Step 1 field writers. Same contract as the step 2/3 writers above:
+   * patch the mirrored WizardForm draft only, no validation and no I/O.
+   */
+  function handleNameChange(name: string) {
+    setForm(prev => ({ ...prev, name }))
+  }
+
+  function handleCategoryIdChange(categoryId: number | null) {
+    setForm(prev => ({ ...prev, categoryId }))
+  }
+
+  function handleDescriptionChange(description: string) {
+    setForm(prev => ({ ...prev, description }))
+  }
+
+  function handleVisibilityChange(visibility: ProductVisibility) {
+    setForm(prev => ({ ...prev, visibility }))
+  }
+
+  function handleRichDescriptionChange(richDescription: string | null) {
+    setForm(prev => ({ ...prev, richDescription }))
+  }
+
+  function handlePriceChange(price: string) {
+    setForm(prev => ({ ...prev, price }))
+  }
+
+  function handleOriginalPriceChange(originalPrice: string) {
+    setForm(prev => ({ ...prev, originalPrice }))
+  }
+
+  function handleValidityDaysChange(validityDays: string) {
+    setForm(prev => ({ ...prev, validityDays }))
+  }
+
+  function handleDeliveryFieldsChange(deliveryFields: DeliveryField[]) {
+    setForm(prev => ({ ...prev, deliveryFields }))
+  }
+
+  function handleStructuredFieldsChange(structuredFields: DeliveryField[]) {
+    setForm(prev => ({ ...prev, structuredFields }))
+  }
+
+  function handleStructuredValuesChange(structuredValues: Record<string, string>) {
+    setForm(prev => ({ ...prev, structuredValues }))
+  }
+
+  function handleFixedContentTypeChange(fixedContentType: FixedContentType) {
+    setForm(prev => ({ ...prev, fixedContentType }))
+  }
+
+  function handleFixedContentChange(fixedContent: string) {
+    setForm(prev => ({ ...prev, fixedContent }))
+  }
+
+  function handleStockModeChange(stockMode: StockMode) {
+    setForm(prev => ({ ...prev, stockMode }))
+  }
+
+  /** D-CAT-05: the mode change coerces the selection, never the category. */
+  function handleDeliveryModeChange(deliveryMode: DeliveryMode) {
+    setForm(prev => ({
+      ...prev,
+      ...coerceDeliverySelection(
+        { ...prev, deliveryMode, stockMode: deliveryMode === 'instant_inventory' ? 'limited' : prev.stockMode },
+        allowedConfigs,
+      ),
+    }))
+  }
+
+  function handleExtraOfferChange(index: number, patch: Partial<ExtraOffer>) {
+    setExtraOffers(prev => prev.map((offer, i) => (i === index ? { ...offer, ...patch } : offer)))
+  }
+
+  function handleExtraOfferDeliveryModeChange(index: number, deliveryMode: DeliveryMode) {
+    setExtraOffers(prev => prev.map((offer, i) => {
+      if (i !== index) return offer
+      return {
+        ...offer,
+        ...coerceDeliverySelection(
+          { ...offer, deliveryMode, stockMode: deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode },
+          allowedConfigs,
+        ),
+      }
+    }))
+  }
+
+  function handleExtraOfferRemove(index: number) {
+    setExtraOffers(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function handleAddExtraOffer() {
+    setExtraOffers(prev => [...prev, createEmptyExtraOffer(form)])
+  }
+
+  function structuredRequirementForOffer(offer: ExtraOffer): StructuredRequirement {
+    return selectedTemplate
+      ? structuredRequirementFor(selectedTemplate, productAttributes, offer.deliveryMode)
+      : 'none'
   }
 
   function validateStep(current: number): string | null {
@@ -540,19 +619,23 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
 
   async function handlePublish() {
     const id = draft?.id
-    if (id == null) return
+    if (id == null || publishingRef.current) return
+    const isCurrent = captureFeedbackOwner()
+    publishingRef.current = true
     setPublishing(true)
     try {
-      await adapter.publishProduct(id)
-      showToast('商品发布成功')
-      navigate('/merchant')
+      const result = await adapter.publishProduct(id)
+      if (!isCurrent()) return
+      if (showProductPublished({ id, name: form.name.trim() }, result, navigate)) navigate('/merchant')
     } catch (err) {
+      if (!isCurrent()) return
       const issues = readinessErrorToIssues(err)
       if (issues.length > 0) {
         setReadiness({ ready: false, productId: id, issues })
       }
       showToast(getErrorMessage(err, '发布失败，请先解决检查清单中的问题'), 'error')
     } finally {
+      publishingRef.current = false
       setPublishing(false)
     }
   }
@@ -764,496 +847,98 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
           </div>
         )}
 
+
         {step === 1 && (
-          <div className="space-y-5" data-testid="wizard-step-display">
-            <div>
-              <FieldLabel required>商品名称</FieldLabel>
-              <input type="text" className="input" placeholder="输入吸引人的商品名称" value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })} data-testid="wizard-name" />
-            </div>
-            <ProductCategorySelect
-              categories={categories}
-              value={form.categoryId}
-              onChange={(categoryId) => setForm({ ...form, categoryId })}
-              disabled={busy}
-            />
-            <ProductImageUploader
-              images={images}
-              imageKeys={imageKeys}
-              onChange={setImages}
-              onImageKeysChange={setImageKeys}
-              disabled={busy}
-            />
-            <div>
-              <FieldLabel>一句话简介</FieldLabel>
-              <textarea className="input min-h-[60px] resize-y" placeholder="简明扼要地概括商品亮点..."
-                value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </div>
-            <div data-testid="wizard-visibility">
-              <FieldLabel required>浏览可见性</FieldLabel>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                  form.visibility === PRODUCT_VISIBILITY.PUBLIC
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                    : 'border-[var(--color-border)]'
-                }`}>
-                  <input type="radio" name="wizardVisibility" value={PRODUCT_VISIBILITY.PUBLIC}
-                    checked={form.visibility === PRODUCT_VISIBILITY.PUBLIC}
-                    onChange={() => setForm({ ...form, visibility: PRODUCT_VISIBILITY.PUBLIC })}
-                    className="w-4 h-4 mt-0.5" data-testid="wizard-visibility-public" />
-                  <span>游客可浏览商品信息</span>
-                </label>
-                <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                  form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                    : 'border-[var(--color-border)]'
-                }`}>
-                  <input type="radio" name="wizardVisibility" value={PRODUCT_VISIBILITY.MEMBERS_ONLY}
-                    checked={form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY}
-                    onChange={() => setForm({ ...form, visibility: PRODUCT_VISIBILITY.MEMBERS_ONLY })}
-                    className="w-4 h-4 mt-0.5" data-testid="wizard-visibility-members_only" />
-                  <span>仅登录后可浏览</span>
-                </label>
-              </div>
-              <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">兑换始终需要登录</p>
-            </div>
-            <div>
-              <FieldLabel>图文详情</FieldLabel>
-              <Suspense fallback={
-                <div className="input min-h-[140px] flex items-center text-sm text-[var(--color-text-muted)]">
-                  正在加载图文编辑器…
-                </div>
-              }>
-                <RichTextEditor
-                  value={form.richDescription}
-                  onChange={(html) => setForm(prev => ({ ...prev, richDescription: html }))}
-                  onInsertImage={handleInsertDescriptionImage}
-                  placeholder="详细描述商品特性、使用教程、售后承诺等..."
-                  disabled={busy}
-                />
-              </Suspense>
-            </div>
-            {selectedTemplate && (
-              <div data-testid="wizard-product-attributes">
-                <FieldLabel>商品参数</FieldLabel>
-                <TemplateAttributeFields
-                  template={selectedTemplate}
-                  target="product"
-                  value={productAttributes}
-                  onChange={setProductAttributes}
-                  disabled={busy}
-                  mode="draft"
-                />
-              </div>
-            )}
-            <ProductDetailsFields
-              value={productDetails}
-              onChange={setProductDetails}
-              disabled={busy}
-              mode="draft"
-            />
-            <div data-testid="wizard-purchase-form">
-              <FieldLabel>购买资料</FieldLabel>
-              <PurchaseFormFieldsEditor fields={purchaseForm} onChange={setPurchaseForm} />
-            </div>
-          </div>
+          <PresentationStep
+            name={form.name}
+            onNameChange={handleNameChange}
+            categories={categories}
+            categoryId={form.categoryId}
+            onCategoryIdChange={handleCategoryIdChange}
+            images={images}
+            imageKeys={imageKeys}
+            onImagesChange={setImages}
+            onImageKeysChange={setImageKeys}
+            description={form.description}
+            onDescriptionChange={handleDescriptionChange}
+            visibility={form.visibility}
+            onVisibilityChange={handleVisibilityChange}
+            richDescription={form.richDescription}
+            onRichDescriptionChange={handleRichDescriptionChange}
+            onInsertDescriptionImage={handleInsertDescriptionImage}
+            template={selectedTemplate}
+            productAttributes={productAttributes}
+            onProductAttributesChange={setProductAttributes}
+            productDetails={productDetails}
+            onProductDetailsChange={setProductDetails}
+            purchaseForm={purchaseForm}
+            onPurchaseFormChange={setPurchaseForm}
+            disabled={busy}
+          />
         )}
 
         {step === 2 && (
-          <div className="space-y-6">
-            <div className="space-y-5 max-w-sm">
-              <div>
-                <FieldLabel required>主规格名称</FieldLabel>
-                <input type="text" maxLength={50} className="input" placeholder={DEFAULT_OFFER_NAME}
-                  value={primaryOfferName} onChange={(e) => setPrimaryOfferName(e.target.value)} data-testid="wizard-primary-offer-name" />
-                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
-                  单规格商品保持「{DEFAULT_OFFER_NAME}」即可，买家端不会显示规格选择器。
-                </p>
-              </div>
-              <div>
-                <FieldLabel required>销售价格（积分）</FieldLabel>
-                <input type="number" step="1" min="1" className="input font-mono text-lg" placeholder="0"
-                  value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} data-testid="wizard-price" />
-              </div>
-              <div>
-                <FieldLabel>划线原价 - 可选</FieldLabel>
-                <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
-                  value={form.originalPrice} onChange={(e) => setForm({ ...form, originalPrice: e.target.value })} />
-              </div>
-              <div>
-                <FieldLabel>有效期（天）- 可选</FieldLabel>
-                <input type="number" step="1" min="1" max="3650" className="input font-mono" placeholder="留空为永久"
-                  value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: e.target.value })}
-                  data-testid="wizard-validity-days" />
-                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">留空为永久有效；改动仅影响新订单</p>
-              </div>
-            </div>
-
-            {selectedTemplate && selectedTemplate.ui.offerOrder.length > 0 && (
-              <div data-testid="wizard-primary-offer-attributes">
-                <FieldLabel>主规格参数</FieldLabel>
-                <TemplateAttributeFields
-                  template={selectedTemplate}
-                  target="offer"
-                  value={primaryOfferAttributes}
-                  onChange={setPrimaryOfferAttributes}
-                  disabled={busy}
-                  mode="draft"
-                />
-              </div>
-            )}
-
-            <div className="pt-2 border-t border-[var(--color-border)]" data-testid="wizard-extra-offers">
-              <div className="flex items-center justify-between mb-1">
-                <FieldLabel>附加规格 - 可选</FieldLabel>
-                <span className="text-xs text-[var(--color-text-muted)]">共 {extraOffers.length + 1} 个规格</span>
-              </div>
-              <p className="text-xs text-[var(--color-text-muted)] mb-4">
-                需要「月卡／季卡」「128G／256G」这类多规格时在此追加；每个规格有独立的价格与交付方式。
-                规格名额一律在保存草稿后的「可售量」步骤独立调整。
-              </p>
-
-              <div className="space-y-4">
-                {extraOffers.map((offer, index) => {
-                  const update = (patch: Partial<ExtraOffer>) =>
-                    setExtraOffers(prev => prev.map((o, i) => (i === index ? { ...o, ...patch } : o)))
-                  const isInventory = offer.deliveryMode === 'instant_inventory'
-                  const isFixed = offer.deliveryMode === 'instant_fixed'
-                  const extraRequirement = selectedTemplate
-                    ? structuredRequirementFor(selectedTemplate, productAttributes, offer.deliveryMode)
-                    : 'none'
-                  const showStructured = extraRequirement === 'fixed_fields'
-                  const showDeliveryFields = extraRequirement === 'inventory_fields'
-                  const showFixedContent = isFixed && offer.fixedContentType !== 'file' && !showStructured
-                  return (
-                    <div key={index} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4"
-                      data-testid={`wizard-extra-offer-${index}`}>
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-sm font-bold text-[var(--color-text)]">附加规格 {index + 1}</span>
-                        <button type="button" aria-label="删除该规格"
-                          onClick={() => setExtraOffers(prev => prev.filter((_, i) => i !== index))}
-                          className="icon-btn p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] cursor-pointer"
-                          data-testid={`wizard-extra-offer-remove-${index}`}>
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div className="sm:col-span-2">
-                          <FieldLabel required>规格名称</FieldLabel>
-                          <input type="text" maxLength={50} className="input" placeholder="如：季卡 / 256G / 美区"
-                            value={offer.name} onChange={(e) => update({ name: e.target.value })} />
-                        </div>
-                        <div>
-                          <FieldLabel required>售价（积分）</FieldLabel>
-                          <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
-                            value={offer.price} onChange={(e) => update({ price: e.target.value })} />
-                        </div>
-                        <div>
-                          <FieldLabel>划线原价 - 可选</FieldLabel>
-                          <input type="number" step="1" min="1" className="input font-mono" placeholder="0"
-                            value={offer.originalPrice} onChange={(e) => update({ originalPrice: e.target.value })} />
-                        </div>
-                        <div>
-                          <FieldLabel>有效期（天）- 可选</FieldLabel>
-                          <input type="number" step="1" min="1" max="3650" className="input font-mono" placeholder="留空为永久"
-                            value={offer.validityDays} onChange={(e) => update({ validityDays: e.target.value })} />
-                          <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">留空为永久有效；改动仅影响新订单</p>
-                        </div>
-                        <div>
-                          <FieldLabel required>交付方式</FieldLabel>
-                          <select className="input appearance-none cursor-pointer" value={offer.deliveryMode}
-                            onChange={(e) => {
-                              const deliveryMode = e.target.value as DeliveryMode
-                              const coerced = coerceDeliverySelection(
-                                { ...offer, deliveryMode, stockMode: deliveryMode === 'instant_inventory' ? 'limited' : offer.stockMode },
-                                allowedConfigs,
-                              )
-                              update(coerced)
-                            }}>
-                            {deliveryModeOptions.map(option => (
-                              <option key={option.value} value={option.value}>{option.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        {!isInventory && (
-                          <div>
-                            <FieldLabel required>名额模式</FieldLabel>
-                            <select className="input appearance-none cursor-pointer" value={offer.stockMode}
-                              onChange={(e) => update({ stockMode: e.target.value as StockMode })}>
-                              <option value="unlimited">不限量</option>
-                              <option value="limited">限量</option>
-                            </select>
-                          </div>
-                        )}
-                        {isFixed && allowedFixedTypes.length > 0 && (
-                          <div>
-                            <FieldLabel required>内容类型</FieldLabel>
-                            <select className="input appearance-none cursor-pointer" value={offer.fixedContentType}
-                              onChange={(e) => update({ fixedContentType: e.target.value as FixedContentType })}>
-                              {allowedFixedTypes.map(type => (
-                                <option key={type} value={type}>
-                                  {type === 'url' ? '链接' : type === 'file' ? '文件' : '文本'}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-                        {showFixedContent && (
-                          <div className="sm:col-span-2">
-                            <FieldLabel required>固定交付内容</FieldLabel>
-                            <textarea className="input min-h-[72px] resize-y" maxLength={5000}
-                              value={offer.fixedContent} onChange={(e) => update({ fixedContent: e.target.value })} />
-                          </div>
-                        )}
-                        {showStructured && (
-                          <div className="sm:col-span-2">
-                            <StructuredContentEditor variant="create"
-                              fields={offer.structuredFields}
-                              values={offer.structuredValues}
-                              onFieldsChange={(structuredFields) => update({ structuredFields })}
-                              onValuesChange={(structuredValues) => update({ structuredValues })}
-                              disabled={busy}
-                              testIdPrefix={`wizard-extra-offer-${index}-structured`}
-                            />
-                          </div>
-                        )}
-                        {showDeliveryFields && (
-                          <div className="sm:col-span-2">
-                            <DeliveryFieldsEditor variant="create"
-                              fields={offer.deliveryFields}
-                              onChange={(deliveryFields) => update({ deliveryFields })}
-                              disabled={busy}
-                              testIdPrefix={`wizard-extra-offer-${index}-delivery`}
-                            />
-                          </div>
-                        )}
-                        {isFixed && offer.fixedContentType === 'file' && (
-                          <p className="sm:col-span-2 text-xs text-[var(--color-text-muted)]">
-                            草稿允许暂不绑定文件；发布前再在编辑中挂载交付文件。
-                          </p>
-                        )}
-                        {isInventory && !showDeliveryFields && (
-                          <p className="sm:col-span-2 text-xs text-[var(--color-text-muted)]">
-                            该规格的卡密在商品创建后通过「可售量」步骤按规格导入交付库存。
-                          </p>
-                        )}
-                      </div>
-                      {selectedTemplate && selectedTemplate.ui.offerOrder.length > 0 && (
-                        <div className="mt-4 pt-3 border-t border-[var(--color-border)]">
-                          <TemplateAttributeFields
-                            template={selectedTemplate}
-                            target="offer"
-                            value={offer.attributes}
-                            onChange={(attributes) => update({ attributes })}
-                            disabled={busy}
-                            mode="draft"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-
-              <button type="button" onClick={() => setExtraOffers(prev => [...prev, createEmptyExtraOffer(form)])}
-                className="btn-secondary w-full py-2 mt-4 text-sm" data-testid="wizard-extra-offer-add">
-                + 添加规格
-              </button>
-            </div>
-          </div>
+          <PricingStep
+            primaryOfferName={primaryOfferName}
+            onPrimaryOfferNameChange={setPrimaryOfferName}
+            price={form.price}
+            onPriceChange={handlePriceChange}
+            originalPrice={form.originalPrice}
+            onOriginalPriceChange={handleOriginalPriceChange}
+            validityDays={form.validityDays}
+            onValidityDaysChange={handleValidityDaysChange}
+            template={selectedTemplate}
+            primaryOfferAttributes={primaryOfferAttributes}
+            onPrimaryOfferAttributesChange={setPrimaryOfferAttributes}
+            extraOffers={extraOffers}
+            onExtraOfferChange={handleExtraOfferChange}
+            onExtraOfferDeliveryModeChange={handleExtraOfferDeliveryModeChange}
+            onExtraOfferRemove={handleExtraOfferRemove}
+            onAddExtraOffer={handleAddExtraOffer}
+            requirementFor={structuredRequirementForOffer}
+            allowedFixedTypes={allowedFixedTypes}
+            deliveryModeOptions={deliveryModeOptions}
+            disabled={busy}
+          />
         )}
 
         {step === 3 && (
-          <div className="space-y-5">
-            <div>
-              <FieldLabel required>交付方式</FieldLabel>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {deliveryModeOptions.map(mode => (
-                  <label key={mode.value}
-                    className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                      form.deliveryMode === mode.value
-                        ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                        : 'border-[var(--color-border)]'
-                    }`}>
-                    <input type="radio" name="wizardDeliveryMode" value={mode.value}
-                      checked={form.deliveryMode === mode.value}
-                      onChange={(e) => {
-                        const deliveryMode = e.target.value as DeliveryMode
-                        setForm({
-                          ...form,
-                          ...coerceDeliverySelection(
-                            { ...form, deliveryMode, stockMode: deliveryMode === 'instant_inventory' ? 'limited' : form.stockMode },
-                            allowedConfigs,
-                          ),
-                        })
-                      }}
-                      className="w-4 h-4" />
-                    {mode.label}
-                  </label>
-                ))}
-              </div>
-            </div>
-
-            {form.deliveryMode === 'instant_inventory' && (
-              <div className="rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 px-4 py-3 text-xs text-[var(--color-text-muted)]">
-                即时库存商品按「一个交付单元对应一位买家」管理。保存草稿后请在「可售量」步骤为每个规格导入账号、卡密、邀请码等独立交付内容。
-              </div>
-            )}
-
-            {primaryStructuredRequirement === 'inventory_fields' && (
-              <DeliveryFieldsEditor variant="create"
-                fields={form.deliveryFields}
-                onChange={(deliveryFields) => setForm(prev => ({ ...prev, deliveryFields }))}
-                disabled={busy}
-                testIdPrefix="wizard-delivery"
-              />
-            )}
-
-            {form.deliveryMode === 'instant_fixed' && (
-              <div className="space-y-4 border-t border-[var(--color-border)] pt-4">
-                {allowedFixedTypes.length > 0 && primaryStructuredRequirement !== 'fixed_fields' && (
-                  <div>
-                    <FieldLabel required>交付内容类型</FieldLabel>
-                    <div className="flex gap-4 items-center flex-wrap">
-                      {allowedFixedTypes.map(value => (
-                        <label key={value} className="flex items-center gap-2 cursor-pointer text-sm">
-                          <input type="radio" name="wizardFixedContentType" value={value}
-                            checked={form.fixedContentType === value}
-                            onChange={() => setForm({ ...form, fixedContentType: value })}
-                            className="w-4 h-4" />
-                          {value === 'url' ? '外部链接' : value === 'file' ? '文件' : '固定文本'}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {form.fixedContentType === 'file' ? (
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    草稿允许暂不绑定文件；发布前再在编辑中挂载交付文件。
-                  </p>
-                ) : primaryStructuredRequirement === 'fixed_fields' ? (
-                  <StructuredContentEditor variant="create"
-                    fields={form.structuredFields}
-                    values={form.structuredValues}
-                    onFieldsChange={(structuredFields) => setForm(prev => ({ ...prev, structuredFields }))}
-                    onValuesChange={(structuredValues) => setForm(prev => ({ ...prev, structuredValues }))}
-                    disabled={busy}
-                    testIdPrefix="wizard-structured"
-                  />
-                ) : (
-                  <div>
-                    <FieldLabel required>交付内容（每位买家收到同一份）</FieldLabel>
-                    {form.fixedContentType === 'url' ? (
-                      <input type="url" className="input font-mono" placeholder="https://example.com/invite"
-                        value={form.fixedContent} onChange={(e) => setForm({ ...form, fixedContent: e.target.value })}
-                        data-testid="fixed-content-input" />
-                    ) : (
-                      <textarea className="input min-h-[80px] resize-y font-mono"
-                        placeholder="买家付款后立即收到的内容..."
-                        value={form.fixedContent} onChange={(e) => setForm({ ...form, fixedContent: e.target.value })}
-                        data-testid="fixed-content-input" />
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {form.deliveryMode !== 'instant_inventory' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div>
-                  <FieldLabel required>{availabilityLabels.mode}</FieldLabel>
-                  <select className="input appearance-none cursor-pointer" value={form.stockMode}
-                    onChange={(e) => setForm({ ...form, stockMode: e.target.value as StockMode })} data-testid="stock-mode-select">
-                    <option value="unlimited">{availabilityLabels.unlimited}</option>
-                    <option value="limited">{availabilityLabels.limited}</option>
-                  </select>
-                </div>
-                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-2.5 flex items-center">
-                  <p className="text-xs text-[var(--color-text-muted)]" data-testid="wizard-initial-stock-hint">
-                    新草稿初始名额为 0；保存草稿后可在「可售量」步骤独立调整。
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
+          <DeliveryStep
+            deliveryMode={form.deliveryMode}
+            onDeliveryModeChange={handleDeliveryModeChange}
+            requirement={primaryStructuredRequirement}
+            allowedFixedTypes={allowedFixedTypes}
+            deliveryModeOptions={deliveryModeOptions}
+            deliveryFields={form.deliveryFields}
+            onDeliveryFieldsChange={handleDeliveryFieldsChange}
+            structuredFields={form.structuredFields}
+            structuredValues={form.structuredValues}
+            onStructuredFieldsChange={handleStructuredFieldsChange}
+            onStructuredValuesChange={handleStructuredValuesChange}
+            fixedContentType={form.fixedContentType}
+            onFixedContentTypeChange={handleFixedContentTypeChange}
+            fixedContent={form.fixedContent}
+            onFixedContentChange={handleFixedContentChange}
+            stockMode={form.stockMode}
+            onStockModeChange={handleStockModeChange}
+            availabilityLabels={availabilityLabels}
+            disabled={busy}
+          />
         )}
 
-        {step === 4 && (
-          <div className="space-y-8" data-testid="wizard-step-confirm">
-            <div>
-              <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-3">确认草稿内容</h2>
-              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4 text-sm">
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品名称</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]" data-testid="wizard-confirm-name">{form.name || '（未填写）'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品分类</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]" data-testid="wizard-confirm-category">
-                    {selectedCategory ? `${selectedCategory.label}` : '（未选择）'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品形态</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{selectedTemplate?.label ?? templateKey ?? '（未选择）'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">浏览可见性</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">
-                    {form.visibility === PRODUCT_VISIBILITY.PUBLIC ? '游客可浏览商品信息' : '仅登录后可浏览'}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">价格</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)] font-mono" data-testid="wizard-confirm-price">{form.price || '0'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">主规格</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{primaryOfferName.trim() || DEFAULT_OFFER_NAME}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">交付方式</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{form.deliveryMode}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">规格数</dt>
-                  <dd className="mt-0.5 text-[var(--color-text)]">{extraOffers.length + 1} 个</dd>
-                </div>
-              </dl>
-              <p className="mt-3 text-xs text-[var(--color-text-muted)]">
-                保存为草稿后不会在商店展示，可继续进入「可售量」配置与「发布」检查。兑换始终需要登录。
-              </p>
-            </div>
 
-            <div>
-              <h2 className="font-heading text-lg font-bold text-[var(--color-text)] mb-3">买家看到的确认弹窗</h2>
-              <div className="max-w-sm mx-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-background)] p-5 pointer-events-none select-none" data-testid="buyer-preview">
-                <div className="font-bold text-lg mb-1">确认兑换</div>
-                <div className="bg-[var(--color-surface)] rounded-lg p-4 my-3 border border-[var(--color-border)]">
-                  <div className="font-bold text-sm line-clamp-1">{form.name || '（商品名称）'}</div>
-                  <div className="flex justify-between items-center text-sm mt-2 pt-2 border-t border-dashed border-[var(--color-border)]">
-                    <span className="text-[var(--color-text-muted)]">
-                      {form.deliveryMode === 'manual_service' ? '本次冻结积分' : '本次支付积分'}
-                    </span>
-                    <span className="font-bold text-[var(--color-cta)] flex items-center gap-1">
-                      <Coins className="w-4 h-4" /> {form.price || '0'}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <span className="btn-secondary flex-1 px-0 text-center opacity-70">再想想</span>
-                  <span className="btn-cta flex-1 px-0 text-center opacity-70">确认支付</span>
-                </div>
-              </div>
-              {safePreviewHtml && (
-                <details className="mt-4">
-                  <summary className="text-sm text-[var(--color-text-muted)] cursor-pointer">图文详情预览</summary>
-                  <div className="mt-2 p-4 rounded-lg border border-[var(--color-border)] prose prose-neutral dark:prose-invert max-w-none text-sm"
-                    dangerouslySetInnerHTML={{ __html: safePreviewHtml }} />
-                </details>
-              )}
-            </div>
-          </div>
+        {step === 4 && (
+          <DraftReviewStep
+            name={form.name}
+            categoryLabel={selectedCategory?.label ?? null}
+            templateName={selectedTemplate?.label ?? templateKey ?? null}
+            visibility={form.visibility}
+            price={form.price}
+            deliveryMode={form.deliveryMode}
+            primaryOfferName={primaryOfferName}
+            extraOfferCount={extraOffers.length}
+            safePreviewHtml={safePreviewHtml}
+          />
         )}
 
         {step === 5 && (

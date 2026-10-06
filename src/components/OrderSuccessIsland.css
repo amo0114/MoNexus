@@ -16,7 +16,7 @@
 
 @media (max-width: 767px) {
   /* The document never moves when chrome or an order changes state. */
-  .mobile-navbar-chrome:not([data-chrome='search']) {
+  .mobile-navbar-chrome {
     height: calc(65px + var(--safe-top));
     padding-top: var(--safe-top) !important;
     padding-bottom: 0;
@@ -80,6 +80,7 @@
   }
 
   .navbar-shell:has(.order-island-panel, .favorite-island-feedback) { overflow: hidden; }
+  .navbar-shell[data-action-open='true'] { overflow: visible; }
 
   /* A separate glass surface stays behind the text through the whole morph.
      Blur is constant; only its opacity changes, including on the way out. */

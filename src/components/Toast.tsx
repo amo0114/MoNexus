@@ -225,7 +225,7 @@ export default function Toast() {
     // ≥md：右下角，最新贴屏幕底缘。
     <div
       className="fixed z-[80] flex pointer-events-none
-        top-[calc(max(var(--navbar-current-h),var(--order-island-bottom,0px))+0.5rem)] left-1/2 -translate-x-1/2
+        top-[calc(max(var(--navbar-current-h),var(--order-island-bottom,0px),var(--search-island-bottom,0px),var(--action-island-bottom,0px))+0.5rem)] left-1/2 -translate-x-1/2
         w-[calc(100vw-2rem)] max-w-[26rem] flex-col-reverse items-center gap-2
         md:top-auto md:bottom-6 md:right-6 md:left-auto md:translate-x-0
         md:w-[22rem] md:max-w-none md:flex-col md:items-end"

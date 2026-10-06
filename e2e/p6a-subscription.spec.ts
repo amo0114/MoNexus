@@ -92,6 +92,7 @@ test.describe.serial('P6a subscription', () => {
   })
 
   test('renewal creates a linked order and extends expiry from the old deadline', async ({ page, request }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/profile')
     const orderCard = page
@@ -105,8 +106,10 @@ test.describe.serial('P6a subscription', () => {
     // 续费结算前明示当前到期（P6a + 续费反馈）
     await expect(page.getByTestId('renew-current-expiry')).toBeVisible({ timeout: 10_000 })
     await page.getByRole('button', { name: '确认支付' }).click()
-    // 续费成功由 SuccessModal 标题承载（不再 toast「续费成功」）
-    await expect(page.getByTestId('success-modal-title')).toContainText('续费成功', { timeout: 10_000 })
+    // Mobile confirmation closes before the accepted order becomes actionable.
+    await expect(page.getByTestId('order-success-island')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('续费订单已交付', { exact: true })).toBeVisible()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
 
     // 顺延断言：新单 renewalOfOrderId 指向原单，expiresAt = 原到期 + 30 天。
     const buyerToken = await tokenOf(request, SEED_ACCOUNTS.user)
@@ -117,6 +120,9 @@ test.describe.serial('P6a subscription', () => {
       .filter(o => o.product?.id === state.productId)
       .sort((a, b) => b.id - a.id)[0]
     expect(renewal.id).not.toBe(state.orderId)
+    await page.getByTestId('order-success-island').click()
+    await expect(page).toHaveURL(new RegExp(`/orders\\?focus=${renewal.id}$`))
+    await expect(page.getByTestId('order-detail-status')).toHaveAttribute('data-order-status', 'delivered')
 
     const detail = await request.get(`${API_BASE}/api/orders/${renewal.id}`, {
       headers: { Authorization: `Bearer ${buyerToken}` },

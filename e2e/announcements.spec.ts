@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, dismissMobileEmailReminder, loginAs, loginAsApi } from './helpers'
 
 /**
  * Announcement center: admin CRUD plus user-facing delivery states.
@@ -108,6 +108,7 @@ test.describe('M3-S3 announcements', () => {
       headers: { Authorization: `Bearer ${userToken}` },
     })
     await loginAs(page, SEED_ACCOUNTS.user)
+    await dismissMobileEmailReminder(page)
 
     const { accessToken: adminToken } = await loginAsApi(request, SEED_ACCOUNTS.admin)
 

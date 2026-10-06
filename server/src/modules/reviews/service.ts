@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
 import { maskEmail } from '../../lib/email.js'
+import { resolveUserNickname } from '../../lib/defaultNickname.js'
 import { badRequest, notFound, conflict } from '../../lib/httpError.js'
 import {
   buildProductReviewsCacheKey,
@@ -15,10 +16,6 @@ const EDIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 // 实现已迁到 lib/email.ts（邮件运营面复用同一脱敏形态）；此处 re-export
 // 保持既有引用点不变。
 export { maskEmail }
-
-function displayNameFor(user: { nickname: string | null; email: string }) {
-  return user.nickname?.trim() || maskEmail(user.email)
-}
 
 // 安全红线：公开接口响应字段白名单，绝不含 email 原文 / userId / orderId。
 export async function listProductReviews(
@@ -75,7 +72,7 @@ async function listProductReviewsFromDb(productId: number, page = 1, pageSize = 
         comment: true,
         editedAt: true,
         createdAt: true,
-        user: { select: { nickname: true, email: true } },
+        user: { select: { id: true, nickname: true } },
       },
     }),
   ])
@@ -87,7 +84,7 @@ async function listProductReviewsFromDb(productId: number, page = 1, pageSize = 
       comment: row.comment,
       editedAt: row.editedAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
-      displayName: displayNameFor(row.user),
+      displayName: resolveUserNickname(row.user),
     })),
     total,
     page,

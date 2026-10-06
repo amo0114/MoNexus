@@ -76,7 +76,7 @@ export default function MobileNavDrawer() {
               onClick={() => go(user ? '/profile' : '/login')}
               className="w-full flex items-center gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)]/35 transition-colors cursor-pointer text-left"
             >
-              <UserAvatar url={user?.avatarUrl} name={displayName} size={40} className="shadow-md" />
+              <UserAvatar userId={user?.id} url={user?.avatarUrl} name={displayName} size={40} className="shadow-md" />
               <div className="min-w-0">
                 <div className="font-bold text-sm text-[var(--color-text)] truncate">{displayName}</div>
                 <div className="text-xs text-[var(--color-text-muted)]">{user ? '查看个人中心' : '登录后查看积分与订单'}</div>

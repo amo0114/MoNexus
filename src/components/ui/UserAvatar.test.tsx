@@ -4,6 +4,20 @@ import UserAvatar from './UserAvatar'
 import { AVATAR_PRESETS } from '../../lib/avatarPresets'
 
 describe('UserAvatar', () => {
+  it('keeps the ID-based default through rename, custom selection, and clear', () => {
+    const { container, rerender } = render(<UserAvatar userId={25} name="原昵称" />)
+    const original = container.querySelector('img')!.getAttribute('src')
+    expect(original).toBe(AVATAR_PRESETS[0].url)
+    rerender(<UserAvatar userId={25} name="新昵称" />)
+    expect(container.querySelector('img')).toHaveAttribute('src', original)
+    rerender(<UserAvatar userId={25} name="新昵称" url="https://files.example/avatar.jpg" />)
+    expect(container.querySelector('img')).toHaveAttribute('src', 'https://files.example/avatar.jpg')
+    rerender(<UserAvatar userId={25} name="新昵称" url={null} />)
+    expect(container.querySelector('img')).toHaveAttribute('src', original)
+    rerender(<UserAvatar userId={26} name="新昵称" />)
+    expect(container.querySelector('img')).toHaveAttribute('src', AVATAR_PRESETS[1].url)
+  })
+
   it('falls back on a broken image and loads the next selected URL', () => {
     const a = AVATAR_PRESETS[0]
     const { container, rerender } = render(<UserAvatar url={a.url} name="明月" size={44} />)

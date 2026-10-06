@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { describe, it, expect } from 'vitest'
-import { AVATAR_PRESETS, avatarSrcSet } from './avatarPresets'
+import { AVATAR_PRESETS, avatarSrcSet, getDefaultAvatarPreset } from './avatarPresets'
+import { resolveUserAvatarUrl } from '../../server/src/modules/auth/avatarPresets'
 
 describe('released avatar contract', () => {
   it('ships the approved roster and every backend-accepted URL as an immutable image', () => {
@@ -10,6 +11,9 @@ describe('released avatar contract', () => {
     expect(AVATAR_PRESETS).toHaveLength(24)
     expect(new Set(AVATAR_PRESETS.map((a) => a.id)).size).toBe(24)
     expect(AVATAR_PRESETS.map((a) => a.url)).toEqual(backendUrls)
+    for (const id of [1, 7, 24, 25, 101, 2_000_000]) {
+      expect(getDefaultAvatarPreset(id).url).toBe(resolveUserAvatarUrl({ id, avatarUrl: null }))
+    }
     for (const faction of ['wei', 'shu', 'wu']) expect(AVATAR_PRESETS.filter((a) => a.faction === faction)).toHaveLength(8)
     expect(AVATAR_PRESETS.map((a) => a.id)).toEqual(expect.arrayContaining(['wei-guo-jia', 'wei-xun-yu', 'wu-zhou-tai']))
     expect(AVATAR_PRESETS.some((a) => ['wei-cao-pi', 'wu-sun-jian'].includes(a.id))).toBe(false)

@@ -1,7 +1,7 @@
 import { Coins, Crown } from 'lucide-react'
 import type { LeaderboardEntry } from '../../api/leaderboard'
 import { fmtPoints } from './format'
-import { initialOf } from './LetterAvatar'
+import UserAvatar from '../../components/ui/UserAvatar'
 
 type Medal = 1 | 2 | 3
 
@@ -59,7 +59,7 @@ function PodiumSpot({
             className={`podium-ring-face ${first ? 'text-[26px] lg:text-[30px]' : 'text-[21px] lg:text-2xl'}`}
             aria-hidden="true"
           >
-            {initialOf(entry.displayName)}
+            <UserAvatar url={entry.avatarUrl} name={entry.displayName} size={first ? 88 : 72} className="!w-full !h-full" />
           </span>
         </div>
         <span className="podium-rank-badge" style={BADGE_STYLE[medal]} aria-hidden="true">

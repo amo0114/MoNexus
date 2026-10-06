@@ -1,30 +1,8 @@
-import {
-  useState,
-  useEffect,
-  useMemo,
-  useRef,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent,
-} from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import {
-  ArrowLeft,
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  Coins,
-  FileText,
-  Headphones,
-  Heart,
-  Store,
-  ShieldCheck,
-  Info,
-  Star,
-  ZoomIn,
-  Zap,
-} from 'lucide-react'
+import { Heart, ShieldCheck, Info, Zap } from 'lucide-react'
+import PointCoin from '../components/ui/PointCoin'
 import api from '../api/client'
 import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
@@ -37,29 +15,25 @@ import { useProductFavorite } from '../hooks/useProductFavorite'
 import MerchantSupportModal from '../components/catalog/MerchantSupportModal'
 import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
-import { formatFileSize } from '../utils/formatFileSize'
-import EmptyState from '../components/ui/EmptyState'
-import ProductMediaFrame from '../components/ui/ProductMediaFrame'
 import ProductImageLightbox from '../components/ProductImageLightbox'
 import { getProductReviews, type ReviewItem } from '../api/reviews'
-import StarRating from '../components/ui/StarRating'
 import { useIsMobileViewport, useIsDesktopViewport } from '../hooks/useMediaQuery'
 import RichTextHtml, { sanitizeRichTextHtml } from '../components/catalog/RichTextHtml'
+import ProductDetailGallery from '../components/catalog/productDetail/ProductDetailGallery'
+import ProductReviewList from '../components/catalog/productDetail/ProductReviewList'
 import ProductSharePanel, { ProductShareButton } from '../components/catalog/ProductSharePanel'
 import ProductSpecSections, {
   listVisibleSpecSections,
   mergeProductOfferAttributes,
   titlesFromTemplate,
 } from '../components/catalog/ProductSpecSections'
-import ProductOfferSelector, { isOfferSoldOut } from '../components/catalog/ProductOfferSelector'
+import { isOfferSoldOut } from '../components/catalog/ProductOfferSelector'
 import type { Offer } from '../types/merchant'
 import type { MerchandisingProjection } from '../types/merchandising'
 import type { ProductDetails, ProductTemplateDefinition, TemplateAttributes } from '../types/catalog'
-import { offerPeriodDetailNote } from '../utils/offerPeriodDisplay'
 import ProductDetailDesktop from '../components/catalog/ProductDetailDesktop'
 import ProductDetailMobile from '../components/catalog/ProductDetailMobile'
-import ProductExchangeSummary from '../components/catalog/ProductExchangeSummary'
-import FavoriteHeartButton from '../components/catalog/FavoriteHeartButton'
+import ProductDetailTablet from '../components/catalog/productDetail/ProductDetailTablet'
 import { referenceProduct, referenceReviews } from '../components/catalog/productDetailMock'
 
 type PublicOffer = Offer & { attributes?: TemplateAttributes }
@@ -171,8 +145,6 @@ export default function ProductDetailPage() {
   const { favorite, toggle: toggleFavorite } = useProductFavorite(product?.id ?? 0, !isReferencePreview)
   const desktopShareRef = useRef<HTMLButtonElement>(null)
   const mobileShareRef = useRef<HTMLButtonElement>(null)
-  const galleryPointerStartRef = useRef<{ x: number; y: number } | null>(null)
-  const galleryDidSwipeRef = useRef(false)
 
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [reviewTotal, setReviewTotal] = useState(0)
@@ -433,51 +405,6 @@ export default function ProductDetailPage() {
     setLightboxOpen(true)
   }
 
-  function handleGalleryKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault()
-      openLightbox()
-      return
-    }
-    if (!hasMultipleImages) return
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault()
-      moveGallery(-1)
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault()
-      moveGallery(1)
-    }
-  }
-
-  function handleGalleryPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.pointerType === 'mouse' && event.button !== 0) return
-    galleryDidSwipeRef.current = false
-    galleryPointerStartRef.current = { x: event.clientX, y: event.clientY }
-  }
-
-  function handleGalleryPointerEnd(event: ReactPointerEvent<HTMLDivElement>) {
-    const start = galleryPointerStartRef.current
-    galleryPointerStartRef.current = null
-    if (!start) return
-
-    const deltaX = event.clientX - start.x
-    const deltaY = event.clientY - start.y
-
-    if (hasMultipleImages && Math.abs(deltaX) >= 48 && Math.abs(deltaX) > Math.abs(deltaY)) {
-      galleryDidSwipeRef.current = true
-      moveGallery(deltaX > 0 ? -1 : 1)
-    }
-  }
-
-  function handleGalleryClick(event: React.MouseEvent<HTMLDivElement>) {
-    if (galleryDidSwipeRef.current) {
-      galleryDidSwipeRef.current = false
-      return
-    }
-    if ((event.target as HTMLElement).closest('button')) return
-    openLightbox()
-  }
-
   if (loading) {
     return (
       <div
@@ -618,133 +545,16 @@ export default function ProductDetailPage() {
   const showSectionNav = hasIntro || specNav.length > 0
 
   const gallery = (
-    <div
-      data-testid="product-gallery"
-      data-baked-controls={isReferencePreview && activeImage === 0}
-      className="rounded-2xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs p-2.5 sm:p-4"
-    >
-      <div className="flex flex-col sm:flex-row gap-3">
-        {/* Thumbnails rail if multiple images */}
-        {hasMultipleImages && (
-          <div className="flex sm:flex-col gap-2 shrink-0 overflow-x-auto sm:overflow-y-auto max-sm:order-2">
-            {galleryImages.map((img, i) => (
-              <button
-                key={`${img}-${i}`}
-                type="button"
-                onClick={() => showGalleryImage(i)}
-                data-testid={`product-gallery-thumb-${i}`}
-                aria-label={`查看第 ${i + 1} 张图片`}
-                aria-pressed={i === activeImage}
-                className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-all p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
-                  i === activeImage
-                    ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)] shadow-xs'
-                    : 'border-[var(--color-border)] opacity-60 hover:opacity-100 bg-[var(--color-surface)]'
-                }`}
-              >
-                <img
-                  src={isReferencePreview && i === 0 ? '/assets/mock/product-detail/thumb-mountain.png' : img}
-                  alt={`${product.name} 图 ${i + 1}`}
-                  className="w-full h-full object-cover rounded"
-                  loading="lazy"
-                />
-              </button>
-            ))}
-            {isReferencePreview && isDesktopViewport && (
-              <button
-                type="button"
-                className="pd-gallery-expand"
-                onClick={openLightbox}
-                aria-label="查看全部商品图片"
-              >
-                <ChevronDown size={15} />
-              </button>
-            )}
-          </div>
-        )}
-
-        {/* Balanced Aspect Container for Contain Frame */}
-        <div className="flex-1 aspect-[16/10] sm:aspect-[4/3] max-h-[280px] sm:max-h-[400px] rounded-xl bg-[var(--color-image-placeholder)]/50 overflow-hidden relative select-none">
-          <ProductMediaFrame
-            src={galleryImages.length > 0 ? (galleryImages[activeImage] ?? galleryImages[0]) : undefined}
-            alt={product.name}
-            frameClassName="w-full h-full aspect-[16/10] sm:aspect-[4/3]"
-            className="shrink-0 touch-pan-y select-none w-full h-full"
-            fit="contain"
-            imageProps={{
-              'data-testid': 'product-gallery-main',
-              draggable: false,
-              className: 'w-full h-full object-contain',
-            }}
-          >
-            <div
-              role="button"
-              aria-label={
-                hasMultipleImages
-                  ? `商品图片，当前第 ${activeImage + 1} 张，共 ${galleryImages.length} 张。点击查看全图；可左右拖动或使用方向键切换。`
-                  : '商品图片，点击查看全图'
-              }
-              tabIndex={0}
-              onKeyDown={handleGalleryKeyDown}
-              onPointerDown={handleGalleryPointerDown}
-              onPointerUp={handleGalleryPointerEnd}
-              onPointerCancel={() => {
-                galleryPointerStartRef.current = null
-              }}
-              onClick={handleGalleryClick}
-              data-testid="product-gallery-stage"
-              className="absolute inset-0 cursor-zoom-in outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] focus-visible:ring-inset"
-            >
-              {hasMultipleImages && (
-                <>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      moveGallery(-1)
-                    }}
-                    data-testid="product-gallery-prev"
-                    aria-label="查看上一张商品图片"
-                    className="absolute left-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-md transition-colors hover:bg-[var(--color-background)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                  >
-                    <ChevronLeft className="w-5 h-5" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      moveGallery(1)
-                    }}
-                    data-testid="product-gallery-next"
-                    aria-label="查看下一张商品图片"
-                    className="absolute right-3 top-1/2 -translate-y-1/2 z-20 inline-flex w-8 h-8 sm:w-9 sm:h-9 items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] shadow-md transition-colors hover:bg-[var(--color-background)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
-                  >
-                    <ChevronRight className="w-5 h-5" aria-hidden="true" />
-                  </button>
-                </>
-              )}
-
-              {/* Component-rendered Page Indicator & Lightbox Button */}
-              <div className="absolute bottom-3 right-3 z-20 px-2.5 py-1 rounded-lg bg-[var(--color-surface)] backdrop-blur border border-[var(--color-border)] text-xs text-[var(--color-text)] flex items-center gap-2 shadow-sm font-mono pointer-events-auto">
-                <span>
-                  {activeImage + 1} / {Math.max(1, galleryImages.length)}
-                </span>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    openLightbox()
-                  }}
-                  aria-label="全屏查看图片"
-                  className="text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors cursor-pointer"
-                >
-                  <ZoomIn className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          </ProductMediaFrame>
-        </div>
-      </div>
-    </div>
+    <ProductDetailGallery
+      productName={product.name}
+      images={galleryImages}
+      activeImage={activeImage}
+      preview={isReferencePreview}
+      isDesktopViewport={isDesktopViewport}
+      onShowImage={showGalleryImage}
+      onMove={moveGallery}
+      onOpenLightbox={openLightbox}
+    />
   )
 
   const reviewsContent = (
@@ -756,41 +566,12 @@ export default function ProductDetailPage() {
       <h2 className="font-heading text-base sm:text-lg font-bold text-[var(--color-text)]">
         用户评价（{reviewTotal}）
       </h2>
-      {reviews.length === 0 ? (
-        <EmptyState compact icon={Star} title="暂无评价" description="兑换后即可发表第一条评价" />
-      ) : (
-        <div className="space-y-3">
-          {reviews.map((r) => (
-            <div
-              key={r.id}
-              className="bg-[var(--color-surface)] rounded-xl p-4 border border-[var(--color-border)] shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[var(--color-text)]">{r.displayName}</span>
-                <StarRating value={r.rating} />
-              </div>
-              {r.comment && (
-                <p className="mt-2 text-xs sm:text-sm text-[var(--color-text)] whitespace-pre-wrap">
-                  {r.comment}
-                </p>
-              )}
-              <div className="mt-2 text-[11px] text-[var(--color-text-muted)]">
-                {new Date(r.createdAt).toLocaleDateString()}
-                {r.editedAt ? '（已修改）' : ''}
-              </div>
-            </div>
-          ))}
-          {!isReferencePreview && reviews.length < reviewTotal && (
-            <button
-              type="button"
-              onClick={() => setReviewPage((p) => p + 1)}
-              className="btn-secondary w-full py-2.5 text-xs sm:text-sm rounded-xl"
-            >
-              加载更多
-            </button>
-          )}
-        </div>
-      )}
+      <ProductReviewList
+        reviews={reviews}
+        reviewTotal={reviewTotal}
+        preview={isReferencePreview}
+        onLoadMore={() => setReviewPage((p) => p + 1)}
+      />
     </div>
   )
 
@@ -855,349 +636,44 @@ export default function ProductDetailPage() {
           shortfall={shortfall}
         />
       ) : (
-        <>
-          {/* Top Bar: Back, Favorite & Share */}
-          <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <button
-              type="button"
-              onClick={() => navigate(-1)}
-              className="flex items-center gap-1.5 text-xs sm:text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors font-medium cursor-pointer min-h-[44px]"
-            >
-              <ArrowLeft className="w-4 h-4" /> 返回商店
-            </button>
-
-            <div className="flex items-center gap-2">
-              <FavoriteHeartButton
-                type="button"
-                favorite={favorite}
-                onClick={toggleFavorite}
-                size={16}
-                ariaLabel={favorite ? '已收藏' : '收藏'}
-                className={`w-9 h-9 rounded-lg border transition-colors ${
-                  favorite
-                    ? 'border-rose-200 bg-rose-50 text-rose-500 dark:bg-rose-950/30 dark:border-rose-900/40 dark:text-rose-400'
-                    : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-surface)]'
-                }`}
-              />
-
-              <ProductShareButton
-                ref={isMobileViewport ? mobileShareRef : desktopShareRef}
-                variant="page"
-                onClick={() => setShareOpen(true)}
-              />
-            </div>
-          </div>
-
-          {/* Header-First SPU Hierarchy: Placed ABOVE gallery and checkout sidebar on all viewports */}
-          <header className="mb-5 sm:mb-6 space-y-2 border-b border-[var(--color-border)] pb-4">
-            <div className="flex items-center gap-2 flex-wrap text-xs">
-              <span className="font-bold px-2.5 py-0.5 rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
-                {product.type}
-              </span>
-              <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1">
-                <Store className="w-3.5 h-3.5" />
-                {product.merchant?.name || '平台自营'}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSupportOpen(true)}
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border border-[var(--color-border)] hover:border-[var(--color-primary)] text-[var(--color-text-muted)] hover:text-[var(--color-primary)] transition-colors cursor-pointer"
-              >
-                <Headphones className="w-3 h-3" />
-                <span>联系客服</span>
-              </button>
-              {product.ratingCount && product.ratingCount > 0 ? (
-                <span
-                  className="text-[var(--color-text-muted)] font-medium flex items-center gap-1"
-                  data-testid="rating-summary"
-                >
-                  <StarRating value={product.ratingAvg ?? 0} />
-                  <span className="font-bold text-[var(--color-text)]">
-                    {(product.ratingAvg ?? 0).toFixed(1)}
-                  </span>
-                  （{product.ratingCount} 条评价）
-                </span>
-              ) : (
-                <span className="text-[var(--color-text-muted)] font-medium" data-testid="rating-summary">
-                  暂无评分
-                </span>
-              )}
-            </div>
-
-            <h1 className="product-text-readable text-[22px] sm:text-3xl lg:text-3xl font-bold text-[var(--color-text)] tracking-tight leading-snug min-w-0">
-              {product.name}
-            </h1>
-
-            <p className="product-text-readable text-xs sm:text-sm text-[var(--color-text-muted)] leading-relaxed max-w-3xl">
-              {product.description?.trim() || '按需选择额度，交付后在订单中查看凭据。'}
-            </p>
-          </header>
-
-          {/* Main Dual-Column Content Grid */}
-          <div className="flex flex-col lg:flex-row gap-8 items-start">
-            {/* Left Column: Gallery & Rich Content Area */}
-            <div className="flex-1 min-w-0 w-full space-y-8">
-              {/* Gallery with Balanced Aspect Ratio and Single Clean Border Card */}
-              {gallery}
-              {!isReferencePreview && <ProductExchangeSummary offer={activeOffer} stockTitle={stockTitle} stockLabel={stockLabel} shortfall={shortfall} />}
-
-              {/* Mobile / Mid-screen In-Flow Offer Selector & Disclosures (< 1024px) */}
-              <div className="lg:hidden space-y-4">
-                {!isDesktopViewport && isMultiSku && (
-                  <ProductOfferSelector
-                    offers={offers}
-                    selectedOfferId={selectedOfferId}
-                    onSelectOffer={(offerId) => setSelectedOfferId(offerId)}
-                  />
-                )}
-
-                {/* In-flow Quick Spec Note on Mobile */}
-                {!isDesktopViewport && activeOffer && offerPeriodDetailNote(activeOffer) && (
-                  <div
-                    className="flex flex-wrap items-center gap-2 text-xs"
-                    data-testid="validity-days-preview"
-                  >
-                    <span className="text-[var(--color-text-muted)] font-bold">规格说明：</span>
-                    <span className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[var(--color-text)] font-medium">
-                      {offerPeriodDetailNote(activeOffer)!.title}
-                    </span>
-                    <span className="text-[var(--color-text-muted)]">
-                      {offerPeriodDetailNote(activeOffer)!.hint}
-                    </span>
-                  </div>
-                )}
-
-                {/* Delivery Disclosures (< 1024px) */}
-                {!isDesktopViewport && (
-                  <>
-                    {fileDeliverySize !== undefined && (
-                      <div
-                        className="text-xs text-[var(--color-text-muted)] flex items-center gap-1.5"
-                        data-testid="file-delivery-preview"
-                      >
-                        <span className="font-bold text-[var(--color-text)]">交付形态：</span>
-                        <span>
-                          文件交付
-                          {fileDeliverySize != null ? ` · 约 ${formatFileSize(fileDeliverySize)}` : ''}
-                        </span>
-                      </div>
-                    )}
-                    {deliveryTemplate.length > 0 && (
-                      <div
-                        className="text-xs text-[var(--color-text-muted)] space-y-1.5"
-                        data-testid="delivery-template-preview"
-                      >
-                        <span className="font-bold text-[var(--color-text)] block">包含交付字段：</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {deliveryTemplate.map((field) => (
-                            <span
-                              key={field.key}
-                              className="px-2 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-background)] text-[11px] text-[var(--color-text)] font-medium"
-                            >
-                              {field.label}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {activeOffer?.autoProvision && (
-                      <div
-                        className="p-3 rounded-xl border border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-xs space-y-1"
-                        data-testid="auto-provision-disclosure"
-                      >
-                        <div className="font-bold text-[var(--color-primary)] flex items-center gap-1.5">
-                          <Zap className="w-3.5 h-3.5" />
-                          <span>交付方式：商家自动开通</span>
-                        </div>
-                        <p className="text-[11px] text-[var(--color-text-muted)] leading-relaxed">
-                          下单后将自动发起开通，自动开通中请稍候…如有疑问可咨询客服。
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* In-flow Purchase Module for Mid-screen (768px – 1023px) */}
-                {!isDesktopViewport && (
-                  <div
-                    ref={inflowCardRef}
-                    className="hidden md:block p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-sm space-y-3"
-                    data-testid="inflow-buy-card"
-                  >
-                    <div className="flex items-baseline justify-between">
-                      <div>
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-muted)] block">
-                          兑换需要
-                        </span>
-                        <div className="flex items-baseline gap-1.5 mt-0.5">
-                          <span className="product-text-readable text-2xl sm:text-3xl font-bold text-[var(--color-points)] flex items-center gap-1.5 tabular-nums">
-                            <Coins className="w-6 h-6 shrink-0" />
-                            <span>{displayPrice}</span>
-                            <span className="text-sm font-normal text-[var(--color-text-muted)]">积分</span>
-                          </span>
-                          {displayOriginalPrice && displayOriginalPrice > displayPrice && (
-                            <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
-                              {displayOriginalPrice}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      {activeOffer?.deliveryMode === 'instant_inventory' && !isSoldOut && (
-                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-[var(--color-success-bg)] text-[var(--color-success-text)] border border-[var(--color-success-border)]">
-                          现货即发
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)]">
-                      <span>
-                        {stockTitle}: <strong className="text-[var(--color-text)]">{stockLabel}</strong>
-                      </span>
-                      <span>
-                        已售: <strong className="text-[var(--color-text)]">{product.sales}</strong>
-                      </span>
-                      {isLoggedIn && (
-                        <span>
-                          余额: <strong className="text-[var(--color-text)]">{userPoints}</strong>
-                        </span>
-                      )}
-                    </div>
-
-                    {isLoggedIn && isInsufficient && !isSoldOut && (
-                      <div className="p-2.5 rounded-xl bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)] text-xs flex items-center justify-between">
-                        <span>积分余额不足</span>
-                        <button
-                          type="button"
-                          onClick={() => navigate('/')}
-                          className="font-bold underline hover:opacity-80 cursor-pointer"
-                        >
-                          去赚积分
-                        </button>
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={handleRedeemClick}
-                      disabled={isLoggedIn && isSoldOut}
-                      data-testid="inflow-buy-cta"
-                      className={
-                        isLoggedIn && isSoldOut
-                          ? 'w-full py-3 px-4 rounded-xl text-sm font-bold opacity-60 cursor-not-allowed bg-[var(--color-border)] text-[var(--color-text-muted)]'
-                          : isLoggedIn && isInsufficient
-                            ? 'w-full btn-secondary py-3 px-4 rounded-xl text-sm font-bold'
-                            : 'w-full btn-cta py-3 px-4 rounded-xl text-sm font-bold shadow'
-                      }
-                    >
-                      {redeemLabel}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Section Navigation Tabs */}
-              {showSectionNav && (
-                <nav
-                  aria-label="商品章节"
-                  data-testid="product-section-nav"
-                  className="sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 md:-mx-8 border-y border-[var(--color-border)] bg-[var(--color-surface)] backdrop-blur-md"
-                >
-                  <div className="flex max-md:gap-3 md:gap-6 px-4 md:px-8 max-md:py-2 md:py-3 overflow-x-auto hide-scrollbar whitespace-nowrap">
-                    {navSections.map((section) => (
-                      <a
-                        key={section.id}
-                        href={`#${section.id}`}
-                        className="shrink-0 text-xs md:text-sm font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)] min-h-[40px] inline-flex items-center"
-                      >
-                        {section.label}
-                      </a>
-                    ))}
-                  </div>
-                </nav>
-              )}
-
-              {/* Highlights List */}
-              {highlights.length > 0 && (
-                <ul
-                  className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]"
-                  data-testid="product-highlights"
-                >
-                  {highlights.map((item, index) => (
-                    <li
-                      key={`${item}-${index}`}
-                      className="flex items-start gap-2 text-xs sm:text-sm text-[var(--color-text)]"
-                    >
-                      <Check
-                        className="w-4 h-4 mt-0.5 shrink-0 text-[var(--color-primary)]"
-                        aria-hidden="true"
-                      />
-                      <span className="break-words font-medium">{item}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-
-              {/* Rich Intro Description */}
-              {hasIntro ? (
-                <section
-                  id="product-section-intro"
-                  className={SECTION_SCROLL_MARGIN}
-                  data-testid="product-section-intro"
-                >
-                  <h3 className="font-heading text-base sm:text-lg font-bold mb-4 flex items-center gap-2 text-[var(--color-text)] uppercase tracking-wider">
-                    <FileText className="w-5 h-5 text-[var(--color-primary)]" /> 介绍
-                  </h3>
-                  <RichTextHtml
-                    html={product.richDescription}
-                    className="rich-text text-[var(--color-text)] leading-loose space-y-4 text-sm md:text-base bg-[var(--color-surface)] p-4 sm:p-6 md:p-8 rounded-2xl border border-[var(--color-border)] shadow-sm"
-                  />
-                </section>
-              ) : null}
-
-              {/* Specifications Table */}
-              <ProductSpecSections
-                productAttributes={product.attributes}
-                offerAttributes={activeOffer?.attributes}
-                details={product.details}
-                assurance={product.assurance}
-                productOrder={template?.ui.productOrder}
-                offerOrder={template?.ui.offerOrder}
-                titles={titlesFromTemplate(template)}
-                enumLabels={template?.ui.enumLabels}
-              />
-
-              {/* Customer Reviews Section */}
-              {reviewsContent}
-
-              {/* Provider and Policy Info on Mobile / Mid-screens */}
-              <div className="lg:hidden space-y-4 pt-4 border-t border-[var(--color-border)]">
-                <div className="p-4 rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)] space-y-3 text-xs text-[var(--color-text-muted)]">
-                  <div className="flex items-center justify-between font-bold text-[var(--color-text)]">
-                    <div className="flex items-center gap-2">
-                      <Store className="w-4 h-4 text-[var(--color-primary)]" />
-                      <span>提供方：{product.merchant?.name || 'MoNexus 自营'}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSupportOpen(true)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[var(--color-border)] hover:border-[var(--color-primary)] text-[var(--color-text)] hover:text-[var(--color-primary)] font-medium transition-colors cursor-pointer"
-                    >
-                      <Headphones className="w-3.5 h-3.5" />
-                      <span>联系客服</span>
-                    </button>
-                  </div>
-                  <p className="leading-relaxed">
-                    发货方式：数字资产/虚拟商品，兑换后立即在页面显示卡密或凭据，也可随时在「个人中心」查看。
-                  </p>
-                  <div className="pt-2 border-t border-[var(--color-border)] text-[11px]">
-                    平台协助售后与争议处理，不另作先行垫付承诺。
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
+        <ProductDetailTablet
+          ref={inflowCardRef}
+          product={product}
+          preview={isReferencePreview}
+          gallery={gallery}
+          reviews={reviewsContent}
+          shareRef={isMobileViewport ? mobileShareRef : desktopShareRef}
+          template={template}
+          activeOffer={activeOffer}
+          offers={offers}
+          isMultiSku={isMultiSku}
+          selectedOfferId={selectedOfferId}
+          onSelectOffer={setSelectedOfferId}
+          onRedeem={handleRedeemClick}
+          redeemLabel={redeemLabel}
+          purchaseDisabled={isLoggedIn && isSoldOut}
+          isSoldOut={isSoldOut}
+          isInsufficient={isInsufficient}
+          displayPrice={displayPrice}
+          displayOriginalPrice={displayOriginalPrice}
+          stockLabel={stockLabel}
+          stockTitle={stockTitle}
+          shortfall={shortfall}
+          isLoggedIn={isLoggedIn}
+          userPoints={userPoints}
+          favorite={favorite}
+          fileDeliverySize={fileDeliverySize}
+          deliveryTemplate={deliveryTemplate}
+          navSections={navSections}
+          showSectionNav={showSectionNav}
+          highlights={highlights}
+          hasIntro={hasIntro}
+          onBack={() => navigate(-1)}
+          onGoEarnPoints={() => navigate('/')}
+          onToggleFavorite={toggleFavorite}
+          onOpenShare={() => setShareOpen(true)}
+          onOpenSupport={() => setSupportOpen(true)}
+        />
       )}
 
       <ProductImageLightbox
@@ -1226,7 +702,7 @@ export default function ProductDetailPage() {
                     </span>
                   )}
                 <div className="flex items-center gap-1 text-[var(--color-points)] font-bold text-lg">
-                  <Coins className="w-4 h-4 shrink-0" />
+                  <PointCoin className="w-5 h-5 shrink-0" />
                   <span className="product-text-readable tabular-nums">{displayPrice}</span>
                   <span className="text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
                 </div>

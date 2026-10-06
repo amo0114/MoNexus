@@ -1,0 +1,156 @@
+/* =========================================================
+   Typography
+   ========================================================= */
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-background);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  transition: background-color 0.5s ease;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading);
+  letter-spacing: 0.01em;
+}
+
+/* =========================================================
+   Utilities
+   ========================================================= */
+
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(to right, var(--color-grid-dot) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-grid-dot) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* 商城与商品弱化网格背景：线条淡化保持科技品牌调性，但不喧宾夺主争夺商品视线 */
+.store-subtle-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--color-grid-dot) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-grid-dot) 1px, transparent 1px);
+  background-size: 32px 32px;
+  opacity: 0.35;
+}
+
+/* 商品与正文易读字体（覆盖全局 h3 的 Orbitron，回归清晰界面无衬线） */
+.product-text-readable {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, Helvetica, Arial, sans-serif !important;
+  letter-spacing: normal;
+}
+
+/* 微交互动效：数字变动跳字（transitions.dev / 02-number-pop-in） */
+@keyframes numberPopIn {
+  0% {
+    opacity: 0.3;
+    transform: translateY(-4px);
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/* 操作成功确认勾选动效（transitions.dev / 10-success-check） */
+@keyframes successCheckDraw {
+  0% {
+    stroke-dashoffset: 48;
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+.success-check-path {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: successCheckDraw 0.45s cubic-bezier(0.22, 1, 0.36, 1) 0.1s forwards;
+}
+
+/* 高级商品卡片物理反光流光层（实体玻璃/金属反光质感） */
+.card-shine-glare {
+  position: absolute;
+  inset: -50% -50% -50% -50%;
+  pointer-events: none;
+  z-index: 25;
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 42%,
+    rgba(255, 255, 255, 0.45) 50%,
+    rgba(255, 255, 255, 0.75) 52%,
+    rgba(255, 255, 255, 0.45) 54%,
+    transparent 62%,
+    transparent 100%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .card-shine-glare {
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 42%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.35) 52%,
+    rgba(255, 255, 255, 0.15) 54%,
+    transparent 62%,
+    transparent 100%
+  );
+}
+
+.group:hover .card-shine-glare {
+  transform: translateX(120%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kinetic-brand * {
+    transition: none !important;
+  }
+  .success-check-path {
+    stroke-dashoffset: 0 !important;
+    animation: none !important;
+  }
+  .card-shine-glare {
+    display: none !important;
+  }
+}
+
+.glass {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-bottom: 1px solid var(--color-glass-border);
+}
+
+/* The navbar changes shape while the document is actively scrolling. A
+   backdrop filter over that moving surface forces expensive repaints on many
+   mobile GPUs, so keep the desktop glass treatment but use an opaque mobile
+   lane. The shell itself is layout-contained and only animates its max-width
+   / shape, which prevents the island transition from invalidating the page. */
+@media (max-width: 767px) {
+  .mobile-navbar-chrome.glass {
+    background-color: var(--color-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .navbar-shell {
+    contain: layout;
+    will-change: max-width, border-radius;
+  }
+}

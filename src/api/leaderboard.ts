@@ -10,9 +10,10 @@ export type LeaderboardScope = 'total' | 'month' | 'week'
 export interface LeaderboardEntry {
   rank: number
   displayName: string
+  avatarUrl: string
   points: number
   isMe: boolean
-  /** 上一轮快照名次；首次入榜为 null。prevRank - rank > 0 即名次上升。 */
+  /** 同一周期截至今日零点的名次；今日首次得分为 null。 */
   prevRank?: number | null
 }
 
@@ -26,11 +27,11 @@ export interface LeaderboardMe {
 export interface LeaderboardResponse {
   scope: LeaderboardScope
   periodKey: string
-  /** '全部' | '2026年8月' | 'MM-DD ~ MM-DD' */
+  /** '全部' | '2026年8月' | 'YYYY-MM-DD ~ YYYY-MM-DD' */
   periodLabel: string
-  /** 快照 cutoff 的前一日；首轮刷新前为 null。 */
+  /** 本次查询覆盖的北京时间日期，包含今天。 */
   dataThrough: string | null
-  /** null 表示该 scope 还没有任何快照（部署后首刷空窗）。 */
+  /** 本次统计截止时刻（ISO）；兼容旧接口的 null。 */
   updatedAt: string | null
   /** Top 100，已按 rank 升序。 */
   top: LeaderboardEntry[]

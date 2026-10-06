@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import {
   acquireCronLeaseWithHeartbeat,
   cronLeaseWindowMs,
   releaseCronLease,
   renewCronLease,
+  rollbackCronLeaseForRetry,
   tryAcquireCronLease,
 } from '../lib/cronLease.js'
 import { __setDeliveryStorageForTesting } from '../lib/storage/delivery.js'
@@ -97,6 +98,50 @@ describe('P7a — CronLease', () => {
     // 互斥已释放——拒绝只能来自窗口节流（lastStartedAt 距今不足窗口）。
     expect(await tryAcquireCronLease('p7a-window', HOUR_MS)).toBeNull()
   })
+
+  it.each(['2026-10-06T12:00:00.123100Z', '2026-10-06T12:00:00.123900Z'])(
+    'release and retry work without advancing the database clock at %s',
+    async fixedNow => {
+      await prisma.$transaction(async tx => {
+        // 在事务内覆盖 DB now()，稳定覆盖 TIMESTAMP(3) 向下/向上舍入边界。
+        // 生产 SQL 原样执行；事务结束恢复 search_path，失败则连测试 schema 一起回滚。
+        await tx.$executeRawUnsafe('CREATE SCHEMA p7a_test_clock')
+        await tx.$executeRawUnsafe(`
+          CREATE FUNCTION p7a_test_clock.now() RETURNS timestamptz
+          LANGUAGE sql STABLE AS $$
+            SELECT current_setting('monexus.test_cron_now')::timestamptz
+          $$`)
+        await tx.$executeRaw`SELECT set_config('monexus.test_cron_now', ${fixedNow}, true)`
+        await tx.$executeRawUnsafe('SET LOCAL search_path = p7a_test_clock, public, pg_catalog')
+
+        const queryRaw = tx.$queryRaw.bind(tx)
+        const executeRaw = tx.$executeRaw.bind(tx)
+        const querySpy = vi.spyOn(prisma, '$queryRaw').mockImplementation(queryRaw)
+        const executeSpy = vi.spyOn(prisma, '$executeRaw').mockImplementation(executeRaw)
+        try {
+          const first = await tryAcquireCronLease('p7a-precision', HOUR_MS)
+          expect(first).toBeTruthy()
+          expect(await releaseCronLease('p7a-precision', first!)).toBe(true)
+          const [row] = await queryRaw<Array<{ released: boolean }>>`
+            SELECT "lockedUntil" <= now() AS released
+            FROM "CronLease" WHERE "name" = 'p7a-precision'`
+          expect(row.released).toBe(true)
+          // 普通释放只解除互斥，窗口仍然生效。
+          expect(await tryAcquireCronLease('p7a-precision', HOUR_MS)).toBeNull()
+
+          expect(await rollbackCronLeaseForRetry('p7a-precision', first!, HOUR_MS)).toBe(true)
+          const second = await tryAcquireCronLease('p7a-precision', HOUR_MS)
+          expect(second).toBeTruthy()
+          expect(second).not.toBe(first)
+          expect(await rollbackCronLeaseForRetry('p7a-precision', first!, HOUR_MS)).toBe(false)
+        } finally {
+          executeSpy.mockRestore()
+          querySpy.mockRestore()
+        }
+        await tx.$executeRawUnsafe('DROP SCHEMA p7a_test_clock CASCADE')
+      })
+    }
+  )
 
   it('reclaims a lease past both mutex and window; blocks an active one', async () => {
     await prisma.cronLease.create({

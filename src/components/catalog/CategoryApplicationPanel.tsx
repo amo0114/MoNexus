@@ -19,10 +19,10 @@
  *     part of the DTO allowlist — REQ-CAT-NF-005);
  *   - no notification event is emitted on this flow (D-CAT-24).
  *
- * Host wiring is deferred (T-CAT-INT-001): this panel is self-contained and
- * takes an injectable adapter.
+ * The merchant dashboard hosts this panel; adapters and the history action
+ * remain injectable for isolated use.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FilePlus2, Loader2, Send, Undo2, Inbox } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import ConfirmDialog from '../ui/ConfirmDialog'
@@ -30,6 +30,8 @@ import AdminPagination from '../admin/AdminPagination'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
 import { useAppStore } from '../../stores/appStore'
+import { useAuthStore } from '../../stores/authStore'
+import { captureFeedbackOwner, showCompletionActivity } from '../../lib/completionFeedback'
 import {
   catalogGovernanceApi,
   getCatalogGovernanceErrorMessage,
@@ -86,10 +88,14 @@ function validateApplicationForm(form: ApplicationFormState): Partial<Record<key
 export interface CategoryApplicationPanelProps {
   /** Injectable governance adapter (production default = shared client). */
   adapter?: CatalogGovernanceAdapter
+  onViewApplications?: () => void
 }
 
-export default function CategoryApplicationPanel({ adapter = catalogGovernanceApi }: CategoryApplicationPanelProps) {
+export default function CategoryApplicationPanel({ adapter = catalogGovernanceApi, onViewApplications }: CategoryApplicationPanelProps) {
   const showToast = useAppStore((s) => s.showToast)
+  const userId = useAuthStore((s) => s.user?.id)
+  const sessionId = useAuthStore((s) => s.sessionId)
+  const authEpoch = useAuthStore((s) => s.authEpoch)
 
   const [items, setItems] = useState<CategoryApplicationDto[]>([])
   const [total, setTotal] = useState(0)
@@ -107,14 +113,28 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
 
   /** Single busy flag — double-submit disabled for every mutation (CHK-UI-005). */
   const [busy, setBusy] = useState<string | null>(null)
+  const busyRef = useRef(false)
+
+  useEffect(() => {
+    busyRef.current = false
+    setBusy(null)
+    setCreateOpen(false)
+    setWithdrawTarget(null)
+    setForm(EMPTY_APPLICATION_FORM)
+    setFormErrors({})
+    setFormError(null)
+    setItems([])
+    setTotal(0)
+  }, [userId, sessionId, authEpoch])
 
   useEffect(() => {
     let cancelled = false
+    const isCurrent = captureFeedbackOwner()
     setLoading(true)
     adapter
       .listMyApplications({ status: status || undefined, page, pageSize: PAGE_SIZE })
       .then((data) => {
-        if (cancelled) return
+        if (cancelled || !isCurrent()) return
         setItems(data.items)
         setTotal(data.total)
         if (data.items.length === 0 && data.page > 1) {
@@ -124,15 +144,35 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
         setLoading(false)
       })
       .catch((err: unknown) => {
-        if (cancelled) return
+        if (cancelled || !isCurrent()) return
         showToast(getApiErrorMessage(err, '加载申请列表失败'), 'error')
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [adapter, status, page, reload, showToast])
+  }, [adapter, status, page, reload, showToast, userId, sessionId, authEpoch])
 
   function refresh() {
     setReload((x) => x + 1)
+  }
+
+  function viewApplications() {
+    if (onViewApplications) onViewApplications()
+    else {
+      setStatus('')
+      setPage(1)
+      refresh()
+    }
+  }
+
+  function reportCompletion(application: CategoryApplicationDto, submitted: boolean) {
+    showCompletionActivity({
+      title: submitted ? '分类申请已提交' : '分类申请已撤回',
+      message: submitted ? '分类申请已提交，等待平台审核' : '申请已撤回',
+      subtitle: `${application.proposedLabel} · ${CATEGORY_APPLICATION_STATUS_LABEL[application.status]}`,
+      groupKey: `merchant:category-application:${application.id}`,
+      actionLabel: '查看申请记录',
+      onAction: viewApplications,
+    })
   }
 
   function openCreate() {
@@ -143,40 +183,51 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
   }
 
   async function handleCreate() {
-    if (busy) return
+    if (busyRef.current) return
     const errors = validateApplicationForm(form)
     setFormErrors(errors)
     if (Object.keys(errors).length > 0) return
+    const isCurrent = captureFeedbackOwner()
+    busyRef.current = true
     setBusy('create')
     setFormError(null)
     try {
-      await adapter.createApplication({
+      const application = await adapter.createApplication({
         proposedLabel: form.proposedLabel.trim(),
         proposedCode: form.proposedCode.trim() || undefined,
         description: form.description.trim(),
         exampleProducts: form.exampleProducts.trim() || undefined,
       })
-      showToast('分类申请已提交，等待平台审核')
+      if (!isCurrent()) return
       setCreateOpen(false)
+      reportCompletion(application, true)
       refresh()
     } catch (err: unknown) {
+      if (!isCurrent()) return
       // Pending duplicate / any other stable code shown as-is; dialog stays open.
       setFormError(getCatalogGovernanceErrorMessage(err, '提交申请失败'))
       showToast(getCatalogGovernanceErrorMessage(err, '提交申请失败'), 'error')
     } finally {
-      setBusy(null)
+      if (isCurrent()) {
+        busyRef.current = false
+        setBusy(null)
+      }
     }
   }
 
   async function handleWithdraw(target: CategoryApplicationDto) {
-    if (busy) return
+    if (busyRef.current) return
+    const isCurrent = captureFeedbackOwner()
+    busyRef.current = true
     setBusy(`withdraw-${target.id}`)
     try {
-      await adapter.withdrawApplication(target.id)
-      showToast('申请已撤回')
+      const application = await adapter.withdrawApplication(target.id)
+      if (!isCurrent()) return
       setWithdrawTarget(null)
+      reportCompletion(application, false)
       refresh()
     } catch (err: unknown) {
+      if (!isCurrent()) return
       if (isCategoryApplicationAlreadyReviewed(err)) {
         showToast('该申请已被审核或已撤回，无法撤回', 'error')
         setWithdrawTarget(null)
@@ -185,7 +236,10 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
         showToast(getCatalogGovernanceErrorMessage(err, '撤回申请失败'), 'error')
       }
     } finally {
-      setBusy(null)
+      if (isCurrent()) {
+        busyRef.current = false
+        setBusy(null)
+      }
     }
   }
 
@@ -239,7 +293,7 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
         ) : items.length === 0 ? (
           <EmptyState icon={Inbox} title="暂无申请" description="点击右上角「申请新分类」提交你的第一个分类申请。" compact />
         ) : (
-          <table className="admin-table">
+          <table className="admin-table table-cards">
             <thead>
               <tr>
                 <th scope="col">申请名称</th>
@@ -251,14 +305,14 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
             <tbody>
               {items.map((a) => (
                 <tr key={a.id} data-testid={`application-row-${a.id}`} data-status={a.status}>
-                  <td>
-                    <div className="font-semibold text-[var(--color-text)]">
+                  <td data-label="申请名称">
+                    <div className="max-w-full break-words font-semibold text-[var(--color-text)]">
                       {a.proposedLabel}
-                      {a.proposedCode && <span className="font-mono text-xs text-[var(--color-text-muted)] ml-2">（{a.proposedCode}）</span>}
+                      {a.proposedCode && <span className="font-mono text-xs text-[var(--color-text-muted)] ml-2 max-md:ml-0 max-md:block max-md:break-all">（{a.proposedCode}）</span>}
                     </div>
-                    <div className="text-xs text-[var(--color-text-muted)] mt-0.5 line-clamp-2">{a.description}</div>
+                    <div className="max-w-full break-words text-xs text-[var(--color-text-muted)] mt-0.5 line-clamp-2">{a.description}</div>
                   </td>
-                  <td>
+                  <td data-label="状态">
                     <span
                       data-testid={`application-status-${a.status}`}
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
@@ -272,7 +326,7 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
                       {CATEGORY_APPLICATION_STATUS_LABEL[a.status]}
                     </span>
                   </td>
-                  <td>
+                  <td data-label="审核结果">
                     {a.status === CATEGORY_APPLICATION_STATUS.PENDING ? (
                       <span className="text-sm text-[var(--color-text-muted)]">等待平台审核</span>
                     ) : (
@@ -287,7 +341,7 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
                       </div>
                     )}
                   </td>
-                  <td>
+                  <td data-label="操作">
                     {a.status === CATEGORY_APPLICATION_STATUS.PENDING ? (
                       <button
                         type="button"

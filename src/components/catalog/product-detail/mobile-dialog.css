@@ -1,0 +1,3 @@
+.pm-dialog {
+  width: min(520px, calc(100vw - 32px));
+}

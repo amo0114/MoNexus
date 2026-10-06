@@ -102,7 +102,7 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
   useEffect(() => {
     if (!notice || phase !== 'details' || !open || obscured || hovered || focused) return
     const startedAt = Date.now()
-    const timer = window.setTimeout(clearNotice, remaining.current)
+    const timer = window.setTimeout(() => clearNotice(notice.id), remaining.current)
     return () => {
       window.clearTimeout(timer)
       remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt))
@@ -136,12 +136,12 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && detailsVisible) clearNotice()
+        if (event.key === 'Escape' && detailsVisible && content) clearNotice(content.id)
       }}
     >
       <span className="sr-only" role="status" aria-atomic="true">
         {open ? phase === 'details' ? `${content?.title}，${content?.subtitle ?? ''}`
-          : phase === 'confirmed' ? '下单成功' : '正在确认支付' : ''}
+          : phase === 'confirmed' ? (content?.payload?.renewal ? '续费订单已创建' : '下单成功') : (content?.payload?.renewal ? '正在提交续费' : '正在确认支付') : ''}
       </span>
       {content && (
         <>
@@ -187,10 +187,10 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
               <button
                 type="button"
                 className="order-island-dismiss"
-                aria-label="收起兑换提示"
+                aria-label={content.payload?.renewal ? '收起续费提示' : '收起兑换提示'}
                 tabIndex={detailsVisible ? 0 : -1}
                 disabled={!detailsVisible}
-                onClick={clearNotice}
+                onClick={() => clearNotice(content.id)}
               >
                 <X size={16} aria-hidden="true" />
               </button>
@@ -204,7 +204,8 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
                 tabIndex={detailsVisible ? 0 : -1}
                 disabled={!detailsVisible}
                 onClick={() => {
-                  clearNotice()
+                  if (useAppStore.getState().islandNotice?.id !== content.id) return
+                  clearNotice(content.id)
                   content.onAction?.()
                 }}
               >
