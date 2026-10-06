@@ -25,6 +25,11 @@ import {
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import { createProductV2Schema, patchProductContentSchema, draftOfferV2WriteSchema } from '../catalog/productV2Schema.js'
+import {
+  adminContentSuggestionSchema,
+  contentSuggestionAppliedSchema,
+  contentSuggestionParamSchema,
+} from '../catalog/contentCopilot/schema.js'
 import * as controller from './controller.js'
 import * as abuseController from './abuseController.js'
 import * as storageController from './storageController.js'
@@ -140,6 +145,9 @@ router.post('/products', (req, res, next) => {
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
 router.patch('/products/:id/content', validate({ params: idParamSchema, body: patchProductContentSchema }), controller.patchProductContent)
 router.get('/products/:id/editor', validate({ params: idParamSchema }), controller.getProductEditor)
+// SPEC-AI-PRODUCT-001 §9 — suggestions only; saving still goes through PATCH /content.
+router.post('/products/:id/content-suggestions', validate({ params: idParamSchema, body: adminContentSuggestionSchema }), controller.createContentSuggestion)
+router.post('/products/:id/content-suggestions/:generationId/applied', validate({ params: contentSuggestionParamSchema, body: contentSuggestionAppliedSchema }), controller.reportContentSuggestionApplied)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)

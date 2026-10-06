@@ -411,6 +411,13 @@ const envSchema = z.object({
   VMQFOX_MAX_AMOUNT_MINOR: optionalStringEnvSchema,
   VMQFOX_REQUEST_TIMEOUT_MS: optionalStringEnvSchema,
   VMQFOX_PROTOCOL_VERSION: optionalStringEnvSchema,
+
+  // --- SPEC-AI-001 §15：AI 运行时。默认全部关闭；模型随 promptVersion 冻结，不走 env。
+  // 超时上限 50s：nginx /api/ 读超时为 60s，需留余量。
+  AI_ENABLED: booleanEnvSchema.default(false),
+  AI_PRODUCT_COPILOT_ENABLED: booleanEnvSchema.default(false),
+  OPENAI_API_KEY: optionalStringEnvSchema,
+  AI_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(50_000).default(40_000),
 })
 
 const parsed = envSchema.safeParse(process.env)
@@ -674,6 +681,16 @@ if (env.NOTIFICATION_EMAIL_ENABLED && !env.NOTIFICATION_ENABLED) {
 // 在 Zod parse 后、config 导出前执行（所有环境一致）。
 if (env.NOTIFICATION_REALTIME_ENABLED && !env.NOTIFICATION_ENABLED) {
   console.error('[Config] NOTIFICATION_REALTIME_ENABLED=true requires NOTIFICATION_ENABLED=true')
+  process.exit(1)
+}
+
+// SPEC-AI-001 §15：feature flag 依赖总闸；总闸开启必须有 provider 凭据。
+if (env.AI_PRODUCT_COPILOT_ENABLED && !env.AI_ENABLED) {
+  console.error('[Config] AI_PRODUCT_COPILOT_ENABLED=true requires AI_ENABLED=true')
+  process.exit(1)
+}
+if (env.AI_ENABLED && !env.OPENAI_API_KEY) {
+  console.error('[Config] AI_ENABLED=true requires OPENAI_API_KEY')
   process.exit(1)
 }
 
@@ -1008,6 +1025,12 @@ export const config = {
     enabled: env.NOTIFICATION_ENABLED,
     emailEnabled: env.NOTIFICATION_EMAIL_ENABLED,
     expiryDays: env.NOTIFICATION_EXPIRY_DAYS,
+  },
+  ai: {
+    enabled: env.AI_ENABLED,
+    productCopilotEnabled: env.AI_PRODUCT_COPILOT_ENABLED,
+    openaiApiKey: env.OPENAI_API_KEY,
+    timeoutMs: env.AI_TIMEOUT_MS,
   },
   notificationRealtime: {
     enabled: env.NOTIFICATION_REALTIME_ENABLED,

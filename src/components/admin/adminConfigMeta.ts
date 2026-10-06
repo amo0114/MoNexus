@@ -7,6 +7,7 @@ export type ConfigGroupId =
   | 'trade' // 交易与交付 (9)
   | 'inventory' // 库存提醒 (2)
   | 'merchandising' // 商品运营 (8)
+  | 'ai' // AI 辅助 (2)
   | 'ops' // 高级运维 (3)
   | 'system' // 系统信息 (build artifact)
 
@@ -24,6 +25,7 @@ export const CONFIG_GROUPS: ConfigGroupDef[] = [
   { id: 'trade', title: '交易与交付', description: '订单二次验证、交付文件与自动开通履约规则', legacyGroup: '安全' },
   { id: 'inventory', title: '库存提醒', description: '商品可用库存低位阈值与重发告警冷却', legacyGroup: '库存' },
   { id: 'merchandising', title: '商品运营', description: '自然热卖与合作伙伴权益自动计算参数' },
+  { id: 'ai', title: 'AI 辅助', description: 'AI 商品说明整理的每日调用次数（按管理员 / 商家分别计）' },
   { id: 'ops', title: '高级运维', description: '凭证有效期限、列表分页上限与邮件投递服务', legacyGroup: '分页限制' },
   { id: 'system', title: '系统信息', description: '当前 API 镜像的运行版本与构建元数据，仅管理员可见' },
 ]
@@ -428,6 +430,28 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     unit: '天',
     label: '自动授予合作伙伴权益的有效天数',
     description: '系统自动授予的合作伙伴权益有效天数（1～365 天）；不影响管理员手动授予的期限。',
+  },
+
+  // h. AI 辅助 (2 项) — SPEC-AI-001 §11.2：0 = 该角色不可调用；试点数值按成本测算配置
+  aiProductCopilotDailyQuotaAdmin: {
+    key: 'aiProductCopilotDailyQuotaAdmin',
+    group: 'ai',
+    type: 'integer',
+    min: 0,
+    max: 1000,
+    unit: '次/日',
+    label: '管理员每日 AI 整理次数',
+    description: '每位管理员每个自然日（北京时间）可发起的 AI 商品说明整理次数；0 表示管理员不可使用。',
+  },
+  aiProductCopilotDailyQuotaMerchant: {
+    key: 'aiProductCopilotDailyQuotaMerchant',
+    group: 'ai',
+    type: 'integer',
+    min: 0,
+    max: 1000,
+    unit: '次/日',
+    label: '商家每日 AI 整理次数',
+    description: '每位商家账号每个自然日（北京时间）可发起的 AI 商品说明整理次数；0 表示商家不可使用。',
   },
 
   // g. 高级运维 (3 项)

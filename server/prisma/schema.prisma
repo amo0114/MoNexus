@@ -146,6 +146,7 @@ model User {
   reconciliationItemsResolved      ReconciliationItem[]        @relation("ReconciliationItemResolvedBy")
   rechargeLimitBuckets             RechargeLimitBucket[]
   rechargeIdempotencyRecords       RechargeIdempotencyRecord[]
+  aiGenerations                    AiGeneration[]              @relation("AiGenerationActor")
 }
 
 // SPEC-NOTIFY-001 Phase 1：1:1 事务消息（与 Announcement 运营广播分离）。
@@ -2301,4 +2302,38 @@ model RechargeIdempotencyRecord {
   @@unique([userId, scope, key])
   @@index([expiresAt])
   @@index([status, expiresAt])
+}
+
+// SPEC-AI-001 §10 — AI call metadata. Never add a column holding a prompt,
+// model input or model output (AI-R20). CHECKs live in 20261007120000.
+model AiGeneration {
+  id                  Int       @id @default(autoincrement())
+  feature             String // product_content_copilot
+  actorUserId         Int?
+  actorRole           String // merchant | admin
+  targetType          String // product
+  targetId            Int
+  provider            String
+  model               String
+  promptVersion       String
+  validatorVersion    String
+  // HMAC-SHA256 with a fixed domain separator (AI-R21); never the input itself.
+  inputHash           String
+  status              String    @default("pending") // pending | succeeded | failed
+  errorCode           String? // AI_TIMEOUT | AI_PROVIDER_ERROR | AI_OUTPUT_INVALID
+  inputTokens         Int?
+  outputTokens        Int?
+  latencyMs           Int?
+  // Counts only: { missing, ambiguous, risky_claim, unsupported_fact }.
+  issueCounts         Json?
+  suggestedFieldCount Int?
+  // Best-effort client telemetry (SPEC-AI-PRODUCT-001 CP-12); null = not reported.
+  acceptedFieldCount  Int?
+  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
+  completedAt         DateTime? @db.Timestamptz(3)
+
+  actor User? @relation("AiGenerationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, feature, createdAt])
+  @@index([feature, createdAt])
 }

@@ -286,6 +286,7 @@ describe('AdminConfigPanel & B2 Specifications', () => {
       '交易与交付',
       '库存提醒',
       '商品运营',
+      'AI 辅助',
       '高级运维',
       '系统信息',
     ]

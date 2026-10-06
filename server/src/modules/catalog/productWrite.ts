@@ -22,6 +22,7 @@ import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 import { checkProductReadiness, type ProductReadinessResult } from './publicationReadiness.js'
 import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
 import { lockProductRow } from '../admin/productLifecycle.js'
+import { isContentCopilotAvailable } from './contentCopilot/service.js'
 
 export type ProductWriteActor =
   | { kind: 'merchant'; merchantId: number }
@@ -622,6 +623,7 @@ export async function getProductEditor(actor: ProductWriteActor, productId: numb
       manageAssurance: actor.kind === 'admin' || actor.kind === 'merchant',
       applyAssurance: actor.kind === 'merchant' && product.merchantId != null,
       adoptSourceDescription: actor.kind === 'admin' && isXboard,
+      aiContentSuggestion: await isContentCopilotAvailable(actor.kind, product),
     },
     sourceDescription: isXboard
       ? {

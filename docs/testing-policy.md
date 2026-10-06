@@ -64,6 +64,13 @@
 - 改动某 spec 时顺手评估：纯 UI 断言下沉、与其他 spec 重叠的场景合并。
 - 目标形态：E2E 收敛为 §3 关键旅程集合 + 少量功能冒烟，总时长不随功能数线性增长。
 
+## 6.5 AI 功能分层（SPEC-AI-001 §13）
+
+- L1/L2（进 CI）：Projection（哨兵泄露、键白名单、未知保持、截断）、Validator、归一化器单测；路由权限、flag、配额、超时与元数据走 `server` 集成测试，LLM 一律使用 `setLlmProviderForTests` 测试替身。
+- L2.5（进 CI）：`contentCopilot/__fixtures__` 中的录制 / 对抗输出回放给 Validator。
+- L3（手动，不进 CI）：`npm --prefix server run ai:eval:product-copilot` 调用真实模型；promptVersion、validatorVersion 或模型变更时必跑，报告写入被忽略的 `server/.ai-eval/`。
+- AI 功能 V1 不新增 E2E：真实 provider 无法进 CI，保存 / 发布路径已有覆盖。
+
 ## 7. 本地验证
 
 - 小改动：`npm run verify:quick`（只跑受 git 变更影响的测试；

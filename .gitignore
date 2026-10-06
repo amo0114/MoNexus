@@ -60,6 +60,8 @@ coverage/
 
 # Prisma client generated to a custom path (local worktree only; never commit)
 server/.generated-prisma-client/
+# SPEC-AI-001 §10.3: L3 eval reports contain model output; never commit them.
+server/.ai-eval/
 .generated-prisma-client/
 
 # Generated mail HTML previews (local only)
