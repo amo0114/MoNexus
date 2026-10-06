@@ -8,7 +8,6 @@ import {
   Package,
   Store,
   Clock,
-  Coins,
   Info,
   Loader2,
   RefreshCw,

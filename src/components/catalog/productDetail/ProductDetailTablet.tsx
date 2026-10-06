@@ -1,5 +1,6 @@
 import { forwardRef, type ReactNode, type Ref } from 'react'
-import { ArrowLeft, Check, Coins, FileText, Headphones, Star, Store, Zap } from 'lucide-react'
+import { ArrowLeft, Check, FileText, Headphones, Star, Store, Zap } from 'lucide-react'
+import PointCoin from '../../ui/PointCoin'
 import type { Product } from '../../../pages/ProductDetailPage'
 import type { ProductTemplateDefinition } from '../../../types/catalog'
 import { offerPeriodDetailNote } from '../../../utils/offerPeriodDisplay'
@@ -285,7 +286,7 @@ const ProductDetailTablet = forwardRef<HTMLDivElement, ProductDetailTabletProps>
                     </span>
                     <div className="flex items-baseline gap-1.5 mt-0.5">
                       <span className="product-text-readable text-2xl sm:text-3xl font-bold text-[var(--color-points)] flex items-center gap-1.5 tabular-nums">
-                        <Coins className="w-6 h-6 shrink-0" />
+                        <PointCoin className="w-6 h-6 shrink-0" />
                         <span>{displayPrice}</span>
                         <span className="text-sm font-normal text-[var(--color-text-muted)]">积分</span>
                       </span>

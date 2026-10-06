@@ -1,4 +1,4 @@
-import { Coins } from 'lucide-react'
+import PointCoin from '../../../ui/PointCoin'
 import { PRODUCT_VISIBILITY, type ProductVisibility } from '../../../../types/catalog'
 import type { DeliveryMode } from '../../../../types/merchant'
 import { DEFAULT_OFFER_NAME } from './wizardStepTypes'
@@ -93,7 +93,7 @@ export default function DraftReviewStep({
                 {deliveryMode === 'manual_service' ? '本次冻结积分' : '本次支付积分'}
               </span>
               <span className="font-bold text-[var(--color-cta)] flex items-center gap-1">
-                <Coins className="w-4 h-4" /> {price || '0'}
+                <PointCoin className="w-4 h-4 shrink-0" /> {price || '0'}
               </span>
             </div>
           </div>
