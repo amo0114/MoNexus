@@ -8,6 +8,7 @@ import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
 import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 import type { ValuePolicyStatus } from '@prisma/client'
 import { provisionValuePolicy } from '../modules/valuePolicy/governance.js'
+import { timeTestOperation } from './commonTiming.js'
 
 export const TEST_VALUE_POLICY_EVIDENCE = {
   d02DecisionRecordRef: 'test-fixture/d02',
@@ -41,21 +42,21 @@ export async function createTestUser(
   role: 'user' | 'admin' | 'merchant' = 'user',
   balance = 5000
 ) {
-  const hashed = await bcrypt.hash(password, 10)
-  const user = await prisma.user.create({
+  const hashed = await timeTestOperation('fixture.passwordHash', () => bcrypt.hash(password, 10))
+  const user = await timeTestOperation('fixture.userInsert', () => prisma.user.create({
     data: {
       email,
       password: hashed,
       role,
     },
-  })
+  }))
   // B_CAT：resolver 驱动的建品/导入 API 需要 frozen seed categories 在场；
   // 用本测试用户作 actor 惰性补齐（create-if-missing），不引入额外 fixture 用户。
-  await ensureSeedCategories(user.id)
-  await prisma.pointAccount.create({
+  await timeTestOperation('fixture.seedCategories', () => ensureSeedCategories(user.id))
+  await timeTestOperation('fixture.pointAccount', () => prisma.pointAccount.create({
     data: { userId: user.id, balance },
-  })
-  await prisma.pointLog.create({
+  }))
+  await timeTestOperation('fixture.pointLog', () => prisma.pointLog.create({
     data: {
       userId: user.id,
       type: 'in',
@@ -63,7 +64,7 @@ export async function createTestUser(
       balanceAfter: balance,
       reason: '测试初始积分',
     },
-  })
+  }))
   return { user, password }
 }
 

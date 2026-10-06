@@ -73,11 +73,14 @@ export async function renewCronLease(name: string, token: string): Promise<boole
   return updated > 0
 }
 
-/** 释放互斥（批次结束）：lockedUntil 即刻归零；lastStartedAt 保留供窗口节流。 */
+/**
+ * 释放互斥（批次结束）：lockedUntil 即刻归零；lastStartedAt 保留供窗口节流。
+ * TIMESTAMP(3) 赋值会四舍五入；显式截断，避免把微秒精度的 now() 写成未来时间。
+ */
 export async function releaseCronLease(name: string, token: string): Promise<boolean> {
   const updated = await prisma.$executeRaw`
     UPDATE "CronLease"
-    SET "lockedUntil" = now(), "updatedAt" = now()
+    SET "lockedUntil" = date_trunc('milliseconds', now()), "updatedAt" = now()
     WHERE "name" = ${name} AND "leaseToken" = ${token}`
   return updated > 0
 }
@@ -95,8 +98,8 @@ export async function rollbackCronLeaseForRetry(
 ): Promise<boolean> {
   const updated = await prisma.$executeRaw`
     UPDATE "CronLease"
-    SET "lockedUntil" = now(),
-        "lastStartedAt" = now() - make_interval(secs => ${cronLeaseWindowMs(periodMs) / 1000}),
+    SET "lockedUntil" = date_trunc('milliseconds', now()),
+        "lastStartedAt" = date_trunc('milliseconds', now() - make_interval(secs => ${cronLeaseWindowMs(periodMs) / 1000})),
         "updatedAt" = now()
     WHERE "name" = ${name} AND "leaseToken" = ${token}`
   return updated > 0

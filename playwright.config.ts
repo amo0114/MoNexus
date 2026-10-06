@@ -28,6 +28,9 @@ export default defineConfig({
   ],
   timeout: 30_000,
   retries: process.env.CI ? 1 : 0,
+  // Keep files/serial journeys together when CI shards the suite. Each
+  // shard owns its database; workers within that database remain serial.
+  fullyParallel: false,
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['html'], ['list']] : 'list',
   use: {

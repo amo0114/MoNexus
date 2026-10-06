@@ -15,11 +15,12 @@
 # whole workflow, so the required "CI OK" check stays Pending forever and the
 # PR cannot merge — path filtering already makes docs-only PRs finish fast.
 #
-# Scheduling: the backend suite runs as 3 file-level shards, and both
-# Playwright jobs are self-contained (own dependencies, DB service and
-# backend build), so they run in parallel with the backend shards instead
-# of after them. "CI OK" aggregates every result, so the parallelism does
-# not weaken the gate. See docs/testing-policy.md for the layering policy.
+# Scheduling: the backend suite runs as 6 file-level shards. Main Playwright
+# runs as 2 shards, alongside the notification and catalog-ops suites.
+# Every Playwright job is self-contained (own dependencies, DB service and
+# backend build). After path filtering, frontend, backend and Playwright
+# jobs can all start in parallel. "CI OK" aggregates every result, so the
+# parallelism preserves every gate. See docs/testing-policy.md for layering.
 
 name: CI
 
@@ -119,20 +120,18 @@ jobs:
         needs.changes.outputs.server == 'true'
       )
     runs-on: ubuntu-latest
-    # The full real-PostgreSQL suite is serial by design (singleFork) and
-    # takes ~13 minutes on a single runner, so it is split into 3 file-level
-    # shards, each against its own PostgreSQL service. setup.ts TRUNCATEs
-    # every table before each test, so shards share no cross-file state.
-    # Shard 1 currently needs up to ~19 minutes of Vitest runtime; dependency
-    # setup, migrations, build checks, and runner variance can push the complete
-    # job beyond 20 minutes.
+    # The real-PostgreSQL suite runs serially within each of 6 file-level
+    # shards. Every shard owns its PostgreSQL service because setup.ts
+    # TRUNCATEs shared tables before each test.
+    # Vitest balances file counts, not runtime; shard membership can change
+    # when test files are added, removed, or renamed.
     # Keep a bounded margin for runner/IO variance — individual Vitest timeouts
     # still detect hung tests.
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
 
     services:
       postgres:
@@ -143,7 +142,10 @@ jobs:
           POSTGRES_DB: monexus_test
         ports:
           - 5432:5432
+        # This database lives only for the job. Keep full per-test resets and
+        # PostgreSQL durability settings while avoiding disk-backed resets.
         options: >-
+          --tmpfs /var/lib/postgresql/data:rw,size=2g
           --health-cmd "pg_isready -U monexus -d monexus_test"
           --health-interval 5s
           --health-timeout 5s
@@ -158,6 +160,8 @@ jobs:
       # 默认 300 次/15 分钟会从第 301 个请求起整片 429；这个 CI 后端
       # 测试作业保持独立的测试上限，不改变生产默认值。
       API_RATE_LIMIT_MAX: 3000
+      # Emit per-file timings for shared reset and fixture operations.
+      TEST_PROFILE_COMMON_SETUP: '1'
 
     steps:
       - name: Check out repository
@@ -185,8 +189,8 @@ jobs:
       - name: Install pandoc for spec DOCX checks
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
 
-      - name: Test backend (shard ${{ matrix.shard }}/3)
-        run: npm --prefix server test -- --shard=${{ matrix.shard }}/3
+      - name: Test backend (shard ${{ matrix.shard }}/6)
+        run: npm --prefix server test -- --shard=${{ matrix.shard }}/6
 
   frontend:
     name: Frontend typecheck and build
@@ -236,13 +240,10 @@ jobs:
 
   e2e:
     name: Playwright E2E
-    # Deliberately NOT gated on the backend job: this job installs its own
-    # dependencies, owns its own PostgreSQL service and builds the backend
-    # itself, so it runs concurrently with the backend shards instead of
-    # queueing behind them. "CI OK" still requires every job to be green,
-    # so gating strength is unchanged; the only cost is some wasted runner
-    # minutes when backend tests fail.
-    needs: [changes, frontend]
+    # This job owns its dependencies, PostgreSQL service, backend build and
+    # frontend dev server. It can start alongside frontend and backend after
+    # path filtering; "CI OK" still requires all selected jobs to pass.
+    needs: changes
     # Runs on: any push to master/develop; PRs to master that touch code;
     # PRs to develop only when e2e files changed or the `run-e2e` label is
     # set (the post-merge push to develop still runs the full suite).
@@ -255,6 +256,10 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     services:
       postgres:
@@ -364,7 +369,10 @@ jobs:
       # before the shared 3000/5173 compatibility stack is started: this
       # avoids carrying long-lived default-stack processes across the
       # feature-specific database reset and startup boundary.
+      # Shard 1 owns this separate, complete suite; it is excluded from the
+      # default Playwright config and does not follow its shard assignment.
       - name: Run Legal Pages E2E tests
+        if: matrix.shard == 1
         run: npm run e2e:legal
         env:
           LEGAL_E2E_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
@@ -373,6 +381,7 @@ jobs:
       # is active. Restore the fresh compatibility fixture before starting
       # the default stack, whose contract deliberately keeps legal pages off.
       - name: Reset database for default E2E
+        if: matrix.shard == 1
         working-directory: server
         run: |
           npx prisma migrate reset --force --skip-seed
@@ -414,8 +423,8 @@ jobs:
             done
           done
 
-      - name: Run E2E tests
-        run: npm run e2e
+      - name: Run E2E tests (shard ${{ matrix.shard }}/2)
+        run: npm run e2e -- --shard=${{ matrix.shard }}/2
         env:
           CI: 'true'
           E2E_BASE_URL: http://127.0.0.1:5173
@@ -428,7 +437,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
 
@@ -437,9 +446,9 @@ jobs:
     # Keep the realtime suite visible as an independent gate. It follows the
     # same PR/push selection as the compatibility E2E job, but never shares
     # that job's database, ports, server processes, retries, or artifacts.
-    # Like the compatibility job it is self-contained, so it does not queue
-    # behind the backend shards either.
-    needs: [changes, frontend]
+    # Like the compatibility job it is self-contained and starts alongside
+    # frontend and backend after path filtering.
+    needs: changes
     if: >-
       !failure() && !cancelled() && (
         github.event_name == 'push' ||
@@ -533,8 +542,8 @@ jobs:
     # the shared compatibility job's single DB would break that determinism and
     # risk cross-spec pollution, so they run only via playwright.catalog-ops.config.ts
     # here, mirroring scripts/verify-catalog-ops-e2e.sh 1:1. Like the other Playwright
-    # jobs it is self-contained and runs in parallel with the backend shards.
-    needs: [changes, frontend]
+    # jobs it is self-contained and runs in parallel with frontend and backend.
+    needs: changes
     if: >-
       !failure() && !cancelled() && (
         github.event_name == 'push' ||
