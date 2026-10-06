@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { loginAs, SEED_ACCOUNTS } from './helpers'
+import { dismissMobileEmailReminder, loginAs, SEED_ACCOUNTS } from './helpers'
 
 /**
  * 移动端回归：320px 视口 + 触摸。
@@ -65,15 +65,19 @@ async function expectTouchTargets(
   await expect(opts.ready).toBeVisible({ timeout: 10_000 })
   // Sample one DOM snapshot: loading controls can disappear between count()
   // and nth(), causing a live locator to wait forever for a removed index.
-  const buttons = await page.locator('button:visible').evaluateAll(elements => elements.map(element => {
-    const box = element.getBoundingClientRect()
-    return {
-      width: box.width,
-      height: box.height,
-      text: (element as HTMLElement).innerText.trim(),
-      ariaLabel: element.getAttribute('aria-label'),
-    }
-  }))
+  // An island leaves the hidden/inert navbar mounted at 95% scale. Measure
+  // controls exposed to users, rather than that inaccessible background.
+  const buttons = await page.locator('button:visible').evaluateAll(elements => elements
+    .filter(element => !element.closest('[inert], [aria-hidden="true"]'))
+    .map(element => {
+      const box = element.getBoundingClientRect()
+      return {
+        width: box.width,
+        height: box.height,
+        text: (element as HTMLElement).innerText.trim(),
+        ariaLabel: element.getAttribute('aria-label'),
+      }
+    }))
   expect(buttons.length).toBeGreaterThan(0)
   const violations: string[] = []
   for (const [i, box] of buttons.entries()) {
@@ -96,6 +100,7 @@ async function expectTouchTargets(
 test.describe('mobile 320px', () => {
   test('hamburger is fully visible and drawer exposes workbench + theme row', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
+    await dismissMobileEmailReminder(page)
 
     const trigger = page.getByRole('button', { name: '打开导航菜单' })
     await expect(trigger).toBeVisible()
@@ -171,6 +176,7 @@ test.describe('mobile 320px', () => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
     // V3 灵动岛：商城搜索收纳进 navbar——先点岛内「搜索」展开搜索卡片
+    await dismissMobileEmailReminder(page)
     await expectTouchTargets(page, '/', { tab: '搜索', ready: page.getByPlaceholder('搜账号、卡密、教程...') })
     // 商家后台：默认 dashboard tab + 商品/订单两个含行内操作的子 tab
     await expectTouchTargets(page, '/merchant', { ready: page.getByText('数据概览') })
