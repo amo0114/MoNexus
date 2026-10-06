@@ -1,18 +1,29 @@
 import { beforeAll, afterAll, beforeEach } from 'vitest'
+import { relative } from 'node:path'
 import { __resetCacheForTests } from '../lib/cache.js'
 import { prisma } from '../lib/prisma.js'
+import { reportCommonTestTimings, timeTestOperation } from './commonTiming.js'
+
+let profileFile = ''
+let profileTests = 0
 
 beforeAll(async () => {
-  await prisma.$connect()
+  await timeTestOperation('database.connect', () => prisma.$connect())
 })
 
 afterAll(async () => {
-  await prisma.$disconnect()
+  try {
+    await timeTestOperation('database.disconnect', () => prisma.$disconnect())
+  } finally {
+    reportCommonTestTimings(profileFile, profileTests)
+  }
 })
 
-beforeEach(async () => {
-  await __resetCacheForTests()
-  await prisma.$executeRawUnsafe(`TRUNCATE TABLE
+beforeEach(async ({ task }) => {
+  profileFile = relative(process.cwd(), task.file.filepath)
+  profileTests += 1
+  await timeTestOperation('reset.cache', () => __resetCacheForTests())
+  await timeTestOperation('reset.truncate', () => prisma.$executeRawUnsafe(`TRUNCATE TABLE
     "TrafficEvent",
     "TrafficDailyVisitor",
     "TrafficAggregationState",
@@ -80,11 +91,11 @@ beforeEach(async () => {
     "StoredObject",
     "StorageProviderConfig",
     "User"
-    RESTART IDENTITY CASCADE`)
+    RESTART IDENTITY CASCADE`))
   // SPEC-STORAGE-001：runtime 单行复位为「仅 env 底座」
-  await prisma.storageRuntime.upsert({
+  await timeTestOperation('reset.storageRuntime', () => prisma.storageRuntime.upsert({
     where: { id: 1 },
     create: { id: 1, activeConfigId: null, configVersion: 0 },
     update: { activeConfigId: null, configVersion: 0 },
-  }).catch(() => {})
+  }).catch(() => {}))
 })
