@@ -138,7 +138,10 @@ jobs:
           POSTGRES_DB: monexus_test
         ports:
           - 5432:5432
+        # This database lives only for the job. Keep full per-test resets and
+        # PostgreSQL durability settings while avoiding disk-backed resets.
         options: >-
+          --tmpfs /var/lib/postgresql/data:rw,size=2g
           --health-cmd "pg_isready -U monexus -d monexus_test"
           --health-interval 5s
           --health-timeout 5s

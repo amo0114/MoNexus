@@ -31,6 +31,7 @@ chore/xxx ┘                                        ▲
 - **执行结构**：backend 测试按文件分 6 个 shard 并行（每 shard 独立 PostgreSQL，片内串行）。主 Playwright 套件分成 2 个 shard，通知和 catalog-ops 各有一个独立 job；每个 E2E job 自带依赖、数据库、后端构建与前端开发服务。路径过滤后，frontend、backend 和所有 E2E job 均可并行启动；`CI OK` 继续汇总所有门禁。全量耗时由最晚完成的必需 job 决定，需同时统计 job 运行时间及 runner 排队时间。
 - **E2E 分片**：主套件保留 `fullyParallel: false` 和 CI 单 worker，文件内的串行业务旅程保持在同一 shard。法律页面套件由主 E2E 的 shard 1 单独完整执行，随后 reset + seed 恢复默认夹具；shard 2 直接使用自己的初始 seed。失败报告按 shard 命名，两个 shard 都必须通过。
 - **分片与耗时**：Vitest 按测试文件相对路径的 SHA-1 排序后均分文件数，不按耗时均衡。增删或重命名测试文件可能改变分片归属，因此每个 shard 都安装 pandoc。分片收益以真实 CI 时间戳为准，不把单个 job 耗时当作整条流水线耗时。
+- **后端测试数据库**：每个 backend shard 的 PostgreSQL 数据目录使用上限 2 GiB 的 `tmpfs`，随 job 销毁。保留每个测试前完整清表，`fsync`、`synchronous_commit`、`full_page_writes` 维持 PostgreSQL 默认设置；该存储配置仅用于一次性 CI 数据库。
 - **frontend job 含前端单元测试**（根目录 `npm test`）及类型检查、构建。
 - `.github/workflows/ci.yml` 变更会**自动**触发全部 E2E 检查（已加入 e2e 路径过滤器）。
 - **不要在 PR 分支上用 `[skip ci]`**：它会抑制整个 workflow，required 的 `CI OK` 将永远 Pending，受保护分支的 PR 无法合并；纯文档 PR 靠路径过滤即可快速出绿，无需手动跳过。
