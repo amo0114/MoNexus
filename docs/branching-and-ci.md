@@ -28,7 +28,7 @@ chore/xxx ┘                                        ▲
 | push → master | ✅ | ✅ | ✅ |
 
 - **`CI OK`** 聚合 job 是唯一需要设为 required 的状态检查：上游 job 被路径过滤跳过时它仍成功，只有真实失败/取消才红。
-- **执行结构**：backend 测试按文件分 6 个 shard 并行（每 shard 独立 PostgreSQL，片内串行）；三个 Playwright job 自带依赖、数据库与后端构建，在 frontend 完成后并行启动，不等待 backend。全量耗时由最晚完成的必需 job 决定，需同时统计 frontend → E2E 的串行路径及 runner 排队时间。
+- **执行结构**：backend 测试按文件分 6 个 shard 并行（每 shard 独立 PostgreSQL，片内串行）；三个 Playwright job 自带依赖、数据库、后端构建与前端开发服务。路径过滤后，frontend、backend 和三个 E2E job 均可并行启动；`CI OK` 继续汇总所有门禁。全量耗时由最晚完成的必需 job 决定，需同时统计 job 运行时间及 runner 排队时间。
 - **分片与耗时**：Vitest 按测试文件相对路径的 SHA-1 排序后均分文件数，不按耗时均衡。增删或重命名测试文件可能改变分片归属，因此每个 shard 都安装 pandoc。分片收益以真实 CI 时间戳为准，不把单个 job 耗时当作整条流水线耗时。
 - **frontend job 含前端单元测试**（根目录 `npm test`）及类型检查、构建。
 - `.github/workflows/ci.yml` 变更会**自动**触发三个 e2e job（已加入 e2e 路径过滤器）。

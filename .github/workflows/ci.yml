@@ -17,9 +17,9 @@
 #
 # Scheduling: the backend suite runs as 6 file-level shards, and all three
 # Playwright jobs are self-contained (own dependencies, DB service and
-# backend build), so they run in parallel with the backend shards instead
-# of after them. "CI OK" aggregates every result, so the parallelism does
-# not weaken the gate. See docs/testing-policy.md for the layering policy.
+# backend build). After path filtering, frontend, backend and Playwright
+# jobs can all start in parallel. "CI OK" aggregates every result, so the
+# parallelism preserves every gate. See docs/testing-policy.md for layering.
 
 name: CI
 
@@ -215,13 +215,10 @@ jobs:
 
   e2e:
     name: Playwright E2E
-    # Deliberately NOT gated on the backend job: this job installs its own
-    # dependencies, owns its own PostgreSQL service and builds the backend
-    # itself, so it runs concurrently with the backend shards instead of
-    # queueing behind them. "CI OK" still requires every job to be green,
-    # so gating strength is unchanged; the only cost is some wasted runner
-    # minutes when backend tests fail.
-    needs: [changes, frontend]
+    # This job owns its dependencies, PostgreSQL service, backend build and
+    # frontend dev server. It can start alongside frontend and backend after
+    # path filtering; "CI OK" still requires all selected jobs to pass.
+    needs: changes
     # Runs on: any push to master/develop; PRs to master that touch code;
     # PRs to develop only when e2e files changed or the `run-e2e` label is
     # set (the post-merge push to develop still runs the full suite).
@@ -416,9 +413,9 @@ jobs:
     # Keep the realtime suite visible as an independent gate. It follows the
     # same PR/push selection as the compatibility E2E job, but never shares
     # that job's database, ports, server processes, retries, or artifacts.
-    # Like the compatibility job it is self-contained, so it does not queue
-    # behind the backend shards either.
-    needs: [changes, frontend]
+    # Like the compatibility job it is self-contained and starts alongside
+    # frontend and backend after path filtering.
+    needs: changes
     if: >-
       !failure() && !cancelled() && (
         github.event_name == 'push' ||
@@ -512,8 +509,8 @@ jobs:
     # the shared compatibility job's single DB would break that determinism and
     # risk cross-spec pollution, so they run only via playwright.catalog-ops.config.ts
     # here, mirroring scripts/verify-catalog-ops-e2e.sh 1:1. Like the other Playwright
-    # jobs it is self-contained and runs in parallel with the backend shards.
-    needs: [changes, frontend]
+    # jobs it is self-contained and runs in parallel with frontend and backend.
+    needs: changes
     if: >-
       !failure() && !cancelled() && (
         github.event_name == 'push' ||
