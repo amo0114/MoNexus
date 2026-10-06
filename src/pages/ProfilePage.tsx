@@ -318,11 +318,12 @@ export default function ProfilePage() {
           {/* 右侧：可用积分 + 核心操作栏（打卡 / 充值 / 流水） */}
           <div className="lg:col-span-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-5 lg:border-l lg:border-[var(--color-border)]/60 lg:pl-6 pt-4 lg:pt-0 border-t border-[var(--color-border)]/60 lg:border-t-0">
             <div className="text-left sm:text-right shrink-0">
-              <span className="text-xs font-medium text-[var(--color-text-muted)] flex items-center sm:justify-end gap-1">
-                <Coins className="w-3.5 h-3.5 text-amber-500" /> 我的可用积分
+              <span className="text-xs font-medium text-[var(--color-text-muted)] flex items-center sm:justify-end gap-1.5">
+                <PointCoin className="w-3.5 h-3.5" /> 我的可用积分
               </span>
-              <div className="font-heading text-3xl sm:text-4xl font-extrabold text-[var(--color-text)] tracking-tight mt-0.5">
-                {user?.points?.toLocaleString() ?? '--'}
+              <div className="font-heading text-3xl sm:text-4xl font-extrabold text-[var(--color-text)] tracking-tight mt-0.5 flex items-center sm:justify-end gap-2">
+                <PointCoin size={28} className="w-7 h-7 sm:w-8 sm:h-8 drop-shadow-sm shrink-0" />
+                <span>{user?.points?.toLocaleString() ?? '--'}</span>
               </div>
             </div>
 
@@ -431,10 +432,11 @@ export default function ProfilePage() {
 
               <div className="p-3 rounded-xl bg-[var(--color-background)] border border-[var(--color-border)]/50 text-xs text-[var(--color-text-muted)] flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Coins className="w-4 h-4 text-amber-500" />
+                  <PointCoin className="w-4 h-4" />
                   <span>可用积分余额</span>
                 </div>
-                <span className="font-heading font-extrabold text-base text-[var(--color-text)]">
+                <span className="font-heading font-extrabold text-base text-[var(--color-text)] flex items-center gap-1.5">
+                  <PointCoin className="w-4 h-4" />
                   {user?.points?.toLocaleString() ?? 0}
                 </span>
               </div>
@@ -446,7 +448,7 @@ export default function ProfilePage() {
                 onClick={() => setHistoryOpen(true)}
                 className="btn-secondary text-xs px-3.5 py-2 inline-flex items-center gap-1.5 cursor-pointer"
               >
-                <Coins className="w-3.5 h-3.5 text-amber-500" />
+                <PointCoin className="w-3.5 h-3.5" />
                 积分流水
               </button>
 

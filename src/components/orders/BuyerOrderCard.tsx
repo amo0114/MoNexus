@@ -1,4 +1,5 @@
-import { Coins, Eye, Loader2, Package, Store } from 'lucide-react'
+import { Eye, Loader2, Package, Store } from 'lucide-react'
+import PointCoin from '../ui/PointCoin'
 import type { UserOrderListItem } from '../../types/order'
 import RegistryPill from '../ui/RegistryPill'
 import SafeImage from '../ui/SafeImage'
@@ -61,7 +62,7 @@ export default function BuyerOrderCard({
         </div>
 
         <div className="flex items-center text-[var(--color-cta)] font-bold tabular-nums text-sm shrink-0">
-          -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />
+          -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
           {order.price}
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Coins, Eye, Loader2, ShoppingBag, Store, ChevronRight } from 'lucide-react'
+import { Eye, Loader2, ShoppingBag, Store, ChevronRight } from 'lucide-react'
+import PointCoin from '../ui/PointCoin'
 import type { UserOrderListItem } from '../../types/order'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
@@ -163,7 +164,7 @@ export default function ProfileOrdersPanel({
                       </span>
                     </div>
                     <div className="flex items-center text-[var(--color-cta)] font-bold whitespace-nowrap text-sm sm:hidden">
-                      -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />
+                      -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
                       {order.price}
                     </div>
                   </div>
@@ -197,7 +198,7 @@ export default function ProfileOrdersPanel({
 
                 <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-2 sm:gap-3 shrink-0 sm:border-l sm:border-[var(--color-border)]/60 sm:pl-4 pt-3 sm:pt-0 border-t border-[var(--color-border)]/60 sm:border-t-0">
                   <div className="hidden sm:flex items-center text-[var(--color-cta)] font-bold whitespace-nowrap text-sm">
-                    -<Coins className="w-3.5 h-3.5 mx-0.5 inline" />
+                    -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
                     {order.price}
                   </div>
                   <button
