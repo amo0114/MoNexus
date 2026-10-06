@@ -28,9 +28,10 @@ chore/xxx ┘                                        ▲
 | push → master | ✅ | ✅ | ✅ |
 
 - **`CI OK`** 聚合 job 是唯一需要设为 required 的状态检查：上游 job 被路径过滤跳过时它仍成功，只有真实失败/取消才红。
-- **执行结构**：backend 测试按文件分 3 个 shard 并行（每 shard 独立 PostgreSQL，互不共享状态）；两个 Playwright job 自带依赖、数据库与后端构建，**不排在 backend 之后**。全量墙钟 ≈ max(backend shard, e2e)，约 8–9 分钟（原约 20 分钟）。
-- **frontend job 含前端单元测试**（根目录 `npm test`，纯逻辑，秒级）。
-- `.github/workflows/ci.yml` 变更会**自动**触发两个 e2e job（已加入 e2e 路径过滤器）。
+- **执行结构**：backend 测试按文件分 6 个 shard 并行（每 shard 独立 PostgreSQL，片内串行）；三个 Playwright job 自带依赖、数据库与后端构建，在 frontend 完成后并行启动，不等待 backend。全量耗时由最晚完成的必需 job 决定，需同时统计 frontend → E2E 的串行路径及 runner 排队时间。
+- **分片与耗时**：Vitest 按测试文件相对路径的 SHA-1 排序后均分文件数，不按耗时均衡。增删或重命名测试文件可能改变分片归属，因此每个 shard 都安装 pandoc。分片收益以真实 CI 时间戳为准，不把单个 job 耗时当作整条流水线耗时。
+- **frontend job 含前端单元测试**（根目录 `npm test`）及类型检查、构建。
+- `.github/workflows/ci.yml` 变更会**自动**触发三个 e2e job（已加入 e2e 路径过滤器）。
 - **不要在 PR 分支上用 `[skip ci]`**：它会抑制整个 workflow，required 的 `CI OK` 将永远 Pending，受保护分支的 PR 无法合并；纯文档 PR 靠路径过滤即可快速出绿，无需手动跳过。
 - **强制跑 e2e**：给 PR 打 `run-e2e` 标签；何时必须打、何时新增 e2e spec 见 [`testing-policy.md`](./testing-policy.md)。
 - 文档类路径（`docs/**`、`*.md`、`.claude/**` 等未列入过滤器的路径）的 PR 三个重活全跳过，约 1 分钟出绿。

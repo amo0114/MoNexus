@@ -8,7 +8,7 @@
 | 层 | 位置 / 工具 | 职责 | 门禁 |
 |---|---|---|---|
 | 前端单元/组件测试 | 根目录 `npm test`（Vitest，`src/**/*.test.ts(x)`） | 纯逻辑与组件行为：协议解析、状态归并、展示计算等 | CI frontend job（秒级） |
-| 后端集成测试 | `server` 下 `npm test`（Vitest + 真实 PostgreSQL） | 路由、事务、并发、鉴权、数据约束 | CI backend job（3 shard 并行） |
+| 后端集成测试 | `server` 下 `npm test`（Vitest + 真实 PostgreSQL） | 路由、事务、并发、鉴权、数据约束 | CI backend job（6 shard 并行，片内串行） |
 | E2E | `npm run e2e`（Playwright） | **跨端关键旅程**的端到端行为 | push→develop / PR→master / 满足条件的 PR |
 
 原则：能在下层复现的行为不上升到上层。E2E 是最贵的一层，只保留下层无法表达的价值。
