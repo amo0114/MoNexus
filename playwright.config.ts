@@ -9,7 +9,10 @@ export default defineConfig({
   // notification realtime suites have the same isolation requirement; the
   // latter owns dedicated ports plus monexus_test_notification_realtime.
   testIgnore: [
-    // This source-level UI harness owns its isolated Vite server and mocks.
+    // The frontend job runs these once via playwright.mobile-island.config.ts,
+    // with its own Vite server and mocked APIs.
+    '**/mobile-chrome.spec.ts',
+    '**/mobile-island-merchant-final.spec.ts',
     '**/mobile-island-quality.spec.ts',
     '**/m3-identity-security-hardening.real.spec.ts',
     '**/legal-pages.spec.ts',

@@ -76,6 +76,8 @@ jobs:
               - 'playwright.mobile-island.config.ts'
               - 'e2e/mobile-chrome.spec.ts'
               - 'e2e/mobile-island*.spec.ts'
+              # Shared authentication fixtures are also used by the mobile lane.
+              - 'e2e/auth-fixtures.ts'
               - 'tsconfig.json'
               - 'tailwind.config.js'
               - '.github/workflows/ci.yml'
