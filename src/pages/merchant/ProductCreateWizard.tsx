@@ -7,6 +7,8 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
+import { captureFeedbackOwner } from '../../lib/completionFeedback'
+import { showProductPublished } from '../../lib/productPublicationFeedback'
 import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
@@ -173,6 +175,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const [readiness, setReadiness] = useState<PublicationReadiness | null>(null)
   const [readinessLoading, setReadinessLoading] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const publishingRef = useRef(false)
   const [activeViewTab, setActiveViewTab] = useState<'wizard' | 'preview'>('wizard')
 
   function loadTemplates() {
@@ -616,19 +619,23 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
 
   async function handlePublish() {
     const id = draft?.id
-    if (id == null) return
+    if (id == null || publishingRef.current) return
+    const isCurrent = captureFeedbackOwner()
+    publishingRef.current = true
     setPublishing(true)
     try {
-      await adapter.publishProduct(id)
-      showToast('商品发布成功')
-      navigate('/merchant')
+      const result = await adapter.publishProduct(id)
+      if (!isCurrent()) return
+      if (showProductPublished({ id, name: form.name.trim() }, result, navigate)) navigate('/merchant')
     } catch (err) {
+      if (!isCurrent()) return
       const issues = readinessErrorToIssues(err)
       if (issues.length > 0) {
         setReadiness({ ready: false, productId: id, issues })
       }
       showToast(getErrorMessage(err, '发布失败，请先解决检查清单中的问题'), 'error')
     } finally {
+      publishingRef.current = false
       setPublishing(false)
     }
   }

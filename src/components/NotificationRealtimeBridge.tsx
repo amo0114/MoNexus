@@ -11,6 +11,8 @@
  *  - refreshes on auth.expiring (single-flight) then aborts + reconnects.
  */
 import { useEffect, useMemo, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { showOrderNotificationIsland } from '../realtime/notificationIsland'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import { refreshAccessToken } from '../api/authRefresh'
@@ -27,6 +29,9 @@ import {
 } from '../auth/sessionContext'
 
 export function NotificationRealtimeBridge(): null {
+  const navigate = useNavigate()
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
   const user = useAuthStore((s) => s.user)
   const accessToken = useAuthStore((s) => s.accessToken)
   const authEpoch = useAuthStore((s) => s.authEpoch)
@@ -48,7 +53,7 @@ export function NotificationRealtimeBridge(): null {
     streamRef.current = new NotificationStream({
       onStateChange: (state) => setStreamState(state),
       onReady: () => publishAllVisible(),
-      onNotification: (n) => handleRealtimeNotification(n, showToast),
+      onNotification: (n) => handleRealtimeNotification(n, showToast, (notification, level) => showOrderNotificationIsland(notification, level, (path) => navigateRef.current(path))),
       onReadInvalidation: () => {
         // PR-5：同用户其他连接已读提示——只刷未读数，绝不弹 Toast。
         getInvalidationScheduler().publishNow('notifications')
@@ -114,7 +119,7 @@ function publishAllVisible(): void {
   getInvalidationScheduler().publishNow('all.visible')
 }
 
-export function handleRealtimeNotification(n: RealtimeNotificationData, showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void): void {
+export function handleRealtimeNotification(n: RealtimeNotificationData, showToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void, showIsland?: (n: RealtimeNotificationData, level: 'success' | 'info' | 'warning') => boolean): void {
   const lru = getExactIdLru()
   const scheduler = getInvalidationScheduler()
   const isFirst = !lru.has(n.id)
@@ -126,7 +131,7 @@ export function handleRealtimeNotification(n: RealtimeNotificationData, showToas
 
   // Toast only for live + visible + first exact ID (REQ-F-013 / CHK-FE-011).
   if (isFirst && toast.level && typeof document !== 'undefined' && document.visibilityState === 'visible') {
-    showToast(n.title, toast.level)
+    if (!showIsland?.(n, toast.level)) showToast(n.title, toast.level)
   }
 }
 

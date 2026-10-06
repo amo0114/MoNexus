@@ -4,6 +4,9 @@ import { useAppStore } from '../stores/appStore'
 import { createOrderReview, updateOrderReview, OwnReview } from '../api/reviews'
 import StarRating from './ui/StarRating'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
+import { showCompletionToast } from '../lib/completionFeedback'
+import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
 
 interface Props {
   open: boolean
@@ -21,16 +24,19 @@ export default function ReviewDialog({ open, orderId, mode, initial, onClose, on
   const [saving, setSaving] = useState(false)
 
   async function handleSubmit() {
+    const owner = getAuthSessionContext(useAuthStore.getState())
+    if (!owner) return
     setSaving(true)
     try {
       const body = { rating, comment: comment.trim() || undefined }
       const saved = mode === 'create'
         ? await createOrderReview(orderId, body)
         : await updateOrderReview(orderId, body)
-      showToast(mode === 'create' ? '评价已提交' : '评价已修改')
+      if (!matchesAuthSessionContext(owner, getAuthSessionContext(useAuthStore.getState()))) return
       onSaved(saved)
+      showCompletionToast(mode === 'create' ? '评价已提交' : '评价已修改')
     } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '操作失败', 'error')
+      if (matchesAuthSessionContext(owner, getAuthSessionContext(useAuthStore.getState()))) showToast(e.response?.data?.error?.message || '操作失败', 'error')
     } finally {
       setSaving(false)
     }

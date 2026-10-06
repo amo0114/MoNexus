@@ -15,9 +15,10 @@ export const LeaderboardTopRowSchema = z
   .object({
     rank: z.number().int().positive(),
     displayName: z.string(),
+    avatarUrl: z.string(),
     points: z.number().int(),
     isMe: z.boolean(),
-    /** 上一轮快照名次；首次入榜为 null。 */
+    /** 同一周期截至今日零点的名次；今日首次得分为 null。 */
     prevRank: z.number().int().positive().nullable(),
   })
   .strict()
@@ -35,8 +36,8 @@ export const LeaderboardResponseSchema = z
     scope: LeaderboardScopeSchema,
     periodKey: z.string(),
     periodLabel: z.string(),
-    dataThrough: z.string().nullable(),
-    updatedAt: z.string().nullable(),
+    dataThrough: z.string(),
+    updatedAt: z.string(),
     top: z.array(LeaderboardTopRowSchema).max(100),
     me: LeaderboardMeSchema.nullable(),
   })

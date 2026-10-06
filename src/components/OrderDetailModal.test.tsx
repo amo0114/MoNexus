@@ -1,5 +1,7 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react'
+import { useState, type ReactElement } from 'react'
+import { MemoryRouter, useLocation } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CheckoutPreview } from '../api/orders'
 import type { UserOrderDetail } from '../types/order'
 import { useAuthStore } from '../stores/authStore'
@@ -26,6 +28,9 @@ vi.mock('../api/orders', async (importOriginal) => {
 })
 
 import OrderDetailModal from './OrderDetailModal'
+
+const render = (ui: ReactElement) => rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
+afterEach(() => vi.restoreAllMocks())
 
 const ORDER: UserOrderDetail = {
   id: 50,
@@ -78,7 +83,7 @@ function preview(overrides: Partial<CheckoutPreview> = {}): CheckoutPreview {
 describe('OrderDetailModal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    useAppStore.setState({ toasts: [], islandNotice: null, modalDepth: 0 })
+    useAppStore.setState({ toasts: [], islandNotice: null, islandQueue: [], islandNoticeAvailable: false, modalDepth: 0 })
     useAuthStore.setState({
       user: {
         id: 1,
@@ -88,7 +93,7 @@ describe('OrderDetailModal', () => {
         points: 500,
         merchant: null,
       },
-      accessToken: 'token',
+      accessToken: `e30.${btoa(JSON.stringify({ userId: 1, sid: 'renewal-test' }))}.sig`,
       isLoggedIn: true,
     })
     renewOrder.mockResolvedValue({
@@ -133,6 +138,68 @@ describe('OrderDetailModal', () => {
       }))
       const options = createOrder.mock.calls[0][1]
       expect(Object.prototype.hasOwnProperty.call(options, 'expectedAssuranceGrantId')).toBe(true)
+      expect(await screen.findByTestId('success-modal-title')).toHaveTextContent('续费成功')
+    })
+  })
+
+  describe('mobile renewal island', () => {
+    beforeEach(() => {
+      vi.spyOn(window, 'matchMedia').mockImplementation((media) => ({ matches: media.includes('767'), media, addEventListener() {}, removeEventListener() {} }) as MediaQueryList)
+      useAppStore.setState({ islandNoticeAvailable: true })
+    })
+
+    async function submit() {
+      fireEvent.click(screen.getByTestId('order-renew-button'))
+      await screen.findByTestId('preview-price')
+      fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+      await waitFor(() => expect(createOrder).toHaveBeenCalledOnce())
+    }
+
+    it('hides both overlays during submission, then opens the NEW order from the result', async () => {
+      let resolve!: (data: unknown) => void
+      createOrder.mockImplementation(() => new Promise((r) => { resolve = r }))
+      function Host() {
+        const [open, setOpen] = useState(true)
+        const location = useLocation()
+        return <>{open && <OrderDetailModal order={ORDER} onClose={() => setOpen(false)} />}<span data-testid="destination">{location.pathname}{location.search}</span></>
+      }
+      render(<Host />)
+      await submit()
+      await waitFor(() => expect(useAppStore.getState().modalDepth).toBe(0))
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(useAppStore.getState().islandNotice?.kind).toBe('order_processing')
+      await act(async () => resolve({ orderId: 88, balanceAfter: 400, provisionPending: true }))
+      expect(useAppStore.getState().islandNotice?.title).toBe('续费订单已创建，开通中')
+      expect(screen.queryByRole('dialog')).toBeNull()
+      act(() => useAppStore.getState().islandNotice?.onAction?.())
+      expect(screen.getByTestId('destination')).toHaveTextContent('/orders?focus=88')
+      expect(useAuthStore.getState().user?.points).toBe(400)
+    })
+
+    it('restores checkout after a password failure and never shows a success island', async () => {
+      let reject!: (error: unknown) => void
+      createOrder.mockImplementation(() => new Promise((_, r) => { reject = r }))
+      render(<OrderDetailModal order={ORDER} onClose={vi.fn()} />)
+      await submit()
+      await waitFor(() => expect(useAppStore.getState().modalDepth).toBe(0))
+      await act(async () => reject({ response: { data: { error: { code: 'VERIFICATION_FAILED', message: '密码错误' } } } }))
+      await screen.findByTestId('purchase-modal')
+      expect(useAppStore.getState().islandNotice).toBeNull()
+      expect(useAppStore.getState().toasts.some((t) => t.type === 'error')).toBe(true)
+      expect(screen.getByRole('button', { name: '确认支付' })).toBeEnabled()
+    })
+
+    it('ignores the result if the session changes while renewal is pending', async () => {
+      let resolve!: (data: unknown) => void
+      createOrder.mockImplementation(() => new Promise((r) => { resolve = r }))
+      const close = vi.fn()
+      render(<OrderDetailModal order={ORDER} onClose={close} />)
+      await submit()
+      act(() => useAuthStore.setState({ authEpoch: useAuthStore.getState().authEpoch + 1 }))
+      await act(async () => resolve({ orderId: 88, balanceAfter: 400 }))
+      expect(useAppStore.getState().islandNotice).toBeNull()
+      expect(close).not.toHaveBeenCalled()
+      expect(useAuthStore.getState().user?.points).toBe(500)
     })
   })
 

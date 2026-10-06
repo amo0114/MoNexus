@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { AlertCircle, Megaphone, ShieldAlert, X } from 'lucide-react'
 import type { PublicAnnouncement } from '../types/admin'
+import { useIslandReminder } from '../hooks/useIslandReminder'
 
 interface AnnouncementBannerProps {
   items: PublicAnnouncement[]
@@ -48,11 +49,23 @@ export default function AnnouncementBanner({
     return items.find((item) => item.presentation === 'notice' && shouldShowNotice(item))
   }, [items, shouldShowNotice])
 
+  const onIsland = useIslandReminder(top?.presentation === 'notice' ? `announcement:${top.id}:${top.version}` : null, {
+    kind: 'notification',
+    title: top?.title ?? '平台通知',
+    subtitle: top?.content,
+    groupKey: 'announcement',
+    actionLabel: '查看公告',
+    onAction: () => { if (top) onOpen(top) },
+    onPresented: () => { if (top) recordNoticeImpression(top) },
+    onDismiss: () => { if (top) dismissNotice(top) },
+  })
+
   useEffect(() => {
-    if (top?.presentation === 'notice') recordNoticeImpression(top)
-  }, [top, recordNoticeImpression])
+    if (top?.presentation === 'notice' && !onIsland) recordNoticeImpression(top)
+  }, [top, recordNoticeImpression, onIsland])
 
   if (!top) return null
+  if (top.presentation === 'notice' && onIsland) return null
 
   const meta = presentationMeta[top.presentation]
   const Icon = meta.icon

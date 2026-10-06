@@ -7,7 +7,8 @@ import {
   businessMonthStart,
   businessWeekStart,
 } from '../../lib/businessTime.js'
-import { maskEmail } from '../../lib/email.js'
+import { resolveUserNickname } from '../../lib/defaultNickname.js'
+import { resolveUserAvatarUrl } from '../auth/avatarPresets.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import type {
@@ -19,11 +20,10 @@ import type {
 } from './types.js'
 
 /**
- * SPEC-LEADERBOARD-001 §4.3/§4.4。
+ * SPEC-LEADERBOARD-001 v1.1。
  *
- * 写侧（refreshLeaderboards）每日一轮，把每期的**全量**合格得分用户落成
- * 快照；读侧（getLeaderboard）只查快照，不碰 PointLog。两侧共用
- * resolvePeriod / periodWindow，期边界只有一处定义。
+ * 历史快照仍由 refreshLeaderboards 维护；当前榜单直接按请求截止时刻聚合。
+ * 两侧共用业务周期与流水过滤，当前榜单不再依赖每日任务是否执行。
  */
 
 /** 与 fileAccess / sessionService 同形的日期状 advisory lock class。 */
@@ -131,19 +131,11 @@ function boundAsStoredUtc(instant: Date) {
  * LB-04 的全序（points desc → 窗口内最后一笔 in 的 createdAt asc → userId
  * asc）直接由 SQL 定序，rank 就是结果集下标，可重跑复现。
  */
-async function aggregateWindow(
-  startUtc: Date | null,
-  endUtc: Date,
-  client: RawClient = prisma
-): Promise<AggregateRow[]> {
+function eligibleLogsSql(startUtc: Date | null, endUtc: Date) {
   const lowerBound =
     startUtc === null ? Prisma.empty : Prisma.sql`AND pl."createdAt" >= ${boundAsStoredUtc(startUtc)}`
-
-  return client.$queryRaw<AggregateRow[]>`
-    SELECT
-      pl."userId" AS "userId",
-      SUM(pl."amount") AS "points",
-      MAX(pl."createdAt") AS "lastEarnedAt"
+  return Prisma.sql`
+    SELECT pl."userId", pl."amount", pl."createdAt"
     FROM "PointLog" pl
     INNER JOIN "User" u ON u."id" = pl."userId"
     WHERE pl."type" = 'in'
@@ -152,6 +144,17 @@ async function aggregateWindow(
       ${lowerBound}
       AND u."role" <> 'admin'
       AND u."status" <> '已封禁'
+  `
+}
+
+async function aggregateWindow(
+  startUtc: Date | null,
+  endUtc: Date,
+  client: RawClient = prisma
+): Promise<AggregateRow[]> {
+  return client.$queryRaw<AggregateRow[]>`
+    SELECT pl."userId", SUM(pl."amount") AS "points", MAX(pl."createdAt") AS "lastEarnedAt"
+    FROM (${eligibleLogsSql(startUtc, endUtc)}) pl
     GROUP BY pl."userId"
     ORDER BY SUM(pl."amount") DESC, MAX(pl."createdAt") ASC, pl."userId" ASC
   `
@@ -243,97 +246,88 @@ export async function refreshLeaderboards({
   return outcomes
 }
 
-/**
- * LB-07：展示名口径与 reviews/service.ts 的 displayNameFor 一致（昵称去空白，
- * 空则回退打码邮箱）。**两处修改必须同步**——它同时是评价区和榜单的对外身份。
- */
-async function displayNamesFor(userIds: number[]): Promise<Map<number, string>> {
-  if (userIds.length === 0) return new Map()
-  const users = await prisma.user.findMany({
-    where: { id: { in: userIds } },
-    select: { id: true, nickname: true, email: true },
-  })
-  return new Map(users.map(user => [user.id, user.nickname?.trim() || maskEmail(user.email)]))
-}
-
 function periodLabel(period: LeaderboardPeriod): string {
   if (period.scope === 'total') return '全部'
   if (period.scope === 'month') {
     const [year, month] = period.startDay!.split('-').map(Number)
     return `${year}年${month}月`
   }
-  return `${period.startDay!.slice(5)} ~ ${addCalendarDays(period.startDay!, 6).slice(5)}`
+  return `${period.startDay} ~ ${addCalendarDays(period.startDay!, 6)}`
+}
+
+interface CurrentRankRow {
+  userId: number
+  rank: bigint
+  points: bigint
+  prevRank: bigint | null
+  nickname: string | null
+  avatarUrl: string | null
 }
 
 /**
- * 读侧：当前期的 Top 100 + 请求者自己的名次。
- *
- * 一期的行同批写入、共享 computedAt，所以 updatedAt 取首行即可；本期无行时
- * 回退到总榜的 computedAt（总榜每轮必刷），把「新周期首日」与「部署后首刷
- * 空窗」(C12，updatedAt null) 区分开。dataThrough 由 computedAt 反推而非由
- * now 反推——cron 落后时不能谎称数据比实际更新。
+ * 当前榜单窗口为 [自然周期起点, now)，含今天；总榜没有左边界。
+ * 在同一条 SQL / 同一 MVCC 视图内计算 Top 100、我的排名及今日零点排名，
+ * 避免多次查询间出现积分/名次错位。仅传回最多 101 行，不把全榜载入 Node。
+ * prevRank 始终比较同一周期的昨日截止值，反复刷新不会把涨幅刷成 0。
+ * 空榜也是有效查询结果，不再通过其他周期的快照推测刷新时间。
  */
 export async function getLeaderboard(
   scope: LeaderboardScope,
   userId: number,
-  { now = new Date() }: { now?: Date } = {}
+  { now = new Date(), client = prisma }: { now?: Date; client?: RawClient } = {}
 ): Promise<LeaderboardResponse> {
   const startedAt = performance.now()
-  const period = resolvePeriod(scope, businessDateString(now))
-  const where = { scope, periodKey: period.periodKey }
-
-  const [topRows, myRow] = await Promise.all([
-    prisma.leaderboardEntry.findMany({
-      where,
-      orderBy: { rank: 'asc' },
-      take: TOP_LIMIT,
-      select: { rank: true, userId: true, points: true, computedAt: true, prevRank: true },
-    }),
-    prisma.leaderboardEntry.findUnique({
-      where: { scope_periodKey_userId: { ...where, userId } },
-      select: { rank: true, points: true, prevRank: true },
-    }),
-  ])
-
-  let computedAt: Date | null = topRows[0]?.computedAt ?? null
-  // 空期快照没有行可携带 computedAt，若停在 null，前端会把「新周期首日、
-  // 本期确无数据」误判成「部署后首刷空窗」(C12)。总榜每轮必刷，用它的
-  // computedAt 兜底：updatedAt 为 null 从此严格等价于「系统尚无任何快照」。
-  if (computedAt === null && scope !== 'total') {
-    const totalRow = await prisma.leaderboardEntry.findFirst({
-      where: { scope: 'total', periodKey: TOTAL_PERIOD_KEY },
-      select: { computedAt: true },
-    })
-    computedAt = totalRow?.computedAt ?? null
-  }
-  const names = await displayNamesFor(topRows.map(row => row.userId))
-  const me: LeaderboardMe | null =
-    myRow === null
-      ? null
-      : { rank: myRow.rank, points: pointsToApiNumber(myRow.points), prevRank: myRow.prevRank }
-
+  const today = businessDateString(now)
+  const period = resolvePeriod(scope, today)
+  const startUtc = period.startDay === null ? null : businessDayStartUtc(period.startDay)
+  const dayStart = boundAsStoredUtc(businessDayStartUtc(today))
+  const rows = await client.$queryRaw<CurrentRankRow[]>`
+    WITH scores AS (
+      SELECT pl."userId", SUM(pl."amount") AS points, MAX(pl."createdAt") AS "lastEarnedAt",
+        SUM(pl."amount") FILTER (WHERE pl."createdAt" < ${dayStart}) AS "previousPoints",
+        MAX(pl."createdAt") FILTER (WHERE pl."createdAt" < ${dayStart}) AS "previousEarnedAt"
+      FROM (${eligibleLogsSql(startUtc, now)}) pl
+      GROUP BY pl."userId"
+    ), ranked AS (
+      SELECT "userId", points,
+        ROW_NUMBER() OVER (ORDER BY points DESC, "lastEarnedAt" ASC, "userId" ASC) AS rank
+      FROM scores
+    ), previous AS (
+      SELECT "userId",
+        ROW_NUMBER() OVER (ORDER BY "previousPoints" DESC, "previousEarnedAt" ASC, "userId" ASC) AS rank
+      FROM scores WHERE "previousPoints" > 0
+    )
+    SELECT r."userId", r.points, r.rank, p.rank AS "prevRank", u.nickname, u."avatarUrl"
+    FROM ranked r
+    JOIN "User" u ON u.id = r."userId"
+    LEFT JOIN previous p ON p."userId" = r."userId"
+    WHERE r.rank <= ${TOP_LIMIT} OR r."userId" = ${userId}
+    ORDER BY r.rank
+  `
+  const topRows = rows.filter(row => row.rank <= BigInt(TOP_LIMIT))
+  const myRow = rows.find(row => row.userId === userId)
+  const me: LeaderboardMe | null = myRow
+    ? { rank: Number(myRow.rank), points: pointsToApiNumber(myRow.points), prevRank: myRow.prevRank === null ? null : Number(myRow.prevRank) }
+    : null
   const result: LeaderboardResponse = {
     scope,
     periodKey: period.periodKey,
     periodLabel: periodLabel(period),
-    dataThrough: computedAt === null ? null : periodWindow(period, businessDateString(computedAt)).lastDay,
-    updatedAt: computedAt === null ? null : computedAt.toISOString(),
+    dataThrough: today,
+    updatedAt: now.toISOString(),
     top: topRows.map(row => ({
-      rank: row.rank,
-      displayName: names.get(row.userId) ?? '',
+      rank: Number(row.rank),
+      displayName: resolveUserNickname({ id: row.userId, nickname: row.nickname }),
+      avatarUrl: resolveUserAvatarUrl({ id: row.userId, avatarUrl: row.avatarUrl }),
       points: pointsToApiNumber(row.points),
       isMe: row.userId === userId,
-      prevRank: row.prevRank,
+      prevRank: row.prevRank === null ? null : Number(row.prevRank),
     })),
     me,
   }
-
   logger.info({
-    op: 'leaderboard.get',
-    scope,
-    periodKey: period.periodKey,
-    rows: result.top.length,
-    duration_ms: Math.round(performance.now() - startedAt),
+    op: 'leaderboard.get', scope, periodKey: period.periodKey,
+    rows: result.top.length, duration_ms: Math.round(performance.now() - startedAt),
   })
   return result
 }

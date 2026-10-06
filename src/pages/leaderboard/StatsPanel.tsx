@@ -33,7 +33,7 @@ function deriveStats(data: LeaderboardResponse): Stat[] {
     stats.push({ icon: Crown, label: '榜首领先', value: `${fmtPoints(champion.points - runnerUp.points)} 分` })
   }
   if (last && last.rank > 3) {
-    stats.push({ icon: Flag, label: `上榜线（第 ${last.rank} 名）`, value: `${fmtPoints(last.points)} 分` })
+    stats.push({ icon: Flag, label: `${last.rank === 100 ? '上榜线' : '当前末位'}（第 ${last.rank} 名）`, value: `${fmtPoints(last.points)} 分` })
   }
   return stats
 }
@@ -84,7 +84,7 @@ export default function StatsPanel({ data }: { data: LeaderboardResponse }) {
       )}
 
       <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
-        仅计「获得」积分，与会员等级同口径；消费不扣减名次。每日刷新，展示前 100 名。
+        仅计「获得」积分，与会员等级同口径；消费不扣减名次。包含今日积分，展示前 100 名；名次变化对比今日零点。
       </p>
     </div>
   )

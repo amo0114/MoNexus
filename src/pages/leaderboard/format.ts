@@ -3,6 +3,14 @@ import type { LeaderboardResponse } from '../../api/leaderboard'
 /** 积分展示统一千分位（12,450），font-mono + tabular-nums 下仍逐列对齐。 */
 export const fmtPoints = (n: number) => n.toLocaleString('zh-CN')
 
+/** 截止时刻始终显示业务时区，避免浏览器时区改变统计周期的观感。 */
+export function formatLeaderboardTime(instant: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  }).format(new Date(instant)).replace(/\//g, '-')
+}
+
 /** 「距上一名 / 距上榜线」的两种结果：有分差给 points，并列给同分文案（绝不出现"还差 0 分"）。 */
 export type MeGap =
   | { kind: 'gap'; label: string; points: number }
@@ -24,6 +32,9 @@ export function meGap(data: LeaderboardResponse): MeGap | null {
     return { kind: 'gap', label: '距上一名', points: prev.points - me.points }
   }
   const last = top[top.length - 1]
+  if (last && me.rank > last.rank && last.points === me.points) {
+    return { kind: 'tied', label: '与上榜线同分' }
+  }
   if (last && me.rank > last.rank && last.points > me.points) {
     return { kind: 'gap', label: '距上榜线', points: last.points - me.points }
   }

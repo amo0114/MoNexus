@@ -1,7 +1,7 @@
 import { Coins, MoveDown, MoveUp, Sparkles } from 'lucide-react'
 import type { LeaderboardEntry } from '../../api/leaderboard'
 import { fmtPoints } from './format'
-import LetterAvatar from './LetterAvatar'
+import UserAvatar from '../../components/ui/UserAvatar'
 
 /**
  * 名次变化（P3-1）：delta = prevRank - rank。
@@ -77,7 +77,7 @@ export default function RankRow({
         </span>
         <RankDelta rank={entry.rank} prevRank={entry.prevRank} />
       </span>
-      <LetterAvatar name={entry.displayName} className="w-10 h-10 shrink-0 text-base" />
+      <UserAvatar url={entry.avatarUrl} name={entry.displayName} size={40} className="text-base" />
       <span
         className={`min-w-0 truncate text-sm flex-1 sm:flex-none sm:w-36 lg:w-48 ${
           entry.isMe ? 'font-bold text-[var(--color-primary)]' : 'font-medium text-[var(--color-text)]'

@@ -152,7 +152,9 @@ describe('GET /api/products/:id/reviews (public)', () => {
     const item = res.body.items[0]
     expect(item.rating).toBe(4)
     expect(item.comment).toBe('公开可见的评价')
-    expect(item.displayName).toBe('rv***@test.local') // 无昵称时邮箱打码
+    const me = await api.get('/api/auth/me').set(authHeader(token)).expect(200)
+    expect(item.displayName).toBe(me.body.nickname) // 无昵称时各展示面使用同一稳定默认昵称
+    expect(item.displayName).toMatch(/^[\u4e00-\u9fff]+$/)
 
     const raw = JSON.stringify(res.body)
     expect(raw).not.toContain('rv-public@test.local')

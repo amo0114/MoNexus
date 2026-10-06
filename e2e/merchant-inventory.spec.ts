@@ -55,8 +55,19 @@ test('merchant filters products, imports then voids inventory with log entry', a
   await page.getByRole('button', { name: '预览导入内容' }).click()
   await expect(page.getByText('预览结果')).toBeVisible({ timeout: 10_000 })
   await page.getByRole('button', { name: '确认导入 1 个' }).click()
-  await expect(page.getByText('成功导入 1 个交付单元')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('成功导入 1 个交付单元', { exact: true })).toBeVisible({ timeout: 10_000 })
   await expect(availability).toContainText(`商品交付库存汇总：${stockBefore + 1}`, { timeout: 10_000 })
+
+  if ((page.viewportSize()?.width ?? 1280) < 768) {
+    await page.getByRole('button', { name: '查看库存记录', exact: true }).click()
+    const importedLog = page.getByTestId('inventory-log-modal')
+    await expect(importedLog).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`inventoryLog=${productId}`))
+    await expect(importedLog.getByTestId('inventory-log-table').locator('tbody tr').first()).toContainText('+1')
+    await expect(importedLog).not.toContainText(uniqueItem)
+    await importedLog.getByRole('button', { name: '关闭' }).click()
+    await expect(importedLog).toBeHidden()
+  }
 
   // 重新进入 Offer-first 工作台作废 1 个，并验证 Offer/Product 分栏结果。
   const voidReason = `E2E 自动化作废 ${Date.now()}`

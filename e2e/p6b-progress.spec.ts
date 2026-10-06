@@ -54,6 +54,11 @@ test.describe.serial('P6b progress & acceptance', () => {
     await page.getByTestId('merchant-progress-note').fill(PROGRESS_NOTE)
     await page.getByTestId('merchant-progress-submit').click()
     await expect(page.getByText('进度已更新').first()).toBeVisible({ timeout: 10_000 })
+    if ((page.viewportSize()?.width ?? 1280) < 768) {
+      await page.getByTestId('action-island-notice').getByRole('button', { name: '查看订单', exact: true }).click()
+      await expect(page).toHaveURL(new RegExp(`/merchant/orders/${state.orderId}$`))
+      await expect(page.getByTestId('merchant-focused-order')).toContainText(`#${state.orderId}`)
+    }
   })
 
   test('buyer sees the progress timeline; acceptance closes the order', async ({ page, request }) => {

@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { blockReasonToUserMessage, PROCESSING_TIMEOUT_LABEL, SETTLEMENT_TERM } from '../utils/settlementCopy'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { captureFeedbackOwner, showCompletionToast, showCompletionActivity } from '../lib/completionFeedback'
+import { showProductPublished } from '../lib/productPublicationFeedback'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import {
   getMerchantStats,
@@ -17,6 +19,7 @@ import {
   rejectOrder,
   postOrderProgress,
   importMerchantInventory,
+  type InventoryImportResult,
 } from '../api/merchant'
 import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage } from '../api/error'
@@ -31,7 +34,7 @@ import { Store, Package, ShoppingBag, DollarSign, Settings, Loader2, BarChart3, 
 import { useAppStore } from '../stores/appStore'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
 import ProvisionBadge from '../components/ProvisionBadge'
-import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
+import MerchantInventoryLogModal, { type InventoryLogProduct } from '../components/merchant/MerchantInventoryLogModal'
 import MerchantAvailabilityModal from '../components/merchant/MerchantAvailabilityModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacityAdjustModal'
@@ -70,9 +73,15 @@ function isGoneOrForbidden(error: any) {
 
 export default function MerchantDashboardPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const orderRoute = /^\/merchant\/orders(?:\/(\d+))?\/?$/.exec(location.pathname)
+  const focusedOrderId = orderRoute?.[1] ? Number(orderRoute[1]) : null
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
-  const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
+  const [activeTab, setActiveTab] = useState<TabKey>(orderRoute ? 'orders' : 'dashboard')
+  useEffect(() => {
+    if (/^\/merchant\/orders(?:\/\d+)?\/?$/.test(location.pathname)) setActiveTab('orders')
+  }, [location.pathname])
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
   const loadCoordinatorRef = useRef(createLatestRequestCoordinator(true))
@@ -114,13 +123,14 @@ export default function MerchantDashboardPage() {
 
   useEffect(() => {
     loadData()
-  }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
+  }, [activeTab, focusedOrderId, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData(opts?: { background?: boolean }) {
     const coordinator = loadCoordinatorRef.current
     const generation = coordinator.begin(opts?.background ? 'background' : 'foreground')
     const snapshot = {
       tab: activeTab,
+      focusedOrderId,
       productPage,
       orderPage,
       orderStatusFilter,
@@ -133,6 +143,7 @@ export default function MerchantDashboardPage() {
     }
     const isCurrent = () => coordinator.isLatest(generation)
     if (!opts?.background || coordinator.ownsLoading(generation)) setLoading(true)
+    if (!opts?.background && snapshot.focusedOrderId) { setOrders([]); setOrderTotal(0) }
     try {
       if (snapshot.tab === 'dashboard' || snapshot.tab === 'orders') {
         const data = await getMerchantStats()
@@ -153,7 +164,7 @@ export default function MerchantDashboardPage() {
         setProducts(data.items)
         setProductTotal(data.total)
       } else if (snapshot.tab === 'orders') {
-        const data = await getMerchantOrders({
+        const data = snapshot.focusedOrderId ? { items: [await getMerchantOrderDetail(snapshot.focusedOrderId)], total: 1 } : await getMerchantOrders({
           page: snapshot.orderPage,
           pageSize: 20,
           status: snapshot.orderStatusFilter || undefined,
@@ -172,6 +183,7 @@ export default function MerchantDashboardPage() {
         setMerchant(data)
       }
     } catch (e: any) {
+      if (isCurrent() && snapshot.focusedOrderId) { setOrders([]); setOrderTotal(0) }
       if (isCurrent() && !opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
     } finally {
       if (coordinator.finish(generation)) {
@@ -265,7 +277,24 @@ export default function MerchantDashboardPage() {
   const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
 
   const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
-  const [logProduct, setLogProduct] = useState<MerchantProduct | null>(null)
+  const [logProduct, setLogProduct] = useState<InventoryLogProduct | null>(null)
+  const inventoryLogParam = new URLSearchParams(location.search).get('inventoryLog')
+  const inventoryLogId = inventoryLogParam && /^[1-9]\d*$/.test(inventoryLogParam) && Number.isSafeInteger(Number(inventoryLogParam))
+    ? Number(inventoryLogParam) : null
+  const previousInventoryLogId = useRef<number | null>(null)
+
+  useEffect(() => {
+    const previous = previousInventoryLogId.current
+    previousInventoryLogId.current = inventoryLogId
+    if (!inventoryLogId) {
+      if (previous) setIsInventoryLogOpen(false)
+      return
+    }
+    const name = location.state?.inventoryLogName
+    setActiveTab('products')
+    setLogProduct({ id: inventoryLogId, name: typeof name === 'string' ? name : `商品 #${inventoryLogId}` })
+    setIsInventoryLogOpen(true)
+  }, [inventoryLogId, location.key, location.state])
 
   const [isOfferManagerOpen, setIsOfferManagerOpen] = useState(false)
   const [offerProduct, setOfferProduct] = useState<MerchantProduct | null>(null)
@@ -289,19 +318,23 @@ export default function MerchantDashboardPage() {
 
   async function handleToggleProductStatus(product: MerchantProduct) {
     if (publishingInFlightRef.current.has(product.id)) return
+    const isCurrent = captureFeedbackOwner()
     const isPublishing = product.status !== 'active' // active → 下架；inactive/draft → 上架
     publishingInFlightRef.current.add(product.id)
     setPublishingProductIds((prev) => new Set(prev).add(product.id))
     try {
       if (isPublishing) {
-        await catalogApi.publishProduct(product.id)
+        const result = await catalogApi.publishProduct(product.id)
+        if (!isCurrent()) return
+        showProductPublished(product, result, navigate, '商品已上架')
       } else {
         await catalogApi.unpublishProduct(product.id)
+        if (!isCurrent()) return
+        showToast('商品已下架')
       }
-      showToast(`商品已${isPublishing ? '上架' : '下架'}`)
       loadData()
     } catch (e: unknown) {
-      showToast(getApiErrorMessage(e, '操作失败'), 'error')
+      if (isCurrent()) showToast(getApiErrorMessage(e, '操作失败'), 'error')
     } finally {
       publishingInFlightRef.current.delete(product.id)
       setPublishingProductIds((prev) => {
@@ -320,9 +353,23 @@ export default function MerchantDashboardPage() {
 
   async function handleInventorySubmit(items: string[], offerId?: number) {
     if (!importingProduct) return
-    await importMerchantInventory(importingProduct.id, { items, ...(offerId != null ? { offerId } : {}) })
-    showToast(`成功导入 ${items.length} 个交付单元`)
+    const product = importingProduct
+    const isCurrent = captureFeedbackOwner()
+    const result = await importMerchantInventory(product.id, { items, ...(offerId != null ? { offerId } : {}) })
+    if (!isCurrent()) return
+    notifyInventoryImported(product, result, offerId)
     loadData()
+  }
+
+  function notifyInventoryImported(product: NonNullable<typeof importingProduct>, result: InventoryImportResult, offerId?: number) {
+    const offerName = product.offers?.find((offer) => offer.id === offerId)?.name
+    showCompletionActivity({
+      title: `成功导入 ${result.imported} 个交付单元`,
+      subtitle: [product.name, offerName].filter(Boolean).join(' · '),
+      groupKey: `merchant-inventory:${product.id}:${offerId ?? 'default'}`,
+      actionLabel: '查看库存记录',
+      onAction: () => navigate(`/merchant?inventoryLog=${product.id}`, { state: { inventoryLogName: product.name } }),
+    })
   }
 
   async function handleOrderAction(
@@ -379,10 +426,16 @@ export default function MerchantDashboardPage() {
 
   async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number; publicNote?: string }) {
     if (!deliveringOrder) return
+    const isCurrent = captureFeedbackOwner()
     try {
       await deliverOrder(deliveringOrder.id, payload)
+      if (!isCurrent()) return
       setDeliveringOrder(null)
-      showToast('发货成功')
+      showCompletionActivity({
+        title: '发货成功', subtitle: `订单 #${deliveringOrder.id} · ${deliveringOrder.product?.name ?? ''}`,
+        groupKey: `merchant:order:${deliveringOrder.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${deliveringOrder.id}`),
+      })
       await loadData()
     } catch (e: any) {
       if (isGoneOrForbidden(e)) setDeliveringOrder(null)
@@ -392,10 +445,16 @@ export default function MerchantDashboardPage() {
 
   async function handleProgressSubmit(note: string) {
     if (!progressOrder) return
+    const isCurrent = captureFeedbackOwner()
     try {
       await postOrderProgress(progressOrder.id, note)
+      if (!isCurrent()) return
       setProgressOrder(null)
-      showToast('进度已更新')
+      showCompletionActivity({
+        title: '进度已更新', subtitle: `订单 #${progressOrder.id} · 买家可在订单动态中查看`,
+        groupKey: `merchant:order:${progressOrder.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${progressOrder.id}`),
+      })
       await loadData()
     } catch (e: any) {
       if (isGoneOrForbidden(e)) setProgressOrder(null)
@@ -405,10 +464,12 @@ export default function MerchantDashboardPage() {
 
   async function handleDisputeSubmit(resolution: 'resume' | 'close') {
     if (!disputeOrder) return
+    const isCurrent = captureFeedbackOwner()
     try {
       await respondDispute(disputeOrder.id, { resolution })
+      if (!isCurrent()) return
       setDisputeOrder(null)
-      showToast('争议处理成功')
+      showCompletionToast('争议处理成功')
       await loadData()
     } catch (e: any) {
       if (isGoneOrForbidden(e)) setDisputeOrder(null)
@@ -495,20 +556,26 @@ export default function MerchantDashboardPage() {
           )}
 
           {activeTab === 'orders' && (
+            <>
+            {focusedOrderId && <div className="flex items-center justify-between gap-3 mb-4 text-sm" data-testid="merchant-focused-order">
+              <span>正在查看订单 #{focusedOrderId}</span>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/merchant/orders')}>全部订单</button>
+            </div>}
             <MerchantOrdersPanel
               orders={orders}
               loading={loading}
-              orderPage={orderPage}
+              orderPage={focusedOrderId ? 1 : orderPage}
               orderTotal={orderTotal}
               setOrderPage={setOrderPage}
               orderStatusFilter={orderStatusFilter}
-              setOrderStatusFilter={setOrderStatusFilter}
+              setOrderStatusFilter={(value) => { setOrderStatusFilter(value); if (focusedOrderId) navigate('/merchant/orders') }}
               orderSortBooking={orderSortBooking}
-              setOrderSortBooking={setOrderSortBooking}
+              setOrderSortBooking={(value) => { setOrderSortBooking(value); if (focusedOrderId) navigate('/merchant/orders') }}
               todo={stats?.todo}
               registry={registry}
               onOrderAction={handleOrderAction}
             />
+            </>
           )}
 
           {activeTab === 'settlements' && (
@@ -622,11 +689,21 @@ export default function MerchantDashboardPage() {
         onClose={() => setIsAvailabilityOpen(false)}
         product={availabilityProduct}
         onChanged={handleAvailabilityChanged}
+        onImported={(result, offerId) => {
+          if (availabilityProduct) notifyInventoryImported(availabilityProduct, result, offerId)
+        }}
       />
 
       <MerchantInventoryLogModal
         isOpen={isInventoryLogOpen}
-        onClose={() => setIsInventoryLogOpen(false)}
+        onClose={() => {
+          setIsInventoryLogOpen(false)
+          if (inventoryLogId) {
+            const params = new URLSearchParams(location.search)
+            params.delete('inventoryLog')
+            navigate({ pathname: location.pathname, search: params.toString() }, { replace: true, state: null })
+          }
+        }}
         product={logProduct}
       />
 

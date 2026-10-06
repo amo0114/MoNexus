@@ -136,6 +136,16 @@ describe('profile pending actions', () => {
 })
 
 describe('profile avatar selection', () => {
+  it('opens with the same ID-based default shown in the profile', async () => {
+    const clicker = userEvent.setup()
+    render(<ProfileIdentityCard />)
+    const preset = AVATAR_PRESETS[user.id - 1]
+    expect(screen.getByTestId('avatar-edit').querySelector('img')).toHaveAttribute('src', preset.url)
+    await clicker.click(screen.getByRole('button', { name: '选择头像' }))
+    expect(screen.getByRole('button', { name: `选择${preset.name}` })).toHaveAttribute('aria-pressed', 'true')
+    expect(updateMe).not.toHaveBeenCalled()
+  })
+
   it('previews across factions, saves only on confirmation, and keeps the persisted selection when reopened', async () => {
     const clicker = userEvent.setup()
     vi.mocked(updateMe).mockResolvedValue({ ...user, avatarUrl: zhao.url })

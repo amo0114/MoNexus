@@ -7,9 +7,11 @@ import {
   businessWeekStart,
 } from '../lib/businessTime.js'
 import { acquireCronLeaseWithHeartbeat } from '../lib/cronLease.js'
-import { maskEmail } from '../lib/email.js'
+import { resolveUserNickname } from '../lib/defaultNickname.js'
+import { resolveUserAvatarUrl } from '../modules/auth/avatarPresets.js'
 import { computeLifetimeEarnedPoints } from '../lib/memberTier.js'
 import { prisma } from '../lib/prisma.js'
+import { _resetForTesting as resetUserStatusCache } from '../lib/userStatusCache.js'
 import {
   LEADERBOARD_REFRESH_WINDOW_MS,
   runLeaderboardRefreshCronBatch,
@@ -257,7 +259,7 @@ describe('leaderboard refresh — 排名全序与幂等 (P.3, LB-04/LB-08)', () 
 })
 
 describe('leaderboard refresh — 名次变化投影 prevRank (P3-1)', () => {
-  it('新一轮把上一轮 rank 写入 prevRank；新入榜为 null；读侧随行下发', async () => {
+  it('历史快照保留上一轮 rank；当前查询独立对比今日零点', async () => {
     const a = await makeUser('lb-delta-a@test.local')
     const b = await makeUser('lb-delta-b@test.local')
 
@@ -290,11 +292,10 @@ describe('leaderboard refresh — 名次变化投影 prevRank (P3-1)', () => {
       { userId: c.id, rank: 3, prevRank: null },
     ])
 
-    // 读侧：top 行与 me 都带 prevRank（schema 已含白名单字段）。
-    const token = (await loginAs('lb-delta-b@test.local', PASSWORD)).accessToken
-    const res = await api.get('/api/leaderboard').set(authHeader(token)).expect(200)
-    expect(res.body.top[0]).toMatchObject({ rank: 1, prevRank: 2, isMe: true })
-    expect(res.body.me).toEqual({ rank: 1, points: 250, prevRank: 2 })
+    // 当前榜单不读历史 prevRank；今日尚无新流水，与今日零点名次相同。
+    const board = await getLeaderboard('total', b.id, { now: REF_NOW })
+    expect(board.top[0]).toMatchObject({ rank: 1, prevRank: 1, isMe: true })
+    expect(board.me).toEqual({ rank: 1, points: 250, prevRank: 1 })
   })
 })
 
@@ -515,24 +516,17 @@ describe('leaderboard cron — 租约互斥 (P.8, LB-09, 验收 6)', () => {
 })
 
 describe('GET /api/leaderboard', () => {
-  /** 直接落快照：读侧契约与 cron 窗口语义解耦，用例不依赖真实日期。 */
-  async function seedSnapshot(
-    scope: LeaderboardScope,
-    entries: Array<{ userId: number; points: number }>,
-    computedAt = new Date()
-  ) {
-    const period = resolvePeriod(scope, businessDateString(computedAt))
-    await prisma.leaderboardEntry.createMany({
-      data: entries.map((entry, index) => ({
-        scope,
-        periodKey: period.periodKey,
-        rank: index + 1,
-        userId: entry.userId,
-        points: entry.points,
-        computedAt,
+  // 全局 setup 会复用用户 ID；封禁场景的内存缓存也必须随数据库一起复位。
+  beforeEach(() => resetUserStatusCache())
+
+  /** API 测试直接造今日流水，完全不依赖 cron 或快照。 */
+  async function seedCurrent(entries: Array<{ userId: number; points: number }>) {
+    await prisma.pointLog.createMany({
+      data: entries.map(entry => ({
+        userId: entry.userId, type: 'in', amount: entry.points, balanceAfter: 0,
+        reason: '排行榜 API 测试', createdAt: businessDayStartUtc(businessDateString(new Date())),
       })),
     })
-    return period
   }
 
   function collectKeys(value: unknown, keys = new Set<string>()): Set<string> {
@@ -595,35 +589,26 @@ describe('GET /api/leaderboard', () => {
     expect(res.body.error.code).toBe('VALIDATION_ERROR')
   })
 
-  it('尚无快照时回空窗契约：top []、updatedAt/dataThrough 均为 null (C12)', async () => {
+  it('无流水也返回有效空榜及本次统计时间，不等待首轮快照', async () => {
     await makeUser('lb-api-empty@test.local')
     const token = (await loginAs('lb-api-empty@test.local', PASSWORD)).accessToken
 
     const res = await api.get('/api/leaderboard').query({ scope: 'week' }).set(authHeader(token)).expect(200)
     expect(res.body.top).toEqual([])
     expect(res.body.me).toBeNull()
-    expect(res.body.updatedAt).toBeNull()
-    expect(res.body.dataThrough).toBeNull()
+    expect(Number.isFinite(Date.parse(res.body.updatedAt))).toBe(true)
+    expect(res.body.dataThrough).toBe(businessDateString(new Date(res.body.updatedAt)))
     expect(LeaderboardResponseSchema.safeParse(res.body).success).toBe(true)
   })
 
-  it('新周期首日：本期无行时 updatedAt 回退总榜批次，与首刷空窗可区分', async () => {
-    // 顺序有讲究：requireActiveUser 的 60s 状态缓存按 userId 记忆且测试间
-    // 不清空，而 TRUNCATE ... RESTART IDENTITY 会复用自增 id——封禁用例把
-    // id=2 缓存成了已封禁，所以真正调 API 的 viewer 必须先建（占 id=1）。
-    await makeUser('lb-api-fresh-viewer@test.local')
-    const someone = await makeUser('lb-api-fresh-period@test.local')
+  it('没有快照也能显示今天获得的积分', async () => {
+    const viewer = await makeUser('lb-api-fresh-viewer@test.local')
     const token = (await loginAs('lb-api-fresh-viewer@test.local', PASSWORD)).accessToken
-    const computedAt = new Date()
-    await seedSnapshot('total', [{ userId: someone.id, points: 100 }], computedAt)
-
+    await seedCurrent([{ userId: viewer.id, points: 100 }])
+    expect(await prisma.leaderboardEntry.count()).toBe(0)
     const res = await api.get('/api/leaderboard').query({ scope: 'week' }).set(authHeader(token)).expect(200)
-    expect(res.body.top).toEqual([])
-    expect(res.body.me).toBeNull()
-    // 刷新已经跑过（总榜携带批次时刻），本期只是还没有数据——不是 C12 空窗，
-    // 前端要据此显示「新的一周刚开始」而非「榜单正在生成中」。
-    expect(res.body.updatedAt).toBe(computedAt.toISOString())
-    expect(res.body.dataThrough).toBe(addCalendarDays(businessDateString(computedAt), -1))
+    expect(res.body.me).toEqual({ rank: 1, points: 100, prevRank: null })
+    expect(res.body.dataThrough).toBe(businessDateString(new Date(res.body.updatedAt)))
     expect(LeaderboardResponseSchema.safeParse(res.body).success).toBe(true)
   })
 
@@ -644,7 +629,7 @@ describe('GET /api/leaderboard', () => {
       orderBy: { id: 'asc' },
     })
     // 前 104 名是批量用户，第 105 名是自己。
-    await seedSnapshot('total', [
+    await seedCurrent([
       ...bulk.map((user, index) => ({ userId: user.id, points: 10_000 - index })),
       { userId: me.id, points: 7 },
     ])
@@ -658,28 +643,31 @@ describe('GET /api/leaderboard', () => {
     expect(res.body.me).toEqual({ rank: 105, points: 7, prevRank: null })
   })
 
-  it('displayName 用昵称、缺失回退打码邮箱；isMe 由服务端标注 (验收 5)', async () => {
+  it('displayName 用昵称、缺失回退稳定趣味昵称；isMe 由服务端标注 (验收 5)', async () => {
     const me = await makeUser('lb-api-me@test.local', { nickname: '  星河  ' })
     const other = await makeUser('lb-api-other@test.local')
     const token = (await loginAs('lb-api-me@test.local', PASSWORD)).accessToken
-    await seedSnapshot('total', [
+    await seedCurrent([
       { userId: other.id, points: 1280 },
       { userId: me.id, points: 80 },
     ])
 
     const res = await api.get('/api/leaderboard').set(authHeader(token)).expect(200)
     expect(res.body.top).toEqual([
-      { rank: 1, displayName: maskEmail('lb-api-other@test.local'), points: 1280, isMe: false, prevRank: null },
-      { rank: 2, displayName: '星河', points: 80, isMe: true, prevRank: null },
+      { rank: 1, displayName: resolveUserNickname(other), avatarUrl: resolveUserAvatarUrl(other), points: 1280, isMe: false, prevRank: null },
+      { rank: 2, displayName: '星河', avatarUrl: resolveUserAvatarUrl(me), points: 80, isMe: true, prevRank: null },
     ])
     expect(res.body.me).toEqual({ rank: 2, points: 80, prevRank: null })
+    const otherToken = (await loginAs('lb-api-other@test.local', PASSWORD)).accessToken
+    const otherProfile = await api.get('/api/auth/me').set(authHeader(otherToken)).expect(200)
+    expect(res.body.top[0].displayName).toBe(otherProfile.body.nickname)
   })
 
   it('响应不含任何他人 userId / email，字段集恰为白名单 (P.6, LB-07, 验收 5)', async () => {
     const me = await makeUser('lb-api-canary-me@test.local', { nickname: '我' })
     const other = await makeUser('lb-api-canary-other@test.local')
     const token = (await loginAs('lb-api-canary-me@test.local', PASSWORD)).accessToken
-    await seedSnapshot('total', [
+    await seedCurrent([
       { userId: other.id, points: 500 },
       { userId: me.id, points: 100 },
     ])
@@ -694,7 +682,7 @@ describe('GET /api/leaderboard', () => {
     expect(keys.has('userId')).toBe(false)
     expect(keys.has('email')).toBe(false)
     expect(keys.has('balance')).toBe(false)
-    expect(new Set(Object.keys(res.body.top[0]))).toEqual(new Set(['rank', 'displayName', 'points', 'isMe', 'prevRank']))
+    expect(new Set(Object.keys(res.body.top[0]))).toEqual(new Set(['rank', 'displayName', 'avatarUrl', 'points', 'isMe', 'prevRank']))
     // strict schema：多下发一个字段即失败。
     expect(LeaderboardResponseSchema.parse(res.body).top).toHaveLength(2)
   })
@@ -704,7 +692,7 @@ describe('GET /api/leaderboard', () => {
     const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: 'lb-api-admin-me@test.local' } })
     const player = await makeUser('lb-api-admin-player@test.local')
     const token = (await loginAs('lb-api-admin-me@test.local', 'admin123')).accessToken
-    await seedSnapshot('total', [{ userId: player.id, points: 300 }])
+    await seedCurrent([{ userId: player.id, points: 300 }])
 
     const res = await api.get('/api/leaderboard').set(authHeader(token)).expect(200)
     expect(res.body.me).toBeNull()
@@ -712,15 +700,17 @@ describe('GET /api/leaderboard', () => {
     expect(await pointsOf('total', 'ALL', adminUser.id)).toBeNull()
   })
 
-  it('updatedAt / dataThrough 由快照 computedAt 反推，cron 落后时不谎报新鲜度', async () => {
+  it('旧快照不会冒充当前积分或本次统计时间', async () => {
     const player = await makeUser('lb-api-fresh@test.local')
     const token = (await loginAs('lb-api-fresh@test.local', PASSWORD)).accessToken
-    // 快照是"昨天算的"：dataThrough 必须停在前天，而不是随今天往前推一天。
     const computedAt = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    await seedSnapshot('total', [{ userId: player.id, points: 42 }], computedAt)
-
+    await prisma.leaderboardEntry.create({ data: {
+      scope: 'total', periodKey: 'ALL', userId: player.id, rank: 1, points: 999, computedAt,
+    } })
+    await seedCurrent([{ userId: player.id, points: 42 }])
     const res = await api.get('/api/leaderboard').set(authHeader(token)).expect(200)
-    expect(res.body.updatedAt).toBe(computedAt.toISOString())
-    expect(res.body.dataThrough).toBe(addCalendarDays(businessDateString(computedAt), -1))
+    expect(res.body.me.points).toBe(42)
+    expect(Date.parse(res.body.updatedAt)).toBeGreaterThan(computedAt.getTime())
+    expect(res.body.dataThrough).toBe(businessDateString(new Date(res.body.updatedAt)))
   })
 })

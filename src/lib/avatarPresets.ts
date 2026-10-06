@@ -30,6 +30,11 @@ export function getDefaultAvatarPreset(seed?: string | number | null): AvatarPre
     }
   }
 
+  // 用户 ID 不随改名改变；与服务端 resolveUserAvatarUrl 共用固定 v2.3 名单顺序。
+  if (typeof seed === 'number' && Number.isSafeInteger(seed) && seed > 0) {
+    return AVATAR_PRESETS[(seed - 1) % AVATAR_PRESETS.length]
+  }
+
   if (!seed) {
     return AVATAR_PRESETS[0]
   }

@@ -68,8 +68,8 @@ export default function FavoriteIsland({ notice, onOpenChange, suppressed = fals
           tabIndex={open ? 0 : -1}
           disabled={!open}
           aria-label={`${content.title}，关闭提示`}
-          onClick={clearNotice}
-          onKeyDown={(event) => { if (event.key === 'Escape') clearNotice() }}
+          onClick={() => clearNotice(content.id)}
+          onKeyDown={(event) => { if (event.key === 'Escape') clearNotice(content.id) }}
         >
           <span className="favorite-island-symbol" key={content.id} aria-hidden="true">
             <span className="favorite-island-glow" />

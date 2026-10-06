@@ -42,26 +42,6 @@
   .modal-overlay { animation: overlayIn var(--dur-med) ease-out; }
 }
 
-/* 灵动岛搜索面板（V3）：内容淡入微位移 + chips 行真实高度展开。
-   容器几何 morph 由 Layout 胶囊皮肤的 transition-all 承担。 */
-/* 注意：不做 scale——入场动画期间的缩放会改变子元素 boundingBox，
-   触控目标运行时量测（≥40px 契约）会被 0.98 倍率误伤 */
-@keyframes islandPanelIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.island-panel-in {
-  animation: islandPanelIn 0.22s var(--ease-standard) both;
-}
-@keyframes islandRowsIn {
-  from { max-height: 0; opacity: 0; transform: translateY(-6px); }
-  to { max-height: 3.5rem; opacity: 1; transform: translateY(0); }
-}
-.island-rows-in {
-  animation: islandRowsIn 0.3s var(--ease-standard) 0.06s both;
-  overflow: hidden;
-}
-
 /* iOS tap feedback — opt-in via .pressable (scale only, no layout shift). */
 .pressable {
   transition: transform var(--dur-fast) var(--ease-standard);

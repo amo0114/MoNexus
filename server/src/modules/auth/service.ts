@@ -82,6 +82,7 @@ import {
 import {
   generateDefaultNickname,
   normalizeUserNickname,
+  resolveUserNickname,
 } from '../../lib/defaultNickname.js'
 export const PASSWORD_BCRYPT_ROUNDS = 12
 
@@ -130,7 +131,7 @@ function buildAuthUser(user: { id: number; email: string; role: string; status: 
     email: user.email,
     role: user.role,
     status: user.status,
-    nickname: user.nickname,
+    nickname: resolveUserNickname(user),
     avatarUrl: user.avatarUrl ?? null,
     points,
   }
@@ -404,7 +405,7 @@ export async function registerUser(
   const result = await prisma.$transaction(async tx => {
     const registerReward = await getSystemConfigValue('registerReward', tx)
 
-    // 未填昵称 → mn_XXXXXXXX(碰撞重试);已填则直接使用。
+    // 未填昵称 → 趣味昵称并记录来源；尽量避免重名，昵称并非唯一标识。
     let finalNickname = chosenNickname
     if (!finalNickname) {
       for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -419,13 +420,18 @@ export async function registerUser(
         }
       }
       if (!finalNickname) {
-        // Extremely unlikely; fold time into suffix space.
+        // 昵称允许重名；词表拥挤时仍能完成注册。
         finalNickname = generateDefaultNickname()
       }
     }
 
     const newUser = await tx.user.create({
-      data: { email: normalizedEmail, password: hashedPassword, nickname: finalNickname },
+      data: {
+        email: normalizedEmail,
+        password: hashedPassword,
+        nickname: finalNickname,
+        nicknameIsGenerated: !chosenNickname,
+      },
     })
 
     await tx.pointAccount.create({
@@ -1200,7 +1206,7 @@ export async function getUserProfile(userId: number) {
     email: user.email,
     role: user.role,
     status: user.status,
-    nickname: user.nickname,
+    nickname: resolveUserNickname(user),
     avatarUrl: user.avatarUrl ?? null,
     points: user.pointAccount?.balance ?? 0,
     emailVerified: user.emailVerified,
@@ -1217,7 +1223,7 @@ export async function getUserProfile(userId: number) {
 }
 
 export async function updateUserProfile(userId: number, data: { nickname?: string; avatarUrl?: string | null }) {
-  const update: { nickname?: string; avatarUrl?: string | null } = {}
+  const update: { nickname?: string; nicknameIsGenerated?: boolean; avatarUrl?: string | null } = {}
   if (data.nickname !== undefined) {
     // 服务端二次校验:1-20 字,禁止控制字符。
     const normalized = data.nickname.trim()
@@ -1225,6 +1231,7 @@ export async function updateUserProfile(userId: number, data: { nickname?: strin
       throw badRequest('昵称需为 1-20 个字符')
     }
     update.nickname = normalized
+    update.nicknameIsGenerated = false
   }
   if (data.avatarUrl !== undefined) {
     // 头像仅限已发布预设的精确路径或平台图床上传地址。

@@ -14,10 +14,18 @@ export interface Toast {
   type: ToastType
 }
 
-export type IslandActivityKind = 'order_processing' | 'order_success' | 'favorite' | 'copy' | 'points' | 'general'
+export type IslandActivityKind = 'order_processing' | 'order_success' | 'favorite' | 'copy' | 'points' | 'notification' | 'general'
 
 export function isOrderActivity(kind?: IslandActivityKind) {
   return kind === 'order_processing' || kind === 'order_success'
+}
+
+export function isActionableActivity(kind?: IslandActivityKind) {
+  return kind === 'notification' || kind === 'points'
+}
+
+function ownsIsland(kind?: IslandActivityKind) {
+  return isOrderActivity(kind) || isActionableActivity(kind)
 }
 
 /** 灵动岛通知与 Live Activity 实时活动（iOS 灵动岛沉浸交互） */
@@ -31,8 +39,20 @@ export interface IslandNotice {
   badge?: string
   actionLabel?: string
   onAction?: () => void
+  /** Called once when the notice is actually visible, not when queued. */
+  onPresented?: () => void
+  /** Explicit close only; expiry and action are not a permanent dismissal. */
+  onDismiss?: () => void
   payload?: Record<string, any>
   durationMs?: number
+  groupKey?: string
+  expiresAt?: number
+}
+
+export type IslandActivity = Omit<IslandNotice, 'id' | 'message' | 'type'> & {
+  title: string
+  message?: string
+  type?: ToastType
 }
 
 /** Keep at most this many toasts on screen; oldest is dropped. */
@@ -44,8 +64,10 @@ const ISLAND_MAX_CHARS = 14
 interface AppState {
   activeTab: 'store' | 'profile' | 'admin'
   toasts: Toast[]
-  /** 灵动岛当前承载的通知（同时只一条，新的顶替旧的并重置计时） */
+  /** 同时一条；普通反馈可替换，业务通知合并排队，支付优先。 */
   islandNotice: IslandNotice | null
+  /** Only actionable events queue; bounded and discarded on session/layout exit. */
+  islandQueue: IslandNotice[]
   /** Layout 在可承载通知的移动 navbar 挂载时打开；公开页必须回退横幅。 */
   islandNoticeAvailable: boolean
   /** 打开中的模态数（DialogOverlay 挂载计数）：>0 时 navbar 淡出、
@@ -84,21 +106,11 @@ interface AppState {
   refreshOrderAttentionIfStale: () => Promise<void>
   showToast: (message: string, type?: ToastType) => void
   removeToast: (id: number) => void
-  clearIslandNotice: () => void
-  triggerIslandActivity: (activity: {
-    title: string
-    subtitle?: string
-    message?: string
-    type?: 'success' | 'info' | 'warning' | 'error'
-    kind?: IslandActivityKind
-    badge?: string
-    actionLabel?: string
-    onAction?: () => void
-    payload?: Record<string, any>
-    durationMs?: number
-  }) => void
+  clearIslandNotice: (id?: number) => void
+  removeIslandActivity: (id: number) => void
+  triggerIslandActivity: (activity: IslandActivity) => number | undefined
   setIslandNoticeAvailable: (available: boolean) => void
-  /** 灵动岛不可用（如搜索卡片展开中）时把通知降级回横幅 toast。 */
+  /** 搜索/弹窗打开时普通通知降级，带操作的活动保留并暂停展示。 */
   demoteIslandNotice: () => void
   modalOpened: () => void
   modalClosed: () => void
@@ -136,6 +148,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   activeTab: 'store',
   toasts: [],
   islandNotice: null,
+  islandQueue: [],
   islandNoticeAvailable: false,
   modalDepth: 0,
   registry: null,
@@ -210,14 +223,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // 模态打开期间灵动岛随 navbar 淡出，通知必须降级为横幅（z-80 高于
     // 模态 z-50，反馈可见）——如兑换成功弹窗内「复制发货信息」。
     if (quiet && short && mobile && get().modalDepth === 0 && get().islandNoticeAvailable
-      && !isOrderActivity(get().islandNotice?.kind)) {
+      && !ownsIsland(get().islandNotice?.kind)) {
       set({ islandNotice: { id, message, type } })
       return
     }
     set((state) => ({
       // A purchase owns its actionable slot until dismissed. Other feedback
       // can still appear below it without discarding the order action.
-      islandNotice: isOrderActivity(state.islandNotice?.kind) ? state.islandNotice : null,
+      islandNotice: ownsIsland(state.islandNotice?.kind) ? state.islandNotice : null,
       toasts: [
         ...state.toasts.filter((t) => !(t.message === message && t.type === type)).slice(-(MAX_TOASTS - 1)),
         { id, message, type },
@@ -228,16 +241,55 @@ export const useAppStore = create<AppState>()((set, get) => ({
   removeToast: (id) =>
     set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 
-  clearIslandNotice: () => set({ islandNotice: null }),
+  clearIslandNotice: (id) => set((state) => {
+    if (id !== undefined && state.islandNotice?.id !== id) return {}
+    const queue = state.islandQueue.filter((n) => (n.expiresAt ?? 0) > Date.now())
+    return { islandNotice: queue[0] ?? null, islandQueue: queue.slice(1) }
+  }),
+
+  removeIslandActivity: (id) => {
+    set((state) => ({ islandQueue: state.islandQueue.filter((notice) => notice.id !== id) }))
+    get().clearIslandNotice(id)
+  },
 
   triggerIslandActivity: (activity) => {
-    if (isOrderActivity(get().islandNotice?.kind) && !isOrderActivity(activity.kind)) {
+    if (isActionableActivity(activity.kind)) {
+      const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+      if (!mobile || !get().islandNoticeAvailable || activity.type === 'error' || activity.type === 'warning') {
+        get().showToast(activity.message || activity.title, activity.type)
+        return
+      }
+      const notice: IslandNotice = {
+        ...activity,
+        id: ++toastId,
+        message: activity.message || activity.title,
+        type: activity.type ?? 'info',
+        durationMs: activity.durationMs ?? 8000,
+        expiresAt: Date.now() + 30_000,
+      }
+      set((state) => {
+        const current = state.islandNotice
+        const queue = state.islandQueue.filter((n) => (n.expiresAt ?? 0) > Date.now())
+        if (!current || !ownsIsland(current.kind) || (notice.groupKey && notice.groupKey === current.groupKey)) {
+          return { islandNotice: notice, islandQueue: queue }
+        }
+        const index = notice.groupKey ? queue.findIndex((n) => n.groupKey === notice.groupKey) : -1
+        if (index >= 0) queue[index] = notice
+        else queue.push(notice)
+        return { islandQueue: queue.slice(-4) }
+      })
+      return notice.id
+    }
+    if (ownsIsland(get().islandNotice?.kind) && !isOrderActivity(activity.kind)) {
       get().showToast(activity.message || activity.title, activity.type)
       return
     }
     const id = ++toastId
     set((state) => ({
       islandNoticeAvailable: true,
+      islandQueue: isActionableActivity(state.islandNotice?.kind)
+        ? [state.islandNotice!, ...state.islandQueue].slice(0, 4)
+        : state.islandQueue,
       toasts: state.toasts.filter(
         (t) => t.message !== '兑换成功' && t.message !== activity.title && t.message !== activity.message
       ),
@@ -255,6 +307,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         durationMs: activity.durationMs ?? (activity.kind === 'order_success' ? 7000 : 3000),
       },
     }))
+    return id
   },
 
   // Layout unmounts on public/auth routes. A notice must never stay in an
@@ -262,16 +315,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setIslandNoticeAvailable: (available) =>
     set((state) => {
       if (available || !state.islandNotice) {
-        return { islandNoticeAvailable: available }
+        return { islandNoticeAvailable: available, ...(!available ? { islandQueue: [] } : {}) }
       }
       const n = state.islandNotice
       // Do not resurrect a purchase callback after leaving its layout.
-      if (isOrderActivity(n.kind)) {
-        return { islandNoticeAvailable: false, islandNotice: null }
+      if (ownsIsland(n.kind)) {
+        return { islandNoticeAvailable: false, islandNotice: null, islandQueue: [] }
       }
       return {
         islandNoticeAvailable: false,
         islandNotice: null,
+        islandQueue: [],
         toasts: [...state.toasts.slice(-(MAX_TOASTS - 1)), { id: n.id, message: n.message, type: n.type }],
       }
     }),
@@ -283,7 +337,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => {
       const n = state.islandNotice
       // Live Activities (like order_success) are hero island interactions and must NEVER demote to a banner toast.
-      if (!n || isOrderActivity(n.kind)) return {}
+      if (!n || ownsIsland(n.kind)) return {}
       return {
         islandNotice: null,
         toasts: [...state.toasts.slice(-(MAX_TOASTS - 1)), { id: n.id, message: n.message, type: n.type }],
@@ -351,5 +405,6 @@ useAuthStore.subscribe((authState) => {
     notificationStreamState: 'disabled',
     toasts: [],
     islandNotice: null,
+    islandQueue: [],
   })
 })

@@ -17,11 +17,13 @@ test('register a new user, login, see profile', async ({ page }) => {
   await page.goto('/profile')
   await expect(page.getByText('我的可用积分')).toBeVisible({ timeout: 10_000 })
 
-  const persistedEmail = await page.evaluate(() => {
+  const persistedUser = await page.evaluate(() => {
     const raw = localStorage.getItem('monexus-auth')
-    return raw ? JSON.parse(raw).state?.user?.email : undefined
+    return raw ? JSON.parse(raw).state?.user : undefined
   })
-  expect(persistedEmail).toBe(email)
+  expect(persistedUser.email).toBe(email)
+  expect(persistedUser.nickname).toMatch(/^[\u4e00-\u9fff]+$/)
+  await expect(page.getByText(persistedUser.nickname, { exact: true }).first()).toBeVisible()
 
   await page.getByRole('tab', { name: '账号设置' }).click()
   await page.getByTestId('profile-logout').click()
@@ -34,4 +36,7 @@ test('register a new user, login, see profile', async ({ page }) => {
   await expect(page).toHaveURL(/\/$/)
   await page.goto('/profile')
   await expect(page.getByText('我的可用积分')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText(persistedUser.nickname, { exact: true }).first()).toBeVisible()
+  await page.reload()
+  await expect(page.getByText(persistedUser.nickname, { exact: true }).first()).toBeVisible()
 })

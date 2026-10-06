@@ -36,6 +36,7 @@ import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessio
 import UserAvatar from '../components/ui/UserAvatar'
 import { ExperienceProgressBar } from '../components/profile/ExperienceProgressBar'
 import { FluidSegmentedControl, type FluidSegmentOption } from '../components/ui/FluidSegmentedControl'
+import PointCoin from '../components/ui/PointCoin'
 
 function getTierSkinConfig(tier?: 'bronze' | 'silver' | 'gold' | 'platinum') {
   switch (tier) {

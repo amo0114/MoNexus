@@ -9,6 +9,7 @@ import { getAuthSessionContext, matchesAuthSessionContext } from '../../auth/ses
 import AvatarPresetDialog from './AvatarPresetDialog'
 import UserAvatar from '../ui/UserAvatar'
 import AsyncButton from '../ui/AsyncButton'
+import { showCompletionToast } from '../../lib/completionFeedback'
 
 /**
  * 个人资料与账号安全卡：
@@ -118,7 +119,7 @@ export default function ProfileIdentityCard() {
       const me = await updateMe({ avatarUrl })
       if (!setUser({ ...user, ...me, merchant: me.merchant ?? user.merchant ?? null }, requestContext)) return
       setChoosingAvatar(false)
-      showToast('头像已更新')
+      showCompletionToast('头像已更新')
     } catch (err: unknown) {
       if (isRequestContextCurrent(requestContext)) {
         showToast(getApiErrorMessage(err, '头像保存失败，请重试'), 'error')
@@ -206,7 +207,7 @@ export default function ProfileIdentityCard() {
             aria-busy={uploading}
             data-testid="avatar-edit"
           >
-            <UserAvatar url={user?.avatarUrl} name={displayName} size={60} className="text-xl" />
+            <UserAvatar userId={user?.id} url={user?.avatarUrl} name={displayName} size={60} className="text-xl" />
             <span aria-hidden="true" className={`absolute inset-0 bg-black/40 ${uploading ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100'} transition-opacity flex items-center justify-center`}>
               {uploading ? (
                 <Loader2 className="w-5 h-5 text-white animate-spin motion-reduce:animate-none" />
@@ -255,6 +256,7 @@ export default function ProfileIdentityCard() {
       {choosingAvatar && (
         <AvatarPresetDialog
           currentUrl={user?.avatarUrl}
+          defaultSeed={user?.id}
           busy={uploading}
           onClose={() => setChoosingAvatar(false)}
           onSave={handleSavePreset}

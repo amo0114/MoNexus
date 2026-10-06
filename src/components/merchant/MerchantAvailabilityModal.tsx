@@ -6,20 +6,23 @@ import {
   adjustMerchantOfferCapacity,
   importMerchantOfferInventory,
   voidMerchantOfferInventory,
+  type InventoryImportResult,
 } from '../../api/merchant'
 import type { CapacityAdjustRequest, VoidInventoryRequest } from '../../types/catalog'
 import type { MerchantProduct } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
+import { captureFeedbackOwner } from '../../lib/completionFeedback'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   product: MerchantProduct | null
   onChanged: () => Promise<void> | void
+  onImported?: (result: InventoryImportResult, offerId: number) => void
 }
 
 /** T-CAT-FE-002: one Offer selector, then exactly one availability action. */
-export default function MerchantAvailabilityModal({ isOpen, onClose, product, onChanged }: Props) {
+export default function MerchantAvailabilityModal({ isOpen, onClose, product, onChanged, onImported }: Props) {
   const showToast = useAppStore((state) => state.showToast)
   const [importOfferId, setImportOfferId] = useState<number | null>(null)
 
@@ -64,8 +67,11 @@ export default function MerchantAvailabilityModal({ isOpen, onClose, product, on
 
   async function handleImport(items: string[], offerId: number) {
     if (!product) return
+    const isCurrent = captureFeedbackOwner()
     const result = await importMerchantOfferInventory(product.id, offerId, { items })
-    showToast(`成功导入 ${result.imported} 个交付单元`)
+    if (!isCurrent()) return
+    if (onImported) onImported(result, offerId)
+    else showToast(`成功导入 ${result.imported} 个交付单元`)
     await onChanged()
   }
 

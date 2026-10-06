@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import {
   Copy,
   Check,
@@ -16,7 +18,8 @@ import {
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
-import { getAuthSessionContext } from '../auth/sessionContext'
+import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
+import { captureFeedbackOwner, showCompletionToast } from '../lib/completionFeedback'
 import { disputeOrder, closeOrder, createOrder, renewOrder, type RenewPrecheck } from '../api/orders'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { OwnReview } from '../api/reviews'
@@ -80,6 +83,8 @@ function formatOrderDate(iso?: string | null) {
 }
 
 export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
+  const navigate = useNavigate()
+  const isMobileViewport = useIsMobileViewport()
   const showToast = useAppStore((s) => s.showToast)
   // The parent replaces this authoritative REST projection after realtime or
   // fallback invalidation. Keeping the first prop in useState freezes an open
@@ -141,30 +146,35 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   }
 
   async function executeAction(action: OrderAction) {
+    const isCurrent = captureFeedbackOwner()
     setConfirmAction(null)
     setLoadingAction(action)
     try {
       if (action === 'dispute') await disputeOrder(order.id)
       if (action === 'close') await closeOrder(order.id)
-      showToast('操作成功')
+      if (!isCurrent()) return
       onUpdated?.()
       // PR-3 复审：dispute 仍是关注态、close 移出关注态——realtime 关闭时
       // 本地动作也要立即收敛权威计数。
       void useAppStore.getState().refreshOrderAttention()
       onClose()
+      showCompletionToast('操作成功')
     } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '操作失败', 'error')
+      if (isCurrent()) showToast(e.response?.data?.error?.message || '操作失败', 'error')
     } finally {
       setLoadingAction(null)
     }
   }
 
   async function startRenew() {
+    const isCurrent = captureFeedbackOwner()
     setRenewLoading(true)
     try {
       const info = await renewOrder(order.id)
+      if (!isCurrent()) return
       setRenewInfo(info)
     } catch (e: any) {
+      if (!isCurrent()) return
       const code = getApiErrorCode(e)
       if (code === 'RENEW_NOT_AVAILABLE') {
         showToast('该商品或规格已下架，无法续费', 'error')
@@ -194,7 +204,16 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   ): Promise<ConfirmOutcome> {
     if (!renewInfo || renewSubmitting) return 'failed'
     const renewalAuthContext = getAuthSessionContext(useAuthStore.getState())
+    if (!renewalAuthContext) return 'failed'
+    const isCurrent = () => matchesAuthSessionContext(renewalAuthContext, getAuthSessionContext(useAuthStore.getState()))
     setRenewSubmitting(true)
+    const processingId = isMobileViewport ? useAppStore.getState().triggerIslandActivity({
+      kind: 'order_processing',
+      title: '正在提交续费',
+      subtitle: order.product.name,
+      type: 'info',
+      payload: { renewal: true },
+    }) : undefined
     try {
       const data = await createOrder(renewInfo.productId, {
         expectedPrice: preview.price,
@@ -210,6 +229,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         // SPEC-LEGAL-001：续费同样是新订单；弹窗仅在用户勾选后回传版本。
         agreementVersions,
       })
+      if (!isCurrent()) return 'failed'
       if (renewalAuthContext) {
         useAuthStore.getState().updatePoints(data.balanceAfter, renewalAuthContext)
       }
@@ -217,7 +237,21 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       // 「新订单」实时事件，这里无条件补拉权威计数（即时已交付单不计数）。
       void useAppStore.getState().refreshOrderAttention()
       setRenewInfo(null)
-      setRenewSuccess({
+      if (isMobileViewport) {
+        const hasDelivery = Boolean(data.deliveryContent?.trim() || data.deliveryFile || data.deliveryStructuredContent?.fields.length)
+        const pending = data.provisionPending || !hasDelivery
+        useAppStore.getState().triggerIslandActivity({
+          kind: 'order_success',
+          title: data.provisionPending ? '续费订单已创建，开通中' : hasDelivery ? '续费订单已交付' : '续费订单已创建，待交付',
+          subtitle: order.product.name,
+          type: pending ? 'info' : 'success',
+          actionLabel: pending ? '查看续费订单' : '查看交付内容',
+          payload: { renewal: true },
+          onAction: () => { if (isCurrent()) navigate(`/orders?focus=${data.orderId}`) },
+          durationMs: 7000,
+        })
+        onClose()
+      } else setRenewSuccess({
         orderId: data.orderId,
         deliveryContent: data.deliveryContent ?? '',
         deliveryContentType: data.deliveryContentType,
@@ -227,6 +261,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       onUpdated?.()
       return 'success'
     } catch (err: any) {
+      if (!isCurrent()) return 'failed'
+      if (processingId !== undefined) useAppStore.getState().clearIslandNotice(processingId)
       const code = getApiErrorCode(err)
       if (code === 'PRICE_CHANGED' || code === 'CHECKOUT_CHANGED') {
         showToast('商品信息已变化，请重新确认', 'error')
@@ -306,7 +342,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     (order.status === 'pending' || order.status === 'processing' || order.status === 'disputed' || order.status === 'delivered')
 
   return (
-    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+    <Dialog open={!(isMobileViewport && renewInfo)} onOpenChange={(o) => { if (!o && !renewSubmitting) onClose() }}>
       <DialogContent className="w-full max-w-lg sm:max-w-xl md:max-w-2xl flex flex-col max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden p-4 sm:p-6 rounded-2xl">
 
         {/* 顶部凭据概览区（Header Receipt Bar） */}
@@ -715,6 +751,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           currentExpiresAt={renewInfo.currentExpiresAt}
           renewMode
           submitting={renewSubmitting}
+          hideWhileSubmitting={isMobileViewport}
           onClose={() => { if (!renewSubmitting) setRenewInfo(null) }}
           onConfirm={handleRenewConfirm}
         />

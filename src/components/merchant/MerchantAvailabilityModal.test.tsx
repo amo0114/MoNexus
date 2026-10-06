@@ -79,7 +79,8 @@ describe('MerchantAvailabilityModal (T-CAT-FE-002)', () => {
   })
 
   it('keeps preview before confirm and targets the already-selected inventory Offer', async () => {
-    render(<MerchantAvailabilityModal isOpen onClose={vi.fn()} product={product} onChanged={vi.fn()} />)
+    const onImported = vi.fn()
+    render(<MerchantAvailabilityModal isOpen onClose={vi.fn()} product={product} onChanged={vi.fn()} onImported={onImported} />)
     fireEvent.click(screen.getByTestId('availability-open-import'))
     expect(screen.getByText('导入交付单元')).toBeInTheDocument()
 
@@ -90,5 +91,22 @@ describe('MerchantAvailabilityModal (T-CAT-FE-002)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '确认导入 1 个' }))
     await waitFor(() => expect(apiMocks.importInventory).toHaveBeenCalledWith(7, 42, { items: ['secret-one'] }))
+    await waitFor(() => expect(onImported).toHaveBeenCalledWith({ imported: 1 }, 42))
   })
+})
+
+
+it('keeps failed import input and never reports a successful batch', async () => {
+  apiMocks.preview.mockResolvedValue({ totalRows: 1, validRows: 1, emptyRows: 0, duplicateRows: 0, existingDuplicateRows: 0, canImport: true })
+  apiMocks.importInventory.mockRejectedValueOnce(new Error('duplicate conflict'))
+  const onImported = vi.fn(), onChanged = vi.fn()
+  render(<MerchantAvailabilityModal isOpen onClose={vi.fn()} product={product} onChanged={onChanged} onImported={onImported} />)
+  fireEvent.click(screen.getByTestId('availability-open-import'))
+  fireEvent.change(screen.getByLabelText('交付单元内容'), { target: { value: 'preserve-this-input' } })
+  fireEvent.click(screen.getByRole('button', { name: '预览导入内容' }))
+  fireEvent.click(await screen.findByRole('button', { name: '确认导入 1 个' }))
+  await waitFor(() => expect(screen.getByRole('button', {name:'确认导入 1 个'})).not.toBeDisabled())
+  expect(onImported).not.toHaveBeenCalled()
+  expect(onChanged).not.toHaveBeenCalled()
+  expect(screen.getByLabelText('交付单元内容')).toHaveValue('preserve-this-input')
 })

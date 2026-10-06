@@ -11,7 +11,7 @@
  *     且不锁其他商品；
  *  4. 失败不伪造成功（只显示错误提示），按钮恢复后可 retry，retry 成功并刷新列表。
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { useAppStore } from '../stores/appStore'
@@ -84,6 +84,7 @@ const { merchantApi, catalogApi } = vi.hoisted(() => {
     deleteMyWebhookConfig: vi.fn<() => Promise<unknown>>(),
     testMyWebhookConfig: vi.fn<() => Promise<unknown>>(),
     adjustMerchantOfferCapacity: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+    importMerchantInventory: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     importMerchantOfferInventory: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     voidMerchantOfferInventory: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     previewMerchantOfferInventory: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -176,11 +177,32 @@ function hasToast(message: string, type: 'success' | 'error'): boolean {
   return useAppStore.getState().toasts.some((t) => t.message === message && t.type === type)
 }
 
+afterEach(() => vi.restoreAllMocks())
 beforeEach(() => {
   vi.resetAllMocks()
-  useAppStore.setState({ toasts: [], islandNotice: null, modalDepth: 0 })
+  useAppStore.setState({ toasts: [], islandNotice: null, islandQueue: [], islandNoticeAvailable: false, modalDepth: 0 })
   merchantApi.getMerchantStats.mockResolvedValue(STATS)
   merchantApi.getMerchantProducts.mockResolvedValue(productsEnvelope())
+})
+
+it('opens the exact order from a notification route and returns to the order list', async () => {
+  const order: MerchantOrder = {
+    id: 77, userId: 1, productId: 1, merchantId: 1, price: 100,
+    commissionRate: '0.1', commissionAmount: 10, settlementAmount: 90,
+    status: 'pending', createdAt: '2026-10-06T00:00:00Z',
+    product: { id: 1, name: '通知关联商品', type: 'default', icon: '' },
+    availableActions: ['start_fulfillment'],
+  }
+  merchantApi.getMerchantOrderDetail.mockResolvedValue(order)
+  merchantApi.getMerchantOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 })
+  render(<MemoryRouter initialEntries={['/merchant/orders/77']}><MerchantDashboardPage /></MemoryRouter>)
+  await screen.findByText('通知关联商品')
+  expect(merchantApi.getMerchantOrderDetail).toHaveBeenCalledWith(77)
+  expect(screen.getByTestId('merchant-focused-order')).toHaveTextContent('#77')
+  expect(merchantApi.getMerchantOrders).not.toHaveBeenCalled()
+  fireEvent.click(screen.getByRole('button', { name: '全部订单' }))
+  await waitFor(() => expect(merchantApi.getMerchantOrders).toHaveBeenCalled())
+  expect(screen.queryByTestId('merchant-focused-order')).toBeNull()
 })
 
 describe('MerchantDashboardPage 商品上架/下架接线', () => {
@@ -334,4 +356,84 @@ describe('MerchantDashboardPage 商品上架/下架接线', () => {
     expect(merchantApi.getMerchantSettlements.mock.calls.length).toBe(settlementsCallsBefore)
     expect(merchantApi.getMerchantMe.mock.calls.length).toBe(profileCallsBefore)
   })
+})
+
+function enableMobileIsland() {
+  vi.spyOn(window, 'matchMedia').mockImplementation(media => ({ matches: media.includes('767'), media, addEventListener() {}, removeEventListener() {} }) as MediaQueryList)
+  useAppStore.setState({ islandNoticeAvailable: true })
+}
+function fulfillmentOrder(): MerchantOrder {
+  return {
+    id: 77, userId: 1, productId: 1, merchantId: 1, price: 100,
+    commissionRate: '0.1', commissionAmount: 10, settlementAmount: 90,
+    status: 'processing', createdAt: '2026-10-06T00:00:00Z',
+    product: { id: 1, name: '履约测试商品', type: 'default', icon: '' },
+    availableActions: ['deliver', 'post_progress'],
+  }
+}
+async function openFulfillmentOrders() {
+  const order = fulfillmentOrder()
+  merchantApi.getMerchantOrders.mockResolvedValue({items:[order],total:1,page:1,pageSize:20})
+  merchantApi.getMerchantOrderDetail.mockResolvedValue(order)
+  render(<MemoryRouter initialEntries={['/merchant/orders']}><MerchantDashboardPage /></MemoryRouter>)
+  await screen.findByTestId('merchant-post-progress-77')
+}
+
+it.each(['deliver', 'progress'] as const)('mobile %s completion links the exact order without publishing submitted content', async (kind) => {
+  enableMobileIsland()
+  merchantApi.deliverOrder.mockResolvedValue(undefined)
+  merchantApi.postOrderProgress.mockResolvedValue({ok:true})
+  await openFulfillmentOrders()
+  if (kind === 'deliver') {
+    fireEvent.click(screen.getByRole('button', {name:'发货',exact:true}))
+    fireEvent.change(await screen.findByTestId('merchant-deliver-content'), {target:{value:'private-delivery-secret'}})
+    fireEvent.click(screen.getByTestId('merchant-deliver-submit'))
+  } else {
+    fireEvent.click(screen.getByTestId('merchant-post-progress-77'))
+    fireEvent.change(await screen.findByTestId('merchant-progress-note'), {target:{value:'private-progress-note'}})
+    fireEvent.click(screen.getByTestId('merchant-progress-submit'))
+  }
+  await waitFor(() => expect(useAppStore.getState().islandNotice?.title).toBe(kind === 'deliver' ? '发货成功' : '进度已更新'))
+  await waitFor(() => expect(useAppStore.getState().modalDepth).toBe(0))
+  const notice = useAppStore.getState().islandNotice!
+  expect(notice.subtitle).toContain('#77')
+  expect(notice.groupKey).toBe('merchant:order:77')
+  expect(JSON.stringify(notice)).not.toContain('private-')
+  act(() => notice.onAction?.())
+  await waitFor(() => expect(screen.getByTestId('merchant-focused-order')).toHaveTextContent('#77'))
+})
+
+it('failed progress retains the form and creates no success island', async () => {
+  enableMobileIsland()
+  merchantApi.postOrderProgress.mockRejectedValue(new Error('offline'))
+  await openFulfillmentOrders()
+  fireEvent.click(screen.getByTestId('merchant-post-progress-77'))
+  fireEvent.change(await screen.findByTestId('merchant-progress-note'), {target:{value:'保留这条进度'}})
+  fireEvent.click(screen.getByTestId('merchant-progress-submit'))
+  await waitFor(() => expect(hasToast('进度更新失败','error')).toBe(true))
+  expect(screen.getByTestId('merchant-progress-note')).toHaveValue('保留这条进度')
+  expect(useAppStore.getState().islandNotice).toBeNull()
+})
+
+it('inventory completion uses the server count and opens records for the imported product', async () => {
+  enableMobileIsland()
+  merchantApi.getMerchantProducts.mockResolvedValue({items:[{...PRODUCTS[0],deliveryMode:'instant_inventory',offers:[{
+    id:11,productId:1,name:'标准规格',price:100,status:'active',deliveryMode:'instant_inventory',stockMode:'limited',stock:0,
+  }]}],total:1,page:1,pageSize:20})
+  merchantApi.previewMerchantOfferInventory.mockResolvedValue({canImport:true,totalRows:2,validRows:2,emptyRows:0,duplicateRows:0,existingDuplicateRows:0})
+  merchantApi.importMerchantInventory.mockResolvedValue({imported:1,totalRows:2,validRows:1,skippedEmptyRows:0,duplicateRows:0,existingDuplicateRows:0})
+  merchantApi.getMerchantInventoryLogs.mockResolvedValue({items:[],total:0,page:1,pageSize:10})
+  renderPage()
+  await openProductsTab()
+  fireEvent.click(screen.getByText('管理交付库存'))
+  fireEvent.change(await screen.findByTestId('merchant-inventory-content'),{target:{value:'secret-one\nsecret-two'}})
+  fireEvent.click(screen.getByRole('button',{name:'预览导入内容'}))
+  fireEvent.click(await screen.findByRole('button',{name:'确认导入 2 个'}))
+  await waitFor(() => expect(useAppStore.getState().islandNotice?.title).toBe('成功导入 1 个交付单元'))
+  await waitFor(() => expect(useAppStore.getState().modalDepth).toBe(0))
+  const notice=useAppStore.getState().islandNotice!
+  expect(JSON.stringify(notice)).not.toContain('secret-one')
+  act(()=>notice.onAction?.())
+  await screen.findByTestId('inventory-log-modal')
+  await waitFor(()=>expect(merchantApi.getMerchantInventoryLogs).toHaveBeenCalledWith(1,{page:1,pageSize:10}))
 })
