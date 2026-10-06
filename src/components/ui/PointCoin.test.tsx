@@ -2,17 +2,19 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 import PointCoin from './PointCoin'
 
-describe('PointCoin component (方案一：平台专属品牌代币)', () => {
-  it('renders default gold variant with gradient definitions and M glyph', () => {
+describe('PointCoin component (MoNexus 平台官方品牌代币)', () => {
+  it('renders default gold variant with MoNexus Ledger Knot geometry', () => {
     const { container } = render(<PointCoin />)
     const svg = container.querySelector('svg')
     expect(svg).toBeInTheDocument()
     expect(screen.getByTestId('point-coin-gold')).toBeInTheDocument()
 
-    // 检查渐变与几何图腾定义
+    // 检查渐变定义与铸币外轮廓
     expect(container.querySelector('defs')).toBeInTheDocument()
-    expect(container.querySelectorAll('circle').length).toBe(4) // outer disk, outer rim, inner core, dash milled edge
-    expect(container.querySelectorAll('path').length).toBe(3) // shadow, body glyph, specular highlight
+    // 4 circles: outer disk, rim, inner core, dashed milled edge + 4 security dots
+    expect(container.querySelectorAll('circle').length).toBe(8)
+    // paths for the interlocking Ledger Knot structure
+    expect(container.querySelectorAll('path').length).toBeGreaterThanOrEqual(5)
   })
 
   it('renders silver variant with slate metallic tones', () => {

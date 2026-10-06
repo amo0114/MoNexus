@@ -5,7 +5,8 @@
 // the open intent through `onOpen`. Listing, category/URL sync, feed blending,
 // audience caching, pagination and scroll restore stay in the page.
 
-import { Coins, Star, Store } from 'lucide-react'
+import { Star, Store } from 'lucide-react'
+import PointCoin from '../ui/PointCoin'
 import ProductMediaFrame from '../ui/ProductMediaFrame'
 import BadgeMark from '../merchandising/BadgeMark'
 import MerchantPartnerMark from '../merchandising/MerchantPartnerMark'
@@ -136,7 +137,7 @@ export default function StoreProductCard({ product, onOpen, disclosure }: StoreP
               </span>
             )}
             <div className="flex items-baseline gap-1 text-[var(--color-cta)] font-bold text-lg md:text-xl tracking-tight">
-              <Coins className="w-4 h-4 shrink-0 self-center" />
+              <PointCoin className="w-4 h-4 shrink-0 self-center" />
               <span className="tabular-nums font-semibold" style={{ fontFeatureSettings: '"tnum" 1' }}>
                 {product.price}
               </span>

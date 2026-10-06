@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
+import PointCoin from './ui/PointCoin'
 import {
   Copy,
   Check,
@@ -19,7 +20,7 @@ import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
-import { captureFeedbackOwner, showCompletionToast } from '../lib/completionFeedback'
+import { captureFeedbackOwner, showCompletionActivity } from '../lib/completionFeedback'
 import { disputeOrder, closeOrder, createOrder, renewOrder, type RenewPrecheck } from '../api/orders'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { OwnReview } from '../api/reviews'
@@ -44,16 +45,20 @@ interface OrderDetailModalProps {
 
 type OrderAction = 'dispute' | 'close'
 
-const ACTION_COPY: Record<OrderAction, { title: string; description: string; confirmLabel: string }> = {
+type OrderActionCopy = { title: string; description: string; confirmLabel: string; successTitle: string }
+
+const ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
   dispute: {
     title: '发起争议',
     description: '确认要发起争议吗？这会暂停该订单的结算，平台与商家将介入处理。',
     confirmLabel: '确认发起争议',
+    successTitle: '争议已提交',
   },
   close: {
     title: '结束订单',
     description: '确认结束订单吗？之后不可再发起争议。',
     confirmLabel: '确认结束订单',
+    successTitle: '订单已结束',
   },
 }
 
@@ -61,16 +66,18 @@ const ACTION_COPY: Record<OrderAction, { title: string; description: string; con
  * P6b：人工服务订单在 delivered 时复用 close/dispute 语义作显式验收，
  * 仅措辞不同（决策 ③）——close = 验收通过，dispute = 验收异议。
  */
-const ACCEPTANCE_ACTION_COPY: Record<OrderAction, { title: string; description: string; confirmLabel: string }> = {
+const ACCEPTANCE_ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
   dispute: {
     title: '验收异议',
     description: '确认对履约结果提出异议吗？这会暂停该订单的结算，平台与商家将介入处理。',
     confirmLabel: '确认提出异议',
+    successTitle: '验收异议已提交',
   },
   close: {
     title: '验收通过',
     description: '确认验收通过？确认后订单关闭并结算给商家。',
     confirmLabel: '确认验收通过',
+    successTitle: '验收已通过',
   },
 }
 
@@ -91,6 +98,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   // modal forever even while the list has already converged.
   const order = initialOrder
   const [loadingAction, setLoadingAction] = useState<OrderAction | null>(null)
+  const actionPending = useRef(false)
   const [confirmAction, setConfirmAction] = useState<OrderAction | null>(null)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [review, setReview] = useState<OwnReview | null>(initialOrder.review ?? null)
@@ -146,6 +154,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   }
 
   async function executeAction(action: OrderAction) {
+    if (actionPending.current) return
+    actionPending.current = true
     const isCurrent = captureFeedbackOwner()
     setConfirmAction(null)
     setLoadingAction(action)
@@ -158,10 +168,18 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       // 本地动作也要立即收敛权威计数。
       void useAppStore.getState().refreshOrderAttention()
       onClose()
-      showCompletionToast('操作成功')
+      showCompletionActivity({
+        title: actionCopy[action].successTitle,
+        message: '操作成功',
+        subtitle: `订单 #${order.id} · ${order.product.name}`,
+        groupKey: `buyer:order:${order.id}`,
+        actionLabel: '查看订单',
+        onAction: () => navigate(`/orders?focus=${order.id}`),
+      })
     } catch (e: any) {
       if (isCurrent()) showToast(e.response?.data?.error?.message || '操作失败', 'error')
     } finally {
+      actionPending.current = false
       setLoadingAction(null)
     }
   }
@@ -529,7 +547,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               data-testid="order-holding-points"
             >
               <h3 className="font-heading text-xs font-bold text-[var(--color-text)] mb-1.5 flex items-center gap-1.5">
-                <Coins className="w-3.5 h-3.5 text-[var(--color-text-muted)]" />
+                <PointCoin className="w-3.5 h-3.5 shrink-0" />
                 <span>积分说明</span>
               </h3>
               {isRefunded ? (
@@ -656,7 +674,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               <button
                 type="button"
                 onClick={() => setConfirmAction('dispute')}
-                disabled={loadingAction === 'dispute'}
+                disabled={loadingAction !== null}
                 data-testid="order-dispute-button"
                 className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-warning)] hover:underline cursor-pointer py-1 transition-colors whitespace-nowrap"
               >
@@ -675,7 +693,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               <button
                 type="button"
                 onClick={() => setConfirmAction('close')}
-                disabled={loadingAction === 'close'}
+                disabled={loadingAction !== null}
                 data-testid="order-close-button"
                 className="btn-secondary h-9 px-3 text-xs whitespace-nowrap text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-cta)] hover:text-[var(--color-cta)] cursor-pointer font-medium"
               >

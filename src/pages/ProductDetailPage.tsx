@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Coins, Heart, ShieldCheck, Info, Zap } from 'lucide-react'
+import { Heart, ShieldCheck, Info, Zap } from 'lucide-react'
+import PointCoin from '../components/ui/PointCoin'
 import api from '../api/client'
 import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
@@ -701,7 +702,7 @@ export default function ProductDetailPage() {
                     </span>
                   )}
                 <div className="flex items-center gap-1 text-[var(--color-points)] font-bold text-lg">
-                  <Coins className="w-4 h-4 shrink-0" />
+                  <PointCoin className="w-5 h-5 shrink-0" />
                   <span className="product-text-readable tabular-nums">{displayPrice}</span>
                   <span className="text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
                 </div>
