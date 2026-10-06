@@ -80,9 +80,9 @@ if [[ -z "$BASE_URL" ]]; then
 fi
 export DATABASE_URL="$BASE_URL"
 
-# ── Node 20.19.5 / npm 10 (frozen engine floor for this card). ───────────────
-NODE20_BIN="${NODE20_BIN:-/root/.nvm/versions/node/v20.19.5/bin}"
-export PATH="$NODE20_BIN:$PATH"
+# ── Node 22.23.1 / npm 10 (frozen engine floor for this card). ───────────────
+NODE22_BIN="${NODE22_BIN:-/root/.nvm/versions/node/v22.23.1/bin}"
+export PATH="$NODE22_BIN:$PATH"
 
 PRISMA_BIN="$SERVER_DIR/node_modules/.bin/prisma"
 VITEST_BIN="$SERVER_DIR/node_modules/.bin/vitest"
@@ -179,7 +179,7 @@ gate_0_env() {
   node_v="$(node --version)"
   npm_v="$(npm --version)"
   say "node=$node_v npm=$npm_v"
-  [[ "$node_v" == "v20.19.5" ]] || { fail "node must be v20.19.5 (got $node_v)"; return 1; }
+  [[ "$node_v" == "v22.23.1" ]] || { fail "node must be v22.23.1 (got $node_v)"; return 1; }
   [[ "$npm_v" == 10.* ]] || { fail "npm must be 10.x (got $npm_v)"; return 1; }
 
   [[ -x "$PRISMA_BIN" ]] || { fail "prisma binary not found at $PRISMA_BIN"; return 1; }
@@ -281,7 +281,7 @@ gate_2_migrate() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gate 3 — server runtime + server build (Node 20.19.5 / npm 10 in PATH).
+# Gate 3 — server runtime + server build (Node 22.23.1 / npm 10 in PATH).
 # ─────────────────────────────────────────────────────────────────────────────
 gate_3_runtime_build() {
   say "── Gate 3: server runtime + server build ──"

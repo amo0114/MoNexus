@@ -10,7 +10,7 @@ export type TurnstileHumanVerifierOptions = {
   secretKey?: string
   /** Test injection only; production uses config.turnstile.allowedHostnames. */
   allowedHostnames?: readonly string[]
-  /** Test injection only; production uses Node 20's global fetch. */
+  /** Test injection only; production uses Node's global fetch. */
   fetchImplementation?: typeof fetch
 }
 

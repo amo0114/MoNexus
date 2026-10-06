@@ -25,7 +25,7 @@ If the user explicitly prefers managed app hosting, choose Fly.io as the backup 
 
 ## Production Prerequisites
 
-- A Linux VPS with nginx, Node.js 20, npm, tar, curl, and either systemd or PM2.
+- A Linux VPS with nginx, Node.js 22, npm, tar, curl, and either systemd or PM2.
 - PostgreSQL 16 reachable from the backend host.
 - Object storage already provisioned according to the production runbook.
 - DNS records for the frontend origin and API origin.

@@ -88,11 +88,11 @@
 | Layer | Technologies |
 | --- | --- |
 | **Frontend** | React 18, TypeScript, Vite 6, React Router 6, Zustand, Tailwind CSS, Radix UI, Axios, Sentry |
-| **Backend** | Node.js 20, Express 4, TypeScript, Zod, Prisma 6, JWT + cookie refresh tokens |
+| **Backend** | Node.js 22, Express 4, TypeScript, Zod, Prisma 6, JWT + cookie refresh tokens |
 | **Data** | PostgreSQL 16, Redis 7 (optional), MinIO / S3-compatible storage |
 | **Ops** | Docker Compose, nginx, GitHub Actions, Vitest, Playwright, pino, prom-client |
 
-**Runtime constraint:** Node.js `>=20 <21`, npm `>=10 <11` (see `.nvmrc`).
+**Runtime constraint:** Node.js `>=22 <23`, npm `>=10 <11` (see `.nvmrc`).
 
 ---
 
@@ -152,7 +152,7 @@ MoNexus-new/
 
 ### Prerequisites
 
-- [Node.js 20](https://nodejs.org/) and npm 10
+- [Node.js 22](https://nodejs.org/) and npm 10
 - [Docker](https://docs.docker.com/get-docker/) (for PostgreSQL / Redis)
 - Git
 

@@ -2,8 +2,8 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-NODE20_BIN="/root/.nvm/versions/node/v20.19.5/bin"
-[[ -d "$NODE20_BIN" ]] && export PATH="$NODE20_BIN:$PATH"
+NODE22_BIN="/root/.nvm/versions/node/v22.23.1/bin"
+[[ -d "$NODE22_BIN" ]] && export PATH="$NODE22_BIN:$PATH"
 DBGUARD="$ROOT/scripts/cmi/dbguard.sh"
 export DATABASE_URL="${DATABASE_URL:-$(grep -E '^DATABASE_URL=' "$(git -C "$ROOT" rev-parse --git-common-dir)/../server/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)}"
 [[ -n "$DATABASE_URL" ]] || { echo 'DATABASE_URL is required' >&2; exit 1; }
