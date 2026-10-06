@@ -3,18 +3,23 @@ import { describe, expect, it } from 'vitest'
 import PointCoin from './PointCoin'
 
 describe('PointCoin component (MoNexus 平台官方品牌代币)', () => {
-  it('renders default gold variant with MoNexus Ledger Knot geometry', () => {
+  it('renders default gold variant with MoNexus Ledger Knot geometry (high contrast)', () => {
     const { container } = render(<PointCoin />)
     const svg = container.querySelector('svg')
     expect(svg).toBeInTheDocument()
     expect(screen.getByTestId('point-coin-gold')).toBeInTheDocument()
 
-    // 检查渐变定义与铸币外轮廓
+    // 渐变与立体铸币结构
     expect(container.querySelector('defs')).toBeInTheDocument()
-    // 4 circles: outer disk, rim, inner core, dashed milled edge + 4 security dots
     expect(container.querySelectorAll('circle').length).toBe(8)
-    // paths for the interlocking Ledger Knot structure
     expect(container.querySelectorAll('path').length).toBeGreaterThanOrEqual(5)
+  })
+
+  it('renders mx motif variant with M·X monogram', () => {
+    const { container } = render(<PointCoin motif="mx" />)
+    const svg = container.querySelector('svg')
+    expect(svg).toBeInTheDocument()
+    expect(container.querySelectorAll('circle').length).toBe(10) // 8 base circles + 2 for M·X center dot + shadow
   })
 
   it('renders silver variant with slate metallic tones', () => {
