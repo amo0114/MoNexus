@@ -6,7 +6,7 @@ import { SEED_ACCOUNTS, loginAs } from './helpers'
  *
  * 惯例同 registration-mail-operations.spec.ts（C16）：真实 loginAs 登录，
  * /api/leaderboard 用精确 pathname mock 铺出各状态；真实聚合/窗口/鉴权语义
- * 已由 server/src/__tests__/leaderboard.test.ts 的 23 个 Vitest 用例覆盖。
+ * 已由 server/src/__tests__/leaderboard.test.ts 及 leaderboard-current.test.ts 覆盖；周期空态和刷新状态下沉到前端组件测试。
  */
 
 const LEADERBOARD_PATH = '/api/leaderboard'
@@ -22,7 +22,7 @@ type MockRow = { rank: number; displayName: string; points: number; isMe?: boole
 const PERIOD: Record<Scope, { periodKey: string; periodLabel: string }> = {
   total: { periodKey: 'ALL', periodLabel: '全部' },
   month: { periodKey: 'M2026-08', periodLabel: '2026年8月' },
-  week: { periodKey: 'W2026-07-27', periodLabel: '07-27 ~ 08-02' },
+  week: { periodKey: 'W2026-07-27', periodLabel: '2026-07-27 ~ 2026-08-02' },
 }
 
 function payload(
@@ -37,9 +37,9 @@ function payload(
   return {
     scope,
     ...PERIOD[scope],
-    dataThrough: opts.dataThrough === undefined ? '2026-07-31' : opts.dataThrough,
+    dataThrough: opts.dataThrough === undefined ? '2026-08-01' : opts.dataThrough,
     updatedAt: opts.updatedAt === undefined ? '2026-07-31T16:05:00.000Z' : opts.updatedAt,
-    top: top.map((row) => ({ isMe: false, ...row })),
+    top: top.map((row) => ({ isMe: false, avatarUrl: '/assets/avatars/three-kingdoms/v2.3/wei-cao-cao.webp', ...row })),
     me: opts.me === undefined ? null : opts.me,
   }
 }
@@ -107,6 +107,9 @@ test.describe('积分排行榜页', () => {
     const podium = page.getByTestId('leaderboard-podium')
     await expect(podium).toBeVisible()
     await expect(page.getByTestId('leaderboard-podium-1')).toContainText('选手1')
+    const avatar = page.getByTestId('leaderboard-podium-1').locator('img')
+    await expect(avatar).toHaveAttribute('src', '/assets/avatars/three-kingdoms/v2.3/wei-cao-cao.webp')
+    await expect.poll(() => avatar.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBeGreaterThan(0)
     const box1 = (await page.getByTestId('leaderboard-podium-1').boundingBox())!
     const box2 = (await page.getByTestId('leaderboard-podium-2').boundingBox())!
     const box3 = (await page.getByTestId('leaderboard-podium-3').boundingBox())!
@@ -125,7 +128,7 @@ test.describe('积分排行榜页', () => {
 
     // 移动端吸底条含「距上榜线」激励行（N1）
     await expect(page.getByTestId('leaderboard-me')).toContainText('距上榜线')
-    await expect(page.getByText('数据截至 2026-07-31 · 每日更新')).toBeVisible()
+    await expect(page.getByText('截至 2026-08-01 00:05:00（北京时间） · 每分钟更新')).toBeVisible()
 
     // 桌面（≥lg）「我的排名」驻左栏卡片；吸底浮条仅 <lg 生效
     const meCard = page.getByTestId('leaderboard-me-card')
@@ -139,7 +142,7 @@ test.describe('积分排行榜页', () => {
     await page.getByTestId('leaderboard-tab-week').click()
     await expect(page.getByTestId('leaderboard-podium-1')).toContainText('周选手1')
     // exact 匹配头部期间徽标——左栏说明卡的「本期区间：…。」带前后缀不会命中
-    await expect(page.getByText('07-27 ~ 08-02', { exact: true })).toBeVisible()
+    await expect(page.getByText('2026-07-27 ~ 2026-08-02', { exact: true })).toBeVisible()
     expect(requested).toContain('week')
   })
 
@@ -187,24 +190,6 @@ test.describe('积分排行榜页', () => {
     expect(box2.x).toBeLessThan(box1.x)
     expect(box1.x).toBeLessThan(box3.x)
     expect(box1.y).toBeLessThan(box3.y)
-  })
-
-  test('两种空态文案可区分：新周期首日 vs 首刷空窗', async ({ page }) => {
-    await loginAs(page, SEED_ACCOUNTS.user)
-    await mockLeaderboard(page, {
-      total: payload('total', rows(3)),
-      // 有 updatedAt（同批次总榜兜底）但无人上榜 = 新周期首日
-      week: payload('week', [], { updatedAt: '2026-08-02T16:05:00.000Z', dataThrough: '2026-08-02' }),
-      // updatedAt 为 null = 系统尚无任何快照（C12 首刷空窗）
-      month: payload('month', [], { updatedAt: null, dataThrough: null }),
-    })
-    await openLeaderboard(page)
-
-    await page.getByTestId('leaderboard-tab-week').click()
-    await expect(page.getByTestId('leaderboard-empty')).toContainText('新的一周刚开始')
-
-    await page.getByTestId('leaderboard-tab-month').click()
-    await expect(page.getByTestId('leaderboard-empty')).toContainText('榜单正在生成中')
   })
 
   test('接口失败：错误态 + 重试按钮恢复', async ({ page }) => {

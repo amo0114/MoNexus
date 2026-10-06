@@ -184,8 +184,9 @@ export async function adjustMerchantOfferCapacity(
  * 调整非即时库存商品的剩余名额。delta 为正时补充、为负时减少。
  * 即时库存商品必须通过交付库存导入/作废接口管理。
  */
-export async function adjustMerchantProductCapacity(id: number, payload: { delta: number; reason: string; offerId?: number }): Promise<void> {
-  await api.post(`/merchant/products/${id}/capacity/adjust`, payload)
+export async function adjustMerchantProductCapacity(id: number, payload: { delta: number; reason: string; offerId?: number }): Promise<CapacityAdjustResult> {
+  const { data } = await api.post<CapacityAdjustResult>(`/merchant/products/${id}/capacity/adjust`, payload)
+  return data
 }
 
 export async function getMerchantOrders(params?: { page?: number; pageSize?: number; status?: string; q?: string; productId?: number; dateFrom?: string; dateTo?: string; sort?: 'booking' }): Promise<ListEnvelope<MerchantOrder>> {
@@ -222,8 +223,9 @@ export async function postOrderProgress(id: number, note: string): Promise<{ ok:
   return data
 }
 
-export async function respondDispute(id: number, payload: { resolution: 'resume' | 'close'; publicNote?: string }): Promise<void> {
-  await api.post(`/merchant/orders/${id}/fulfillment/respond-dispute`, payload)
+export async function respondDispute(id: number, payload: { resolution: 'resume' | 'close'; publicNote?: string }): Promise<MerchantOrder> {
+  const { data } = await api.post<MerchantOrder>(`/merchant/orders/${id}/fulfillment/respond-dispute`, payload)
+  return data
 }
 
 export async function rejectOrder(

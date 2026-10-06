@@ -14,13 +14,14 @@ export interface LeaderboardPeriod {
   endDay: string | null
 }
 
-/** LB-07：他人行只含这五个字段，绝不含 userId / email / 余额。 */
+/** LB-07：公开身份只含展示名和头像，绝不含 userId / email / 余额。 */
 export interface LeaderboardTopRow {
   rank: number
   displayName: string
+  avatarUrl: string
   points: number
   isMe: boolean
-  /** 上一轮快照名次；首次入榜为 null。prevRank - rank > 0 即名次上升。 */
+  /** 同一周期截至今日零点的名次；今日首次得分为 null。 */
   prevRank: number | null
 }
 
@@ -34,12 +35,12 @@ export interface LeaderboardMe {
 export interface LeaderboardResponse {
   scope: LeaderboardScope
   periodKey: string
-  /** 总榜「全部」/ 月榜「2026年8月」/ 周榜「07-27 ~ 08-02」。 */
+  /** 总榜「全部」/ 月榜「2026年8月」/ 周榜「2026-07-27 ~ 2026-08-02」。 */
   periodLabel: string
-  /** 快照覆盖到的最后一个日历日；尚无快照为 null。 */
-  dataThrough: string | null
-  /** 快照批次时刻（ISO）；尚无快照为 null。 */
-  updatedAt: string | null
+  /** 本次查询覆盖到的北京时间日期，包含今天。 */
+  dataThrough: string
+  /** 本次统计截止时刻（ISO）。 */
+  updatedAt: string
   top: LeaderboardTopRow[]
   me: LeaderboardMe | null
 }

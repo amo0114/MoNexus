@@ -83,6 +83,9 @@ if [[ "$INSTALL_PLAYWRIGHT" == "true" ]]; then
   (cd "$ROOT_DIR" && npx playwright install chromium)
 fi
 
+echo "[INFO] Running isolated mobile browser checks"
+(cd "$ROOT_DIR" && npm run e2e:mobile-island)
+
 echo "[INFO] Running Playwright E2E"
 (
   cd "$ROOT_DIR"

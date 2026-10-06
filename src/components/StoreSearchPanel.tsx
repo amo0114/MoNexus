@@ -9,7 +9,7 @@ import { useAppStore } from '../stores/appStore'
  * 状态与 StorePage 网格共享（appStore.storeQuery/storeCategory），
  * 输入经 StorePage 既有 300ms debounce 驱动列表。
  */
-export default function StoreSearchPanel({ onClose }: { onClose: () => void }) {
+export default function StoreSearchPanel({ onClose, active = true }: { onClose: () => void; active?: boolean }) {
   const query = useAppStore((s) => s.storeQuery)
   const setQuery = useAppStore((s) => s.setStoreQuery)
   const category = useAppStore((s) => s.storeCategory)
@@ -17,10 +17,11 @@ export default function StoreSearchPanel({ onClose }: { onClose: () => void }) {
   const registry = useAppStore((s) => s.registry)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // 展开即聚焦（在 tap 事件链内，iOS 允许程序聚焦）
+  // Do not scroll the catalog to the input when opening the keyboard.
   useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
+    if (active) inputRef.current?.focus({ preventScroll: true })
+    else inputRef.current?.blur()
+  }, [active])
 
   // 动态 productCategories（稳定 code）为权威分类；旧 backend 无该字段时回退
   // legacy productTypes（value=label）——与 StorePage/fetchProducts 的回退一致。
@@ -39,8 +40,8 @@ export default function StoreSearchPanel({ onClose }: { onClose: () => void }) {
     return registry?.productTypes.find((t) => t.value === value)?.label ?? value
   }
   return (
-    <div className="w-full island-panel-in">
-      <div className="flex items-center gap-2.5">
+    <div className="w-full">
+      <div className="store-search-row flex items-center gap-2.5">
         <Search className="w-5 h-5 shrink-0 text-[var(--color-primary)]" />
         <input
           ref={inputRef}
@@ -48,7 +49,7 @@ export default function StoreSearchPanel({ onClose }: { onClose: () => void }) {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') onClose()
+            if (e.key === 'Escape' || (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229)) onClose()
           }}
           placeholder="搜账号、卡密、教程..."
           aria-label="搜索商品"
@@ -64,7 +65,7 @@ export default function StoreSearchPanel({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      <div className="island-rows-in flex gap-2 overflow-x-auto hide-scrollbar mt-2.5 pb-0.5 -mx-1 px-1">
+      <div className="store-search-categories flex gap-2 overflow-x-auto hide-scrollbar mt-2.5 pb-0.5 -mx-1 px-1">
         {categories.map((cat) => (
           <button
             key={cat}

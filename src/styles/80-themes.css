@@ -1,0 +1,156 @@
+/* =========================================================
+   Soft theme — warm yellow palette, rounded shapes, soft shadows
+   Inspired by warm-curative aesthetics (no IP likeness).
+   ========================================================= */
+:root[data-theme="soft"] {
+  --color-primary: #FF8C42;
+  --color-primary-hover: #E67333;
+  --color-secondary: #FFB088;
+  --color-cta: #AD4B35;              /* 暖陶红 — 白字 5.48:1 AA */
+  --color-cta-hover: #963E2B;
+  --color-on-cta: #FFFFFF;
+  --color-background: #FFF8EC;
+  --color-surface: #FFFEFB;
+  --color-text: #5D3A1F;
+  --color-text-muted: #A07050;
+  --color-border: #FFE4C4;
+
+  --color-image-placeholder: #FFF1DB;
+  --color-grid-dot: #FFE4C4;
+  --color-glass-bg: rgba(255, 248, 236, 0.85);
+  --color-glass-border: rgba(255, 140, 66, 0.18);
+
+  --color-primary-tint: rgba(255, 140, 66, 0.12);
+  --color-primary-tint-strong: rgba(255, 140, 66, 0.2);
+
+  --color-points: #3F7A3F;             /* 暖米卡上 5.09:1 */
+  --color-on-primary: #3D2210;         /* 深棕 on 暖橙 — 6.40:1 */
+
+  --color-info: #2563EB;
+  --color-warning: #F5A340;
+  --color-success: #6BBE6B;
+  --color-danger: #FF7B6B;
+
+  --color-primary-border-subtle: rgba(255, 140, 66, 0.28);
+  --color-danger-bg: #FFF0ED;
+  --color-danger-border: #FFD2CA;
+  --color-danger-text: #C53B2B;
+  --color-success-bg: #F0FAF0;
+  --color-success-border: #C8E6C8;
+  --color-success-text: #2D6A2D;
+
+  /* Toast 色阶（暖米卡 #FFFEFB 上实测 ≥4.5:1） */
+  --color-toast-success: #3F7A3F;    /* 同 --color-points — 5.09:1 */
+  --color-toast-error: #B91C1C;      /* red-700 — 5.83:1 */
+  --color-toast-info: #1D4ED8;       /* blue-700 — 6.29:1 */
+  --color-toast-warning: #9A6206;    /* amber-800 调暖 — 4.71:1 */
+
+  --shadow-sm: 0 1px 3px rgba(255, 140, 66, 0.08);
+  --shadow-md: 0 4px 12px rgba(255, 140, 66, 0.12);
+  --shadow-lg: 0 8px 24px rgba(255, 140, 66, 0.18);
+  --shadow-xl: 0 16px 40px rgba(255, 140, 66, 0.22);
+  --shadow-focus: 0 0 0 4px rgba(255, 140, 66, 0.25);
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --radius-pill: 9999px;
+
+  --font-body: 'Nunito', 'Hiragino Maru Gothic ProN', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
+  --font-heading: 'Nunito', 'Hiragino Maru Gothic ProN', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
+  --font-weight-normal: 500;
+  --font-weight-medium: 600;
+  --font-weight-semibold: 700;
+  --font-weight-bold: 800;
+}
+
+:root[data-theme="soft"] .star-filled {
+  color: #F5A340;
+  fill: #F5A340;
+}
+
+/* =========================================================
+   Ink theme — 墨韵：冷白宣纸 + 松烟墨 + 花青 + 松绿。
+   黑白配的意象取自水墨画而非肃穆纯黑白：纸为冷调宣白（不带黄），
+   墨取松烟（微青黑而非纯黑），点缀花青（石青蓝，山水点苔）与
+   松绿；全色板剔除橘黄波段，与 soft 的暖橘家族彻底分野。
+   半径/字体沿用 light（中性直线条衬墨意），仅覆写色彩与阴影。
+   ========================================================= */
+:root[data-theme="ink"] {
+  --color-primary: #34507A;          /* 花青 — 宣纸底 7.8:1，白字按钮同 */
+  --color-primary-hover: #2A4266;    /* 深花青 */
+  --color-secondary: #6B86A8;        /* 淡花青 */
+  --color-cta: #3D7257;              /* 松绿 — 白字 5.6:1 */
+  --color-cta-hover: #315C46;
+  --color-on-cta: #FFFFFF;
+  --color-background: #EEF0EE;       /* 冷白宣纸（微青灰，不带黄） */
+  --color-surface: #F8F9F7;          /* 卡纸（比底稍亮，如托裱） */
+  --color-text: #22262C;             /* 松烟墨（微青黑，非纯黑） */
+  --color-text-muted: #666E77;       /* 淡墨 */
+  --color-border: #D9DDD9;           /* 绫绢灰边 */
+
+  --color-image-placeholder: #E6E9E5;
+  --color-grid-dot: #D9DDD9;
+  --color-glass-bg: rgba(248, 249, 247, 0.85);
+  --color-glass-border: rgba(52, 80, 122, 0.12);
+
+  --color-primary-tint: rgba(52, 80, 122, 0.09);
+  --color-primary-tint-strong: rgba(52, 80, 122, 0.16);
+
+  --color-points: #2F5C46;           /* 松绿深化 — 纸卡 7.3:1 */
+  --color-on-primary: #FFFFFF;       /* 白字 on 花青 7.8:1 */
+
+  --color-info: #2C6E8A;             /* 黛蓝偏青 */
+  --color-warning: #677220;          /* 苔黄（68° 黄绿，警示语义的黄族但不入橘调） */
+  --color-success: #3D7257;          /* 松绿 */
+  --color-danger: #A62B4D;           /* 胭脂（冷调绯红，非橘红） */
+
+  --color-primary-border-subtle: rgba(52, 80, 122, 0.22);
+  --color-danger-bg: #F7EAEF;
+  --color-danger-border: #E8BCCD;
+  --color-danger-text: #861B3B;
+  --color-success-bg: #EDF4EF;
+  --color-success-border: #BCD4C4;
+  --color-success-text: #244C37;
+
+  --color-toast-success: #2F5C46;
+  --color-toast-error: #A62B4D;
+  --color-toast-info: #2C6E8A;
+  --color-toast-warning: #677220;
+
+  /* Warning banner family — 苔笺 */
+  --color-warning-bg: #EFF0DC;
+  --color-warning-border: #D6D9B4;
+  --color-warning-text: #4C541A;
+  --color-warning-accent: #677220;
+  --color-warning-accent-hover: #59631B;
+
+  /* Shadows — 冷墨晕染 */
+  --shadow-sm: 0 1px 2px rgba(34, 38, 44, 0.05);
+  --shadow-md: 0 4px 6px rgba(34, 38, 44, 0.07);
+  --shadow-lg: 0 10px 15px rgba(34, 38, 44, 0.09);
+  --shadow-xl: 0 20px 25px rgba(34, 38, 44, 0.11);
+  --shadow-focus: 0 0 0 3px rgba(52, 80, 122, 0.22);
+}
+
+:root[data-theme="ink"] .star-filled {
+  color: #34507A;                    /* 花青 — 弃用金色，避免暖黄联想 */
+  fill: #34507A;
+}
+
+:root[data-theme="ink"] .brand-logo > .brand-logo__light,
+:root[data-theme="ink"] .brand-logo > .brand-logo__dark,
+:root[data-theme="ink"] .brand-logo > .brand-logo__soft {
+  display: none;
+}
+
+:root[data-theme="ink"] .brand-logo > .brand-logo__black {
+  display: block;
+}
+
+:root[data-theme="ink"] .star-filled {
+  color: #B8862B;                    /* 泥金 — 与朱砂、宣纸同属重彩画料 */
+  fill: #B8862B;
+}

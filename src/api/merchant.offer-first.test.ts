@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import api from './client'
 import {
   adjustMerchantOfferCapacity,
+  adjustMerchantProductCapacity,
   importMerchantOfferInventory,
   previewMerchantOfferInventory,
   voidMerchantOfferInventory,
@@ -13,6 +14,12 @@ const post = vi.mocked(api.post)
 
 describe('merchant Offer-first availability API', () => {
   beforeEach(() => post.mockReset())
+
+  it('preserves the actual remaining capacity from the legacy product entry', async () => {
+    post.mockResolvedValueOnce({ data: { stock: 17 } })
+    expect(await adjustMerchantProductCapacity(7, { offerId: 43, delta: 2, reason: '扩容' })).toEqual({ stock: 17 })
+    expect(post).toHaveBeenCalledWith('/merchant/products/7/capacity/adjust', { offerId: 43, delta: 2, reason: '扩容' })
+  })
 
   it('uses explicit Offer IDs in every inventory/capacity URL and never sends offerId in the body', async () => {
     post

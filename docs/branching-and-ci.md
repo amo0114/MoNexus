@@ -32,7 +32,7 @@ chore/xxx ┘                                        ▲
 - **E2E 分片**：主套件保留 `fullyParallel: false` 和 CI 单 worker，文件内的串行业务旅程保持在同一 shard。法律页面套件由主 E2E 的 shard 1 单独完整执行，随后 reset + seed 恢复默认夹具；shard 2 直接使用自己的初始 seed。失败报告按 shard 命名，两个 shard 都必须通过。
 - **分片与耗时**：Vitest 按测试文件相对路径的 SHA-1 排序后均分文件数，不按耗时均衡。增删或重命名测试文件可能改变分片归属，因此每个 shard 都安装 pandoc。分片收益以真实 CI 时间戳为准，不把单个 job 耗时当作整条流水线耗时。
 - **后端测试数据库**：每个 backend shard 的 PostgreSQL 数据目录使用上限 2 GiB 的 `tmpfs`，随 job 销毁。保留每个测试前完整清表，`fsync`、`synchronous_commit`、`full_page_writes` 维持 PostgreSQL 默认设置；该存储配置仅用于一次性 CI 数据库。
-- **frontend job 含前端单元测试**（根目录 `npm test`）及类型检查、构建。
+- **frontend job**：执行前端单元测试（根目录 `npm test`）、类型检查、构建，以及 `npm run e2e:mobile-island`。移动浏览器套件使用独立 Vite 5192 和全量 API 测试桩，不连接数据库；其三个 spec 从主 E2E 排除，避免重复运行。相关 spec、专用配置和共享 `e2e/auth-fixtures.ts` 变更都会触发 frontend job。
 - `.github/workflows/ci.yml` 变更会**自动**触发全部 E2E 检查（已加入 e2e 路径过滤器）。
 - **不要在 PR 分支上用 `[skip ci]`**：它会抑制整个 workflow，required 的 `CI OK` 将永远 Pending，受保护分支的 PR 无法合并；纯文档 PR 靠路径过滤即可快速出绿，无需手动跳过。
 - **强制跑 e2e**：给 PR 打 `run-e2e` 标签；何时必须打、何时新增 e2e spec 见 [`testing-policy.md`](./testing-policy.md)。

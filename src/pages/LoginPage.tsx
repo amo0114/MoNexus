@@ -519,7 +519,7 @@ export default function LoginPage() {
                 autoComplete="nickname"
               />
               <p className="px-0.5 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
-                用于评价与个人展示。留空将分配类似 <code className="text-[10px]">mn_XXXXXXXX</code> 的默认昵称。
+                用于评价与个人展示。留空将分配“爱喝茶的小军师”这样的趣味昵称，之后可随时修改。
               </p>
             </div>
             <input

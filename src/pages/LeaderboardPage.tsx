@@ -4,13 +4,14 @@ import { Trophy } from 'lucide-react'
 import { getLeaderboard, LeaderboardResponse, LeaderboardScope } from '../api/leaderboard'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
 import EmptyState from '../components/ui/EmptyState'
 import { Skeleton } from '../components/ui/Skeleton'
 import Podium from './leaderboard/Podium'
 import RankRow from './leaderboard/RankRow'
 import MyRankBar from './leaderboard/MyRankBar'
 import StatsPanel from './leaderboard/StatsPanel'
-import { fmtPoints, meGap } from './leaderboard/format'
+import { fmtPoints, formatLeaderboardTime, meGap } from './leaderboard/format'
 
 const SCOPES: { value: LeaderboardScope; label: string }[] = [
   { value: 'total', label: '总榜' },
@@ -18,21 +19,10 @@ const SCOPES: { value: LeaderboardScope; label: string }[] = [
   { value: 'week', label: '本周榜' },
 ]
 
-/**
- * 空态分两类（spec §4.4）：updatedAt 为 null 是部署后首刷未完成的空窗，
- * 有 updatedAt 却无人上榜则是新周期首日。
- */
-function emptyCopy(scope: LeaderboardScope, updatedAt: string | null) {
-  if (!updatedAt) {
-    return { title: '榜单正在生成中', description: '首轮数据稍后就位，晚点再来看看' }
-  }
-  if (scope === 'week') {
-    return { title: '新的一周刚开始', description: '明天见分晓——现在去签到，抢占本周榜首' }
-  }
-  if (scope === 'month') {
-    return { title: '新的一个月刚开始', description: '明天见分晓——现在去签到，抢占本月榜首' }
-  }
-  return { title: '还没有人上榜', description: '完成每日签到赚取积分，成为第一个登上总榜的人' }
+/** 空榜仅表示本期尚无合格得分，与定时任务或新周期首日无关。 */
+function emptyCopy(scope: LeaderboardScope) {
+  const period = scope === 'week' ? '本周' : scope === 'month' ? '本月' : '当前'
+  return { title: `${period}还没有人上榜`, description: '完成每日签到赚取积分，刷新即可查看排名' }
 }
 
 /** 加载骨架：hero（颁奖台 + 战况卡）+ 8 行列表，形状对齐最终布局。 */
@@ -87,10 +77,12 @@ function LeaderboardSkeleton() {
 
 export default function LeaderboardPage() {
   const navigate = useNavigate()
+  const authEpoch = useAuthStore((state) => state.authEpoch)
   const [scope, setScope] = useState<LeaderboardScope>('total')
   const [data, setData] = useState<LeaderboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
+  const [refreshFailed, setRefreshFailed] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
   // 吸底条的收起条件：自己那一行（颁奖台或列表）已在可视区。
@@ -100,27 +92,49 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     let mounted = true
+    let inFlight = false
+    let hasData = false
+    setData(null)
     setLoading(true)
-    getLeaderboard(scope)
-      .then((res) => {
-        if (!mounted) return
+    setRefreshFailed(false)
+    async function refresh() {
+      if (inFlight) return
+      inFlight = true
+      try {
+        const res = await getLeaderboard(scope)
+        if (!mounted || useAuthStore.getState().authEpoch !== authEpoch) return
+        hasData = true
         setData(res)
         setFailed(false)
-      })
-      .catch((err) => {
-        if (!mounted) return
-        // 保留旧 scope 的数据会张冠李戴，失败一律清空并给出重试入口。
-        setData(null)
-        setFailed(true)
-        useAppStore.getState().showToast(getApiErrorMessage(err, '排行榜加载失败，请稍后重试'), 'error')
-      })
-      .finally(() => {
-        if (mounted) setLoading(false)
-      })
+        setRefreshFailed(false)
+      } catch (err) {
+        if (!mounted || useAuthStore.getState().authEpoch !== authEpoch) return
+        if (hasData) {
+          // 后台更新失败保留原截止时刻并明确提示，不能把旧数据标成新数据。
+          setRefreshFailed(true)
+        } else {
+          setFailed(true)
+          useAppStore.getState().showToast(getApiErrorMessage(err, '排行榜加载失败，请稍后重试'), 'error')
+        }
+      } finally {
+        inFlight = false
+        if (mounted && useAuthStore.getState().authEpoch === authEpoch) setLoading(false)
+      }
+    }
+    const refreshVisible = () => {
+      if (document.visibilityState !== 'hidden') void refresh()
+    }
+    void refresh()
+    const timer = window.setInterval(refreshVisible, 60_000)
+    document.addEventListener('visibilitychange', refreshVisible)
+    window.addEventListener('focus', refreshVisible)
     return () => {
       mounted = false
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshVisible)
+      window.removeEventListener('focus', refreshVisible)
     }
-  }, [scope, reloadKey])
+  }, [scope, reloadKey, authEpoch])
 
   useEffect(() => {
     if (!meEl || typeof IntersectionObserver === 'undefined') {
@@ -135,7 +149,7 @@ export default function LeaderboardPage() {
     return () => io.disconnect()
   }, [meEl])
 
-  const copy = emptyCopy(scope, data?.updatedAt ?? null)
+  const copy = emptyCopy(scope)
   const gap = data ? meGap(data) : null
   const gapText = !gap
     ? null
@@ -158,8 +172,13 @@ export default function LeaderboardPage() {
           )}
         </div>
         <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          {data?.dataThrough ? `数据截至 ${data.dataThrough} · 每日更新` : '数据每日更新'}
+          {data?.updatedAt ? `截至 ${formatLeaderboardTime(data.updatedAt)}（北京时间） · 每分钟更新` : '包含今日积分 · 每分钟更新'}
         </p>
+        <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+          {scope === 'week' ? '本周一 00:00 起累计' : scope === 'month' ? '本月 1 日 00:00 起累计' : '累计获得积分'}
+          {' · 名次变化对比今日 00:00'}
+        </p>
+        {refreshFailed && <p role="status" className="mt-2 text-sm text-[var(--color-danger)]">更新失败，暂时显示上次结果，请重试</p>}
       </header>
 
       <div className="flex items-center gap-2 mt-4 mb-4">
@@ -181,6 +200,9 @@ export default function LeaderboardPage() {
             {opt.label}
           </button>
         ))}
+        <button type="button" className="ml-auto btn-secondary btn-sm" disabled={loading} onClick={() => setReloadKey((key) => key + 1)}>
+          刷新
+        </button>
       </div>
 
       <div aria-busy={loading || undefined}>

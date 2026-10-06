@@ -1,0 +1,37 @@
+@media (max-width: 767px) {
+  body:has(.pm-detail) [data-testid='back-to-top-button'] {
+    bottom: calc(80px + var(--safe-bottom, 0px)) !important;
+    z-index: 30;
+  }
+  .dark .pm-detail,
+  .dark .pm-bottom-bar,
+  [data-theme='dark'] .pm-detail,
+  [data-theme='dark'] .pm-bottom-bar {
+    --pm-ink: var(--color-text);
+    --pm-muted: var(--color-text-muted);
+    --pm-border: var(--color-border);
+    --pm-surface: var(--color-surface);
+    --pm-soft: var(--color-background);
+    --pm-blue: var(--color-primary);
+    --pm-price: var(--color-points);
+  }
+  .dark .pm-price,
+  [data-theme='dark'] .pm-price {
+    background: var(--color-primary-tint);
+  }
+  .dark .pm-offer[aria-pressed='true'],
+  [data-theme='dark'] .pm-offer[aria-pressed='true'] {
+    background: var(--color-primary-tint);
+  }
+  .dark .pm-store-icon,
+  .dark .pm-service > span,
+  .dark .pm-steps li > span,
+  .dark .pm-reviews [data-testid='review-list'] > h2,
+  [data-theme='dark'] .pm-store-icon,
+  [data-theme='dark'] .pm-service > span,
+  [data-theme='dark'] .pm-steps li > span,
+  [data-theme='dark'] .pm-reviews [data-testid='review-list'] > h2 {
+    background: var(--color-primary-tint);
+    color: var(--color-primary);
+  }
+}

@@ -1,0 +1,79 @@
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+/* Toast 动效方向跟着位置走：移动端顶部下挂 → 自上而下；桌面右下 → 自下而上。
+   X 居中由容器负责（-translate-x-1/2），卡片 keyframes 只动 translateY/scale。
+   assertive 级（error/warning）用带回弹的曲线 + 稍长时长，进场分量更重。 */
+@keyframes toastInDown {
+  from { transform: translateY(-14px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+@keyframes toastInUp {
+  from { transform: translateY(12px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+/* iOS 横幅感 = 大圆角 + 磨砂 + 弹簧：两端都带轻微 overshoot，
+   assertive 级回弹更明显、时长更长（进场分量匹配重要性）。 */
+.toast-enter {
+  animation: toastInDown 0.4s cubic-bezier(0.34, 1.35, 0.64, 1) forwards;
+}
+
+.toast-enter-assertive {
+  animation: toastInDown 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@media (min-width: 768px) {
+  .toast-enter {
+    animation: toastInUp 0.32s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
+  }
+  .toast-enter-assertive {
+    animation: toastInUp 0.42s cubic-bezier(0.34, 1.45, 0.64, 1) forwards;
+  }
+}
+
+@keyframes toastOutUp {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-6px) scale(0.98); }
+}
+
+@keyframes toastOutDown {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.98); }
+}
+
+.toast-exit {
+  animation: toastOutUp 0.18s ease-in forwards;
+}
+
+@media (min-width: 768px) {
+  .toast-exit {
+    animation-name: toastOutDown;
+  }
+}
+
+/* 倒计时进度条：与 ToastCard 的自动消失同Duration（inline style 注入），
+   hover 时随计时器一起 animation-play-state: paused。 */
+@keyframes toastProgress {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+.toast-progress {
+  animation-name: toastProgress;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}

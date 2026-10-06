@@ -3,6 +3,7 @@ import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
 import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, Package, Wallet, ArrowLeft, ChevronRight } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
+import PointCoin from './ui/PointCoin'
 import { formatBadgeCount } from '../utils/orderAttention'
 import { subscribeReadInvalidation } from '../realtime/readSyncBroadcast'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -16,15 +17,17 @@ import UserAvatar from './ui/UserAvatar'
 import ThemeToggle from './ThemeToggle'
 import MobileNavDrawer from './MobileNavDrawer'
 import BottomTabBar from './BottomTabBar'
-import StoreSearchPanel from './StoreSearchPanel'
+import MobileSearchIsland from './MobileSearchIsland'
 import OrderSuccessIsland, { type OrderIslandPhase } from './OrderSuccessIsland'
 import FavoriteIsland from './FavoriteIsland'
 import QuietIslandNotice from './QuietIslandNotice'
+import ActionIslandNotice from './ActionIslandNotice'
+import { useIslandQueuePause } from '../hooks/useIslandQueuePause'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import { useAnnouncements } from '../hooks/useAnnouncements'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import { NotificationRealtimeBridge } from './NotificationRealtimeBridge'
-import { isOrderActivity, useAppStore } from '../stores/appStore'
+import { isActionableActivity, isOrderActivity, useAppStore } from '../stores/appStore'
 import { getApiErrorMessage } from '../api/error'
 import {
   getLegalDocumentSummaries,
@@ -39,6 +42,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const isAdminPage = location.pathname.startsWith('/admin')
   const isProductDetailPage = /^\/product\/[^/]+\/?$/.test(location.pathname)
   const navRef = useRef<HTMLElement>(null)
+  const navbarShellRef = useRef<HTMLDivElement>(null)
+  const searchTriggerRef = useRef<HTMLButtonElement>(null)
   const user = useAuthStore((s) => s.user)
   const storedSessionId = useAuthStore((s) => s.sessionId)
   const accessToken = useAuthStore((s) => s.accessToken)
@@ -144,10 +149,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // 点击后 navbar morph 为搜索卡片（input + 分类 chips + 遮罩聚焦）。
   // 路由变化即收起；仅商城页可触发（搜索是商城场景）。
   const [searchOpen, setSearchOpen] = useState(false)
+  const [searchPresent, setSearchPresent] = useState(false)
   useEffect(() => {
     setSearchOpen(false)
-  }, [location.pathname])
+  }, [location.pathname, isMobileViewport])
+  const searchEligible = isMobileViewport && location.pathname === '/'
   const islandSearch = searchOpen && isMobileViewport && location.pathname === '/'
+  const searchBusy = searchEligible && (islandSearch || searchPresent)
 
   // 灵动岛通知（V4）：移动端简短安静级消息（success/info ≤14 字）由 navbar
   // 胶囊短暂承载——默认内容淡出、通知淡入，几何零重排；2.4s 自动消退，
@@ -156,16 +164,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const islandNotice = useAppStore((s) => s.islandNotice)
   const orderNotice = isOrderActivity(islandNotice?.kind) ? islandNotice : null
   const favoriteNotice = islandNotice?.kind === 'favorite' ? islandNotice : null
-  const quietNotice = islandNotice && !orderNotice && !favoriteNotice ? islandNotice : null
+  const actionNotice = isActionableActivity(islandNotice?.kind) ? islandNotice : null
+  const quietNotice = islandNotice && !orderNotice && !favoriteNotice && !actionNotice ? islandNotice : null
+  const [actionIslandOpen, setActionIslandOpen] = useState(false)
+  const actionIslandVisible = isMobileViewport && actionIslandOpen && !searchBusy
   const [favoriteIslandOpen, setFavoriteIslandOpen] = useState(false)
-  const favoriteIslandVisible = isMobileViewport && favoriteIslandOpen
+  const favoriteIslandVisible = isMobileViewport && favoriteIslandOpen && !searchBusy
   const [orderIslandOpen, setOrderIslandOpen] = useState(false)
   const [orderIslandPhase, setOrderIslandPhase] = useState<OrderIslandPhase>('processing')
   const [orderIslandHeight, setOrderIslandHeight] = useState(132)
-  const orderIslandVisible = isMobileViewport && orderIslandOpen
+  const orderIslandVisible = isMobileViewport && orderIslandOpen && !searchBusy
   const [quietIslandOpen, setQuietIslandOpen] = useState(false)
   const quietIslandVisible = isMobileViewport && quietIslandOpen
-  const hideNavbarContent = Boolean(quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible)
+  const hideNavbarContent = Boolean(islandSearch || quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible || actionIslandVisible)
   const clearIslandNotice = useAppStore((s) => s.clearIslandNotice)
   const demoteIslandNotice = useAppStore((s) => s.demoteIslandNotice)
   const setIslandNoticeAvailable = useAppStore((s) => s.setIslandNoticeAvailable)
@@ -175,14 +186,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // （见 appStore.showToast 的 modalDepth 分支），模态内反馈不丢失。
   const modalOpen = useAppStore((s) => s.modalDepth > 0)
   useEffect(() => {
-    if (islandNotice && !isOrderActivity(islandNotice.kind) && (islandSearch || modalOpen)) {
+    if (modalOpen) setSearchOpen(false)
+  }, [modalOpen])
+  useEffect(() => {
+    if (islandNotice && !isOrderActivity(islandNotice.kind) && !isActionableActivity(islandNotice.kind) && (searchBusy || modalOpen)) {
       demoteIslandNotice()
     }
-  }, [islandNotice, islandSearch, modalOpen, demoteIslandNotice])
+  }, [islandNotice, searchBusy, modalOpen, demoteIslandNotice])
   useEffect(() => {
-    if (!islandNotice || isOrderActivity(islandNotice.kind)) return
+    if (!islandNotice || isOrderActivity(islandNotice.kind) || isActionableActivity(islandNotice.kind)) return
     const duration = islandNotice.durationMs ?? 2400
-    const t = setTimeout(clearIslandNotice, duration)
+    const t = setTimeout(() => clearIslandNotice(islandNotice.id), duration)
     return () => clearTimeout(t)
   }, [islandNotice, clearIslandNotice])
   // Public/auth routes render Toast without Layout. Only advertise the island
@@ -192,15 +206,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     setIslandNoticeAvailable(isMobileViewport)
     return () => setIslandNoticeAvailable(false)
   }, [isMobileViewport, setIslandNoticeAvailable])
+  useIslandQueuePause(searchBusy || modalOpen, isMobileViewport)
 
   type ChromeMode = 'expanded' | 'compact' | 'notice' | 'search'
-  const chromeMode: ChromeMode = islandSearch
+  const chromeMode: ChromeMode = searchBusy
     ? 'search'
-    : quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible
+    : quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible || actionIslandVisible
       ? 'notice'
       : navCompact
         ? 'compact'
         : 'expanded'
+  // Keep the resting shell mounted at its own size; the search surface morphs
+  // above it, so neither the catalog nor the text participates in the resize.
+  const shellChromeMode = searchBusy ? navCompact ? 'compact' : 'expanded' : chromeMode
   const chromeCompact = chromeMode !== 'expanded'
   const compactIsland = chromeMode === 'compact' || chromeMode === 'notice'
   const isBrandCondensed = isScrolled || compactIsland
@@ -222,10 +240,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const syncNavbarHeight = useCallback(() => {
     const nav = navRef.current
     if (!nav) return
-    document.documentElement.style.setProperty(
-      '--navbar-current-h',
-      `${Math.ceil(nav.getBoundingClientRect().height)}px`,
-    )
+    const height = `${Math.ceil(nav.getBoundingClientRect().height)}px`
+    const style = document.documentElement.style
+    if (style.getPropertyValue('--navbar-current-h') !== height) {
+      style.setProperty('--navbar-current-h', height)
+    }
   }, [])
 
   useLayoutEffect(() => {
@@ -341,31 +360,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           paddingTop: chromeCompact ? 'calc(var(--safe-top) + 0.5rem)' : 'calc(var(--safe-top) + 0.75rem)',
         }}
       >
-        {islandSearch && (
-          <div
-            aria-hidden="true"
-            onClick={() => setSearchOpen(false)}
-            className="md:hidden fixed inset-0 bg-black/25 animate-[overlayIn_0.25s_ease-out]"
-          />
-        )}
         {/* 顶部 Chrome 容器：
             - 顶部常驻态（expanded）：标准全宽贴顶导航栏，纯净贴边，无漂浮药丸圆角，完美符合直觉；
             - 下滑感知态（compact）：收缩为居中灵动岛品牌药丸；
             - 搜索模式（search）：展开为商城搜索面板；
             - 灵动岛通知：直接在岛内丝滑承载 Apple Live Activity。 */}
         <div
+          ref={navbarShellRef}
           data-testid="navbar-shell"
-          data-chrome={chromeMode}
+          data-chrome={shellChromeMode}
+          data-search-open={islandSearch}
+          data-search-present={searchBusy}
           data-order-open={orderIslandVisible}
           data-order-phase={orderIslandPhase}
           data-favorite-open={favoriteIslandVisible}
+          data-action-open={Boolean(actionNotice) && !searchBusy && !modalOpen}
           className={`navbar-shell ${isMobileViewport ? 't-resize' : ''} pointer-events-auto ${
             isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : 'max-w-7xl'
           } mx-auto flex justify-between items-center relative w-full
           transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-200 ${
-            chromeMode === 'search'
-              ? 'max-md:max-w-[calc(100vw-1.5rem)] max-md:rounded-3xl max-md:px-4 max-md:py-3 max-md:shadow-xl max-md:bg-[var(--color-surface)]/95 max-md:backdrop-blur-2xl max-md:border max-md:border-[var(--color-border)]'
-              : chromeMode === 'compact'
+            shellChromeMode === 'compact'
                 ? 'max-md:max-w-[18.5rem] max-md:min-h-[42px] max-md:rounded-full max-md:px-3.5 max-md:py-0 max-md:bg-[var(--color-surface)]/95 max-md:backdrop-blur-2xl max-md:border max-md:border-[var(--color-border)] max-md:shadow-lg'
                 : 'px-4 sm:px-6'
           }`}
@@ -374,18 +388,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             '--order-island-height': `${orderIslandHeight}px`,
           } as React.CSSProperties}
         >
-        {islandSearch ? (
-          <StoreSearchPanel onClose={() => setSearchOpen(false)} />
-        ) : (
-        <>
         {/* 灵动岛通知激活时默认内容淡出（保留布局占位 → 几何零重排） */}
         <div
           ref={(element) => {
             if (!element) return
-            if (hideNavbarContent) element.setAttribute('inert', '')
+            if (hideNavbarContent || searchBusy) element.setAttribute('inert', '')
             else element.removeAttribute('inert')
           }}
-          aria-hidden={hideNavbarContent ? true : undefined}
+          aria-hidden={hideNavbarContent || searchBusy ? true : undefined}
           className={`navbar-default-content flex items-center justify-between w-full ${
             hideNavbarContent ? 'opacity-0 scale-95 pointer-events-none' : 'opacity-100 scale-100'
           }`}
@@ -572,9 +582,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
                   onClick={() => navigate('/profile')}
                 >
-                  <div className="bg-[var(--color-cta)]/10 p-1 rounded-full">
-                    <Coins className="w-4 h-4 text-[var(--color-cta)]" />
-                  </div>
+                  <PointCoin className="w-5 h-5 shrink-0" />
                   <span className="font-bold text-[15px] text-[var(--color-text)] font-mono">
                     {user.points ?? '--'}
                   </span>
@@ -596,9 +604,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             {/* 灵动岛搜索入口（商城页·移动视口）：点击后 navbar morph 为搜索卡片 */}
             {isMobileViewport && location.pathname === '/' && (
               <button
+                ref={searchTriggerRef}
                 type="button"
                 onClick={() => setSearchOpen(true)}
                 aria-label="搜索"
+                aria-expanded={islandSearch}
                 className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
               >
                 <Search className="w-5 h-5" />
@@ -633,7 +643,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               className="hidden md:flex items-center gap-2 ml-1 relative group cursor-pointer"
               aria-label="个人中心"
             >
-              <UserAvatar url={user.avatarUrl} name={user.nickname || user.email} size={44} className="shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow duration-300 group-hover:shadow-lg" />
+              <UserAvatar userId={user.id} url={user.avatarUrl} name={user.nickname || user.email} size={44} className="shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow duration-300 group-hover:shadow-lg" />
             </button>
             )}
 
@@ -642,23 +652,30 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        </>
+        {searchEligible && (
+          <MobileSearchIsland open={islandSearch} anchorRef={navbarShellRef} backdropRootRef={navRef} triggerRef={searchTriggerRef}
+            onClose={() => setSearchOpen(false)} onPresenceChange={setSearchPresent} />
         )}
         <QuietIslandNotice
           notice={quietNotice}
-          suppressed={!isMobileViewport || islandSearch || modalOpen || Boolean(orderNotice || favoriteNotice)}
-          onDismiss={clearIslandNotice}
+          suppressed={!isMobileViewport || searchBusy || modalOpen || Boolean(orderNotice || favoriteNotice || actionNotice)}
+          onDismiss={() => quietNotice && clearIslandNotice(quietNotice.id)}
           onVisibleChange={setQuietIslandOpen}
         />
         <FavoriteIsland
           notice={favoriteNotice}
-          suppressed={islandSearch || modalOpen || Boolean(orderNotice || quietNotice)}
+          suppressed={searchBusy || modalOpen || Boolean(orderNotice || quietNotice || actionNotice)}
           onOpenChange={setFavoriteIslandOpen}
+        />
+        <ActionIslandNotice
+          notice={actionNotice}
+          suppressed={!isMobileViewport || searchBusy || modalOpen || Boolean(orderNotice || favoriteNotice || quietNotice)}
+          onVisibleChange={setActionIslandOpen}
         />
         {isMobileViewport && (
           <OrderSuccessIsland
             notice={orderNotice}
-            obscured={modalOpen || islandSearch}
+            obscured={modalOpen || searchBusy}
             onOpenChange={setOrderIslandOpen}
             onHeightChange={setOrderIslandHeight}
             onPhaseChange={setOrderIslandPhase}

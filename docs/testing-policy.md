@@ -8,6 +8,7 @@
 | 层 | 位置 / 工具 | 职责 | 门禁 |
 |---|---|---|---|
 | 前端单元/组件测试 | 根目录 `npm test`（Vitest，`src/**/*.test.ts(x)`） | 纯逻辑与组件行为：协议解析、状态归并、展示计算等 | CI frontend job（秒级） |
+| 前端浏览器回归 | `npm run e2e:mobile-island`（Playwright，API 测试桩） | 移动布局、焦点、导航动效及无障碍等真实浏览器行为 | CI frontend job；三个 spec 仅在专用套件运行 |
 | 后端集成测试 | `server` 下 `npm test`（Vitest + 真实 PostgreSQL） | 路由、事务、并发、鉴权、数据约束 | CI backend job（6 shard 并行，片内串行） |
 | E2E | `npm run e2e`（Playwright） | **跨端关键旅程**的端到端行为 | push→develop / PR→master / 满足条件的 PR；主套件在 CI 分 2 shard，片内单 worker |
 
@@ -68,6 +69,7 @@
 - 小改动：`npm run verify:quick`（只跑受 git 变更影响的测试；
   `npm run verify:quick -- e2e/xxx.spec.ts` 追加指定 e2e spec）。
 - 全量（与 CI 等价）：`npm run verify:local`，或 `verify:local:no-e2e`。
+- `verify:local` 包含独立移动浏览器套件；`verify:quick -- e2e/mobile-chrome.spec.ts` 等移动 spec 会路由至专用配置，不为这些 spec 重置数据库。也可单独运行 `npm run verify:mobile-island`。
 - 日常无需本地全量：push→develop 集成门会跑全套，develop 上红了再修即可。
 
 ## 8. 后端公共开销计时

@@ -187,6 +187,16 @@ export async function loginAs(page: Page, account: SeedAccount) {
   await expect(page).toHaveURL(/\/$/, { timeout: 10_000 })
 }
 
+/** Seed accounts are unverified; dismiss their mobile reminder through the UI
+ * before testing the resting navbar. Dismissal persists for this browser session. */
+export async function dismissMobileEmailReminder(page: Page) {
+  const reminder = page.getByTestId('action-island-notice')
+  await expect(reminder).toContainText('邮箱尚未验证')
+  await reminder.getByRole('button', { name: '收起通知', exact: true }).click()
+  await expect(reminder).toBeHidden()
+  await expect(page.getByRole('button', { name: '打开导航菜单' })).toBeVisible()
+}
+
 /** Select an admin panel through the navigation rendered for the current viewport. */
 export async function selectAdminTab(page: Page, tabId: string) {
   if ((page.viewportSize()?.width ?? 1280) < 768) {

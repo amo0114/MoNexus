@@ -21,6 +21,8 @@ import { completeIdempotencyKey, peekPendingOrder, takePendingOrder } from './se
 import BrandedPaymentQr from './BrandedPaymentQr'
 import { parseSafeProductReturnTo } from '../../utils/returnTo'
 import { rememberRechargeReturnTo } from './session'
+import { createRechargeIslandFeedback } from './islandFeedback'
+import { captureFeedbackOwner } from '../../lib/completionFeedback'
 
 function displayStatus(orderStatus: string, resumePayment: boolean): string {
   if (resumePayment && (orderStatus === 'created' || orderStatus === 'pending_payment')) {
@@ -90,6 +92,11 @@ export default function RechargeResult({
 
   useEffect(() => {
     let cancelled = false
+    const isCurrent = captureFeedbackOwner()
+    const feedback = createRechargeIslandFeedback(() => {
+      navigate('/profile')
+      useAppStore.getState().setPointsHistoryOpen(true)
+    })
     let timer: number | undefined
     let pollCount = 0
     const startedAt = Date.now()
@@ -117,6 +124,7 @@ export default function RechargeResult({
       if (statusRef.current && isTerminalOrderStatus(statusRef.current)) return
       try {
         let next = await getRechargeOrder(orderId)
+        if (cancelled || !isCurrent()) return
         if (peekPendingOrder() === orderId) takePendingOrder()
         if (
           resumePayment
@@ -139,10 +147,11 @@ export default function RechargeResult({
             completeInFlight.current = false
           }
         }
-        if (cancelled) return
+        if (cancelled || !isCurrent()) return
         statusRef.current = next.status
         setOrder(next)
         setError('')
+        feedback.update(next, resumePayment)
         if (next.status === 'credited' && !creditedRefreshed.current) {
           creditedRefreshed.current = true
           void refreshCurrentUser()
@@ -152,7 +161,7 @@ export default function RechargeResult({
           else scheduleNextPoll()
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && isCurrent()) {
           setError(getApiErrorMessage(err, '无法加载充值订单'))
           scheduleNextPoll()
         }
@@ -162,9 +171,10 @@ export default function RechargeResult({
     void load()
     return () => {
       cancelled = true
+      feedback.dispose()
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [orderId, resumePayment])
+  }, [orderId, resumePayment, navigate])
 
   async function confirmSandboxPayment() {
     if (!order?.adminSandbox || isTerminalOrderStatus(order.status) || confirmingSandbox) return

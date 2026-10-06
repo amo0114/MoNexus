@@ -1,0 +1,245 @@
+/* =========================================================
+   MoNexus Design System (revised 2026-05-12)
+   Strategy: neutral slate skeleton + indigo as focus accent + green CTA.
+   Indigo is reserved for interactive elements (buttons, links, focus
+   rings, badges). Background / surface / text use neutral slate so
+   indigo never dominates the page.
+   ========================================================= */
+
+:root {
+  /* --- Core tokens --- */
+  --color-primary: #6366F1;          /* indigo-500 — interactive accent */
+  --color-primary-hover: #4F46E5;    /* indigo-600 */
+  --color-secondary: #818CF8;        /* indigo-400 */
+  --color-cta: #15803D;              /* green-700 — 5.02:1 AA on white */
+  --color-cta-hover: #166534;        /* green-800 */
+  --color-on-cta: #FFFFFF;
+  --color-background: #F8FAFC;       /* slate-50 — neutral page bg */
+  --color-surface: #FFFFFF;
+  --color-text: #1E293B;             /* slate-800 — neutral body text */
+  --color-text-muted: #64748B;       /* slate-500 */
+  --color-border: #E2E8F0;           /* slate-200 */
+
+  /* --- Auxiliary tokens (utility-specific) --- */
+  --color-image-placeholder: #F1F5F9; /* slate-100 — empty image / star-empty */
+  --color-grid-dot: #E2E8F0;          /* slate-200 — .bg-grid-pattern */
+  --color-glass-bg: rgba(255, 255, 255, 0.85);
+  --color-glass-border: rgba(99, 102, 241, 0.12);
+
+  /* Primary tints as ready-made rgba tokens.
+     `bg-[var(--color-primary)]/8` does NOT work: Tailwind v3 cannot apply an
+     opacity modifier to an arbitrary var() colour (it can't split it into
+     channels), so the utility is dropped and the element renders transparent.
+     These tokens give the same wash, theme-aware, with no build-time magic. */
+  --color-primary-tint: rgba(99, 102, 241, 0.09);
+  --color-primary-tint-strong: rgba(99, 102, 241, 0.16);
+
+  /* 文字级积分绿：--color-cta 是给白字按钮做底色的，直接当文字色在白卡上
+     仅 2.28:1（WCAG AA 需 4.5）。此 token 专供文字/图标，三主题均 ≥4.5:1。 */
+  --color-points: #15803D;             /* green-700 — 白卡 5.01:1 */
+  /* primary 底色上的文字色：dark/soft 的 primary 偏浅，白字不达标，
+     改用深色文字（4.92 / 6.40）；light 维持白字基线。 */
+  --color-on-primary: #FFFFFF;
+
+  /* Spacing */
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+  --space-2xl: 3rem;
+  --space-3xl: 4rem;
+
+  /* Warning (amber family) — for unverified-email banners, soft alerts */
+  --color-warning-bg: #FFFBEB;          /* amber-50 */
+  --color-warning-border: #FDE68A;      /* amber-200 */
+  --color-warning-text: #78350F;        /* amber-900 */
+  --color-warning-accent: #D97706;      /* amber-600 — icon / CTA fill */
+  --color-warning-accent-hover: #B45309;/* amber-700 */
+
+  /* Shadows (neutral, not indigo-tinted) */
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 4px 6px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 10px 15px rgba(15, 23, 42, 0.1);
+  --shadow-xl: 0 20px 25px rgba(15, 23, 42, 0.12);
+  --shadow-focus: 0 0 0 3px rgba(99, 102, 241, 0.22);
+
+  /* --- Radius tokens (multi-theme prep) --- */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-pill: 9999px;
+
+  /* --- Font tokens --- */
+  --font-body: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-heading: 'Orbitron', 'Exo 2', sans-serif;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  /* --- Semantic state colors (multi-theme prep) --- */
+  --color-info: #2563EB;             /* blue-600 — info badges / hints (≥4.5:1 on surface) */
+  --color-warning: #F59E0B;
+  --color-success: #22C55E;
+  --color-danger: #EF4444;
+
+  /* Semantic badge / banner families (no arbitrary opacity modifier needed) */
+  --color-primary-border-subtle: rgba(99, 102, 241, 0.25);
+  --color-danger-bg: #FEF2F2;
+  --color-danger-border: #FECACA;
+  --color-danger-text: #B91C1C;
+  --color-success-bg: #F0FDF4;
+  --color-success-border: #BBF7D0;
+  --color-success-text: #15803D;
+
+  /* Toast 2.0 图标/进度条色阶（文字级，白卡实测 ≥4.5:1）。
+     与上方 --color-success 等徽章浅色不同：这组专供 surface 卡上的小图标。 */
+  --color-toast-success: #15803D;    /* green-700 — 5.01:1 */
+  --color-toast-error: #B91C1C;      /* red-700 — 5.90:1 */
+  --color-toast-info: #1D4ED8;       /* blue-700 — 6.36:1 */
+  --color-toast-warning: #B45309;    /* amber-700 — 5.02:1 */
+
+  /* --- Mobile chrome metrics (T1) ---
+     --tabbar-h: reserved dock space (up to 64px content + 16px floating gap).
+     --navbar-h: expanded navbar content height（py-4×2 + 44px 行高 + 1px border）。
+     --navbar-current-h: Layout 通过 ResizeObserver 写入的实时导航高度；Toast
+     用它与缩起岛、搜索态保持同一条视觉基线。未挂载 Layout 的公开页则
+     回落至展开态 + safe-top。Safe-area insets default to 0 on non-notch
+     devices so calc() always works. */
+  --tabbar-h: 80px;
+  --navbar-h: 77px;
+  --navbar-current-h: calc(var(--navbar-h) + var(--safe-top));
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+
+  /* --- Motion tokens (transitions-polish) --- */
+  --duration-stagger: 40ms;
+  --duration-micro: 80ms;
+  --duration-quick: 150ms;
+  --duration-fast: 250ms;
+  --duration-medium: 350ms;
+  --duration-slow: 400ms;
+  --duration-very-slow: 500ms;
+
+  --ease-smooth-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: ease-in-out;
+  --ease-out: ease-out;
+  --ease-linear: linear;
+  --ease-bounce: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --ease-bounce-strong: cubic-bezier(0.34, 1.96, 0.64, 1);
+
+  --distance-micro: 4px;
+  --distance-small: 6px;
+  --distance-base: 8px;
+  --distance-medium: 12px;
+  --distance-large: 30px;
+
+  --scale-large: 0.96;
+  --scale-medium: 0.97;
+  --scale-small: 0.98;
+  --scale-tiny: 0.99;
+
+  --blur-small: 2px;
+  --blur-medium: 3px;
+  --blur-large: 8px;
+}
+
+.dark,
+:root[data-theme="dark"] {
+  --color-primary: #818CF8;          /* indigo-400 brightened for dark bg */
+  --color-primary-hover: #A5B4FC;
+  --color-secondary: #A5B4FC;
+  --color-cta: #4ADE80;
+  --color-cta-hover: #86EFAC;
+  --color-on-cta: #0A0A14;           /* dark background — 11.30:1 AAA on green-400 */
+  --color-background: #0A0A14;       /* near-black with a hint of purple */
+  --color-surface: #161629;
+  --color-text: #F1F5F9;             /* slate-100 */
+  --color-text-muted: #94A3B8;       /* slate-400 */
+  --color-border: #1E293B;           /* slate-800 */
+
+  --color-image-placeholder: #1F1F36;
+  --color-grid-dot: #1E293B;
+  --color-glass-bg: rgba(22, 22, 41, 0.85);
+  --color-glass-border: rgba(129, 140, 248, 0.15);
+
+  /* 深色底需要更高 alpha 才看得出色晕 */
+  --color-primary-tint: rgba(129, 140, 248, 0.14);
+  --color-primary-tint-strong: rgba(129, 140, 248, 0.22);
+
+  --color-points: #4ADE80;             /* green-400 — 深卡 10.21:1 */
+  --color-on-primary: #1E293B;         /* slate-800 on indigo-400 — 4.92:1 */
+
+  /* Warning (amber family) — tuned for dark surfaces */
+  --color-warning-bg: rgba(180, 83, 9, 0.18);  /* amber-700 @ ~18% */
+  --color-warning-border: #92400E;             /* amber-800 */
+  --color-warning-text: #FEF3C7;               /* amber-100 */
+  --color-warning-accent: #FBBF24;             /* amber-400 — brighter on dark */
+  --color-warning-accent-hover: #F59E0B;       /* amber-500 */
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.5);
+  --shadow-focus: 0 0 0 3px rgba(129, 140, 248, 0.4);
+
+  --color-info: #60A5FA;
+  --color-warning: #FBBF24;
+  --color-success: #4ADE80;
+  --color-danger: #F87171;
+
+  --color-primary-border-subtle: rgba(129, 140, 248, 0.28);
+  --color-danger-bg: rgba(239, 68, 68, 0.15);
+  --color-danger-border: rgba(248, 113, 113, 0.3);
+  --color-danger-text: #FCA5A5;
+  --color-success-bg: rgba(34, 197, 94, 0.15);
+  --color-success-border: rgba(74, 222, 128, 0.3);
+  --color-success-text: #86EFAC;
+
+  /* Toast 色阶（深色卡 #161629 上实测 ≥4.5:1） */
+  --color-toast-success: #4ADE80;    /* green-400 — 8.06:1 */
+  --color-toast-error: #F87171;      /* red-400 — 5.15:1 */
+  --color-toast-info: #60A5FA;       /* blue-400 — 5.74:1 */
+  --color-toast-warning: #FBBF24;    /* amber-400 — 8.28:1 */
+}
+
+/* =========================================================
+   Ledger Knot brand mark
+   The approved raster master contains its own optical corrections, so keep
+   each themed rendition at identical geometry and swap only the source.
+   ========================================================= */
+.brand-logo > img {
+  grid-area: 1 / 1;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.brand-logo > .brand-logo__dark,
+.brand-logo > .brand-logo__soft,
+.brand-logo > .brand-logo__black {
+  display: none;
+}
+
+.dark .brand-logo > .brand-logo__light {
+  display: none;
+}
+
+.dark .brand-logo > .brand-logo__dark {
+  display: block;
+}
+
+:root[data-theme="soft"] .brand-logo > .brand-logo__light,
+:root[data-theme="soft"] .brand-logo > .brand-logo__dark {
+  display: none;
+}
+
+:root[data-theme="soft"] .brand-logo > .brand-logo__soft {
+  display: block;
+}

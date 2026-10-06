@@ -33,8 +33,11 @@ echo "[INFO] Checking local runtime"
 npm run check:runtime
 
 E2E_SPECS=()
+MOBILE_E2E_SPECS=()
 for arg in "$@"; do
   case "$arg" in
+    e2e/mobile-chrome.spec.ts|e2e/mobile-island-merchant-final.spec.ts|e2e/mobile-island-quality.spec.ts)
+      MOBILE_E2E_SPECS+=("$arg") ;;
     *.spec.ts) E2E_SPECS+=("$arg") ;;
     *) echo "[WARN] Ignoring unrecognized argument: $arg (expected e2e/*.spec.ts)" ;;
   esac
@@ -144,6 +147,12 @@ if [[ ${#FRONTEND_SRC[@]} -gt 0 || ${#FRONTEND_TESTS[@]} -gt 0 ]]; then
     npx vitest run "${CHANGED_ARGS[@]}"
     RAN_ANYTHING=true
   fi
+fi
+
+if [[ ${#MOBILE_E2E_SPECS[@]} -gt 0 ]]; then
+  echo "[INFO] Running isolated mobile spec(s): ${MOBILE_E2E_SPECS[*]}"
+  npx playwright test --config playwright.mobile-island.config.ts "${MOBILE_E2E_SPECS[@]}"
+  RAN_ANYTHING=true
 fi
 
 if [[ ${#E2E_SPECS[@]} -gt 0 ]]; then

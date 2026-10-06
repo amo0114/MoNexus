@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Coins, Eye, Lock, Package, Tag, Check, Calendar } from 'lucide-react'
+import { Eye, Lock, Package, Tag, Check, Calendar } from 'lucide-react'
+import PointCoin from '../ui/PointCoin'
 import DOMPurify from 'dompurify'
 import type { ProductDetails } from '../../types/catalog'
 
@@ -151,7 +152,7 @@ export default function LivePreviewSandbox({
         <div className="p-3 rounded-xl bg-[var(--color-background)] border border-[var(--color-border)] space-y-2">
           <div className="flex items-baseline justify-between">
             <div className="flex items-baseline gap-1">
-              <Coins className="w-4 h-4 text-[var(--color-points)] self-center" />
+              <PointCoin className="w-4 h-4 shrink-0 self-center" />
               <span className="font-heading text-xl font-black text-[var(--color-points)]" data-testid="sandbox-price">
                 {activeOffer.price || '0'}
               </span>

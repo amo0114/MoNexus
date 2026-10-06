@@ -1,0 +1,86 @@
+/* =========================================================
+   Component classes
+   - .btn-primary  : filled indigo, main interaction (login, submit, save)
+   - .btn-cta      : filled green, conversion CTA (buy, claim, redeem)
+   - .btn-secondary: outlined indigo, secondary actions (cancel, back)
+   - .card
+   - .input
+   - .modal-overlay / .modal
+   All hovers respect "no layout shift" (translateY only).
+
+   NOTE: these classes live in @layer components so that plain Tailwind
+   utilities (utilities layer) override them — size/variant tweaks like
+   `btn-secondary px-4 py-2 text-sm` need NO !important.
+   ========================================================= */
+
+/* =========================================================
+   Motion system (V2-M1) — Apple-class easing & durations.
+   All overrides below are scoped to <md; desktop keeps the
+   original parameters (V2 spec invariant 9).
+   ========================================================= */
+:root {
+  --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);   /* iOS standard ease-out */
+  --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);   /* subtle spring overshoot */
+  --dur-fast: 150ms;
+  --dur-med: 250ms;
+  --dur-slow: 380ms;
+}
+
+/* Page entrance, mobile variant: faster, shorter travel, iOS curve. */
+@keyframes fadeInMobile {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes overlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 767px) {
+  .fade-in { animation: fadeInMobile var(--dur-slow) var(--ease-standard) forwards; }
+  .modal-overlay { animation: overlayIn var(--dur-med) ease-out; }
+}
+
+/* iOS tap feedback — opt-in via .pressable (scale only, no layout shift). */
+.pressable {
+  transition: transform var(--dur-fast) var(--ease-standard);
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+
+/* Skeleton shimmer: <md replaces the pulse with a light sweep. */
+.skeleton-shimmer { position: relative; overflow: hidden; }
+@media (max-width: 767px) {
+  .skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    animation: shimmer 1.4s var(--ease-standard) infinite;
+  }
+  .dark .skeleton-shimmer::after {
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+/* Progress Shimmer (from skills-ref/transitions-dev/15-shimmer-text.md) */
+@keyframes progress-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+.animate-progress-shimmer {
+  animation: progress-shimmer 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-progress-shimmer {
+    animation: none;
+  }
+}

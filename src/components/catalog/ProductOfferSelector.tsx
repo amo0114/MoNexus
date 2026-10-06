@@ -1,5 +1,6 @@
 import React from 'react'
-import { Check, Coins } from 'lucide-react'
+import { Check } from 'lucide-react'
+import PointCoin from '../ui/PointCoin'
 import type { Offer } from '../../types/merchant'
 import type { TemplateAttributes } from '../../types/catalog'
 import { offerPeriodSubtitle } from '../../utils/offerPeriodDisplay'

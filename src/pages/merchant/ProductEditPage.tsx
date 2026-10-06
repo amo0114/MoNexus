@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Eye, Loader2, Package } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
@@ -28,36 +28,33 @@ import {
   type ProductDetails,
   type ProductTemplateDefinition,
   type ProductVisibility,
-  type FulfillmentRule,
   type TemplateAttributes,
   type TemplateKey,
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
-import ProductCategorySelect from '../../components/catalog/ProductCategorySelect'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
-import TemplateAttributeFields from '../../components/catalog/TemplateAttributeFields'
-import ProductDetailsFields from '../../components/catalog/ProductDetailsFields'
-import ProductImageUploader from '../../components/merchant/ProductImageUploader'
-import PurchaseFormFieldsEditor, {
+import {
   serializePurchaseFormFields,
   validatePurchaseFormFields,
 } from '../../components/merchant/PurchaseFormFieldsEditor'
 import EmptyState from '../../components/ui/EmptyState'
 
-import FieldLabel from '../../components/catalog/wizard/FieldLabel'
-import OfferDeliveryFieldsEditor from '../../components/catalog/wizard/DeliveryFieldsEditor'
-import OfferStructuredContentEditor from '../../components/catalog/wizard/StructuredContentEditor'
 import { DELIVERY_FIELDS_MAX, serializeDeliveryFields, serializeStructuredContent, validateStructuredRows } from '../../components/catalog/wizard/deliveryFields'
-import { deliveryModeFor } from '../../components/catalog/wizard/fulfillment'
 import { pickFileFromInput } from '../../utils/pickFileFromInput'
 
 import {
   draftsFromOffers, reconcileOfferDrafts, cloneOfferStructuredDraft,
-  parseDeliveryFields, parseStructuredContent, type OfferStructuredDraft,
+  type OfferStructuredDraft,
 } from './productEditor/offerDrafts'
-
-const RichTextEditor = lazy(() => import('../../components/catalog/RichTextEditor'))
+import {
+  offerStructuredRequirement,
+  shouldEditDeliveryFields,
+  shouldEditStructuredContent,
+} from './productEditor/offerRequirements'
+import ProductInformationSection from './productEditor/ProductInformationSection'
+import OfferEditingSection from './productEditor/OfferEditingSection'
+import PurchaseFormSection from './productEditor/PurchaseFormSection'
 
 const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
@@ -66,8 +63,6 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
-
-type StructuredRequirement = FulfillmentRule['requireStructuredDelivery']
 
 type EditorForm = {
   name: string
@@ -347,9 +342,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       for (const offer of offers) {
         const draft = offerDrafts[offer.id]
         if (!draft) continue
-        const requirement = selectedTemplate
-          ? structuredRequirementFor(selectedTemplate, form.attributes, offer.deliveryMode)
-          : 'none'
+        const requirement = offerStructuredRequirement(offer, selectedTemplate, form.attributes)
         const showDeliveryFields = shouldEditDeliveryFields(offer, requirement)
         const showStructured = shouldEditStructuredContent(offer, requirement)
         if (showDeliveryFields) {
@@ -414,9 +407,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           const draft = workingDrafts[offer.id]
           const baselineDraft = workingBaseline[offer.id]
           if (!draft || JSON.stringify(draft) === JSON.stringify(baselineDraft)) continue
-          const requirement = selectedTemplate
-            ? structuredRequirementFor(selectedTemplate, form.attributes, offer.deliveryMode)
-            : 'none'
+          const requirement = offerStructuredRequirement(offer, selectedTemplate, form.attributes)
           const payload: OfferWriteRequest & { fixedStructuredContent?: unknown | null } = {}
           if (shouldEditDeliveryFields(offer, requirement)) {
             payload.deliveryFields = serializeDeliveryFields(draft.deliveryFields)
@@ -615,274 +606,71 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8 lg:items-start">
         <div className={`space-y-6 ${activeViewTab === 'preview' ? 'hidden lg:block' : 'block'}`}>
-          <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-5" data-testid="product-edit-info">
-            <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">商品信息</h2>
-            <ProductImageUploader
-              images={form.images.map(image => image.url)}
-              imageKeys={imageKeys}
-              onChange={(next) => {
-                setForm(prev => {
-                  const urls = typeof next === 'function' ? next(prev.images.map(image => image.url)) : next
-                  return { ...prev, images: bindImageRefs(urls, prev.images, imageKeys) }
-                })
-              }}
-              onImageKeysChange={setImageKeys}
-              disabled={busy}
-            />
-            {unresolvedImages && (
-              <p className="text-xs text-[var(--color-text-muted)]" data-testid="product-edit-images-unresolved">
-                部分图片缺少可写引用。请替换为平台上传或 /assets 静态图后再保存图集；本次保存不会修改图集。
-              </p>
-            )}
-            <div>
-              <FieldLabel required>商品名称</FieldLabel>
-              <input
-                type="text"
-                className="input"
-                value={form.name}
-                onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
-                disabled={busy}
-                data-testid="product-edit-name"
-              />
-            </div>
-            <div>
-              <FieldLabel>一句话简介</FieldLabel>
-              <textarea
-                className="input min-h-[60px] resize-y"
-                value={form.description}
-                onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
-                disabled={busy}
-                data-testid="product-edit-description"
-              />
-            </div>
-            <ProductCategorySelect
-              categories={categories}
-              value={form.categoryId}
-              onChange={(categoryId) => setForm(prev => ({ ...prev, categoryId }))}
-              disabled={busy}
-            />
-            {templateLocked ? (
-              <p className="text-sm text-[var(--color-text-muted)]" data-testid="product-edit-template-locked">
-                商品形态：{selectedTemplate?.label ?? savedTemplateKey}
-              </p>
-            ) : (
-              <div data-testid="product-edit-template-picker">
-                <FieldLabel>商品形态</FieldLabel>
-                <select
-                  className="input appearance-none cursor-pointer"
-                  value={templateKey ?? ''}
-                  onChange={(event) => {
-                    const next = event.target.value
-                    setTemplateKey(isTemplateKey(next) ? next : null)
-                  }}
-                  disabled={busy}
-                  data-testid="product-edit-template-select"
-                >
-                  <option value="">请选择商品形态</option>
-                  {templates.map(template => (
-                    <option key={template.key} value={template.key}>{template.label}</option>
-                  ))}
-                </select>
-                <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
-                  历史商品可补选一次形态，选定并保存后不可更改。
-                </p>
-              </div>
-            )}
-            {selectedTemplate && (
-              <div data-testid="product-edit-attributes">
-                <FieldLabel>商品参数</FieldLabel>
-                <TemplateAttributeFields
-                  template={selectedTemplate}
-                  target="product"
-                  value={form.attributes}
-                  onChange={(attributes) => setForm(prev => ({ ...prev, attributes }))}
-                  disabled={busy}
-                  mode={fieldMode}
-                />
-              </div>
-            )}
-            <div>
-              <FieldLabel>图文详情</FieldLabel>
-              <Suspense fallback={
-                <div className="input min-h-[140px] flex items-center text-sm text-[var(--color-text-muted)]">
-                  正在加载图文编辑器…
-                </div>
-              }>
-                <RichTextEditor
-                  value={form.richDescription}
-                  onChange={(html) => setForm(prev => ({ ...prev, richDescription: html }))}
-                  onInsertImage={handleInsertDescriptionImage}
-                  disabled={busy}
-                />
-              </Suspense>
-            </div>
-            <ProductDetailsFields
-              value={form.details}
-              onChange={(details) => setForm(prev => ({ ...prev, details }))}
-              disabled={busy}
-              mode={fieldMode}
-            />
-            <div data-testid="product-edit-visibility">
-              <FieldLabel required>浏览可见性</FieldLabel>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                  form.visibility === PRODUCT_VISIBILITY.PUBLIC
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                    : 'border-[var(--color-border)]'
-                }`}>
-                  <input
-                    type="radio"
-                    name="productEditVisibility"
-                    value={PRODUCT_VISIBILITY.PUBLIC}
-                    checked={form.visibility === PRODUCT_VISIBILITY.PUBLIC}
-                    onChange={() => setForm(prev => ({ ...prev, visibility: PRODUCT_VISIBILITY.PUBLIC }))}
-                    className="w-4 h-4 mt-0.5"
-                    disabled={busy}
-                    data-testid="product-edit-visibility-public"
-                  />
-                  <span>游客可浏览商品信息</span>
-                </label>
-                <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
-                  form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                    : 'border-[var(--color-border)]'
-                }`}>
-                  <input
-                    type="radio"
-                    name="productEditVisibility"
-                    value={PRODUCT_VISIBILITY.MEMBERS_ONLY}
-                    checked={form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY}
-                    onChange={() => setForm(prev => ({ ...prev, visibility: PRODUCT_VISIBILITY.MEMBERS_ONLY }))}
-                    className="w-4 h-4 mt-0.5"
-                    disabled={busy}
-                    data-testid="product-edit-visibility-members_only"
-                  />
-                  <span>仅登录后可浏览</span>
-                </label>
-              </div>
-              <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">兑换始终需要登录</p>
-            </div>
-          </section>
+          <ProductInformationSection
+            images={form.images.map(image => image.url)}
+            imageKeys={imageKeys}
+            onImagesChange={(next) => {
+              setForm(prev => {
+                const urls = typeof next === 'function' ? next(prev.images.map(image => image.url)) : next
+                return { ...prev, images: bindImageRefs(urls, prev.images, imageKeys) }
+              })
+            }}
+            onImageKeysChange={setImageKeys}
+            unresolvedImages={unresolvedImages}
+            disabled={busy}
+            name={form.name}
+            onNameChange={(name) => setForm(prev => ({ ...prev, name }))}
+            description={form.description}
+            onDescriptionChange={(description) => setForm(prev => ({ ...prev, description }))}
+            richDescription={form.richDescription}
+            onRichDescriptionChange={(richDescription) => setForm(prev => ({ ...prev, richDescription }))}
+            attributes={form.attributes}
+            onAttributesChange={(attributes) => setForm(prev => ({ ...prev, attributes }))}
+            details={form.details}
+            onDetailsChange={(details) => setForm(prev => ({ ...prev, details }))}
+            visibility={form.visibility}
+            onVisibilityChange={(visibility) => setForm(prev => ({ ...prev, visibility }))}
+            categories={categories}
+            categoryId={form.categoryId}
+            onCategoryIdChange={(categoryId) => setForm(prev => ({ ...prev, categoryId }))}
+            templates={templates}
+            templateKey={templateKey}
+            onTemplateKeyChange={(next) => setTemplateKey(isTemplateKey(next) ? next : null)}
+            selectedTemplate={selectedTemplate}
+            savedTemplateKey={savedTemplateKey}
+            templateLocked={templateLocked}
+            fieldMode={fieldMode}
+            onInsertDescriptionImage={handleInsertDescriptionImage}
+          />
 
           {capabilities?.manageOffers && (
-            <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-3" data-testid="product-edit-offers">
-              <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">套餐</h2>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {actor === 'merchant'
-                  ? '套餐价格与库存仍使用商品列表中的「规格管理」。文件交付规格可在本页挂载交付文件。'
-                  : '套餐价格、交付与库存仍使用商品列表中的「规格管理」。本页不改写套餐商业字段。'}
-              </p>
-              {offerConflictLabels.length > 0 && (
-                <div
-                  className="rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-2 text-sm text-[var(--color-text)]"
-                  data-testid="product-edit-offer-conflicts"
-                >
-                  以下字段与其他会话冲突，已采用最新规格内容：{offerConflictLabels.join('、')}
-                </div>
-              )}
-              {offers.length > 0 && (
-                <ul className="space-y-2">
-                  {offers.map(offer => (
-                    <li
-                      key={offer.id}
-                      className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-3 py-2 text-sm"
-                      data-testid={`product-edit-offer-${offer.id}`}
-                    >
-                      <span className="font-bold">{offer.name}</span>
-                      <span className="text-[var(--color-text-muted)] ml-2 font-mono">{offer.price} 积分</span>
-                      {offer.fixedContentType === 'file' && (
-                        <div className="mt-2 space-y-1.5">
-                          <p className="text-xs text-[var(--color-text-muted)]">
-                            {offerFileLabelById[offer.id]
-                              ?? (offer.fixedFileId != null ? `文件 #${offer.fixedFileId}` : '尚未绑定交付文件')}
-                          </p>
-                          {actor === 'merchant' ? (
-                            <div className="flex flex-wrap items-center gap-2">
-                              <input
-                                type="file"
-                                className="input text-xs py-1"
-                                disabled={busy}
-                                onChange={(event) => {
-                                  const file = event.target.files?.[0] ?? null
-                                  setOfferFileById(prev => ({ ...prev, [offer.id]: file }))
-                                }}
-                                data-testid={`product-edit-offer-file-${offer.id}`}
-                              />
-                              <button
-                                type="button"
-                                className="btn-secondary px-3 py-1.5 text-xs disabled:opacity-40"
-                                disabled={busy}
-                                onClick={() => void handleBindOfferFile(offer)}
-                                data-testid={`product-edit-offer-file-bind-${offer.id}`}
-                              >
-                                {bindingOfferId === offer.id
-                                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  : (offer.fixedFileId ? '替换文件' : '挂载文件')}
-                              </button>
-                            </div>
-                          ) : (
-                            <p className="text-xs text-[var(--color-text-muted)]">
-                              请在商品列表的「规格管理」中挂载交付文件。
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      {(() => {
-                        const draft = offerDrafts[offer.id]
-                        if (!draft) return null
-                        const requirement = selectedTemplate
-                          ? structuredRequirementFor(selectedTemplate, form.attributes, offer.deliveryMode)
-                          : 'none'
-                        const showDeliveryFields = shouldEditDeliveryFields(offer, requirement)
-                        const showStructured = shouldEditStructuredContent(offer, requirement)
-                        if (!showDeliveryFields && !showStructured) return null
-                        const offerBusy = busy || actor !== 'merchant'
-                        return (
-                          <div className="mt-3 space-y-3">
-                            {showDeliveryFields && (
-                              <OfferDeliveryFieldsEditor variant="edit"
-                                fields={draft.deliveryFields}
-                                onChange={(deliveryFields) => setOfferDrafts(prev => ({
-                                  ...prev,
-                                  [offer.id]: { ...(prev[offer.id] ?? draft), deliveryFields },
-                                }))}
-                                disabled={offerBusy}
-                                testIdPrefix={`product-edit-offer-${offer.id}-delivery`}
-                              />
-                            )}
-                            {showStructured && (
-                              <OfferStructuredContentEditor variant="edit"
-                                fields={draft.structuredFields}
-                                values={draft.structuredValues}
-                                onFieldsChange={(structuredFields) => setOfferDrafts(prev => ({
-                                  ...prev,
-                                  [offer.id]: { ...(prev[offer.id] ?? draft), structuredFields },
-                                }))}
-                                onValuesChange={(structuredValues) => setOfferDrafts(prev => ({
-                                  ...prev,
-                                  [offer.id]: { ...(prev[offer.id] ?? draft), structuredValues },
-                                }))}
-                                disabled={offerBusy}
-                                testIdPrefix={`product-edit-offer-${offer.id}-structured`}
-                              />
-                            )}
-                          </div>
-                        )
-                      })()}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            <OfferEditingSection
+              actor={actor}
+              offers={offers}
+              busy={busy}
+              bindingOfferId={bindingOfferId}
+              conflictLabels={offerConflictLabels}
+              selectedTemplate={selectedTemplate}
+              productAttributes={form.attributes}
+              offerDrafts={offerDrafts}
+              offerFileLabelById={offerFileLabelById}
+              onOfferFileChange={(offerId, file) => {
+                setOfferFileById(prev => ({ ...prev, [offerId]: file }))
+              }}
+              onBindOfferFile={(offer) => void handleBindOfferFile(offer)}
+              onDraftChange={(offerId, draft, patch) => {
+                setOfferDrafts(prev => ({
+                  ...prev,
+                  [offerId]: { ...(prev[offerId] ?? draft), ...patch },
+                }))
+              }}
+            />
           )}
 
-          <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-3" data-testid="product-edit-purchase-form">
-            <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">购买资料</h2>
-            <PurchaseFormFieldsEditor
-              fields={form.purchaseForm}
-              onChange={(purchaseForm) => setForm(prev => ({ ...prev, purchaseForm }))}
-            />
-          </section>
+          <PurchaseFormSection
+            fields={form.purchaseForm}
+            onChange={(purchaseForm) => setForm(prev => ({ ...prev, purchaseForm }))}
+          />
 
           {capabilities?.adoptSourceDescription && (
             <p className="text-sm text-[var(--color-text-muted)]" data-testid="product-edit-source-note">
@@ -1016,16 +804,6 @@ function isTemplateKey(value: string | null | undefined): value is TemplateKey {
   return typeof value === 'string' && (TEMPLATE_KEYS as readonly string[]).includes(value)
 }
 
-function offerStructuredRequirement(
-  offer: ProductEditorOffer,
-  template: ProductTemplateDefinition | null,
-  productAttributes: TemplateAttributes,
-): StructuredRequirement {
-  return template
-    ? structuredRequirementFor(template, productAttributes, offer.deliveryMode)
-    : 'none'
-}
-
 function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): string | null {
   if (fields.length === 0) return null
   if (fields.length > DELIVERY_FIELDS_MAX) return `${prefix}：交付字段最多 ${DELIVERY_FIELDS_MAX} 个`
@@ -1038,36 +816,6 @@ function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): str
     if (!field.label.trim()) return `${label}：名称不能为空`
   }
   return null
-}
-
-function structuredRequirementFor(
-  template: ProductTemplateDefinition,
-  productAttributes: TemplateAttributes,
-  deliveryMode: ProductEditorOffer['deliveryMode'],
-): StructuredRequirement {
-  const matched = template.fulfillmentRules.find(rule =>
-    Object.entries(rule.whenProductAttributes).every(([key, expected]) => productAttributes[key] === expected),
-  )
-  if (matched) return matched.requireStructuredDelivery
-  for (const rule of template.fulfillmentRules) {
-    if (rule.requireStructuredDelivery === 'none') continue
-    const modes = rule.configurations.flatMap(configuration => {
-      return [deliveryModeFor(configuration) ?? 'manual_service']
-    })
-    if (modes.includes(deliveryMode)) return rule.requireStructuredDelivery
-  }
-  return 'none'
-}
-
-function shouldEditDeliveryFields(offer: ProductEditorOffer, requirement: StructuredRequirement): boolean {
-  if (requirement === 'inventory_fields') return offer.deliveryMode === 'instant_inventory'
-  return parseDeliveryFields(offer.deliveryFields).length > 0
-}
-
-function shouldEditStructuredContent(offer: ProductEditorOffer, requirement: StructuredRequirement): boolean {
-  if (offer.fixedContentType === 'file') return false
-  if (requirement === 'fixed_fields') return offer.deliveryMode === 'instant_fixed'
-  return parseStructuredContent(offer.fixedStructuredContent).fields.length > 0
 }
 
 function isNotFoundError(error: unknown): boolean {

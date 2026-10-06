@@ -4,22 +4,24 @@ import { avatarSrcSet, getDefaultAvatarPreset } from '../../lib/avatarPresets'
 export default function UserAvatar({
   url,
   name,
+  userId,
   size = 40,
   className = '',
   disableDefaultPreset = false,
 }: {
   url?: string | null
   name?: string | null
+  userId?: number
   size?: number
   className?: string
   disableDefaultPreset?: boolean
 }) {
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
-  const initial = name?.trim().charAt(0).toUpperCase() || '?'
+  const initial = Array.from(name?.trim() || '')[0]?.toUpperCase() || '?'
 
-  // 若用户未上传/设置专属头像，则根据用户名/邮箱自动分配三国名将预设头像；用户自定义头像优先
+  // 已知用户使用不可变 ID；匿名预览才回退名称。保存的自定义头像始终优先。
   const effectiveUrl =
-    url || (!disableDefaultPreset ? getDefaultAvatarPreset(name).url : null)
+    url || (!disableDefaultPreset ? getDefaultAvatarPreset(userId ?? name).url : null)
 
   const isFailed = failedUrl !== null && failedUrl === effectiveUrl
 

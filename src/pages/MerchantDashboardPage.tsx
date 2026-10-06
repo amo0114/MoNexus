@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { blockReasonToUserMessage, PROCESSING_TIMEOUT_LABEL, SETTLEMENT_TERM } from '../utils/settlementCopy'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { captureFeedbackOwner, showCompletionActivity } from '../lib/completionFeedback'
+import { showProductPublished, showProductUnpublished } from '../lib/productPublicationFeedback'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import {
   getMerchantStats,
@@ -17,6 +19,9 @@ import {
   rejectOrder,
   postOrderProgress,
   importMerchantInventory,
+  type InventoryImportResult,
+  type CapacityAdjustResult,
+  type InventoryVoidResult,
 } from '../api/merchant'
 import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage } from '../api/error'
@@ -27,11 +32,11 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Plus, ChevronLeft, ChevronRight, Loader2, BarChart3, Search, AlertTriangle, CalendarDays, Megaphone, FilePlus2 } from 'lucide-react'
+import { Store, Package, ShoppingBag, DollarSign, Settings, Loader2, BarChart3, Megaphone, FilePlus2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
 import ProvisionBadge from '../components/ProvisionBadge'
-import MerchantInventoryLogModal from '../components/merchant/MerchantInventoryLogModal'
+import MerchantInventoryLogModal, { type InventoryLogProduct } from '../components/merchant/MerchantInventoryLogModal'
 import MerchantAvailabilityModal from '../components/merchant/MerchantAvailabilityModal'
 import MerchantInventoryImportModal from '../components/merchant/MerchantInventoryImportModal'
 import MerchantCapacityAdjustModal from '../components/merchant/MerchantCapacityAdjustModal'
@@ -40,6 +45,9 @@ import MerchantDeliverDialog from '../components/merchant/MerchantDeliverDialog'
 import MerchantDisputeDialog from '../components/merchant/MerchantDisputeDialog'
 import MerchantProgressDialog from '../components/merchant/MerchantProgressDialog'
 import CategoryApplicationPanel from '../components/catalog/CategoryApplicationPanel'
+import MerchantProductsPanel from '../components/merchant/dashboard/MerchantProductsPanel'
+import MerchantOrdersPanel, { type MerchantOrderAction } from '../components/merchant/dashboard/MerchantOrdersPanel'
+import { Th } from '../components/merchant/dashboard/MerchantPanelPrimitives'
 import RegistryPill from '../components/ui/RegistryPill'
 import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
@@ -60,29 +68,6 @@ const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] 
   { key: 'categoryApplications', label: '分类申请', Icon: FilePlus2 },
 ]
 
-function isInstantInventoryProduct(product: MerchantProduct) {
-  // 兼容早期商品：服务端在未返回 deliveryMode 时默认按即时库存处理。
-  return (product.deliveryMode ?? 'instant_inventory') === 'instant_inventory'
-}
-
-function getAvailabilityLabel(product: MerchantProduct) {
-  if (isInstantInventoryProduct(product)) return '交付库存'
-  if (product.stockMode === 'unlimited') return '不限量'
-  return product.deliveryMode === 'manual_service'
-    ? '服务名额'
-    : '可售名额'
-}
-
-function getOfferAvailabilityLabel(offer: NonNullable<MerchantProduct['offers']>[number]) {
-  if (offer.deliveryMode === 'instant_inventory') {
-    return `交付库存 ${offer.availableStock ?? '—'}`
-  }
-  if (offer.stockMode === 'unlimited') return '不限量'
-  return offer.deliveryMode === 'manual_service'
-    ? `服务名额 ${offer.stock}`
-    : `可售名额 ${offer.stock}`
-}
-
 function isGoneOrForbidden(error: any) {
   const status = error?.response?.status
   return status === 403 || status === 404
@@ -90,9 +75,17 @@ function isGoneOrForbidden(error: any) {
 
 export default function MerchantDashboardPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const orderRoute = /^\/merchant\/orders(?:\/(\d+))?\/?$/.exec(location.pathname)
+  const focusedOrderId = orderRoute?.[1] ? Number(orderRoute[1]) : null
+  const categoryApplicationRoute = /^\/merchant\/category-applications\/?$/.test(location.pathname)
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
-  const [activeTab, setActiveTab] = useState<TabKey>('dashboard')
+  const [activeTab, setActiveTab] = useState<TabKey>(orderRoute ? 'orders' : categoryApplicationRoute ? 'categoryApplications' : 'dashboard')
+  useEffect(() => {
+    if (/^\/merchant\/orders(?:\/\d+)?\/?$/.test(location.pathname)) setActiveTab('orders')
+    else if (categoryApplicationRoute) setActiveTab('categoryApplications')
+  }, [location.pathname, location.key, categoryApplicationRoute])
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
   const loadCoordinatorRef = useRef(createLatestRequestCoordinator(true))
@@ -128,19 +121,23 @@ export default function MerchantDashboardPage() {
   const [orderStatusFilter, setOrderStatusFilter] = useState('')
   // P6c：按预约日期排序（bookingDate 升序，无预约的排最后）。
   const [orderSortBooking, setOrderSortBooking] = useState(false)
+  const startingOrderIdsRef = useRef(new Set<number>())
+  const [startingOrderIds, setStartingOrderIds] = useState<ReadonlySet<number>>(new Set())
+  const rejectingRef = useRef(false)
 
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [merchant, setMerchant] = useState<Merchant | null>(null)
 
   useEffect(() => {
     loadData()
-  }, [activeTab, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
+  }, [activeTab, focusedOrderId, productPage, orderPage, orderStatusFilter, orderSortBooking, productSearchDebounced, productStatusFilter, productTypeFilter, productModeFilter, productLowStockOnly])
 
   async function loadData(opts?: { background?: boolean }) {
     const coordinator = loadCoordinatorRef.current
     const generation = coordinator.begin(opts?.background ? 'background' : 'foreground')
     const snapshot = {
       tab: activeTab,
+      focusedOrderId,
       productPage,
       orderPage,
       orderStatusFilter,
@@ -153,6 +150,7 @@ export default function MerchantDashboardPage() {
     }
     const isCurrent = () => coordinator.isLatest(generation)
     if (!opts?.background || coordinator.ownsLoading(generation)) setLoading(true)
+    if (!opts?.background && snapshot.focusedOrderId) { setOrders([]); setOrderTotal(0) }
     try {
       if (snapshot.tab === 'dashboard' || snapshot.tab === 'orders') {
         const data = await getMerchantStats()
@@ -173,7 +171,7 @@ export default function MerchantDashboardPage() {
         setProducts(data.items)
         setProductTotal(data.total)
       } else if (snapshot.tab === 'orders') {
-        const data = await getMerchantOrders({
+        const data = snapshot.focusedOrderId ? { items: [await getMerchantOrderDetail(snapshot.focusedOrderId)], total: 1 } : await getMerchantOrders({
           page: snapshot.orderPage,
           pageSize: 20,
           status: snapshot.orderStatusFilter || undefined,
@@ -192,6 +190,7 @@ export default function MerchantDashboardPage() {
         setMerchant(data)
       }
     } catch (e: any) {
+      if (isCurrent() && snapshot.focusedOrderId) { setOrders([]); setOrderTotal(0) }
       if (isCurrent() && !opts?.background) showToast(e.response?.data?.error?.message || '加载失败', 'error')
     } finally {
       if (coordinator.finish(generation)) {
@@ -285,7 +284,24 @@ export default function MerchantDashboardPage() {
   const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
 
   const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
-  const [logProduct, setLogProduct] = useState<MerchantProduct | null>(null)
+  const [logProduct, setLogProduct] = useState<InventoryLogProduct | null>(null)
+  const inventoryLogParam = new URLSearchParams(location.search).get('inventoryLog')
+  const inventoryLogId = inventoryLogParam && /^[1-9]\d*$/.test(inventoryLogParam) && Number.isSafeInteger(Number(inventoryLogParam))
+    ? Number(inventoryLogParam) : null
+  const previousInventoryLogId = useRef<number | null>(null)
+
+  useEffect(() => {
+    const previous = previousInventoryLogId.current
+    previousInventoryLogId.current = inventoryLogId
+    if (!inventoryLogId) {
+      if (previous) setIsInventoryLogOpen(false)
+      return
+    }
+    const name = location.state?.inventoryLogName
+    setActiveTab('products')
+    setLogProduct({ id: inventoryLogId, name: typeof name === 'string' ? name : `商品 #${inventoryLogId}` })
+    setIsInventoryLogOpen(true)
+  }, [inventoryLogId, location.key, location.state])
 
   const [isOfferManagerOpen, setIsOfferManagerOpen] = useState(false)
   const [offerProduct, setOfferProduct] = useState<MerchantProduct | null>(null)
@@ -309,19 +325,23 @@ export default function MerchantDashboardPage() {
 
   async function handleToggleProductStatus(product: MerchantProduct) {
     if (publishingInFlightRef.current.has(product.id)) return
+    const isCurrent = captureFeedbackOwner()
     const isPublishing = product.status !== 'active' // active → 下架；inactive/draft → 上架
     publishingInFlightRef.current.add(product.id)
     setPublishingProductIds((prev) => new Set(prev).add(product.id))
     try {
       if (isPublishing) {
-        await catalogApi.publishProduct(product.id)
+        const result = await catalogApi.publishProduct(product.id)
+        if (!isCurrent()) return
+        showProductPublished(product, result, navigate, '商品已上架')
       } else {
-        await catalogApi.unpublishProduct(product.id)
+        const result = await catalogApi.unpublishProduct(product.id)
+        if (!isCurrent()) return
+        showProductUnpublished(product, result, navigate)
       }
-      showToast(`商品已${isPublishing ? '上架' : '下架'}`)
       loadData()
     } catch (e: unknown) {
-      showToast(getApiErrorMessage(e, '操作失败'), 'error')
+      if (isCurrent()) showToast(getApiErrorMessage(e, '操作失败'), 'error')
     } finally {
       publishingInFlightRef.current.delete(product.id)
       setPublishingProductIds((prev) => {
@@ -332,23 +352,62 @@ export default function MerchantDashboardPage() {
     }
   }
 
-  async function handleAvailabilityChanged() {
-    await loadData()
+  function handleAvailabilityChanged() {
     setIsAvailabilityOpen(false)
     setAvailabilityProduct(null)
+    return loadData()
   }
 
   async function handleInventorySubmit(items: string[], offerId?: number) {
     if (!importingProduct) return
-    await importMerchantInventory(importingProduct.id, { items, ...(offerId != null ? { offerId } : {}) })
-    showToast(`成功导入 ${items.length} 个交付单元`)
+    const product = importingProduct
+    const isCurrent = captureFeedbackOwner()
+    const result = await importMerchantInventory(product.id, { items, ...(offerId != null ? { offerId } : {}) })
+    if (!isCurrent()) return
+    notifyInventoryImported(product, result, offerId)
     loadData()
   }
 
+  function notifyInventoryImported(product: NonNullable<typeof importingProduct>, result: InventoryImportResult, offerId?: number) {
+    const offerName = product.offers?.find((offer) => offer.id === offerId)?.name
+    showCompletionActivity({
+      title: `成功导入 ${result.imported} 个交付单元`,
+      subtitle: [product.name, offerName].filter(Boolean).join(' · '),
+      groupKey: `merchant-inventory:${product.id}:${offerId ?? 'default'}`,
+      actionLabel: '查看库存记录',
+      onAction: () => navigate(`/merchant?inventoryLog=${product.id}`, { state: { inventoryLogName: product.name } }),
+    })
+  }
+
+  function notifyCapacityAdjusted(product: MerchantProduct, result: CapacityAdjustResult, offerId: number) {
+    const offer = product.offers?.find((item) => item.id === offerId)
+    const label = offer?.deliveryMode === 'manual_service' ? '服务名额' : '可售名额'
+    showCompletionActivity({
+      title: `${label}已调整，剩余 ${result.stock} 个`,
+      subtitle: [product.name, offer?.name].filter(Boolean).join(' · '),
+      groupKey: `merchant-inventory:${product.id}:${offerId}`,
+      actionLabel: '查看记录',
+      onAction: () => navigate(`/merchant?inventoryLog=${product.id}`, { state: { inventoryLogName: product.name } }),
+    })
+  }
+
+  function notifyInventoryVoided(product: MerchantProduct, result: InventoryVoidResult) {
+    const offer = product.offers?.find((item) => item.id === result.offerId)
+    showCompletionActivity({
+      title: `已作废 ${result.voided} 个，规格剩余 ${result.availableStock} 个`,
+      subtitle: `${[product.name, offer?.name].filter(Boolean).join(' · ')} · 商品库存共 ${result.productAvailableStock} 个`,
+      message: `已作废 ${result.voided} 个交付单元；当前规格剩余 ${result.availableStock}，商品汇总 ${result.productAvailableStock}`,
+      groupKey: `merchant-inventory:${product.id}:${result.offerId}`,
+      actionLabel: '查看记录',
+      onAction: () => navigate(`/merchant?inventoryLog=${product.id}`, { state: { inventoryLogName: product.name } }),
+    })
+  }
+
   async function handleOrderAction(
-    action: 'start_fulfillment' | 'deliver' | 'respond_dispute' | 'reject' | 'post_progress',
+    action: MerchantOrderAction,
     order: MerchantOrder,
   ) {
+    if (startingOrderIdsRef.current.has(order.id)) return
     if (action === 'deliver') {
       setDeliveringOrder(order)
       return
@@ -366,43 +425,73 @@ export default function MerchantDashboardPage() {
       setRejectNote('')
       return
     }
+    const isCurrent = captureFeedbackOwner()
+    startingOrderIdsRef.current.add(order.id)
+    setStartingOrderIds(new Set(startingOrderIdsRef.current))
     try {
       await startFulfillment(order.id)
-      showToast('已开始履约')
-      loadData()
+      if (!isCurrent()) return
+      showCompletionActivity({
+        title: '已开始履约',
+        subtitle: `订单 #${order.id} · ${order.product?.name ?? ''}`,
+        groupKey: `merchant:order:${order.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${order.id}`),
+      })
+      await loadData()
     } catch (e: any) {
-      showToast(e.response?.data?.error?.message || '操作失败', 'error')
+      if (isCurrent()) showToast(e.response?.data?.error?.message || '操作失败', 'error')
+    } finally {
+      startingOrderIdsRef.current.delete(order.id)
+      setStartingOrderIds(new Set(startingOrderIdsRef.current))
     }
   }
 
   async function handleRejectConfirm() {
-    if (!rejectingOrder) return
+    if (!rejectingOrder || rejectingRef.current) return
+    rejectingRef.current = true
+    const order = rejectingOrder
+    const isCurrent = captureFeedbackOwner()
     setRejecting(true)
     try {
-      await rejectOrder(rejectingOrder.id, {
+      await rejectOrder(order.id, {
         publicNote: rejectNote.trim() || undefined,
       })
-      showToast('已拒单，积分将退还用户；如实际履约能力已释放，请手动补回服务名额')
+      if (!isCurrent()) return
       setRejectingOrder(null)
       setRejectNote('')
+      showCompletionActivity({
+        title: '已拒单，冻结积分已退还',
+        message: '已拒单，冻结积分已退还；服务名额请先核对库存记录，避免重复补充',
+        subtitle: `订单 #${order.id} · 服务名额请先核对库存记录，避免重复补充`,
+        groupKey: `merchant:order:${order.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${order.id}`),
+      })
       loadData()
     } catch (e: any) {
+      if (!isCurrent()) return
       if (isGoneOrForbidden(e)) {
         setRejectingOrder(null)
         setRejectNote('')
       }
       showToast(e.response?.data?.error?.message || '拒单失败', 'error')
     } finally {
+      rejectingRef.current = false
       setRejecting(false)
     }
   }
 
   async function handleDeliverSubmit(payload: { deliveryContent?: string; structuredValues?: Record<string, string>; attachmentFileId?: number; publicNote?: string }) {
     if (!deliveringOrder) return
+    const isCurrent = captureFeedbackOwner()
     try {
       await deliverOrder(deliveringOrder.id, payload)
+      if (!isCurrent()) return
       setDeliveringOrder(null)
-      showToast('发货成功')
+      showCompletionActivity({
+        title: '发货成功', subtitle: `订单 #${deliveringOrder.id} · ${deliveringOrder.product?.name ?? ''}`,
+        groupKey: `merchant:order:${deliveringOrder.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${deliveringOrder.id}`),
+      })
       await loadData()
     } catch (e: any) {
       if (isGoneOrForbidden(e)) setDeliveringOrder(null)
@@ -412,10 +501,16 @@ export default function MerchantDashboardPage() {
 
   async function handleProgressSubmit(note: string) {
     if (!progressOrder) return
+    const isCurrent = captureFeedbackOwner()
     try {
       await postOrderProgress(progressOrder.id, note)
+      if (!isCurrent()) return
       setProgressOrder(null)
-      showToast('进度已更新')
+      showCompletionActivity({
+        title: '进度已更新', subtitle: `订单 #${progressOrder.id} · 买家可在订单动态中查看`,
+        groupKey: `merchant:order:${progressOrder.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${progressOrder.id}`),
+      })
       await loadData()
     } catch (e: any) {
       if (isGoneOrForbidden(e)) setProgressOrder(null)
@@ -425,12 +520,22 @@ export default function MerchantDashboardPage() {
 
   async function handleDisputeSubmit(resolution: 'resume' | 'close') {
     if (!disputeOrder) return
+    const isCurrent = captureFeedbackOwner()
     try {
-      await respondDispute(disputeOrder.id, { resolution })
+      const result = await respondDispute(disputeOrder.id, { resolution })
+      if (!isCurrent()) return
       setDisputeOrder(null)
-      showToast('争议处理成功')
+      showCompletionActivity({
+        title: resolution === 'close' ? '争议已处理，订单已关闭'
+          : result.status === 'delivered' ? '争议已解除，恢复为已交付' : '争议已解除，已恢复履约',
+        message: '争议处理成功',
+        subtitle: `订单 #${disputeOrder.id} · ${disputeOrder.product?.name ?? ''}`,
+        groupKey: `merchant:order:${disputeOrder.id}`, actionLabel: '查看订单',
+        onAction: () => navigate(`/merchant/orders/${disputeOrder.id}`),
+      })
       await loadData()
     } catch (e: any) {
+      if (!isCurrent()) return
       if (isGoneOrForbidden(e)) setDisputeOrder(null)
       throw e
     }
@@ -485,382 +590,57 @@ export default function MerchantDashboardPage() {
           )}
 
           {activeTab === 'products' && (
-            <div className="fade-in">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商品管理</h2>
-                <button
-                  className="btn-primary px-3 py-1.5 text-sm btn-sm"
-                  onClick={() => navigate('/merchant/products/new')}
-                >
-                  <Plus className="w-4 h-4" /> 新建商品
-                </button>
-              </div>
-
-              {/* 筛选栏 */}
-              <div className="flex flex-wrap items-center gap-3 mb-5" data-testid="merchant-product-filters">
-                <div className="relative flex-1 min-w-[200px]">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] pointer-events-none" />
-                  <input
-                    type="text"
-                    placeholder="搜索商品名称..."
-                    className="input pl-9 py-2"
-                    value={productSearch}
-                    onChange={(e) => setProductSearch(e.target.value)}
-                    data-testid="merchant-product-search"
-                  />
-                </div>
-                <select
-                  className="input py-2 w-auto appearance-none cursor-pointer"
-                  value={productStatusFilter}
-                  onChange={(e) => { setProductStatusFilter(e.target.value); setProductPage(1); }}
-                  aria-label="按状态筛选"
-                  data-testid="merchant-product-status-filter"
-                >
-                  <option value="">全部状态</option>
-                  <option value="active">上架中</option>
-                  <option value="inactive">未上架</option>
-                </select>
-                <select
-                  className="input py-2 w-auto appearance-none cursor-pointer"
-                  value={productTypeFilter}
-                  onChange={(e) => { setProductTypeFilter(e.target.value); setProductPage(1); }}
-                  aria-label="按类型筛选"
-                  data-testid="merchant-product-type-filter"
-                >
-                  <option value="">全部类型</option>
-                  {registry?.productTypes?.map((pt) => (
-                    <option key={pt.value} value={pt.value}>{pt.label}</option>
-                  ))}
-                </select>
-                <select
-                  className="input py-2 w-auto appearance-none cursor-pointer"
-                  value={productModeFilter}
-                  onChange={(e) => { setProductModeFilter(e.target.value); setProductPage(1); }}
-                  aria-label="按发货模式筛选"
-                  data-testid="merchant-product-mode-filter"
-                >
-                  <option value="">全部发货模式</option>
-                  {registry?.deliveryModes?.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-                <label className="flex items-center gap-2 text-sm text-[var(--color-text)] cursor-pointer select-none whitespace-nowrap">
-                  <input
-                    type="checkbox"
-                    checked={productLowStockOnly}
-                    onChange={(e) => { setProductLowStockOnly(e.target.checked); setProductPage(1); }}
-                    className="w-4 h-4 cursor-pointer accent-[var(--color-primary)]"
-                    data-testid="merchant-product-lowstock-toggle"
-                  />
-                  仅看低库存
-                </label>
-              </div>
-              <div className="overflow-x-auto">
-                {loading && products.length === 0 ? (
-                  <TableSkeleton />
-                ) : (
-                <table className="table-cards w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-[var(--color-border)]">
-                      <Th>ID</Th>
-                      <Th>名称</Th>
-                      <Th>价格</Th>
-                      <Th>可售资源/销量</Th>
-                      <Th>状态</Th>
-                      <Th align="right">操作</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {!loading && products.length === 0 ? (
-                      <tr>
-                        <td colSpan={6}>
-                          <EmptyState compact icon={Package} title="暂无商品" description="点击右上角「新建商品」上架第一个商品" />
-                        </td>
-                      </tr>
-                    ) : (
-                      products.map((p) => {
-                        // P4a：按「该商品是否存在对应类型的规格」判定入口——每个规格
-                        // 有独立 deliveryMode，混合规格商品可能同时需要交付库存导入与
-                        // 名额调整。只看商品级投影（= 默认规格的模式）会让另一半规格
-                        // 永远无法管理。offers 缺失时回落到商品级投影（旧行为）。
-                        const rowOffers = p.offers ?? []
-                        const inventoryManaged = rowOffers.length > 0
-                          ? rowOffers.some(o => o.deliveryMode === 'instant_inventory')
-                          : isInstantInventoryProduct(p)
-                        const capacityManaged = rowOffers.length > 0
-                          ? rowOffers.some(o => o.deliveryMode !== 'instant_inventory' && o.stockMode === 'limited')
-                          : (!isInstantInventoryProduct(p) && p.stockMode === 'limited')
-                        const stockCount = inventoryManaged
-                          ? (p.availableStock ?? p._count?.inventory ?? p.stock)
-                          : p.stock
-                        const threshold = registry?.inventory?.lowStockThreshold
-                        const isLowStock = p.lowStock ?? (
-                          inventoryManaged &&
-                          typeof threshold === 'number' &&
-                          stockCount <= threshold
-                        )
-                        return (
-                          <tr key={p.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="ID">{p.id}</td>
-                            <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]" data-label="名称">{p.name}</td>
-                            <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="价格">{p.price}</td>
-                            <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="可售资源/销量">
-                              {rowOffers.length > 0 ? (
-                                <div className="space-y-1" data-testid={`merchant-product-availability-${p.id}`}>
-                                  {inventoryManaged && (
-                                    <div className="font-medium text-[var(--color-text)]">
-                                      商品交付库存汇总：{p.availableStock ?? stockCount}
-                                    </div>
-                                  )}
-                                  {rowOffers.map((offer) => (
-                                    <div key={offer.id} className="text-xs">
-                                      <span className="font-medium text-[var(--color-text)]">{offer.name}</span>：{getOfferAvailabilityLabel(offer)}
-                                    </div>
-                                  ))}
-                                  <div className="text-xs">商品累计已售：{p.sales}</div>
-                                </div>
-                              ) : (
-                                <span className="whitespace-nowrap">
-                                  {getAvailabilityLabel(p)}{' '}
-                                  {p.stockMode !== 'unlimited' && stockCount}
-                                  {' / 已售 '}{p.sales}
-                                </span>
-                              )}
-                              {isLowStock && (
-                                <span
-                                  className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
-                                  data-testid={`low-stock-badge-${p.id}`}
-                                >
-                                  <AlertTriangle className="w-3 h-3" /> 低库存
-                                </span>
-                              )}
-                            </td>
-                            <td className="py-3 px-2 text-sm" data-label="状态">
-                              <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
-                            </td>
-                            <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
-                              {rowOffers.length > 0 && (
-                                <LinkAction onClick={() => { setAvailabilityProduct(p); setIsAvailabilityOpen(true); }}>
-                                  管理可售资源
-                                </LinkAction>
-                              )}
-                              {inventoryManaged && (
-                                <LinkAction onClick={() => { setImportingProduct({ id: p.id, name: p.name, offers: p.offers }); setIsInventoryModalOpen(true); }}>
-                                  管理交付库存
-                                </LinkAction>
-                              )}
-                              {capacityManaged && (
-                                <LinkAction onClick={() => { setCapacityProduct(p); setIsCapacityAdjustOpen(true); }}>
-                                  {p.deliveryMode === 'manual_service' ? '调整服务名额' : '调整可售名额'}
-                                </LinkAction>
-                              )}
-                              {(inventoryManaged || capacityManaged) && (
-                                <LinkAction onClick={() => { setLogProduct(p); setIsInventoryLogOpen(true); }}>
-                                  可售资源记录
-                                </LinkAction>
-                              )}
-                              <LinkAction onClick={() => navigate(`/merchant/products/${p.id}/edit`)}>
-                                编辑
-                              </LinkAction>
-                              <LinkAction onClick={() => { setOfferProduct(p); setIsOfferManagerOpen(true); }}>
-                                规格管理
-                              </LinkAction>
-                              <LinkAction
-                                onClick={() => handleToggleProductStatus(p)}
-                                disabled={publishingProductIds.has(p.id)}
-                                testId={`merchant-product-toggle-status-${p.id}`}
-                              >
-                                {p.status === 'active' ? '下架' : '上架'}
-                              </LinkAction>
-                            </td>
-                          </tr>
-                        )
-                      })
-                    )}
-                  </tbody>
-                </table>
-                )}
-              </div>
-              <PaginationControls page={productPage} total={productTotal} setPage={setProductPage} testId="merchant-product-pagination" />
-            </div>
+            <MerchantProductsPanel
+              products={products}
+              loading={loading}
+              productPage={productPage}
+              productTotal={productTotal}
+              setProductPage={setProductPage}
+              productSearch={productSearch}
+              setProductSearch={setProductSearch}
+              productStatusFilter={productStatusFilter}
+              setProductStatusFilter={setProductStatusFilter}
+              productTypeFilter={productTypeFilter}
+              setProductTypeFilter={setProductTypeFilter}
+              productModeFilter={productModeFilter}
+              setProductModeFilter={setProductModeFilter}
+              productLowStockOnly={productLowStockOnly}
+              setProductLowStockOnly={setProductLowStockOnly}
+              registry={registry}
+              publishingProductIds={publishingProductIds}
+              onToggleProductStatus={handleToggleProductStatus}
+              onCreateProduct={() => navigate('/merchant/products/new')}
+              onEditProduct={(productId) => navigate(`/merchant/products/${productId}/edit`)}
+              onManageAvailability={(product) => { setAvailabilityProduct(product); setIsAvailabilityOpen(true) }}
+              onManageInventory={(product) => { setImportingProduct({ id: product.id, name: product.name, offers: product.offers }); setIsInventoryModalOpen(true) }}
+              onAdjustCapacity={(product) => { setCapacityProduct(product); setIsCapacityAdjustOpen(true) }}
+              onViewInventoryLog={(product) => { setLogProduct(product); setIsInventoryLogOpen(true) }}
+              onManageOffers={(product) => { setOfferProduct(product); setIsOfferManagerOpen(true) }}
+            />
           )}
 
           {activeTab === 'orders' && (
-            <div className="fade-in">
-              <h2 className="font-heading text-xl font-bold mb-4 text-[var(--color-text)]">订单管理</h2>
-
-              <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4" data-testid="merchant-order-todo">
-                <button
-                  type="button"
-                  onClick={() => { setOrderStatusFilter('pending'); setOrderPage(1) }}
-                  className={`card p-2 md:p-3 text-left cursor-pointer border ${orderStatusFilter === 'pending' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
-                >
-                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">待处理</div>
-                  <div className="text-lg md:text-xl font-bold text-[var(--color-warning)]">{stats?.todo?.pending ?? '—'}</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setOrderStatusFilter('processing'); setOrderPage(1) }}
-                  className={`card p-2 md:p-3 text-left cursor-pointer border ${orderStatusFilter === 'processing' ? 'border-[var(--color-primary)]' : 'border-transparent'}`}
-                >
-                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">履约中</div>
-                  <div className="text-lg md:text-xl font-bold text-[var(--color-primary)]">{stats?.todo?.processing ?? '—'}</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setOrderStatusFilter(''); setOrderPage(1) }}
-                  className="card p-2 md:p-3 text-left cursor-pointer border border-transparent"
-                  data-testid="merchant-sla-todo"
-                >
-                  <div className="text-[10px] md:text-xs text-[var(--color-text-muted)] uppercase font-bold">{PROCESSING_TIMEOUT_LABEL}</div>
-                  <div className="text-lg md:text-xl font-bold text-[var(--color-danger)]">{stats?.todo?.slaExceeded ?? '—'}</div>
-                </button>
-              </div>
-
-              <div className="flex flex-wrap gap-2 mb-4">
-                <select
-                  value={orderStatusFilter}
-                  onChange={(e) => { setOrderStatusFilter(e.target.value); setOrderPage(1) }}
-                  className="input py-1.5 w-40"
-                  data-testid="merchant-order-status-filter"
-                >
-                  <option value="">全部状态</option>
-                  {(registry?.orderStatuses ?? []).map((s) => (
-                    <option key={s.value} value={s.value}>{s.label}</option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => { setOrderSortBooking(v => !v); setOrderPage(1) }}
-                  aria-pressed={orderSortBooking}
-                  className={`btn-secondary btn-sm ${
-                    orderSortBooking ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary)]/10' : ''
-                  }`}
-                  data-testid="merchant-orders-sort-booking"
-                >
-                  <CalendarDays className="w-4 h-4" /> 按预约日期
-                </button>
-              </div>
-
-              <div className="overflow-x-auto">
-                {loading && orders.length === 0 ? (
-                  <TableSkeleton />
-                ) : (
-                <table className="table-cards w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-[var(--color-border)]">
-                      <Th>订单号</Th>
-                      <Th>商品</Th>
-                      <Th>用户</Th>
-                      <Th>金额/抽成</Th>
-                      <Th>结算金额</Th>
-                      <Th>状态</Th>
-                      <Th align="right">操作</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {!loading && orders.length === 0 ? (
-                      <tr>
-                        <td colSpan={7}>
-                          <EmptyState compact icon={ShoppingBag} title="你还没有订单" description="订单产生后将显示在这里" />
-                        </td>
-                      </tr>
-                    ) : (
-                      orders.map((o) => (
-                        <tr key={o.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="订单号">
-                            <div>{o.id}</div>
-                            {typeof o.holdingPoints === 'number' && o.holdingPoints > 0 && (
-                              <div className="text-xs text-[var(--color-text-muted)] mt-0.5">冻结 {o.holdingPoints}</div>
-                            )}
-                          </td>
-                          <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]" data-label="商品">
-                            <div>{o.product?.name}</div>
-                            {o.offerNameSnapshot && o.offerNameSnapshot !== '默认规格' && (
-                              <div className="mt-0.5 text-xs font-bold text-[var(--color-text-muted)]">规格：{o.offerNameSnapshot}</div>
-                            )}
-                            {o.bookingDate && (
-                              <div
-                                className="mt-0.5 text-xs font-bold text-[var(--color-primary)]"
-                                data-testid={`merchant-order-booking-${o.id}`}
-                              >
-                                预约日期 {formatBookingDay(o.bookingDate)}
-                              </div>
-                            )}
-                            {o.product?.deliveryMode && <div className="mt-1"><RegistryPill value={o.product.deliveryMode} category="deliveryModes" /></div>}
-                          </td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="用户">{o.user?.email}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="金额/抽成">
-                            {o.price}积分 <span className="text-[var(--color-text-muted)]">(抽成 {(Number(o.commissionRate) * 100).toFixed(0)}%)</span>
-                          </td>
-                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]" data-label="结算金额">
-                            {o.settlementAmount}积分
-                          </td>
-                          <td className="py-3 px-2 text-sm" data-label="状态">
-                            <RegistryPill value={o.status} category="orderStatuses" />
-                            {o.slaExceeded && (
-                              <span
-                                className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
-                                data-testid={`sla-exceeded-badge-${o.id}`}
-                              >
-                                <AlertTriangle className="w-3 h-3" /> {PROCESSING_TIMEOUT_LABEL}
-                              </span>
-                            )}
-                            {o.fulfillmentDeadline && (
-                              <div className="text-xs text-[var(--color-text-muted)] mt-1">
-                                截止 {new Date(o.fulfillmentDeadline).toLocaleString()}
-                              </div>
-                            )}
-                            {o.provisionTask && (
-                              <div className="mt-1">
-                                <ProvisionBadge task={o.provisionTask} idSuffix={o.id} />
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
-                            {o.availableActions?.includes('start_fulfillment') && (
-                              <button onClick={() => handleOrderAction('start_fulfillment', o)} className="btn-secondary btn-sm mr-2">
-                                开始履约
-                              </button>
-                            )}
-                            {o.availableActions?.includes('reject') && (
-                              <button
-                                onClick={() => handleOrderAction('reject', o)}
-                                className="btn-secondary btn-sm mr-2 border-[var(--color-danger)] text-[var(--color-danger)]"
-                                data-testid={`merchant-reject-order-${o.id}`}
-                              >
-                                拒单
-                              </button>
-                            )}
-                            {o.availableActions?.includes('post_progress') && (
-                              <button
-                                onClick={() => handleOrderAction('post_progress', o)}
-                                className="btn-secondary btn-sm mr-2"
-                                data-testid={`merchant-post-progress-${o.id}`}
-                              >
-                                进度更新
-                              </button>
-                            )}
-                            {o.availableActions?.includes('deliver') && (
-                              <button onClick={() => handleOrderAction('deliver', o)} className="btn-primary btn-sm mr-2">
-                                发货
-                              </button>
-                            )}
-                            {o.availableActions?.includes('respond_dispute') && (
-                              <button onClick={() => handleOrderAction('respond_dispute', o)} className="btn-secondary btn-sm mr-2">
-                                处理争议
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-                )}
-              </div>
-              <PaginationControls page={orderPage} total={orderTotal} setPage={setOrderPage} />
-            </div>
+            <>
+            {focusedOrderId && <div className="flex items-center justify-between gap-3 mb-4 text-sm" data-testid="merchant-focused-order">
+              <span>正在查看订单 #{focusedOrderId}</span>
+              <button type="button" className="btn-secondary btn-sm" onClick={() => navigate('/merchant/orders')}>全部订单</button>
+            </div>}
+            <MerchantOrdersPanel
+              orders={orders}
+              loading={loading}
+              orderPage={focusedOrderId ? 1 : orderPage}
+              orderTotal={orderTotal}
+              setOrderPage={setOrderPage}
+              orderStatusFilter={orderStatusFilter}
+              setOrderStatusFilter={(value) => { setOrderStatusFilter(value); if (focusedOrderId) navigate('/merchant/orders') }}
+              orderSortBooking={orderSortBooking}
+              setOrderSortBooking={(value) => { setOrderSortBooking(value); if (focusedOrderId) navigate('/merchant/orders') }}
+              todo={stats?.todo}
+              registry={registry}
+              onOrderAction={handleOrderAction}
+              pendingOrderIds={startingOrderIds}
+            />
+            </>
           )}
 
           {activeTab === 'settlements' && (
@@ -962,7 +742,10 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'categoryApplications' && (
             <div className="fade-in">
-              <CategoryApplicationPanel />
+              <CategoryApplicationPanel
+                key={categoryApplicationRoute ? location.key : 'category-applications'}
+                onViewApplications={() => navigate('/merchant/category-applications')}
+              />
             </div>
           )}
 
@@ -974,11 +757,27 @@ export default function MerchantDashboardPage() {
         onClose={() => setIsAvailabilityOpen(false)}
         product={availabilityProduct}
         onChanged={handleAvailabilityChanged}
+        onImported={(result, offerId) => {
+          if (availabilityProduct) notifyInventoryImported(availabilityProduct, result, offerId)
+        }}
+        onCapacityAdjusted={(result, offerId) => {
+          if (availabilityProduct) notifyCapacityAdjusted(availabilityProduct, result, offerId)
+        }}
+        onInventoryVoided={(result) => {
+          if (availabilityProduct) notifyInventoryVoided(availabilityProduct, result)
+        }}
       />
 
       <MerchantInventoryLogModal
         isOpen={isInventoryLogOpen}
-        onClose={() => setIsInventoryLogOpen(false)}
+        onClose={() => {
+          setIsInventoryLogOpen(false)
+          if (inventoryLogId) {
+            const params = new URLSearchParams(location.search)
+            params.delete('inventoryLog')
+            navigate({ pathname: location.pathname, search: params.toString() }, { replace: true, state: null })
+          }
+        }}
         product={logProduct}
       />
 
@@ -997,6 +796,9 @@ export default function MerchantDashboardPage() {
         onClose={() => setIsCapacityAdjustOpen(false)}
         product={capacityProduct}
         onAdjusted={loadData}
+        onCompleted={(result, offerId) => {
+          if (capacityProduct) notifyCapacityAdjusted(capacityProduct, result, offerId)
+        }}
       />
 
       <MerchantOfferManagerModal
@@ -1033,12 +835,16 @@ export default function MerchantDashboardPage() {
           <p className="text-sm text-[var(--color-text-muted)] mb-4">
             拒单后订单将标记为已退款，冻结积分退还用户，结算作废。订单 #{rejectingOrder?.id}（{rejectingOrder?.product?.name}）
           </p>
+          <p className="text-xs text-[var(--color-text-muted)] mb-4">
+            未交付的限量服务名额按退款规则回补。请先核对库存记录，避免重复手动补充。
+          </p>
           <label className="block text-xs font-medium text-[var(--color-text)] mb-1">公开备注（可选）</label>
           <textarea
             className="input min-h-[80px] resize-y mb-4"
             value={rejectNote}
             onChange={(e) => setRejectNote(e.target.value)}
             maxLength={1000}
+            disabled={rejecting}
             placeholder="例如：暂无服务档期"
             data-testid="merchant-reject-note"
           />
@@ -1062,7 +868,7 @@ export default function MerchantDashboardPage() {
   )
 }
 
-// ---------- Local presentational helpers ----------
+// ---------- 概览统计卡片 ----------
 
 function StatCard({ label, value, tone }: { label: string; value: number | string; tone?: 'cta' | 'warning' }) {
   const valueColor =
@@ -1075,77 +881,6 @@ function StatCard({ label, value, tone }: { label: string; value: number | strin
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] max-md:p-3 p-4">
       <div className="text-[var(--color-text-muted)] max-md:text-xs text-sm mb-1">{label}</div>
       <div className={`font-heading max-md:text-xl text-2xl font-bold ${valueColor}`}>{value}</div>
-    </div>
-  )
-}
-
-function Th({ children, align }: { children: React.ReactNode; align?: 'left' | 'right' }) {
-  return (
-    <th className={`py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider ${align === 'right' ? 'text-right' : 'text-left'}`}>
-      {children}
-    </th>
-  )
-}
-
-function StatusPill({ kind }: { kind: 'active' | 'inactive' }) {
-  const styles: Record<typeof kind, { bg: string; text: string; border: string; label: string }> = {
-    active:   { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '上架中' },
-    inactive: { bg: 'bg-[var(--color-text-muted)]/10',   text: 'text-[var(--color-text-muted)]',   border: 'border-[var(--color-text-muted)]/25',   label: '未上架' },
-  }
-  const s = styles[kind]
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${s.bg} ${s.text} ${s.border}`}>
-      {s.label}
-    </span>
-  )
-}
-
-interface LinkActionProps {
-  children: React.ReactNode
-  onClick: () => void
-  disabled?: boolean
-  testId?: string
-}
-
-function LinkAction({ children, onClick, disabled, testId }: LinkActionProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      data-testid={testId}
-      className={`text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer btn-sm ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-    >
-      {children}
-    </button>
-  )
-}
-
-function PaginationControls({ page, total, setPage, testId }: { page: number; total: number; setPage: (p: number) => void; testId?: string }) {
-  const pageSize = 20
-  const totalPages = Math.ceil(total / pageSize) || 1
-
-  return (
-    <div className="flex items-center justify-between mt-4 px-2 pb-2 border-t border-[var(--color-border)] pt-4" data-testid={testId}>
-      <div className="text-sm text-[var(--color-text-muted)]">
-        共 {total} 条记录，第 {page} / {totalPages} 页
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => setPage(Math.max(1, page - 1))}
-          disabled={page <= 1}
-          className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => setPage(Math.min(totalPages, page + 1))}
-          disabled={page >= totalPages}
-          className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      </div>
     </div>
   )
 }

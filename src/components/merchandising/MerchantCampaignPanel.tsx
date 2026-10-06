@@ -106,7 +106,8 @@ export default function MerchantCampaignPanel({
 
   function renderActions(campaign: PromotionCampaignDTO) {
     if (!isKnownCampaignStatus(campaign.status)) return null
-    const busy = actionBusyId === campaign.id
+    const busy = actionBusyId !== null
+    const acting = actionBusyId === campaign.id
     const confirming = confirm?.id === campaign.id
     const isCancelling = confirming && confirm.action === 'cancel'
     const isRetrying = confirming && confirm.action === 'retry'
@@ -126,7 +127,7 @@ export default function MerchantCampaignPanel({
                   onCancel(campaign)
                 }}
               >
-                {busy ? '处理中…' : '确认取消'}
+                {acting ? '处理中…' : '确认取消'}
               </button>
               <button type="button" className="merch-btn" disabled={busy} onClick={() => setConfirm(null)}>
                 返回
@@ -139,7 +140,7 @@ export default function MerchantCampaignPanel({
               disabled={busy}
               onClick={() => setConfirm({ id: campaign.id, action: 'cancel' })}
             >
-              {busy ? '处理中…' : cancelActionLabel(campaign)}
+              {acting ? '处理中…' : cancelActionLabel(campaign)}
             </button>
           )}
         </div>
@@ -161,7 +162,7 @@ export default function MerchantCampaignPanel({
                   onRetryPayment(campaign)
                 }}
               >
-                {busy ? '处理中…' : '确认重试'}
+                {acting ? '处理中…' : '确认重试'}
               </button>
               <button type="button" className="merch-btn" disabled={busy} onClick={() => setConfirm(null)}>
                 返回
@@ -174,7 +175,7 @@ export default function MerchantCampaignPanel({
               disabled={busy}
               onClick={() => setConfirm({ id: campaign.id, action: 'retry' })}
             >
-              {busy ? '处理中…' : '重试支付'}
+              {acting ? '处理中…' : '重试支付'}
             </button>
           )}
         </div>

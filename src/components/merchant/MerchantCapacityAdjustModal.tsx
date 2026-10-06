@@ -1,23 +1,26 @@
 import AsyncButton from '../ui/AsyncButton'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Minus, Plus } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
-import { adjustMerchantProductCapacity } from '../../api/merchant'
+import { adjustMerchantProductCapacity, type CapacityAdjustResult } from '../../api/merchant'
 import { MerchantProduct } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
+import { captureFeedbackOwner, showCompletionToast } from '../../lib/completionFeedback'
 
 interface Props {
   isOpen: boolean
   onClose: () => void
   product: MerchantProduct | null
   onAdjusted: () => Promise<void> | void
+  onCompleted?: (result: CapacityAdjustResult, offerId: number) => void
 }
 
-export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, onAdjusted }: Props) {
+export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, onAdjusted, onCompleted }: Props) {
   const showToast = useAppStore((state) => state.showToast)
   const [deltaText, setDeltaText] = useState('')
   const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const inFlight = useRef(false)
 
   // P4a：名额挂在 Offer 上，只有非即时库存的规格支持名额调整。含已下架规格：
   // 商家常在重新上架前先备好名额，过滤掉会让入口可点但无规格可选。
@@ -57,7 +60,7 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
-    if (!product) return
+    if (!product || !selectedOffer || inFlight.current) return
     if (!isValidDelta) {
       showToast('调整数量必须是非 0 整数；正数表示补充，负数表示减少', 'error')
       return
@@ -72,27 +75,36 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
       return
     }
 
+    const isCurrent = captureFeedbackOwner()
+    inFlight.current = true
     setSubmitting(true)
     try {
-      await adjustMerchantProductCapacity(product.id, {
+      const result = await adjustMerchantProductCapacity(product.id, {
         delta,
         reason: trimmedReason,
         // 已解析出目标规格就显式携带：默认 Offer 未必是可调名额的那条规格。
-        ...(selectedOfferId != null ? { offerId: selectedOfferId } : {}),
+        offerId: selectedOffer.id,
       })
-      await onAdjusted()
-      showToast(`${capacityLabel}调整成功，列表已刷新`)
+      if (!isCurrent()) return
       onClose()
+      if (onCompleted) onCompleted(result, selectedOffer.id)
+      else showCompletionToast(`${capacityLabel}调整成功，当前剩余 ${result.stock}`)
+      try {
+        await onAdjusted()
+      } catch {
+        if (isCurrent()) showToast('名额已调整，但列表刷新失败，请手动刷新', 'error')
+      }
     } catch (error: any) {
-      showToast(error.response?.data?.error?.message || `${capacityLabel}调整失败`, 'error')
+      if (isCurrent()) showToast(error.response?.data?.error?.message || `${capacityLabel}调整失败`, 'error')
     } finally {
+      inFlight.current = false
       setSubmitting(false)
     }
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !submitting) onClose() }}>
-      <DialogContent className="max-w-lg" data-testid="merchant-capacity-adjust-modal">
+    <Dialog open={isOpen} onOpenChange={(open) => { if (!open && !inFlight.current) onClose() }}>
+      <DialogContent className="max-w-lg max-h-[90dvh] overflow-y-auto" hideClose={submitting} data-testid="merchant-capacity-adjust-modal">
         <DialogTitle>调整{capacityLabel}</DialogTitle>
         <DialogDescription>
           商品：{product?.name ?? ''}。正数补充名额，负数减少名额；本次调整会留下操作原因。
@@ -100,7 +112,7 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
 
         <p className="mt-3 rounded-md border border-amber-500/25 bg-amber-500/8 px-3 py-2 text-xs text-[var(--color-text-muted)]">
           {isManualService
-            ? '拒单或仲裁退款不会自动回补服务名额。仅当实际履约能力已释放时，再在这里手动补回，避免错误超卖。'
+            ? '待接单拒单可按退款规则回补服务名额；已交付后仲裁退款不自动回补。手动补充前请核对库存记录与实际履约能力，避免重复补充。'
             : '固定内容一经交付可能已被使用；退款不会自动回补可售名额。如确认可重新出售，请在这里手动补回。'}
         </p>
 
@@ -191,7 +203,7 @@ export default function MerchantCapacityAdjustModal({ isOpen, onClose, product, 
             <AsyncButton loading={submitting} loadingLabel="调整中…"
               type="submit"
               className="btn-primary px-5 py-2 min-w-[150px]"
-              disabled={submitting || !isValidDelta || wouldBecomeNegative || !reason.trim()}
+              disabled={submitting || !selectedOffer || !isValidDelta || wouldBecomeNegative || !reason.trim()}
               data-testid="merchant-capacity-adjust-submit"
             >
               {actionLabel}

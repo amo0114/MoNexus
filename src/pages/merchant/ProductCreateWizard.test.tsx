@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { Dispatch, SetStateAction } from 'react'
 import ProductCreateWizard from './ProductCreateWizard'
@@ -94,6 +94,7 @@ import {
   type TemplateKey,
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
+import { useAuthStore } from '../../stores/authStore'
 import { uploadImage } from '../../api/uploads'
 import { serializePurchaseFormFields } from '../../components/merchant/PurchaseFormFieldsEditor'
 
@@ -583,5 +584,52 @@ describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
     fireEvent.click(screen.getByTestId('wizard-next'))
     fireEvent.change(screen.getByTestId('wizard-price'), { target: { value: '250' } })
     expect(screen.getByTestId('sandbox-price')).toHaveTextContent('250')
+  })
+})
+
+
+describe('mobile publication completion', () => {
+  beforeEach(() => {
+    seedRegistry()
+    vi.spyOn(window,'matchMedia').mockImplementation(media => ({matches:media.includes('767'),media,addEventListener(){},removeEventListener(){}}) as MediaQueryList)
+    useAppStore.setState({islandNoticeAvailable:true,islandNotice:null,islandQueue:[],modalDepth:0,toasts:[]})
+  })
+  afterEach(() => vi.restoreAllMocks())
+  async function readyToPublish(publish: unknown) {
+    const transport=await walkToConfirm({
+      get:{'/merchant/products/101/offers':catalogFixtureOffers,'/merchant/products/101/readiness':{ready:true,productId:101,issues:[]}},
+      post:{'/merchant/products':v2Created,'/merchant/products/101/publish':publish},
+    })
+    fireEvent.click(screen.getByTestId('wizard-save-draft'))
+    await screen.findByTestId('product-availability-step')
+    fireEvent.click(screen.getByTestId('wizard-next'))
+    await waitFor(()=>expect(screen.getByTestId('publication-publish')).not.toBeDisabled())
+    return transport
+  }
+  it('publishes once and shows an actionable success only after the response', async () => {
+    let resolve!: (value: unknown) => void
+    const transport=await readyToPublish(()=>new Promise(r=>{resolve=r}))
+    fireEvent.click(screen.getByTestId('publication-publish'))
+    fireEvent.click(screen.getByTestId('publication-publish'))
+    expect(transport.calls.filter(c=>c.url.endsWith('/publish'))).toHaveLength(1)
+    expect(useAppStore.getState().islandNotice?.title).not.toBe('商品发布成功')
+    await act(async()=>resolve({id:101,status:'active',publishedAt:'2026-10-06'}))
+    expect(useAppStore.getState().islandNotice?.title).toBe('商品发布成功')
+    expect(useAppStore.getState().islandNotice?.actionLabel).toBe('查看商品')
+  })
+  it('does not show publication success from an old session', async () => {
+    let resolve!: (value: unknown) => void
+    await readyToPublish(()=>new Promise(r=>{resolve=r}))
+    fireEvent.click(screen.getByTestId('publication-publish'))
+    act(()=>useAuthStore.setState({authEpoch:useAuthStore.getState().authEpoch+1}))
+    await act(async()=>resolve({id:101,status:'active',publishedAt:'2026-10-06'}))
+    expect(useAppStore.getState().islandNotice).toBeNull()
+  })
+  it('keeps the draft and shows an error when publishing fails', async () => {
+    await readyToPublish(()=>{throw new Error('publish failed')})
+    fireEvent.click(screen.getByTestId('publication-publish'))
+    await waitFor(()=>expect(useAppStore.getState().toasts.some(t=>t.type==='error')).toBe(true))
+    expect(screen.getByTestId('wizard-step-publish')).toBeInTheDocument()
+    expect(useAppStore.getState().islandNotice?.title).not.toBe('商品发布成功')
   })
 })

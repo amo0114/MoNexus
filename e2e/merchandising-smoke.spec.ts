@@ -275,3 +275,106 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
     ).toHaveCount(1)
   })
 })
+
+// Financial journey: request/cancel, insufficient retry, then one real charge.
+test('merchant promotion completions preserve confirmation and actual charge results', async ({ page, request }, testInfo) => {
+  test.setTimeout(90_000)
+  const mobile = (page.viewportSize()?.width ?? 1280) < 768
+  const admin = await loginAsApi(request, SEED_ACCOUNTS.admin)
+  const merchant = await loginAsApi(request, SEED_ACCOUNTS.merchant)
+  const adminHeaders = { Authorization: `Bearer ${admin.accessToken}` }
+  const merchantHeaders = { Authorization: `Bearer ${merchant.accessToken}` }
+  const profileResponse = await request.get(`${API_BASE}/api/auth/me`, { headers: merchantHeaders })
+  expect(profileResponse.ok()).toBe(true)
+  const profile = await profileResponse.json()
+  const balanceBefore = profile.points as number
+  expect(Number.isInteger(balanceBefore) && balanceBefore >= 0).toBe(true)
+  const price = balanceBefore + 100
+  const productsResponse = await request.get(`${API_BASE}/api/merchant/products?status=active&pageSize=100`, { headers: merchantHeaders })
+  const ownProductId = findMerchantProduct(await productsResponse.json())
+  const label = `E2E推广结果-${Date.now()}`
+  const code = `feedback-${randomUUID()}`
+  const pkgResponse = await request.post(`${API_BASE}/api/admin/promotion-packages`, {
+    headers: adminHeaders,
+    data: { code, label, placement: 'category_sponsored', durationDays: 1, pricePoints: price },
+  })
+  expect(pkgResponse.status()).toBe(201)
+  const pkgId = parseAdminPackage(await pkgResponse.json())
+  await loginAs(page, SEED_ACCOUNTS.merchant)
+  await page.goto('/merchant/promotions')
+  await page.getByLabel('选择商品').selectOption(String(ownProductId))
+  await page.locator('.merch-promo-package').filter({ hasText: label }).getByRole('radio').check()
+
+  async function submitRequest() {
+    const responsePromise = page.waitForResponse(r => new URL(r.url()).pathname === '/api/merchant/promotion-campaigns' && r.request().method() === 'POST')
+    await page.getByRole('button', { name: '提交申请', exact: true }).click()
+    const response = await responsePromise
+    expect(response.ok()).toBe(true)
+    const created = parseCampaignMutation(await response.json())
+    expect(created.status).toBe('pending_review')
+    if (mobile) {
+      const notice = page.getByTestId('action-island-notice')
+      await expect(notice.locator('strong')).toHaveText('推广申请已提交，待审核')
+      await expect(notice).toContainText(`推广 #${created.id}`)
+      await notice.getByRole('button', { name: '查看推广列表' }).click()
+      await expect(page).toHaveURL(/view=records/)
+      await expect(page.getByTestId('merchant-promotion-records')).toBeFocused()
+    } else await expect(page.locator('.merch-promo-success')).toContainText('等待平台审核')
+    return created.id
+  }
+
+  const firstId = await submitRequest()
+  const firstCard = page.locator('.merch-campaign-card[data-status="pending_review"]').filter({ hasText: code })
+  await firstCard.getByRole('button', { name: '取消申请' }).click()
+  await expect(firstCard).toContainText('确认取消申请？取消不会扣积分。')
+  const cancelResponse = page.waitForResponse(r => new URL(r.url()).pathname === `/api/merchant/promotion-campaigns/${firstId}/cancel`)
+  await firstCard.getByRole('button', { name: '确认取消' }).click()
+  const cancelled = await (await cancelResponse).json()
+  expect(cancelled.campaign).toMatchObject({ status: 'cancelled', chargedPoints: 0, refundedPoints: 0 })
+  if (mobile) {
+    const notice = page.getByTestId('action-island-notice')
+    await expect(notice.locator('strong')).toHaveText('推广申请已取消')
+    await expect(notice).toContainText('取消时未扣积分')
+    await notice.getByRole('button', { name: '查看推广列表' }).click()
+  }
+
+  const nextId = await submitRequest()
+  const approve = await request.post(`${API_BASE}/api/admin/promotion-campaigns/${nextId}/approve`, { headers: adminHeaders, data: {} })
+  expect(approve.ok()).toBe(true)
+  expect((await approve.json()).campaign).toMatchObject({ status: 'payment_failed', chargedPoints: 0 })
+  await page.reload()
+  const card = page.locator('.merch-campaign-card[data-status="payment_failed"]').filter({ hasText: code })
+  async function retry() {
+    await card.getByRole('button', { name: '重试支付' }).click()
+    await expect(card).toContainText(`将按已批准的 ${price} 积分扣款`)
+    const responsePromise = page.waitForResponse(r => new URL(r.url()).pathname === `/api/merchant/promotion-campaigns/${nextId}/retry-payment`)
+    await card.getByRole('button', { name: '确认重试' }).click()
+    const response = await responsePromise
+    expect(response.ok()).toBe(true)
+    return (await response.json()).campaign
+  }
+  expect(await retry()).toMatchObject({ status: 'payment_failed', chargedPoints: 0 })
+  await expect(page.locator('.merch-action-error')).toContainText('推广尚未扣费')
+  await expect(page.getByTestId('action-island-notice').filter({ hasText: '推广已生效' })).toHaveCount(0)
+  const topUp = await request.post(`${API_BASE}/api/admin/users/${profile.id}/adjust`, { headers: adminHeaders, data: { type: 'add', amount: 100, reason: 'E2E promotion retry fixture' } })
+  expect(topUp.ok()).toBe(true)
+  expect(await retry()).toMatchObject({ status: 'active', chargedPoints: price })
+  if (mobile) {
+    const notice = page.getByTestId('action-island-notice')
+    await expect(notice.locator('strong')).toHaveText('推广已生效')
+    await expect(notice).toContainText(`已扣 ${price} 积分`)
+    await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))) })
+    await page.screenshot({ path: testInfo.outputPath('promotion-charged.png'), animations: 'disabled' })
+    await notice.getByRole('button', { name: '查看推广列表' }).click()
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  const finalProfile = await request.get(`${API_BASE}/api/auth/me`, { headers: merchantHeaders })
+  expect((await finalProfile.json()).points).toBe(0)
+  const cleanup = await request.post(`${API_BASE}/api/admin/promotion-campaigns/${nextId}/cancel`, { headers: { ...adminHeaders, 'Idempotency-Key': randomUUID() }, data: { points: 0, reason: 'E2E promotion cleanup' } })
+  expect(cleanup.ok()).toBe(true)
+  if (balanceBefore > 0) {
+    const restore = await request.post(`${API_BASE}/api/admin/users/${profile.id}/adjust`, { headers: adminHeaders, data: { type: 'add', amount: balanceBefore, reason: 'E2E fixture balance restore' } })
+    expect(restore.ok()).toBe(true)
+  }
+  expect(pkgId).toBeGreaterThan(0)
+})

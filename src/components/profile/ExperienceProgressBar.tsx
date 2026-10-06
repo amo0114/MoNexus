@@ -44,6 +44,20 @@ export function ExperienceProgressBar({
   const roundedPct = Math.round(progress)
   const isMaxTier = !nextTier || nextThresh === null
 
+  let progressGradient = 'bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-500'
+  let pipGlow = 'shadow-[0_0_6px_rgba(59,130,246,0.9),0_0_2px_#fff]'
+
+  if (tier === 'platinum') {
+    progressGradient = 'bg-gradient-to-r from-purple-500 via-fuchsia-500 to-indigo-400'
+    pipGlow = 'shadow-[0_0_8px_rgba(168,85,247,0.95),0_0_2px_#fff]'
+  } else if (tier === 'gold') {
+    progressGradient = 'bg-gradient-to-r from-amber-500 via-yellow-400 to-amber-600'
+    pipGlow = 'shadow-[0_0_8px_rgba(245,158,11,0.95),0_0_2px_#fff]'
+  } else if (tier === 'silver') {
+    progressGradient = 'bg-gradient-to-r from-cyan-500 via-sky-400 to-indigo-500'
+    pipGlow = 'shadow-[0_0_6px_rgba(6,182,212,0.95),0_0_2px_#fff]'
+  }
+
   const nextTierLabel =
     nextTierLabelOverride ||
     (nextTier === 'silver' ? '白银会员' : nextTier === 'gold' ? '黄金会员' : nextTier === 'platinum' ? '铂金会员' : nextTier || '')
@@ -76,7 +90,7 @@ export function ExperienceProgressBar({
           className="relative w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-2.5 overflow-hidden border border-slate-200/60 dark:border-slate-700/60 shadow-inner"
         >
           <div
-            className="relative h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] via-indigo-500 to-amber-500 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+            className={`relative h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${progressGradient}`}
             style={{ width: `${progress}%` }}
           >
             {/* 流光扫掠层 (skills-ref/transitions-dev/15-shimmer-text) */}
@@ -87,7 +101,7 @@ export function ExperienceProgressBar({
             {/* 端点高光圆点 (Leading Edge Pip) */}
             {progress > 3 && progress < 99.5 && (
               <div
-                className="absolute right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(245,158,11,0.95),0_0_2px_#fff] animate-pulse pointer-events-none"
+                className={`absolute right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white ${pipGlow} animate-pulse pointer-events-none`}
                 aria-hidden="true"
               />
             )}
@@ -107,7 +121,7 @@ export function ExperienceProgressBar({
 
   // 默认 compact 模式 (适用于顶部用户卡片)
   return (
-    <div className={`mt-2.5 max-w-xs w-full ${className}`}>
+    <div className={`w-full ${className}`}>
       {/* 顶部文字说明与比率 */}
       <div className="flex items-center justify-between text-[11px] text-[var(--color-text-muted)] mb-1.5 font-medium">
         <div className="flex items-center gap-1">
@@ -139,7 +153,7 @@ export function ExperienceProgressBar({
         className="relative w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-2 overflow-hidden border border-slate-200/60 dark:border-slate-700/60 shadow-inner"
       >
         <div
-          className="relative h-full rounded-full bg-gradient-to-r from-[var(--color-primary)] via-indigo-500 to-amber-500 transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+          className={`relative h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${progressGradient}`}
           style={{ width: `${progress}%` }}
         >
           {/* 流光扫掠层 (skills-ref/transitions-dev/15-shimmer-text) */}
@@ -150,7 +164,7 @@ export function ExperienceProgressBar({
           {/* 端点高光圆点 (Leading Edge Pip) */}
           {progress > 3 && progress < 99.5 && (
             <div
-              className="absolute right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_6px_rgba(245,158,11,0.95),0_0_2px_#fff] animate-pulse pointer-events-none"
+              className={`absolute right-0.5 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-white ${pipGlow} animate-pulse pointer-events-none`}
               aria-hidden="true"
             />
           )}

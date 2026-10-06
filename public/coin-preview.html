@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MoNexus 代币中心图腾重构方案对比</title>
+<style>
+  body { background: #0A0D14; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 32px 20px; max-width: 1200px; margin: 0 auto; line-height: 1.6; }
+  h1 { font-size: 26px; font-weight: 800; margin-bottom: 8px; color: #FFFFFF; letter-spacing: -0.02em; }
+  .subtitle { color: #94A3B8; font-size: 14px; margin-bottom: 36px; max-width: 780px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 24px; }
+  .card { background: #111622; border: 1px solid #1E293B; border-radius: 20px; padding: 24px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; margin-bottom: 12px; }
+  .badge-rec { background: rgba(245, 158, 11, 0.15); color: #FBBF24; border: 1px solid rgba(245, 158, 11, 0.3); }
+  .card h2 { font-size: 18px; margin: 0 0 8px 0; color: #F8FAFC; }
+  .desc { font-size: 13px; color: #94A3B8; margin-bottom: 24px; min-height: 58px; }
+  .preview-box { background: #080B10; border: 1px solid #1A2234; border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+  .preview-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748B; font-weight: 700; margin-bottom: 12px; }
+  .sizes-row { display: flex; align-items: flex-end; gap: 20px; }
+  .size-cell { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 11px; color: #64748B; font-family: monospace; }
+  .real-contexts { display: flex; flex-direction: column; gap: 10px; }
+  .price-pill { display: inline-flex; align-items: center; gap: 6px; font-weight: 800; font-size: 18px; color: #10B981; padding: 10px 14px; background: rgba(16, 185, 129, 0.08); border-radius: 10px; border: 1px solid rgba(16, 185, 129, 0.2); }
+  .price-pill span { font-feature-settings: "tnum" 1; }
+  .order-pill { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 14px; color: #10B981; padding: 6px 12px; background: rgba(255,255,255,0.03); border-radius: 8px; border: 1px solid #1E293B; }
+  .highlight-contrast { color: #38BDF8; font-weight: 600; font-size: 12px; margin-top: 12px; display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<h1>MoNexus 代币中心图腾重构方案对比</h1>
+<p class="subtitle">针对<strong>“中心图案看不清晰（原对比度仅1.5:1）”</strong>以及<strong>“避免麻豆等单字母M联想”</strong>，采用<strong>【深沉凹盘 + 亮金浮雕（对比度大幅提升至 8.5:1）】</strong>重构的三种视觉方案：</p>
+
+<div class="grid">
+  <!-- Card 1 -->
+  <div class="card">
+    <div>
+      <span class="badge badge-rec">方案 A（官方首推 · 账本之结）</span>
+      <h2>官方互锁纽带 (Ledger Knot)</h2>
+      <p class="desc">直接采用 MoNexus 官方设计规范中的<strong>「账本之结」</strong>。加粗主梁骨骼并加深底盘，立体互锁结构一目了然，与顶部导航 Logo 完美呼应，极具 Web3 主权代币高级质感。</p>
+      
+      <div class="preview-box">
+        <div class="preview-label">各微型视口尺寸真实渲染 (14px ~ 56px)</div>
+        <div class="sizes-row">
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+  <defs>
+    <linearGradient id="g1_outer_14" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_14)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_14)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_14)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_14)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_14)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg><span>14px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <defs>
+    <linearGradient id="g1_outer_16" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_16" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_16" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_16)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_16)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_16)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_16)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_16)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg><span>16px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+  <defs>
+    <linearGradient id="g1_outer_20" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_20" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_20" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_20)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_20)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_20)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_20)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_20)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg><span>20px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+  <defs>
+    <linearGradient id="g1_outer_24" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_24" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_24" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_24)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_24)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_24)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_24)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_24)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg><span>24px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+  <defs>
+    <linearGradient id="g1_outer_32" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_32" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_32" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_32)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_32)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_32)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_32)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_32)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg><span>32px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="56" height="56">
+  <defs>
+    <linearGradient id="g1_outer_56" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_56" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_56" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_56)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_56)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_56)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_56)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_56)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg><span>56px</span></div>
+        </div>
+      </div>
+
+      <div class="preview-box">
+        <div class="preview-label">真实业务场景还原</div>
+        <div class="real-contexts">
+          <div class="price-pill"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
+  <defs>
+    <linearGradient id="g1_outer_18" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_18" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_18" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_18)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_18)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_18)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_18)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_18)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg> <span>399</span></div>
+          <div class="order-pill">-<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+  <defs>
+    <linearGradient id="g1_outer_14" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g1_core_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g1_glyph_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g1_outer_14)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g1_core_14)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <circle cx="12" cy="5.2" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="18.8" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="12" cy="18.8" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <circle cx="5.2" cy="12" r="0.45" fill="#FBBF24" opacity="0.8"/>
+  <g transform="translate(0, 0.5)" opacity="0.5" fill="#260D00">
+    <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z"/>
+    <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z"/>
+    <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z"/>
+  </g>
+  <path d="M12.2 7.6 L14.5 9.0 L12.0 10.6 L12.0 14.6 L10.0 16.0 L10.0 11.6 Z" fill="url(#g1_glyph_14)"/>
+  <path d="M6.0 13.6 L8.2 15.0 L18.0 9.4 L15.8 8.0 Z" fill="url(#g1_glyph_14)"/>
+  <path d="M9.8 13.8 L12.0 15.1 L12.0 14.8 L9.8 16.0 Z" fill="url(#g1_glyph_14)"/>
+  <path d="M9.8 12.8 L10.8 13.4 L10.0 14.0 L9.8 13.8 Z" fill="#260D00"/>
+  <path d="M7.4 14.0 L16.8 8.8" stroke="#FFFFFF" stroke-width="0.5" stroke-linecap="round" opacity="0.9"/>
+  <path d="M12.3 8.0 L14.1 9.1" stroke="#FFFFFF" stroke-width="0.4" stroke-linecap="round" opacity="0.8"/>
+</svg> <span>120</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="highlight-contrast">✓ 强对比度 8.5:1 · 杜绝单字母歧义 · 100% 契合平台 Logo</div>
+  </div>
+
+  <!-- Card 2 -->
+  <div class="card">
+    <div>
+      <span class="badge badge-rec" style="background: rgba(147, 51, 234, 0.15); color: #C084FC; border-color: rgba(147, 51, 234, 0.3);">方案 B（动力学合印 · M · X）</span>
+      <h2>动力学双字母 (MX Monogram)</h2>
+      <p class="desc">取材自导航栏的 <strong>M · X</strong> 收敛概念，左侧几何 M 与右侧 Nexus 交叉 X 深度交错，中心点缀发光节点。清晰表达 MoNexus 缩写，彻底解决单 M 造成的视觉误解。</p>
+      
+      <div class="preview-box">
+        <div class="preview-label">各微型视口尺寸真实渲染 (14px ~ 56px)</div>
+        <div class="sizes-row">
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+  <defs>
+    <linearGradient id="g2_outer_14" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_14)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_14)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_14)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg><span>14px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <defs>
+    <linearGradient id="g2_outer_16" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_16" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_16" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_16)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_16)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_16)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg><span>16px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+  <defs>
+    <linearGradient id="g2_outer_20" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_20" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_20" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_20)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_20)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_20)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg><span>20px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+  <defs>
+    <linearGradient id="g2_outer_24" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_24" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_24" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_24)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_24)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_24)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg><span>24px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+  <defs>
+    <linearGradient id="g2_outer_32" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_32" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_32" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_32)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_32)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_32)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg><span>32px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="56" height="56">
+  <defs>
+    <linearGradient id="g2_outer_56" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_56" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_56" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_56)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_56)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_56)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg><span>56px</span></div>
+        </div>
+      </div>
+
+      <div class="preview-box">
+        <div class="preview-label">真实业务场景还原</div>
+        <div class="real-contexts">
+          <div class="price-pill"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
+  <defs>
+    <linearGradient id="g2_outer_18" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_18" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_18" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_18)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_18)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_18)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg> <span>399</span></div>
+          <div class="order-pill">-<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+  <defs>
+    <linearGradient id="g2_outer_14" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g2_core_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g2_glyph_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g2_outer_14)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g2_core_14)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6" stroke="#260D00" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.8"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.8"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.8"/>
+    <circle cx="11.2" cy="15.2" r="0.8" fill="#260D00" stroke="none"/>
+  </g>
+  <g stroke="url(#g2_glyph_14)" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.8 15.5 V8.5 L9.6 12.2 L12.4 8.5" stroke-width="1.6"/>
+    <path d="M13.6 8.5 L17.4 15.5" stroke-width="1.6"/>
+    <path d="M17.4 8.5 L13.6 15.5" stroke-width="1.6"/>
+  </g>
+  <circle cx="11.2" cy="15.2" r="0.75" fill="#FFFFFF"/>
+</svg> <span>120</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="highlight-contrast">✓ 强对比度 8.8:1 · 品牌缩写极其直观 · 极具现代科技感</div>
+  </div>
+
+  <!-- Card 3 -->
+  <div class="card">
+    <div>
+      <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38BDF8; border: 1px solid rgba(56, 189, 248, 0.3);">方案 C（拓扑双环 · 枢纽连结）</span>
+      <h2>拓扑交汇环 (Nexus Interlink)</h2>
+      <p class="desc">两枚倾斜金属环立体互锁，中心聚为交汇节点。纯粹象征“Nexus 连结与流转”，完全不使用任何英文字母，造型极其干净纯粹，在 12px 超小视口下亦极其分明。</p>
+      
+      <div class="preview-box">
+        <div class="preview-label">各微型视口尺寸真实渲染 (14px ~ 56px)</div>
+        <div class="sizes-row">
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+  <defs>
+    <linearGradient id="g3_outer_14" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_14)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_14)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_14)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_14)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg><span>14px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16">
+  <defs>
+    <linearGradient id="g3_outer_16" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_16" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_16" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_16)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_16)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_16)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_16)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg><span>16px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+  <defs>
+    <linearGradient id="g3_outer_20" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_20" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_20" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_20)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_20)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_20)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_20)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg><span>20px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+  <defs>
+    <linearGradient id="g3_outer_24" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_24" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_24" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_24)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_24)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_24)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_24)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg><span>24px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+  <defs>
+    <linearGradient id="g3_outer_32" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_32" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_32" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_32)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_32)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_32)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_32)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg><span>32px</span></div>
+          <div class="size-cell"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="56" height="56">
+  <defs>
+    <linearGradient id="g3_outer_56" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_56" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_56" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_56)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_56)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_56)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_56)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg><span>56px</span></div>
+        </div>
+      </div>
+
+      <div class="preview-box">
+        <div class="preview-label">真实业务场景还原</div>
+        <div class="real-contexts">
+          <div class="price-pill"><svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="18" height="18">
+  <defs>
+    <linearGradient id="g3_outer_18" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_18" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_18" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_18)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_18)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_18)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_18)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg> <span>399</span></div>
+          <div class="order-pill">-<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" width="14" height="14">
+  <defs>
+    <linearGradient id="g3_outer_14" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDE047"/>
+      <stop offset="35%" stop-color="#F59E0B"/>
+      <stop offset="70%" stop-color="#D97706"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="g3_core_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="40%" stop-color="#78350F"/>
+      <stop offset="100%" stop-color="#451A03"/>
+    </linearGradient>
+    <linearGradient id="g3_glyph_14" x1="6" y1="6" x2="18" y2="18" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#FEF08A"/>
+      <stop offset="100%" stop-color="#FBBF24"/>
+    </linearGradient>
+  </defs>
+  <circle cx="12" cy="12" r="10" fill="url(#g3_outer_14)"/>
+  <circle cx="12" cy="12" r="9.2" stroke="#FEF08A" stroke-width="0.8" stroke-opacity="0.9"/>
+  <circle cx="12" cy="12" r="7.6" fill="url(#g3_core_14)"/>
+  <circle cx="12" cy="12" r="7.6" stroke="#F59E0B" stroke-opacity="0.3" stroke-width="0.5" stroke-dasharray="1 1"/>
+  <g transform="translate(0, 0.5)" opacity="0.6">
+    <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="#260D00" stroke-width="1.8"/>
+    <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="#260D00" stroke-width="1.8"/>
+  </g>
+  <rect x="7.2" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(-30 9.9 12)" stroke="url(#g3_glyph_14)" stroke-width="1.6"/>
+  <rect x="11.4" y="7.8" width="5.4" height="8.4" rx="2.7" transform="rotate(30 14.1 12)" stroke="url(#g3_glyph_14)" stroke-width="1.6"/>
+  <circle cx="12" cy="12" r="1" fill="#FFFFFF"/>
+</svg> <span>120</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="highlight-contrast">✓ 强对比度 8.2:1 · 纯几何极简图腾 · 辨识效率极高</div>
+  </div>
+</div>
+</body>
+</html>

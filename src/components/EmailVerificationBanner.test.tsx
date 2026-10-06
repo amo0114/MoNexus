@@ -1,14 +1,19 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import { useAuthStore } from '../stores/authStore'
+import { useAppStore } from '../stores/appStore'
+import { sendVerificationEmail } from '../api/auth'
 
 vi.mock('../api/auth', () => ({
   sendVerificationEmail: vi.fn().mockResolvedValue({ success: true }),
 }))
 
 describe('EmailVerificationBanner', () => {
+  afterEach(() => vi.restoreAllMocks())
   beforeEach(() => {
+    vi.mocked(sendVerificationEmail).mockReset().mockResolvedValue({ ok: true })
+    useAppStore.setState({ islandNotice: null, islandQueue: [], islandNoticeAvailable: false, toasts: [] })
     sessionStorage.clear()
     useAuthStore.setState({
       user: {
@@ -70,4 +75,40 @@ describe('EmailVerificationBanner', () => {
     render(<EmailVerificationBanner />)
     expect(screen.queryByText('邮箱尚未验证')).not.toBeInTheDocument()
   })
+  function enableMobile() {
+    vi.spyOn(window, 'matchMedia').mockImplementation(media => ({ matches: media.includes('767'), media, addEventListener() {}, removeEventListener() {} }) as MediaQueryList)
+    useAppStore.setState({ islandNoticeAvailable: true })
+  }
+
+  it('sends from the mobile reminder once and shows mail guidance only after success', async () => {
+    enableMobile()
+    let resolve!: (value: { ok: true }) => void
+    vi.mocked(sendVerificationEmail).mockImplementation(() => new Promise(r => { resolve = r }))
+    render(<EmailVerificationBanner />)
+    const reminder = useAppStore.getState().islandNotice!
+    expect(reminder.actionLabel).toBe('发送验证邮件')
+    expect(screen.queryByText('邮箱尚未验证')).toBeNull()
+    act(() => { reminder.onAction?.(); reminder.onAction?.() })
+    expect(sendVerificationEmail).toHaveBeenCalledOnce()
+    expect(useAppStore.getState().islandNotice?.title).not.toBe('验证邮件已发送')
+    await act(async () => resolve({ ok: true }))
+    expect(useAppStore.getState().islandNotice?.title).toBe('验证邮件已发送')
+    expect(useAppStore.getState().islandNotice?.subtitle).toContain('24 小时')
+  })
+
+  it('retains retry on send failure and ignores a late success after account changes', async () => {
+    enableMobile()
+    vi.mocked(sendVerificationEmail).mockRejectedValueOnce(new Error('offline'))
+    render(<EmailVerificationBanner />)
+    act(() => { useAppStore.getState().islandNotice?.onAction?.() })
+    await waitFor(() => expect(useAppStore.getState().islandNotice?.actionLabel).toBe('重新发送'))
+    expect(useAppStore.getState().toasts[0].type).toBe('error')
+    let resolve!: (value: { ok: true }) => void
+    vi.mocked(sendVerificationEmail).mockImplementation(() => new Promise(r => { resolve = r }))
+    act(() => { useAppStore.getState().islandNotice?.onAction?.() })
+    act(() => useAuthStore.setState({user:null, authEpoch:useAuthStore.getState().authEpoch+1}))
+    await act(async () => resolve({ ok: true }))
+    expect(useAppStore.getState().islandNotice).toBeNull()
+  })
+
 })

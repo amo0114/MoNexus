@@ -1,0 +1,73 @@
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-primary); }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Stars (rating system) */
+.star-filled { color: #F59E0B; fill: #F59E0B; }
+.star-empty { color: var(--color-image-placeholder); fill: var(--color-image-placeholder); }
+
+/* =========================================================
+   Rich text (merchant-authored HTML, ProductDetailPage).
+   The typography plugin is not installed; these rules give
+   user content the same mobile-safe guarantees: no horizontal
+   overflow from tables / pre / long URLs.
+   ========================================================= */
+.rich-text { overflow-wrap: break-word; }
+.rich-text :where(img, video) { max-width: 100%; height: auto; }
+.rich-text :where(a) { color: var(--color-primary); overflow-wrap: anywhere; }
+.rich-text :where(pre) { overflow-x: auto; max-width: 100%; }
+.rich-text :where(table) { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; }
+.rich-text :where(td, th) { padding: 0.375rem 0.75rem; border: 1px solid var(--color-border); }
+
+/* Admin table */
+
+/* =========================================================
+   Responsive tables — card layout below the md breakpoint.
+   Add .table-cards to any <table>; give each body td a
+   data-label="列名" (colspan cells are excluded automatically).
+   ========================================================= */
+@media (max-width: 767px) {
+  .table-cards { display: block; width: 100%; }
+  .table-cards thead { display: none; }
+  .table-cards tbody { display: block; width: 100%; }
+  .table-cards tbody tr {
+    display: block;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-xs) var(--space-md);
+    margin-bottom: var(--space-md);
+  }
+  .table-cards tbody td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-sm) var(--space-md);
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid var(--color-border);
+    text-align: right;
+  }
+  .table-cards tbody tr td:last-child { border-bottom: none; }
+  .table-cards tbody td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-align: left;
+  }
+  .table-cards tbody td:not([data-label])::before { content: none; }
+  /* Full-width cells: empty states / skeleton rows */
+  .table-cards tbody td[colspan] {
+    display: block;
+    text-align: center;
+  }
+  .table-cards tbody td[colspan]::before { content: none; }
+}
