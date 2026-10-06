@@ -9,7 +9,7 @@
 |---|---|---|---|
 | 前端单元/组件测试 | 根目录 `npm test`（Vitest，`src/**/*.test.ts(x)`） | 纯逻辑与组件行为：协议解析、状态归并、展示计算等 | CI frontend job（秒级） |
 | 后端集成测试 | `server` 下 `npm test`（Vitest + 真实 PostgreSQL） | 路由、事务、并发、鉴权、数据约束 | CI backend job（6 shard 并行，片内串行） |
-| E2E | `npm run e2e`（Playwright） | **跨端关键旅程**的端到端行为 | push→develop / PR→master / 满足条件的 PR |
+| E2E | `npm run e2e`（Playwright） | **跨端关键旅程**的端到端行为 | push→develop / PR→master / 满足条件的 PR；主套件在 CI 分 2 shard，片内单 worker |
 
 原则：能在下层复现的行为不上升到上层。E2E 是最贵的一层，只保留下层无法表达的价值。
 
@@ -69,3 +69,14 @@
   `npm run verify:quick -- e2e/xxx.spec.ts` 追加指定 e2e spec）。
 - 全量（与 CI 等价）：`npm run verify:local`，或 `verify:local:no-e2e`。
 - 日常无需本地全量：push→develop 集成门会跑全套，develop 上红了再修即可。
+
+## 8. 后端公共开销计时
+
+CI backend job 设置 `TEST_PROFILE_COMMON_SETUP=1`；本地可在原有测试数据库配置上加同名变量。每个测试文件结束后输出一条 `BACKEND_TEST_PROFILE` JSON，包含相对文件路径、执行测试数，以及公共操作的次数、总耗时、P50、P95 和最大耗时（毫秒）。
+若本地 reporter 隐藏通过文件的输出，可加 `--reporter=verbose` 查看记录。
+
+- `reset.*`：缓存重置、67 张表的 `TRUNCATE`、存储运行配置复位。
+- `fixture.*`：`createTestUser` 的密码哈希、用户写入、分类准备、积分账户及初始积分日志写入。
+- `database.*`：测试文件的连接和断开。
+
+计时保持原有清理和造数顺序；未设置变量时不输出报告。报告不包含夹具参数或凭据。不同 shard、并发夹具操作的耗时可能重叠，不能把累计耗时直接当作流水线可节省的墙钟时间；需结合 job/step 时间戳及文件测试耗时判断。

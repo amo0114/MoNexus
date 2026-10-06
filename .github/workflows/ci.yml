@@ -15,8 +15,9 @@
 # whole workflow, so the required "CI OK" check stays Pending forever and the
 # PR cannot merge — path filtering already makes docs-only PRs finish fast.
 #
-# Scheduling: the backend suite runs as 6 file-level shards, and all three
-# Playwright jobs are self-contained (own dependencies, DB service and
+# Scheduling: the backend suite runs as 6 file-level shards. Main Playwright
+# runs as 2 shards, alongside the notification and catalog-ops suites.
+# Every Playwright job is self-contained (own dependencies, DB service and
 # backend build). After path filtering, frontend, backend and Playwright
 # jobs can all start in parallel. "CI OK" aggregates every result, so the
 # parallelism preserves every gate. See docs/testing-policy.md for layering.
@@ -152,6 +153,8 @@ jobs:
       # 默认 300 次/15 分钟会从第 301 个请求起整片 429；这个 CI 后端
       # 测试作业保持独立的测试上限，不改变生产默认值。
       API_RATE_LIMIT_MAX: 3000
+      # Emit per-file timings for shared reset and fixture operations.
+      TEST_PROFILE_COMMON_SETUP: '1'
 
     steps:
       - name: Check out repository
@@ -231,6 +234,10 @@ jobs:
       )
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
 
     services:
       postgres:
@@ -340,7 +347,10 @@ jobs:
       # before the shared 3000/5173 compatibility stack is started: this
       # avoids carrying long-lived default-stack processes across the
       # feature-specific database reset and startup boundary.
+      # Shard 1 owns this separate, complete suite; it is excluded from the
+      # default Playwright config and does not follow its shard assignment.
       - name: Run Legal Pages E2E tests
+        if: matrix.shard == 1
         run: npm run e2e:legal
         env:
           LEGAL_E2E_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
@@ -349,6 +359,7 @@ jobs:
       # is active. Restore the fresh compatibility fixture before starting
       # the default stack, whose contract deliberately keeps legal pages off.
       - name: Reset database for default E2E
+        if: matrix.shard == 1
         working-directory: server
         run: |
           npx prisma migrate reset --force --skip-seed
@@ -390,8 +401,8 @@ jobs:
             done
           done
 
-      - name: Run E2E tests
-        run: npm run e2e
+      - name: Run E2E tests (shard ${{ matrix.shard }}/2)
+        run: npm run e2e -- --shard=${{ matrix.shard }}/2
         env:
           CI: 'true'
           E2E_BASE_URL: http://127.0.0.1:5173
@@ -404,7 +415,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
 
