@@ -35,6 +35,7 @@ import type { RichTextInsertedImage } from './RichTextEditor'
 import ProductCategorySelect from './ProductCategorySelect'
 import ProductDetailsFields from './ProductDetailsFields'
 import TemplateAttributeFields from './TemplateAttributeFields'
+import ProductDraftAssistant from './ProductDraftAssistant'
 
 const RichTextEditor = lazy(() => import('./RichTextEditor'))
 
@@ -78,10 +79,11 @@ interface Props {
   open: boolean
   onClose: () => void
   onCreated: (productId: number) => void | Promise<void>
+  onAssistantCreated?: (productId: number) => void
 }
 
 /** T-CAT-FE-004 / SPEC-PRODUCT-COMMERCE-002 P5: admin-authored v2 Product draft. */
-export default function AdminPlatformProductWizard({ open, onClose, onCreated }: Props) {
+export default function AdminPlatformProductWizard({ open, onClose, onCreated, onAssistantCreated }: Props) {
   const showToast = useAppStore((state) => state.showToast)
   const [categories, setCategories] = useState<CategoryRegistryItem[]>([])
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
@@ -97,11 +99,15 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated }:
   const [purchaseForm, setPurchaseForm] = useState<PurchaseFormField[]>([])
   const [submitting, setSubmitting] = useState(false)
   const submitLock = useRef(false)
+  const [assistantActive, setAssistantActive] = useState(false)
+  const [assistantBusy, setAssistantBusy] = useState(false)
 
   useEffect(() => {
     if (!open) return
     let cancelled = false
     setForm(EMPTY_FORM)
+    setAssistantActive(false)
+    setAssistantBusy(false)
     setImages([])
     setImageKeys({})
     setDescriptionImages([])
@@ -301,13 +307,21 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated }:
     : ['text', 'url', 'file']
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next && !submitting) onClose() }}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next && !submitting && !assistantBusy) onClose() }}>
       <DialogContent className="max-w-3xl max-h-[90dvh] overflow-y-auto" data-testid="admin-platform-product-wizard">
         <DialogTitle>新建平台商品</DialogTitle>
         <DialogDescription>
           创建结果固定为平台自营草稿；可售量和发布需在后续独立完成。
         </DialogDescription>
-        <form className="mt-5 space-y-5" onSubmit={submit}>
+        {open && <div className="mt-5"><ProductDraftAssistant actor="admin" templates={templates} categories={categories}
+          createDraft={createAdminPlatformProductV2} disabled={submitting}
+          onActiveChange={setAssistantActive} onBusyChange={setAssistantBusy}
+          onCreated={id => {
+            showToast(`平台商品草稿 #${id} 已创建`)
+            if (onAssistantCreated) onAssistantCreated(id)
+            else { void onCreated(id); onClose() }
+          }} /></div>}
+        <form className="mt-5 space-y-5" onSubmit={submit} hidden={assistantActive}>
           <div>
             <label htmlFor="admin-platform-template" className="block text-sm font-bold mb-1.5">商品形态 *</label>
             <select

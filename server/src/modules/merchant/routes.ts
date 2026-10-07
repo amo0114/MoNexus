@@ -23,6 +23,7 @@ import { categoryApplicationRoutes } from '../catalog/applicationRoutes.js'
 import { merchantAssuranceRouter } from '../catalog/assurance/routes.js'
 import { z } from 'zod'
 import { createProductV2Schema, patchProductContentSchema } from '../catalog/productV2Schema.js'
+import { createDraftAssistantRouter } from '../catalog/draftAssistant/routes.js'
 import {
   contentSuggestionAppliedSchema,
   contentSuggestionParamSchema,
@@ -41,6 +42,7 @@ router.post('/register', authenticate, requireActiveUser, validate(applyMerchant
 
 // All other routes require merchant role
 router.use(authenticate, requireActiveUser, requireMerchant)
+router.use(createDraftAssistantRouter('merchant'))
 
 router.get('/me', controller.me)
 router.put('/me', validate(updateMerchantSchema), controller.updateMe)

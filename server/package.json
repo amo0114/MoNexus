@@ -32,7 +32,8 @@
     "test:value-policy-backtest": "vitest run --config vitest.backtest.config.ts",
     "test:value-policy-staging-governance": "vitest run --config vitest.value-policy-staging.config.ts",
     "value-policy:backtest": "tsx src/scripts/valuePolicyBacktest.ts",
-    "ai:eval:product-copilot": "tsx src/scripts/evalProductCopilot.ts"
+    "ai:eval:product-copilot": "tsx src/scripts/evalProductCopilot.ts",
+    "ai:eval:product-draft": "tsx src/scripts/evalProductDraft.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1045.0",

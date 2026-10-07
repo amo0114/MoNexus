@@ -2,6 +2,8 @@
 
 Contract: `docs/specs/ai-foundation.md`. First consumer: `modules/catalog/contentCopilot` (SPEC-AI-PRODUCT-001).
 
+`modules/catalog/draftAssistant` (SPEC-AI-PRODUCT-002) adds creation-time extraction under the same product Copilot flag/quota. It uses its own projection and validator; `product_draft` targets identify the actor's pending form, never a placeholder business row.
+
 ## Red lines
 
 - AI never writes business tables. The only write is `AiGeneration` metadata (no prompt / input / output columns, ever).

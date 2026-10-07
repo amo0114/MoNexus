@@ -111,7 +111,7 @@ export default function AdminAiSettingsPanel() {
       <div>
         <h4 className="font-bold text-[var(--color-text)]">AI 服务</h4>
         <p className="text-xs text-[var(--color-text-muted)] mt-1">
-          配置 OpenAI 或第三方兼容服务，开启商品说明整理。保存后对新请求立即生效；每日配额在下方分别设置。
+          配置 OpenAI 或第三方兼容服务，开启 AI 辅助新建商品与说明整理。保存后对新请求立即生效；每日配额在下方分别设置。
         </p>
       </div>
       <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 space-y-4">
@@ -160,9 +160,9 @@ export default function AdminAiSettingsPanel() {
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={copilotEnabled} disabled={busy !== null || !enabled || clearKey}
-            onChange={e => setCopilotEnabled(e.target.checked)} />商品说明 Copilot
+            onChange={e => setCopilotEnabled(e.target.checked)} />商品 Copilot（新建与说明整理）
         </label>
-        <p className="text-xs text-[var(--color-text-muted)]">两个开关均开启且对应角色的配额大于 0 时，已选择商品形态的商品编辑页才会显示 AI 整理入口。</p>
+        <p className="text-xs text-[var(--color-text-muted)]">两个开关均开启且对应角色的配额大于 0 时，新建页显示 AI 辅助创建；已选择形态的商品编辑页显示 AI 整理。两种操作共用每日额度。</p>
       </div>
       {error && <div role="alert" className="text-sm text-[var(--color-danger)]">{error}
         <button type="button" className="btn-secondary btn-sm ml-2" disabled={busy !== null} onClick={() => void load()}>重新加载 AI 配置</button>

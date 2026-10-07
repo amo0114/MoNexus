@@ -441,7 +441,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 1000,
     unit: '次/日',
     label: '管理员每日 AI 整理次数',
-    description: '每位管理员每个自然日（北京时间）可发起的 AI 商品说明整理次数；0 表示管理员不可使用。',
+    description: '每位管理员每个自然日（北京时间）的 AI 调用次数；辅助新建和说明整理共用；0 表示不可使用。',
   },
   aiProductCopilotDailyQuotaMerchant: {
     key: 'aiProductCopilotDailyQuotaMerchant',
@@ -451,7 +451,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 1000,
     unit: '次/日',
     label: '商家每日 AI 整理次数',
-    description: '每位商家账号每个自然日（北京时间）可发起的 AI 商品说明整理次数；0 表示商家不可使用。',
+    description: '每位商家账号每个自然日（北京时间）的 AI 调用次数；辅助新建和说明整理共用；0 表示不可使用。',
   },
 
   // g. 高级运维 (3 项)

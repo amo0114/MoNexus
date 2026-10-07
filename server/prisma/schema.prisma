@@ -2311,7 +2311,7 @@ model AiGeneration {
   feature             String // product_content_copilot
   actorUserId         Int?
   actorRole           String // merchant | admin
-  targetType          String // product
+  targetType          String // product | product_draft (actor id; no Product row)
   targetId            Int
   provider            String
   model               String

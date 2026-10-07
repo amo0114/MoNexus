@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-001 |
-| 版本 | 1.1.0 |
+| 版本 | 1.1.1 |
 | 日期 | 2026-10-07 |
 | 状态 | Implementation Ready（全部决策 Frozen；D-AI-01 已裁决，见 §6.3） |
 | 产品 | MoNexus |
@@ -272,7 +272,7 @@ model AiGeneration {
   feature            String    // CHECK: 'product_content_copilot'（新 feature 需迁移扩展）
   actorUserId        Int?
   actorRole          String    // CHECK: 'merchant' | 'admin'
-  targetType         String    // CHECK: 'product'
+  targetType         String    // CHECK: 'product' | 'product_draft'
   targetId           Int
   provider           String
   model              String
@@ -321,7 +321,7 @@ model AiGeneration {
 runAiGeneration<T>(args: {
   feature: AiFeature
   actor: { userId: number; role: 'merchant' | 'admin' }
-  target: { type: 'product'; id: number }
+  target: { type: 'product' | 'product_draft'; id: number }
   promptVersion: string
   validatorVersion: string
   reasoningEffort: 'none'
@@ -346,6 +346,8 @@ runAiGeneration<T>(args: {
 崩溃遗留的 `pending` 行计入当日配额，超过「超时 + 5s」后不再阻塞同 target 的新请求。
 
 ### 11.2 配额（configurable，不冻结数值）
+
+自 1.1.1 起商品 Copilot 包含说明整理和辅助新建（SPEC-AI-PRODUCT-002），两种操作共用同一 feature 的角色额度与开关。新建操作尚无商品 ID，以 `targetType=product_draft`、`targetId=actorUserId` 去重，禁止创建占位商品；prompt/schema/projection/validator 独立。形态与分类可作为待确认候选展示，但必须经人工明确核对后走原创建接口；价格、有效期与交付设置仍由用户填写/选择。
 
 - 以 `SystemConfig` 范围键实现，沿用 `RANGE_CONFIG_KEYS` 与管理后台现有配置界面、AdminLog。
 - V1 两个键（每个 feature 按角色各一，使「仅管理员试点」无需新增 flag）：
@@ -464,3 +466,4 @@ L3 eval 可直接使用后台保存的 Key，允许开关关闭时运行，以�
 | 1.0.1 | 2026-10-07 | 项目运行时升级到 Node 22，SDK 改为固定 `openai@7.28.0`（取代 1.0.0 的 6.49.0 临时方案）；其余条款不变 |
 | 1.0.2 | 2026-10-07 | AI-R13 补充超限兜底：截断后仍超限必须拒绝调用 |
 | 1.1.0 | 2026-10-07 | 后台统一管理第三方兼容 API 地址、模型、Key、双开关、连接测试和角色配额；加密单例配置、即时生效、版本冲突保护；环境变量仅作首次接管前底座。 |
+| 1.1.1 | 2026-10-07 | 商品 Copilot 扩展辅助新建操作，共用开关与额度；增加 product_draft 元数据目标，不创建占位商品，交易设置由用户明确确认。 |

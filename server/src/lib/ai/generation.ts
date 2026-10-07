@@ -75,7 +75,7 @@ export function computeAiInputHash(input: unknown): string {
 export interface RunAiGenerationArgs<T> {
   feature: AiFeature
   actor: { userId: number; role: AiActorRole }
-  target: { type: 'product'; id: number }
+  target: { type: 'product' | 'product_draft'; id: number }
   promptVersion: string
   validatorVersion: string
   reasoningEffort: 'none'
