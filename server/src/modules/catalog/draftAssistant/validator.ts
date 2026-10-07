@@ -4,8 +4,8 @@ import { validateTemplateAttributes } from '../templates/validate.js'
 import { productDetailsSchema } from '../templates/productDetails.js'
 import type { TemplateAttributes, TemplateKey } from '../templates/types.js'
 import type { DraftAiContext } from './projection.js'
-import { detectHardFacts, hasForbiddenMarkup } from '../contentCopilot/normalizers.js'
-import { DRAFT_OUTPUT_SCHEMA, type DraftModelOutput } from './schema.js'
+import { DRAFT_OUTPUT_SCHEMA, INTRODUCTION_SECTIONS, type DraftModelOutput, type GroundedDraftCopy } from './schema.js'
+import { hasForbiddenDraftCopy, isDraftSourceExcerpt, validateGroundedDraftCopy } from './copyGuard.js'
 
 const validateStructure = new Ajv2020({ strict: true, allErrors: true, coerceTypes: false, removeAdditional: false })
   .compile<DraftModelOutput>(DRAFT_OUTPUT_SCHEMA)
@@ -17,19 +17,10 @@ export function validateDraftSuggestion(output: unknown, context: DraftAiContext
   const source = context.untrusted.description
   function excerpt(value: string | null): string | null {
     if (value == null || value.trim() === '') return null
-    if (hasForbiddenMarkup(value) || detectHardFacts(value).some(item => ['H2', 'H4', 'H7'].includes(item.cls))) {
+    if (hasForbiddenDraftCopy(value)) {
       rejected++; return null
     }
-    // Never turn 130 into 30 or split a signed/decimal quantity.
-    let index = source.indexOf(value)
-    while (index >= 0) {
-      const before = source.slice(0, index)
-      const after = source.slice(index + value.length)
-      const cutsStart = /^[\d.]/.test(value) && /[\d.+-]$/.test(before)
-      const cutsEnd = /\d$/.test(value) && /^[\d.%]/.test(after)
-      if (!cutsStart && !cutsEnd) return value.trim()
-      index = source.indexOf(value, index + 1)
-    }
+    if (isDraftSourceExcerpt(value, source)) return value.trim()
     rejected++
     return null
   }
@@ -73,8 +64,24 @@ export function validateDraftSuggestion(output: unknown, context: DraftAiContext
   }
   const productAttributes = attributes('product')
   const offerAttributes = attributes('offer')
+  const name = excerpt(raw.name)
+  function prose(value: GroundedDraftCopy | null, maxLength = 2000): string | null {
+    if (!value) return null
+    const validated = template && name ? validateGroundedDraftCopy(value, source) : null
+    if (validated == null || validated !== value.text.trim()) rejected++
+    if (validated != null && validated.length > maxLength) return null
+    return validated
+  }
+  const sections = new Map<string, string>()
+  const duplicates = new Set(raw.introduction.filter((entry, index) => raw.introduction.findIndex(item => item.section === entry.section) !== index).map(entry => entry.section))
+  for (const entry of raw.introduction) {
+    if (duplicates.has(entry.section)) { rejected++; continue }
+    const text = prose(entry, 600)
+    if (text) sections.set(entry.section, text)
+  }
+  const introduction = Object.entries(INTRODUCTION_SECTIONS).flatMap(([key, label]) => sections.has(key) ? [`${label}\n${sections.get(key)}`] : []).join('\n\n') || null
   const details = productDetailsSchema.parse({
-    highlights: raw.details.highlights.map(excerpt).filter((value): value is string => value != null),
+    highlights: raw.details.highlights.map(value => prose(value, 40)).filter((value): value is string => value != null),
     usageInstructions: excerpt(raw.details.usageInstructions) ?? '',
     purchaseNotes: excerpt(raw.details.purchaseNotes) ?? '',
     afterSalesInstructions: excerpt(raw.details.afterSalesInstructions) ?? '',
@@ -83,8 +90,11 @@ export function validateDraftSuggestion(output: unknown, context: DraftAiContext
   const suggestion = {
     templateKey: template?.key ?? null,
     categoryId,
-    name: excerpt(raw.name),
-    description: excerpt(raw.description),
+    name,
+    // If only the proposed short copy is rejected, reuse an already accepted
+    // model overview verbatim. Never synthesize replacement copy from a template.
+    description: prose(raw.description) ?? sections.get('overview') ?? null,
+    introduction,
     offerName: excerpt(raw.offerName),
     attributes: productAttributes,
     offerAttributes,

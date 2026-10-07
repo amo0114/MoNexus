@@ -14,6 +14,13 @@ export function displayDraftValue(value: unknown): string {
   return Array.isArray(value) ? value.join('、') : String(value)
 }
 
+/** Only fixed tags are introduced after human confirmation; every source character is escaped. */
+export function draftIntroductionHtml(text: string | null | undefined): string | null {
+  if (!text?.trim()) return null
+  const escaped = text.trim().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  return escaped.split(/\n\s*\n/).map(paragraph => `<p>${paragraph.replace(/\r?\n/g, '<br>')}</p>`).join('')
+}
+
 export function attributeLabel(template: ProductTemplateDefinition | null, target: 'product' | 'offer', key: string): string {
   const schema = target === 'product' ? template?.productSchema : template?.offerSchema
   const properties = schema?.properties as Record<string, { title?: string }> | undefined
@@ -33,7 +40,7 @@ export function getDraftChanges(current: ProductDraftSuggestion, next: ProductDr
   const add = (key: string, label: string, before: unknown, after: unknown, apply: DraftChange['apply'], format = displayDraftValue) => {
     if (JSON.stringify(before) !== JSON.stringify(after)) changes.push({ key, label, before: format(before), after: format(after), apply })
   }
-  for (const [key, label] of [['name', '商品名称'], ['description', '商品简介'], ['offerName', '主规格名称']] as const) {
+  for (const [key, label] of [['name', '商品名称'], ['description', '商品简介'], ['introduction', '详细商品介绍'], ['offerName', '主规格名称']] as const) {
     add(key, label, current[key], next[key], value => ({ ...value, [key]: next[key] }))
   }
   add('categoryId', '商品分类', current.categoryId, next.categoryId, value => ({ ...value, categoryId: next.categoryId }),

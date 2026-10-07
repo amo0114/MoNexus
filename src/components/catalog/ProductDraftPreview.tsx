@@ -46,6 +46,10 @@ export default function ProductDraftPreview({ proposal, template, category, pric
       {proposal.details.highlights.length > 0 && <ul className="flex flex-col gap-2 text-sm">{proposal.details.highlights.map((item, index) => <li key={index} className="flex items-start gap-2">
         <Check className="mt-0.5 size-4 shrink-0 text-[var(--color-primary)]" aria-hidden="true" /><span className="break-words [overflow-wrap:anywhere]">{item}</span>
       </li>)}</ul>}
+      {proposal.introduction && <section aria-label="详细商品介绍预览" className="border-t border-[var(--color-border)] pt-4">
+        <h4 className="mb-3 text-sm font-semibold">详细商品介绍</h4>
+        <p className="whitespace-pre-wrap break-words text-sm leading-7 text-[var(--color-text-muted)] [overflow-wrap:anywhere]">{proposal.introduction}</p>
+      </section>}
       <div className="rounded-xl bg-[var(--color-background)] p-4">
         <p className="break-words text-sm font-semibold [overflow-wrap:anywhere]">{proposal.offerName || '默认规格'}</p>
         <p className="mt-2 text-2xl font-bold text-[var(--color-primary)]">{price || '售价待填写'}{price && <span className="ml-1 text-xs font-normal">积分</span>}</p>

@@ -7,6 +7,7 @@ export type ProductDraftSuggestion = {
   categoryId: number | null
   name: string | null
   description: string | null
+  introduction: string | null
   offerName: string | null
   attributes: TemplateAttributes
   offerAttributes: TemplateAttributes

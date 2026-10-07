@@ -39,11 +39,14 @@ describe('AI draft assistant routes', () => {
     const token = await actor(role)
     const res = await suggest(token, role).expect(200)
     expect(res.body.suggestion.name).toBe('网络入门学习指南')
+    expect(res.body.suggestion.introduction).toContain('商品介绍\n')
+    expect(JSON.stringify(res.body)).not.toContain('sourceQuotes')
     expect(res.headers['cache-control']).toBe('no-store')
     expect(await prisma.product.count()).toBe(0)
     expect(await prisma.offer.count()).toBe(0)
     const row = await prisma.aiGeneration.findUniqueOrThrow({ where: { id: res.body.generationId } })
-    expect(row).toMatchObject({ feature: 'product_content_copilot', targetType: 'product_draft', status: 'succeeded', actorRole: role })
+    expect(row).toMatchObject({ feature: 'product_content_copilot', targetType: 'product_draft', status: 'succeeded', actorRole: role,
+      promptVersion: 'product-draft@2', validatorVersion: 'product-draft-validator@2' })
     expect(row.targetId).toBe(row.actorUserId)
     expect(JSON.stringify(row)).not.toContain('网络入门')
     expect(JSON.stringify(calls[0].input)).not.toContain('draft.test.local')
@@ -127,7 +130,7 @@ describe('AI draft assistant routes', () => {
     const created = await api.post('/api/merchant/products').set(authHeader(token)).send({
       editorVersion: 2, templateKey: suggestion.templateKey, templateVersion: 1,
       name: suggestion.name, categoryId: suggestion.categoryId, description: suggestion.description,
-      richDescription: null, descriptionImages: [], images: [], visibility: 'members_only',
+      richDescription: `<p>${suggestion.introduction}</p>`, descriptionImages: [], images: [], visibility: 'members_only',
       attributes: suggestion.attributes, details: suggestion.details, purchaseForm: [],
       offers: [{ name: suggestion.offerName, price: 100, originalPrice: null, attributes: suggestion.offerAttributes,
         deliveryMode: 'instant_fixed', stockMode: 'limited', validityDays: null, fixedContentType: 'text',
@@ -136,6 +139,7 @@ describe('AI draft assistant routes', () => {
     expect(created.body.status).toBe('draft')
     const product = await prisma.product.findUniqueOrThrow({ where: { id: created.body.id } })
     expect(product).toMatchObject({ status: 'draft', stock: 0, stockMode: 'limited', visibility: 'members_only' })
+    expect(product.richDescription).toContain(suggestion.introduction)
     await prisma.systemConfig.update({ where: { key: 'aiProductCopilotDailyQuotaMerchant' }, data: { value: 1 } })
     const exhausted = await api.post(`/api/merchant/products/${product.id}/content-suggestions`).set(authHeader(token))
       .send({ expectedContentVersion: 1 }).expect(429)

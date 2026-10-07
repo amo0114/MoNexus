@@ -8,7 +8,7 @@ import ProductDetailsFields from './ProductDetailsFields'
 import TemplateAttributeFields from './TemplateAttributeFields'
 import ProductDraftPreview from './ProductDraftPreview'
 import ProductDraftDiff from './ProductDraftDiff'
-import { getDraftChanges } from './productDraftReview'
+import { draftIntroductionHtml, getDraftChanges } from './productDraftReview'
 
 type Props = {
   actor: ProductEditorActor
@@ -214,7 +214,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
     const selectedDelivery = DELIVERY_CHOICES[delivery]
     const payload = buildCreateProductV2Request({
       templateKey: template.key, name: proposal.name.trim(), categoryId: proposal.categoryId!,
-      description: proposal.description ?? '', richDescription: null,
+      description: proposal.description ?? '', richDescription: draftIntroductionHtml(proposal.introduction),
       images: [], imageKeys: {}, visibility: 'members_only',
       attributes: proposal.attributes, details: proposal.details,
       offers: [{
@@ -280,7 +280,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
           {!source && <div className="mt-4 flex flex-wrap gap-2">{EXAMPLES.map(item => <button key={item.label} type="button" className="btn-secondary min-h-11 text-sm" disabled={blocked} onClick={() => setSource(item.text)}><FileText className="size-4" aria-hidden="true" />试试{item.label}</button>)}</div>}
         </div>}
         {proposal && stage === 'edit' && !pending && !sourceExpanded && <div className="flex flex-wrap items-center justify-between gap-3">
-          <div><h3 ref={heading} tabIndex={-1} className="font-bold outline-none">先看看商品，再补充关键设置</h3><p className="mt-1 text-xs text-[var(--color-text-muted)]">AI 提取的内容仍需核对含义与参数归属，所有字段都可以修改。</p></div>
+          <div><h3 ref={heading} tabIndex={-1} className="font-bold outline-none">先看看商品，再补充关键设置</h3><p className="mt-1 text-xs text-[var(--color-text-muted)]">AI 已整理参数并扩写文案，请核对服务范围与表达，所有字段都可以修改。</p></div>
           <button type="button" className="btn-secondary min-h-11 text-sm" disabled={busy !== null} onClick={() => setSourceExpanded(true)}>补充介绍，让 AI 再整理</button>
         </div>}
         {(!proposal || sourceExpanded) && !pending && <div className="flex flex-col gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -304,7 +304,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
           const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next
         })} onApply={applyFollowUp} onDiscard={discardFollowUp} />}
         {proposal && <>
-          {(pending ?? result)?.rejectedFieldCount ? <p className="text-xs text-[var(--color-text-muted)]">部分候选缺少原文依据或不符合字段要求，已留空，请核对是否有遗漏。</p> : null}
+          {(pending ?? result)?.rejectedFieldCount ? <p className="text-xs text-[var(--color-text-muted)]">部分内容已过滤或恢复为完整原句，请核对生成结果是否符合实际。</p> : null}
           {(pending ?? result)?.truncated && <p className="text-xs text-[var(--color-text-muted)]">本次只参考了部分介绍，请核对是否有遗漏。</p>}
           {stale && !pending && <p className="text-sm text-[var(--color-text-muted)]">介绍已修改，请整理并核对差异，或取消本次介绍修改后继续。</p>}
           {stage === 'edit' ? <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
@@ -332,7 +332,8 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
                       <select id={`${id}-category`} className="input" value={proposal.categoryId ?? ''} disabled={blocked} onChange={event => patch({ categoryId: event.target.value ? Number(event.target.value) : null })}>
                         <option value="">请选择商品分类</option>{categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
                     <div><label htmlFor={`${id}-description`} className="mb-1 block text-sm font-semibold">商品简介</label>
-                      <textarea id={`${id}-description`} className="input min-h-20" maxLength={2000} value={proposal.description ?? ''} disabled={blocked} onChange={event => patch({ description: event.target.value })} /></div>
+                      <textarea id={`${id}-description`} className="input min-h-24" maxLength={2000} value={proposal.description ?? ''} disabled={blocked} onChange={event => patch({ description: event.target.value })} />
+                      <p className="mt-1 text-xs text-[var(--color-text-muted)]">短简介用于概括商品，完整介绍在「详细说明」中查看和修改。</p></div>
                     {template && <TemplateAttributeFields key={`${template.key}-product`} template={template} target="product" value={proposal.attributes} onChange={attributes => {
                       patch({ attributes }); if (delivery && !deliveryChoices(template, attributes).includes(delivery)) setDelivery('')
                     }} disabled={blocked} mode="draft" />}
@@ -358,8 +359,13 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
                   </div>
                 </div>
                 <div>
-                  {groupTitle('details', '详细说明', '亮点、使用说明、购买须知与售后 · 可在草稿中继续完善')}
-                  <div id={`${id}-details-fields`} hidden={group !== 'details'} className="px-4 pb-4"><ProductDetailsFields value={proposal.details} onChange={details => patch({ details })} disabled={blocked} mode="draft" /></div>
+                  {groupTitle('details', '详细说明', proposal.introduction ? `已生成详细商品介绍 · ${proposal.introduction.length} 字，可编辑` : '详细商品介绍、亮点、使用说明与购买须知')}
+                  <div id={`${id}-details-fields`} hidden={group !== 'details'} className="space-y-4 px-4 pb-4">
+                    <div><label htmlFor={`${id}-introduction`} className="mb-1 block text-sm font-semibold">详细商品介绍</label>
+                      <textarea id={`${id}-introduction`} className="input min-h-72" maxLength={6000} value={proposal.introduction ?? ''} disabled={blocked} onChange={event => patch({ introduction: event.target.value })} />
+                      <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">保存后会进入商品详情页的介绍区。想让文案更具体，可以补充服务范围、交付成果和适用场景，再让 AI 整理。</p></div>
+                    <ProductDetailsFields value={proposal.details} onChange={details => patch({ details })} disabled={blocked} mode="draft" />
+                  </div>
                 </div>
               </div>
               <button type="button" className="btn-primary min-h-11 w-full" disabled={blocked || stale} onClick={review}>下一步：确认草稿<ArrowRight className="size-4" aria-hidden="true" /></button>

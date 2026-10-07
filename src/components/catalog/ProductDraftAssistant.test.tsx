@@ -14,7 +14,7 @@ const template: ProductTemplateDefinition = {
 }
 const response: api.ProductDraftSuggestionResponse = {
   generationId: 1, missingFields: [], rejectedFieldCount: 0, truncated: false,
-  suggestion: { templateKey: 'fixed_content', categoryId: 1, name: '学习指南', description: '适合入门学习', offerName: null,
+  suggestion: { templateKey: 'fixed_content', categoryId: 1, name: '学习指南', description: '适合入门学习', introduction: '商品介绍\n帮助入门学习者理解连接基础与常见问题排查。', offerName: null,
     attributes: { contentCategory: '学习指引' }, offerAttributes: {}, details: EMPTY_PRODUCT_DETAILS },
 }
 const createDraft = vi.fn()
@@ -193,9 +193,28 @@ describe('AI assisted draft creation', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(7))
     expect(createDraft).toHaveBeenCalledTimes(1)
     expect(createDraft.mock.calls[0][0]).toMatchObject({ editorVersion: 2, name: '修改后的学习指南', templateKey: 'fixed_content',
+      richDescription: '<p>商品介绍<br>帮助入门学习者理解连接基础与常见问题排查。</p>',
       visibility: 'members_only', purchaseForm: [], images: [],
       offers: [{ name: '默认规格', price: 100, validityDays: null, deliveryMode: 'instant_fixed', stockMode: 'limited', fixedContent: null, autoProvision: false }] })
     expect(api.requestProductDraftSuggestion).toHaveBeenCalledWith('admin', '学习指南，适合入门学习，内容类型为学习指引', expect.any(AbortSignal))
+  })
+
+  it('shows and edits detailed copy separately, then saves the same reviewed text', async () => {
+    mount()
+    await generate()
+    expect(screen.getByRole('region', { name: '详细商品介绍预览' })).toHaveTextContent('帮助入门学习者')
+    fireEvent.click(screen.getByRole('button', { name: /^详细说明/ }))
+    const input = screen.getByLabelText('详细商品介绍')
+    expect(input).toBeVisible()
+    fireEvent.change(input, { target: { value: '内容与服务\n整理简历文字与版式。' } })
+    expect(screen.getByRole('region', { name: '详细商品介绍预览' })).toHaveTextContent('整理简历文字与版式')
+    fillCommerce()
+    review()
+    confirm()
+    fireEvent.click(screen.getByRole('button', { name: '确认并创建草稿' }))
+    await waitFor(() => expect(createDraft).toHaveBeenCalledWith(expect.objectContaining({
+      description: '适合入门学习', richDescription: '<p>内容与服务<br>整理简历文字与版式。</p>',
+    })))
   })
 
   it('requires explicit price, delivery and validity instead of inventing defaults', async () => {

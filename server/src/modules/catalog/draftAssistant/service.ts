@@ -38,7 +38,7 @@ export async function generateDraftSuggestion(actor: { userId: number; role: AiA
       return {
         value: result,
         issueCounts: { missing: result.missingFields.length, unsupported_fact: result.rejectedFieldCount, risky_claim: 0, ambiguous: 0 },
-        suggestedFieldCount: [result.suggestion.name, result.suggestion.description, result.suggestion.offerName,
+        suggestedFieldCount: [result.suggestion.name, result.suggestion.description, result.suggestion.introduction, result.suggestion.offerName,
           result.suggestion.templateKey, result.suggestion.categoryId, result.suggestion.details.usageInstructions,
           result.suggestion.details.purchaseNotes, result.suggestion.details.afterSalesInstructions]
           .filter(Boolean).length + result.suggestion.details.highlights.length
