@@ -332,6 +332,9 @@ const envSchema = z.object({
   LEGAL_PAGES_ENFORCEMENT: z.enum(['off', 'enforce']).default('off'),
   LEGAL_PAGES_FIXTURE_PATH: optionalStringEnvSchema,
 
+  // SPEC-MERCHANT-WORKBENCH-001: read-only, disabled by default (including empty env).
+  MERCHANT_WORKBENCH_ENABLED: realtimeBooleanEnvSchema(),
+
   // --- SPEC-NOTIFY-001：站内订单消息通知。总开关关闭时接口 404、写入跳过。
   // 邮件通道 Phase 2；ENABLED=false 时 EMAIL_ENABLED 不得为 true。
   NOTIFICATION_ENABLED: booleanEnvSchema.default(false),
@@ -1004,6 +1007,7 @@ export const config = {
     enforcement: env.LEGAL_PAGES_ENFORCEMENT,
     fixturePath: env.LEGAL_PAGES_FIXTURE_PATH,
   },
+  merchantWorkbenchEnabled: env.MERCHANT_WORKBENCH_ENABLED,
   notification: {
     enabled: env.NOTIFICATION_ENABLED,
     emailEnabled: env.NOTIFICATION_EMAIL_ENABLED,

@@ -1,11 +1,11 @@
 # 商家待办与经营建议 V1：实施计划
 
-版本：0.2.0；日期：2026-10-07。状态：待实施。契约：[SPEC-MERCHANT-WORKBENCH-001](./merchant-workbench-v1.md)。本文件不代表业务代码或测试已经完成。
+版本：0.2.1；日期：2026-10-07。状态：PR1 后端已实现并通过本地验证，PR2/PR3 待实施。契约：[SPEC-MERCHANT-WORKBENCH-001](./merchant-workbench-v1.md)。实际检查见 [PR1 验证记录](./merchant-workbench-pr1-verification.md)，不代表已部署或完成前端验收。
 
 ## 1. 分支与协作
 
 - 文档分支：`feat/merchant-workbench`，从本地 `develop` 的 `ffc7546` 建立。
-- 工作区：`/root/projects/worktrees/monexus-merchant-workbench`。本次仅提交两份方案文档；不混入主工作区邮件改动或其他未跟踪文件，不改 AI Agent 工作区。
+- 工作区：`/root/projects/worktrees/monexus-merchant-workbench`。最初提交两份方案文档，当前继续实施 PR1；不混入主工作区邮件改动或其他未跟踪文件，不改 AI Agent 工作区。
 - 开始实施时检查 develop 的最新变更，按仓库规范更新本分支；本记录不声称已同步远端最新提交。
 - V1 不依赖 AI 分支合并，不做暂缓/指纹/偏好表/写接口，不新增工作台数据库迁移，不改 `/me` 契约。
 - 后续实施拆为三个 PR：规则查询、工作台接入、试点与验收。原暂缓 PR 已删除。
@@ -102,3 +102,5 @@ npx vitest run src/components/merchant/workbench
 ## 6. 修订记录
 
 0.2.0：采纳实施前评审八项意见，移除暂缓 PR，将开关、分页和刷新路径简化；补齐发布参数、缺项导航、SLA 等号及 SQL 时区测试；迁入独立分支提交。
+
+0.2.1：完成 PR1，只读查询和共享发布评估已落地；补充本地验证记录。前端与试点仍属于后续范围。
