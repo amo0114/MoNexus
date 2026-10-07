@@ -245,10 +245,11 @@ describe('single items', () => {
     api.fetchWorkbenchItem.mockRejectedValueOnce(httpError(503))
     await store().recheckDraft(30)
     expect(isStale(store(), draftItem(30))).toBe(true)
+    expect(store().drafts.failedProductIds).toEqual([29, 30])
 
     api.fetchWorkbenchItem.mockResolvedValueOnce({ targetId: 29, state: 'match', item: draftItem(29) })
     await store().recheckDraft(29)
-    expect(store().drafts.failedProductIds).toEqual([])
+    expect(store().drafts.failedProductIds).toEqual([30])
     expect(draftItems(store()).map(item => item.targetId)).toEqual([30, 29])
   })
 })
@@ -292,6 +293,103 @@ describe('stale responses and session isolation', () => {
     older.resolve(draftBatch([draftItem(10)]))
     await continuing
     expect(draftItems(store()).map(item => item.targetId)).toEqual([40])
+  })
+})
+
+describe('review regressions (f63f096..1ed94c5)', () => {
+  it.each([404, 403])('a collection %s invalidates in-flight requests so a late 200 cannot re-enable', async status => {
+    mockHealthy()
+    await store().enter()
+    const urgent = deferred<UrgentResponse>()
+    api.fetchWorkbenchUrgent.mockReturnValueOnce(urgent.promise)
+    api.fetchWorkbenchAvailability.mockRejectedValueOnce(httpError(status))
+    const changing = store().afterAvailabilityChange()
+    await vi.waitFor(() => expect(store().availability).toBe(status === 404 ? 'disabled' : 'forbidden'))
+    urgent.resolve(urgentResponse([fulfillmentItem(501)]))
+    await changing
+    expect(store().availability).toBe(status === 404 ? 'disabled' : 'forbidden')
+    expect(urgentItems(store())).toEqual([])
+
+    // A later legitimate probe may enable it again.
+    mockHealthy()
+    await store().refreshAll()
+    expect(store().availability).toBe('enabled')
+  })
+
+  it.each([
+    ['unknown result', () => Promise.resolve({ targetId: 30, state: 'unknown' } as ItemResult)],
+    ['network failure', () => Promise.reject(networkError())],
+  ])('a recheck %s is listed as failed and blocks the empty state', async (_label, respond) => {
+    api.fetchWorkbenchUrgent.mockResolvedValue(urgentResponse())
+    api.fetchWorkbenchAvailability.mockResolvedValue(group([]))
+    api.fetchWorkbenchDrafts.mockResolvedValue(draftBatch([]))
+    await store().enter()
+    expect(isVerifiedEmpty(store())).toBe(true)
+
+    api.fetchWorkbenchItem.mockImplementationOnce(respond)
+    await store().recheckDraft(30)
+    expect(store().drafts.failedProductIds).toEqual([30])
+    expect(hasUncheckedGroups(store())).toBe(true)
+    expect(isVerifiedEmpty(store())).toBe(false)
+
+    api.fetchWorkbenchItem.mockResolvedValueOnce({ targetId: 30, state: 'clear' })
+    await store().recheckDraft(30)
+    expect(store().drafts.failedProductIds).toEqual([])
+    expect(isVerifiedEmpty(store())).toBe(true)
+  })
+
+  it('an older recheck cannot overwrite a newer reset round', async () => {
+    mockHealthy()
+    api.fetchWorkbenchDrafts.mockResolvedValue(draftBatch([draftItem(30)]))
+    await store().enter()
+    const item = deferred<ItemResult>()
+    api.fetchWorkbenchItem.mockReturnValueOnce(item.promise)
+    const rechecking = store().recheckDraft(30)
+    api.fetchWorkbenchDrafts.mockResolvedValueOnce(draftBatch([], { results: [{ targetId: 30, state: 'clear' }] }))
+    await store().refreshAll()
+    expect(draftItems(store())).toEqual([])
+    item.resolve({ targetId: 30, state: 'match', item: draftItem(30) })
+    await rechecking
+    expect(draftItems(store())).toEqual([])
+  })
+
+  it('an older batch cannot overwrite a newer recheck, in either arrival order', async () => {
+    for (const recheckFirst of [true, false]) {
+      store().reset(`epoch:1:order-${recheckFirst}`)
+      mockHealthy()
+      api.fetchWorkbenchDrafts.mockResolvedValueOnce(draftBatch([draftItem(30)], { hasMore: true, nextBeforeProductId: 31 }))
+      await store().enter()
+      // Continue batch starts first and will report product 20 as still incomplete…
+      const batch = deferred<DraftBatchResponse>()
+      api.fetchWorkbenchDrafts.mockReturnValueOnce(batch.promise)
+      const continuing = store().continueDrafts()
+      // …then a recheck of 20 starts later and finds it fixed.
+      const item = deferred<ItemResult>()
+      api.fetchWorkbenchItem.mockReturnValueOnce(item.promise)
+      const rechecking = store().recheckDraft(20)
+      if (recheckFirst) {
+        item.resolve({ targetId: 20, state: 'clear' }); await rechecking
+        batch.resolve(draftBatch([draftItem(20)])); await continuing
+      } else {
+        batch.resolve(draftBatch([draftItem(20)])); await continuing
+        item.resolve({ targetId: 20, state: 'clear' }); await rechecking
+      }
+      expect(draftItems(store()).map(entry => entry.targetId)).toEqual([30])
+    }
+  })
+
+  it('a newer batch wins over an older recheck that settles later', async () => {
+    mockHealthy()
+    api.fetchWorkbenchDrafts.mockResolvedValueOnce(draftBatch([draftItem(30)], { hasMore: true, nextBeforeProductId: 30 }))
+    await store().enter()
+    const item = deferred<ItemResult>()
+    api.fetchWorkbenchItem.mockReturnValueOnce(item.promise)
+    const rechecking = store().recheckDraft(20)
+    api.fetchWorkbenchDrafts.mockResolvedValueOnce(draftBatch([], { results: [{ targetId: 20, state: 'clear' }] }))
+    await store().continueDrafts()
+    item.resolve({ targetId: 20, state: 'match', item: draftItem(20) })
+    await rechecking
+    expect(draftItems(store()).map(entry => entry.targetId)).toEqual([30])
   })
 })
 

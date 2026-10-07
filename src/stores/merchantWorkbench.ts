@@ -167,28 +167,50 @@ function applyDraftResult(entries: Record<number, DraftEntry>, result: ItemResul
   return next
 }
 
+function withId(ids: number[], id: number) {
+  return ids.includes(id) ? ids : [...ids, id]
+}
+
 // Per-group request generations and in-flight de-duplication (module level,
-// shared by every component on the page).
-const generation = { urgent: 0, availability: 0, drafts: 0, session: 0 }
+// shared by every component on the page). `epoch` is bumped on a session
+// reset and whenever a collection says the module is unavailable, so every
+// request started before that point is ignored when it settles.
+const generation = { urgent: 0, availability: 0, drafts: 0, epoch: 0 }
 const inflight: { urgent: Promise<void> | null; availability: Promise<void> | null; draftReset: Promise<void> | null } = {
   urgent: null, availability: null, draftReset: null,
 }
+// Draft results come from batches and single-item rechecks. Every draft
+// request takes a sequence number; per product, only a result from a request
+// started no earlier than the last applied one may land. A reset round also
+// supersedes every recheck started before it.
+const draftOrder = { seq: 0, lastReset: 0, product: new Map<number, number>() }
+
+function invalidateRequests() {
+  generation.epoch += 1
+  inflight.urgent = null
+  inflight.availability = null
+  inflight.draftReset = null
+  draftOrder.product.clear()
+}
 
 export const useMerchantWorkbenchStore = create<State & Actions>()((set, get) => {
-  function sessionToken() {
-    return generation.session
+  /** A collection reported 404/403: drop all facts and every in-flight request; only a new probe re-enables. */
+  function markUnavailable(kind: 'disabled' | 'forbidden') {
+    const { sessionKey, urgentRequestedAt } = get()
+    invalidateRequests()
+    set({ ...initialState(sessionKey), availability: kind, urgentRequestedAt })
   }
 
   function loadUrgent(): Promise<void> {
     if (inflight.urgent) return inflight.urgent
-    const session = sessionToken()
+    const session = generation.epoch
     const seq = ++generation.urgent
     const requestedAt = Date.now()
     set(state => ({ urgentRequestedAt: requestedAt, fulfillment: { ...state.fulfillment, loading: true }, soldOut: { ...state.soldOut, loading: true } }))
     const request = (async () => {
       try {
         const data = await fetchWorkbenchUrgent()
-        if (session !== generation.session || seq !== generation.urgent) return
+        if (session !== generation.epoch || seq !== generation.urgent) return
         set(state => ({
           availability: 'enabled',
           urgentRequestFailed: false,
@@ -198,11 +220,11 @@ export const useMerchantWorkbenchStore = create<State & Actions>()((set, get) =>
           urgentKnownCount: data.urgentKnownCount,
         }))
       } catch (error) {
-        if (session !== generation.session || seq !== generation.urgent) return
+        if (session !== generation.epoch || seq !== generation.urgent) return
         const kind = classify(error)
         if (kind === 'disabled' || kind === 'forbidden') {
           // Module off (or merchant no longer active): stop this round and clear facts.
-          set({ ...initialState(get().sessionKey), availability: kind, urgentRequestedAt: requestedAt })
+          markUnavailable(kind)
           return
         }
         set(state => ({
@@ -223,20 +245,20 @@ export const useMerchantWorkbenchStore = create<State & Actions>()((set, get) =>
 
   function loadAvailability(): Promise<void> {
     if (inflight.availability) return inflight.availability
-    const session = sessionToken()
+    const session = generation.epoch
     const seq = ++generation.availability
     const requestedAt = Date.now()
     set(state => ({ availabilityGroup: { ...state.availabilityGroup, loading: true } }))
     const request = (async () => {
       try {
         const data = await fetchWorkbenchAvailability()
-        if (session !== generation.session || seq !== generation.availability) return
+        if (session !== generation.epoch || seq !== generation.availability) return
         set(state => ({ availabilityGroup: mergeGroup(state.availabilityGroup, data, requestedAt) }))
       } catch (error) {
-        if (session !== generation.session || seq !== generation.availability) return
+        if (session !== generation.epoch || seq !== generation.availability) return
         const kind = classify(error)
         if (kind === 'disabled' || kind === 'forbidden') {
-          set({ ...initialState(get().sessionKey), availability: kind, urgentRequestedAt: get().urgentRequestedAt })
+          markUnavailable(kind)
           return
         }
         set(state => ({ availabilityGroup: markGroupFailed(state.availabilityGroup, requestedAt) }))
@@ -264,48 +286,56 @@ export const useMerchantWorkbenchStore = create<State & Actions>()((set, get) =>
   async function runDrafts(mode: 'reset' | 'next'): Promise<void> {
     const current = get().drafts
     if (mode === 'next' && (current.loading || !current.hasMore || current.nextBeforeProductId == null)) return
-    const session = sessionToken()
+    const session = generation.epoch
     const seq = ++generation.drafts
+    const order = ++draftOrder.seq
+    if (mode === 'reset') draftOrder.lastReset = order
     const requestedAt = Date.now()
     const cursor = mode === 'next' ? current.nextBeforeProductId : null
     set(state => ({ drafts: { ...state.drafts, loading: true, requestedAt: mode === 'reset' ? requestedAt : state.drafts.requestedAt } }))
     try {
       const data: DraftBatchResponse = await fetchWorkbenchDrafts(cursor)
-      if (session !== generation.session || seq !== generation.drafts) return
-      set(state => {
-        const startEntries = mode === 'reset' ? {} : state.drafts.entries
+      if (session !== generation.epoch || seq !== generation.drafts) return
+      // A recheck started after this batch owns its product's result.
+      const newer = (productId: number) => (draftOrder.product.get(productId) ?? 0) > order
+      const state = get().drafts
+      // A reset round starts empty, except for results of rechecks newer than it.
+      let entries: Record<number, DraftEntry> = mode === 'reset'
+        ? Object.fromEntries(Object.entries(state.entries).filter(([id]) => newer(Number(id))))
+        : state.entries
+      const covered = new Set<number>()
+      for (const result of data.results) {
+        if (newer(result.targetId)) continue
+        covered.add(result.targetId)
+        draftOrder.product.set(result.targetId, order)
         // A reset round keeps previous cards for products that this batch reports as unknown.
-        let entries = startEntries
-        for (const result of data.results) {
-          if (mode === 'reset' && result.state === 'unknown' && state.drafts.entries[result.targetId]) {
-            entries = { ...entries, [result.targetId]: { ...state.drafts.entries[result.targetId], stale: true } }
-          } else {
-            entries = applyDraftResult(entries, result)
-          }
+        if (mode === 'reset' && result.state === 'unknown' && state.entries[result.targetId]) {
+          entries = { ...entries, [result.targetId]: { ...state.entries[result.targetId], stale: true } }
+        } else {
+          entries = applyDraftResult(entries, result)
         }
-        const failed = mode === 'reset'
-          ? data.failedProductIds
-          : [...state.drafts.failedProductIds.filter(id => !data.results.some(result => result.targetId === id)), ...data.failedProductIds]
-        return {
-          drafts: {
-            entries,
-            scannedCount: (mode === 'reset' ? 0 : state.drafts.scannedCount) + data.scannedCount,
-            checkedCount: (mode === 'reset' ? 0 : state.drafts.checkedCount) + data.checkedCount,
-            failedProductIds: failed,
-            hasMore: data.hasMore,
-            nextBeforeProductId: data.nextBeforeProductId,
-            evaluatedAt: data.evaluatedAt,
-            status: 'complete',
-            loading: false,
-            requestedAt: mode === 'reset' ? requestedAt : state.drafts.requestedAt,
-          },
-        }
+      }
+      const kept = state.failedProductIds.filter(id => (mode === 'reset' ? newer(id) : !covered.has(id)))
+      const failed = data.failedProductIds.filter(id => !newer(id)).reduce(withId, kept)
+      set({
+        drafts: {
+          entries,
+          scannedCount: (mode === 'reset' ? 0 : state.scannedCount) + data.scannedCount,
+          checkedCount: (mode === 'reset' ? 0 : state.checkedCount) + data.checkedCount,
+          failedProductIds: failed,
+          hasMore: data.hasMore,
+          nextBeforeProductId: data.nextBeforeProductId,
+          evaluatedAt: data.evaluatedAt,
+          status: 'complete',
+          loading: false,
+          requestedAt: mode === 'reset' ? requestedAt : state.requestedAt,
+        },
       })
     } catch (error) {
-      if (session !== generation.session || seq !== generation.drafts) return
+      if (session !== generation.epoch || seq !== generation.drafts) return
       const kind = classify(error)
       if (kind === 'disabled' || kind === 'forbidden') {
-        set({ ...initialState(get().sessionKey), availability: kind, urgentRequestedAt: get().urgentRequestedAt })
+        markUnavailable(kind)
         return
       }
       set(state => ({
@@ -320,21 +350,17 @@ export const useMerchantWorkbenchStore = create<State & Actions>()((set, get) =>
   }
 
   async function recheckDraft(productId: number): Promise<void> {
-    const session = sessionToken()
+    if (get().availability !== 'enabled') return
+    const session = generation.epoch
+    const order = ++draftOrder.seq
+    draftOrder.product.set(productId, order)
+    // Superseded by a newer batch/recheck of this product, a newer round, or a reset/unavailable epoch.
+    const current = () => session === generation.epoch && order > draftOrder.lastReset && draftOrder.product.get(productId) === order
+    let result: ItemResult
     try {
-      const result = await fetchWorkbenchItem('draft_incomplete', productId)
-      if (session !== generation.session) return
-      set(state => ({
-        drafts: {
-          ...state.drafts,
-          entries: applyDraftResult(state.drafts.entries, result),
-          failedProductIds: result.state === 'unknown'
-            ? state.drafts.failedProductIds
-            : state.drafts.failedProductIds.filter(id => id !== productId),
-        },
-      }))
+      result = await fetchWorkbenchItem('draft_incomplete', productId)
     } catch (error) {
-      if (session !== generation.session) return
+      if (!current()) return
       const status = (error as { response?: { status?: number } } | undefined)?.response?.status
       // A single-resource 404 only means this product is gone/not ours: drop
       // its card, never switch the whole module off.
@@ -346,8 +372,19 @@ export const useMerchantWorkbenchStore = create<State & Actions>()((set, get) =>
         })
         return
       }
-      set(state => ({ drafts: { ...state.drafts, entries: applyDraftResult(state.drafts.entries, { targetId: productId, state: 'unknown' }) } }))
+      result = { targetId: productId, state: 'unknown' }
     }
+    if (!current()) return
+    set(state => ({
+      drafts: {
+        ...state.drafts,
+        entries: applyDraftResult(state.drafts.entries, result),
+        // A failed check stays listed (banner + retry) until a later check settles it.
+        failedProductIds: result.state === 'unknown'
+          ? withId(state.drafts.failedProductIds, productId)
+          : state.drafts.failedProductIds.filter(id => id !== productId),
+      },
+    }))
   }
 
   function stale(requestedAt: number | null, now: number) {
@@ -358,10 +395,7 @@ export const useMerchantWorkbenchStore = create<State & Actions>()((set, get) =>
     ...initialState(null),
 
     reset(sessionKey) {
-      generation.session += 1
-      inflight.urgent = null
-      inflight.availability = null
-      inflight.draftReset = null
+      invalidateRequests()
       set(initialState(sessionKey))
     },
 
@@ -458,7 +492,8 @@ export function isVerifiedEmpty(state: State): boolean {
   const groupsComplete = [state.fulfillment, state.soldOut, state.availabilityGroup]
     .every(group => group.status === 'complete' && !group.truncated && group.staleKeys.length === 0)
   const draftsComplete = state.drafts.status === 'complete' && !state.drafts.hasMore && state.drafts.failedProductIds.length === 0
-  return !state.urgentRequestFailed && groupsComplete && draftsComplete
+  const draftsSettled = Object.values(state.drafts.entries).every(entry => !entry.stale)
+  return !state.urgentRequestFailed && groupsComplete && draftsComplete && draftsSettled
     && urgentItems(state).length === 0 && normalAvailabilityItems(state).length === 0 && draftItems(state).length === 0
 }
 

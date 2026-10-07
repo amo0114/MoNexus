@@ -18,12 +18,20 @@
 
 | 检查 | 结果 |
 | --- | --- |
-| 工作台新增测试：`src/stores/merchantWorkbench.test.ts`、`src/components/merchant/workbench/{navigation,WorkbenchCard,WorkbenchSummary}.test.*`、`src/pages/merchant/WorkbenchPage.test.tsx`、`src/pages/merchant/productEditor/editorFocus.test.ts` | 6 个文件 81 个用例通过 |
+| 工作台新增测试：`src/stores/merchantWorkbench.test.ts`、`src/components/merchant/workbench/{navigation,WorkbenchCard,WorkbenchSummary}.test.*`、`src/pages/merchant/WorkbenchPage.test.tsx`、`src/pages/merchant/productEditor/editorFocus.test.ts` | 6 个文件 88 个用例通过（含评审修复新增 7 个） |
 | 扩展的既有测试：`MerchantAvailabilityModal.test.tsx`（+2）、`MerchantDashboardPage.test.tsx`（+4）、`ProductEditPage.test.tsx`（+11） | 分别 6 / 39 / 30 个用例通过 |
-| 前端单测全量 `npx vitest run` | 187 个文件 1571 个用例通过 |
+| 前端单测全量 `npx vitest run --maxWorkers=4` | 187 个文件 1578 个用例通过（评审修复后重跑） |
 | `npm run build`（tsc + vite build） | 通过；仅既有的 chunk 体积警告 |
 | 浏览器冒烟（临时 Playwright 脚本，全部 API 拦截 mock，未提交） | 390px、1280px 各 1 条通过 |
 | `git diff --check` | 通过 |
+
+### 评审修复（`f63f096..1ed94c5` 审查的 3 项 P2）
+
+1. 集合接口 404/403 统一走 `markUnavailable`：清空事实的同时递增请求 epoch、清空去重槽，所有在途请求（urgent、availability、草稿批次、单项复查）结算时被丢弃；只有之后新发起的探测能重新启用。
+2. 单项复查返回 unknown 或网络/5xx 失败时登记到 `failedProductIds`（显示“部分事项暂未检查”与单项重试），成功后清除；`isVerifiedEmpty` 另要求没有待刷新的草稿条目。
+3. 草稿批次与单项复查共享按产品的请求序号：每个产品只接受不早于最后一次已应用请求的结果；重置轮次使之前发起的单项复查全部失效，重置时保留更新的单项结果。两种交错返回顺序均有测试。
+
+7 个回归用例先在旧实现（`1ed94c5` 的 store）上确认失败，再在修复后通过。首次全量运行时宿主负载约 17、内存接近用满（其他会话并行），5 个无关文件（StorePage.cmi、RechargePage、merchandising 三个）超时；单独重跑 5 个文件 118 个用例通过，`--maxWorkers=4` 全量重跑通过。
 
 ### 测试覆盖的要求
 
