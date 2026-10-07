@@ -2,6 +2,7 @@
 // only; the OpenAI SDK is imported exclusively by openaiProvider.ts.
 
 import type { AiSafe } from './safe.js'
+import { getAiRuntimeConfig } from './runtimeConfig.js'
 
 export interface LlmStructuredRequest {
   model: string
@@ -44,18 +45,16 @@ export class LlmError extends Error {
 }
 
 let providerOverride: LlmProvider | null = null
-let defaultProvider: LlmProvider | null = null
 
 /** Test-only injection, same convention as externalCatalog's client overrides. */
 export function setLlmProviderForTests(provider: LlmProvider | null): void {
   providerOverride = provider
 }
 
-export async function getLlmProvider(): Promise<LlmProvider> {
+export async function getLlmProvider(settings?: { apiKey: string | null; baseUrl: string }): Promise<LlmProvider> {
   if (providerOverride) return providerOverride
-  if (!defaultProvider) {
-    const { createOpenAiProvider } = await import('./openaiProvider.js')
-    defaultProvider = createOpenAiProvider()
-  }
-  return defaultProvider
+  const runtime = settings ?? await getAiRuntimeConfig()
+  if (!runtime.apiKey) throw new LlmError('unavailable')
+  const { createOpenAiProvider } = await import('./openaiProvider.js')
+  return createOpenAiProvider(undefined, runtime.apiKey, runtime.baseUrl)
 }

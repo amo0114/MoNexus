@@ -412,11 +412,15 @@ const envSchema = z.object({
   VMQFOX_REQUEST_TIMEOUT_MS: optionalStringEnvSchema,
   VMQFOX_PROTOCOL_VERSION: optionalStringEnvSchema,
 
-  // --- SPEC-AI-001 §15：AI 运行时。默认全部关闭；模型随 promptVersion 冻结，不走 env。
+  // --- SPEC-AI-001 §15：后台首次接管前的 AI 配置；地址和模型由后台管理。
   // 超时上限 50s：nginx /api/ 读超时为 60s，需留余量。
   AI_ENABLED: booleanEnvSchema.default(false),
   AI_PRODUCT_COPILOT_ENABLED: booleanEnvSchema.default(false),
   OPENAI_API_KEY: optionalStringEnvSchema,
+  AI_CREDENTIALS_ENC_KEY: optionalStringEnvSchema.refine(
+    value => !value || /^[a-fA-F0-9]{64}$/.test(value),
+    "AI_CREDENTIALS_ENC_KEY must be 64 hex characters",
+  ),
   AI_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(50_000).default(40_000),
 })
 
@@ -1030,6 +1034,7 @@ export const config = {
     enabled: env.AI_ENABLED,
     productCopilotEnabled: env.AI_PRODUCT_COPILOT_ENABLED,
     openaiApiKey: env.OPENAI_API_KEY,
+    credentialsEncKey: env.AI_CREDENTIALS_ENC_KEY ?? null,
     timeoutMs: env.AI_TIMEOUT_MS,
   },
   notificationRealtime: {

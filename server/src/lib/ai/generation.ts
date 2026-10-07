@@ -14,6 +14,7 @@ import { getSystemConfigValue, type SystemConfigKey } from '../systemConfig.js'
 import { aiGenerationDuration, aiGenerationTotal, aiTokensTotal } from './metrics.js'
 import { getLlmProvider, LlmError } from './provider.js'
 import type { AiSafe } from './safe.js'
+import { aiProductCopilotEnabled, getAiRuntimeConfig, type AiRuntimeSettings } from './runtimeConfig.js'
 
 export const AI_FEATURES = ['product_content_copilot'] as const
 export type AiFeature = (typeof AI_FEATURES)[number]
@@ -37,11 +38,11 @@ const QUOTA_KEYS: Record<AiFeature, Record<AiActorRole, SystemConfigKey>> = {
   },
 }
 
-export function isAiFeatureEnabled(feature: AiFeature): boolean {
-  if (!config.ai.enabled) return false
+export async function isAiFeatureEnabled(feature: AiFeature, settings?: AiRuntimeSettings): Promise<boolean> {
+  const runtime = settings ?? await getAiRuntimeConfig()
   switch (feature) {
     case 'product_content_copilot':
-      return config.ai.productCopilotEnabled
+      return aiProductCopilotEnabled(runtime)
   }
 }
 
@@ -77,7 +78,6 @@ export interface RunAiGenerationArgs<T> {
   target: { type: 'product'; id: number }
   promptVersion: string
   validatorVersion: string
-  model: string
   reasoningEffort: 'none'
   schemaName: string
   system: string
@@ -102,7 +102,7 @@ function failureFor(err: unknown): { code: FailureCode; httpError: HttpError } {
   return { code: 'AI_OUTPUT_INVALID', httpError: new HttpError(502, 'AI_OUTPUT_INVALID', 'AI 返回的内容无法使用，请稍后重试') }
 }
 
-async function claimGenerationSlot<T>(args: RunAiGenerationArgs<T>, inputHash: string, providerName: string) {
+async function claimGenerationSlot<T>(args: RunAiGenerationArgs<T>, inputHash: string, providerName: string, model: string) {
   const now = new Date()
   const dayStart = businessDayStartUtc(businessDateString(now))
   const inFlightSince = new Date(now.getTime() - config.ai.timeoutMs - IN_FLIGHT_GRACE_MS)
@@ -141,7 +141,7 @@ async function claimGenerationSlot<T>(args: RunAiGenerationArgs<T>, inputHash: s
         targetType: args.target.type,
         targetId: args.target.id,
         provider: providerName,
-        model: args.model,
+        model,
         promptVersion: args.promptVersion,
         validatorVersion: args.validatorVersion,
         inputHash,
@@ -153,23 +153,24 @@ async function claimGenerationSlot<T>(args: RunAiGenerationArgs<T>, inputHash: s
 }
 
 export async function runAiGeneration<T>(args: RunAiGenerationArgs<T>): Promise<{ generationId: number; value: T }> {
-  if (!isAiFeatureEnabled(args.feature)) throw notFound()
+  const runtime = await getAiRuntimeConfig()
+  if (!await isAiFeatureEnabled(args.feature, runtime)) throw notFound()
 
-  const provider = await getLlmProvider()
+  const provider = await getLlmProvider(runtime)
   const inputHash = computeAiInputHash(args.input)
-  const row = await claimGenerationSlot(args, inputHash, provider.name)
+  const row = await claimGenerationSlot(args, inputHash, provider.name, runtime.model)
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), config.ai.timeoutMs)
   const startedAt = Date.now()
   let usage: { inputTokens: number | null; outputTokens: number | null } = { inputTokens: null, outputTokens: null }
-  let reportedModel = args.model
+  let reportedModel = runtime.model
 
   try {
     let result
     try {
       result = await provider.generateStructured({
-        model: args.model,
+        model: runtime.model,
         reasoningEffort: args.reasoningEffort,
         schemaName: args.schemaName,
         system: args.system,
@@ -183,7 +184,7 @@ export async function runAiGeneration<T>(args: RunAiGenerationArgs<T>): Promise<
       throw controller.signal.aborted ? new LlmError('timeout') : err
     }
     usage = result.usage
-    reportedModel = result.model || args.model
+    reportedModel = result.model || runtime.model
     const parsed = args.parse(result.output)
     const latencyMs = Date.now() - startedAt
 
@@ -258,7 +259,7 @@ export async function recordAiGenerationApplied(args: {
   target: { type: 'product'; id: number }
   appliedFieldCount: number
 }): Promise<void> {
-  if (!isAiFeatureEnabled(args.feature)) throw notFound()
+  if (!await isAiFeatureEnabled(args.feature)) throw notFound()
   const row = await prisma.aiGeneration.findFirst({
     where: {
       id: args.generationId,

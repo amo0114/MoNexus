@@ -1,4 +1,4 @@
-# Plan：AI Foundation（SPEC-AI-001 v1.0.2）
+# Plan：AI Foundation（SPEC-AI-001 v1.1.0）
 
 配套 spec：`docs/specs/ai-foundation.md`。从 `develop` 拉 `feat/ai-foundation`，PR 目标 `develop`。本计划只拆任务与依赖，实施细节以 Spec 为准；Spec 与代码事实冲突时停止并回报，不自行改 Spec。
 
@@ -115,3 +115,7 @@ Spec §14 四个指标；标签有限枚举。
 ## 完成定义
 
 Spec §17 全部八条有对应测试且通过。真实调用只在 L3 eval（手动）中发生；上线前检查见 Spec §6.3「上线检查」。
+
+## 后台统一配置扩展（1.1.0）
+
+以 SPEC-AI-001 §15 为准：新增 AiRuntimeConfig 加密单例及服务地址/model 扩展迁移；管理员 MFA 后挂载 AI 配置和连接测试接口；后台 AI 分组增加 API 地址、模型名、Key 与双开关；运行时和 eval 改读有效配置。部署须配置 AI_CREDENTIALS_ENC_KEY 并运行迁移；已有配额保留。Key 不通过本计划、日志或仓库交付。验证覆盖权限、密文/脱敏、并发版本冲突、开关/换 Key 即时生效、清除不回退环境、连接超时/限流及前端保存行为。

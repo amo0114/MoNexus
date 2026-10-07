@@ -51,7 +51,7 @@ export async function isContentCopilotAvailable(
   actorKind: 'merchant' | 'admin',
   product: { templateKey: string | null; templateVersion: number | null; archivedAt: Date | null },
 ): Promise<boolean> {
-  if (!isAiFeatureEnabled(CONTENT_COPILOT_FEATURE)) return false
+  if (!await isAiFeatureEnabled(CONTENT_COPILOT_FEATURE)) return false
   if (product.templateKey == null || product.templateVersion == null || product.archivedAt != null) return false
   return (await getAiDailyQuota(CONTENT_COPILOT_FEATURE, actorKind)) > 0
 }
@@ -61,7 +61,7 @@ export async function generateContentSuggestion(
   productId: number,
   input: ContentSuggestionRequest,
 ) {
-  if (!isAiFeatureEnabled(CONTENT_COPILOT_FEATURE)) throw notFound()
+  if (!await isAiFeatureEnabled(CONTENT_COPILOT_FEATURE)) throw notFound()
 
   const product = await prisma.product.findFirst({
     where: ownershipWhere(actor, productId),
@@ -156,7 +156,6 @@ export async function generateContentSuggestion(
     target: { type: 'product', id: productId },
     promptVersion: PROMPT_VERSION,
     validatorVersion: VALIDATOR_VERSION,
-    model: MODEL_BINDING.model,
     reasoningEffort: MODEL_BINDING.reasoningEffort,
     schemaName: MODEL_BINDING.schemaName,
     system: SYSTEM_PROMPT,

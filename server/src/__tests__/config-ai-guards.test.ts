@@ -9,6 +9,7 @@ const SERVER_ROOT = path.resolve(__dirname, '..', '..')
 
 const BASE_ENV: Record<string, string> = {
   NODE_ENV: 'test',
+  AI_CREDENTIALS_ENC_KEY: '',
   DATABASE_URL: 'postgresql://user:pass@localhost:5432/db?schema=public',
   JWT_SECRET: 'a-sufficiently-long-test-secret-32chars!!',
   FRONTEND_ORIGIN: 'http://localhost:5173',
@@ -31,7 +32,7 @@ describe('AI config guards (SPEC-AI-001 §15)', () => {
   it('defaults to everything off with a 40s timeout', () => {
     const result = loadAiConfig({})
     expect(result.status).toBe(0)
-    expect(result.ai).toEqual({ enabled: false, productCopilotEnabled: false, openaiApiKey: null, timeoutMs: 40_000 })
+    expect(result.ai).toEqual({ enabled: false, productCopilotEnabled: false, openaiApiKey: null, credentialsEncKey: null, timeoutMs: 40_000 })
   })
 
   it('requires AI_ENABLED for the product copilot flag', () => {
@@ -51,6 +52,14 @@ describe('AI config guards (SPEC-AI-001 §15)', () => {
     expect(loadAiConfig({ AI_TIMEOUT_MS: '1000' }).status).toBe(1)
     const ok = loadAiConfig({ AI_ENABLED: 'true', AI_PRODUCT_COPILOT_ENABLED: 'true', OPENAI_API_KEY: 'sk-test', AI_TIMEOUT_MS: '50000' })
     expect(ok.status).toBe(0)
-    expect(ok.ai).toEqual({ enabled: true, productCopilotEnabled: true, openaiApiKey: 'set', timeoutMs: 50_000 })
+    expect(ok.ai).toEqual({ enabled: true, productCopilotEnabled: true, openaiApiKey: 'set', credentialsEncKey: null, timeoutMs: 50_000 })
+  })
+
+  it('rejects malformed credential master keys without echoing them', () => {
+    const malformed = 'MASTER_KEY_SENTINEL-not-hex'
+    const result = loadAiConfig({ AI_CREDENTIALS_ENC_KEY: malformed })
+    expect(result.status).toBe(1)
+    expect(result.output).toContain('AI_CREDENTIALS_ENC_KEY')
+    expect(result.output).not.toContain(malformed)
   })
 })

@@ -48,6 +48,7 @@ import { adminAssuranceRouter } from '../catalog/assurance/routes.js'
 import { adminSourceDescriptionRouter } from '../catalog/sourceDescriptionRoutes.js'
 import { rechargeAdminRoutes } from '../recharge/adminRoutes.js'
 import { getBuildInfo } from './buildInfo.js'
+import { aiSettingsRoutes } from './aiSettings.js'
 import { z } from 'zod'
 import { platformReport } from '../traffic/controller.js'
 import { trafficQuerySchema } from '../traffic/schema.js'
@@ -62,6 +63,7 @@ const adminOfferParamSchema = z.object({
   offerId: z.coerce.number().int().positive('必须是正整数'),
 })
 
+router.use(aiSettingsRoutes)
 router.use('/portable-backups', portableBackupRoutes)
 router.use('/value-policies', valuePolicyGovernanceRoutes)
 // T-CAT-BE-001 §7.2：admin product-categories（列表/CRUD/排序/启停/删除）。

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import OpenAI from 'openai'
 import { describe, expect, it, vi } from 'vitest'
 import { computeAiInputHash } from './generation.js'
-import { createOpenAiProvider } from './openaiProvider.js'
+import { createOpenAiProvider, probeOpenAiConnection } from './openaiProvider.js'
 import { LlmError, type LlmStructuredRequest } from './provider.js'
 import { markAiSafe } from './safe.js'
 
@@ -119,5 +119,35 @@ describe('SDK import boundary (SPEC-AI-001 §17-8)', () => {
     }
     walk(srcRoot)
     expect(offenders).toEqual(['lib/ai/openaiProvider.ts'])
+  })
+})
+
+describe('OpenAI connection probe', () => {
+  it('uses the model list endpoint with an abort signal, never Responses', async () => {
+    const list = vi.fn().mockResolvedValue({ data: [{ id: 'gpt-6-luna' }] })
+    await probeOpenAiConnection('test-key', 'gpt-6-luna', undefined, { models: { list } } as unknown as Pick<OpenAI, 'models'>)
+    expect(list).toHaveBeenCalledOnce()
+    expect(list).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) })
+  })
+
+  it('aborts a hung probe at 10 seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      const list = vi.fn((opts) => new Promise((_resolve, reject) => {
+        opts.signal.addEventListener('abort', () => reject(new OpenAI.APIUserAbortError()))
+      }))
+      const pending = probeOpenAiConnection('test-key', 'gpt-6-luna', undefined, { models: { list } } as unknown as Pick<OpenAI, 'models'>)
+      const assertion = expect(pending).rejects.toMatchObject({ code: 'timeout' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      await assertion
+    } finally { vi.useRealTimers() }
+  })
+
+  it('strips upstream error bodies including echoed API keys', async () => {
+    const list = vi.fn().mockRejectedValue(OpenAI.APIError.generate(401, { message: 'SECRET-SENTINEL' }, 'SECRET-SENTINEL', new Headers()))
+    const err = await probeOpenAiConnection('test-key', 'gpt-6-luna', undefined, { models: { list } } as unknown as Pick<OpenAI, 'models'>).catch(e => e)
+    expect(err).toBeInstanceOf(LlmError)
+    expect(err.providerStatus).toBe(401)
+    expect(JSON.stringify(err)).not.toContain('SECRET-SENTINEL')
   })
 })

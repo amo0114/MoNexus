@@ -1,6 +1,6 @@
 // SPEC-AI-PRODUCT-001 §11.3 — L3 model eval. Manual only (never in CI): sends
 // every fixture to the real provider through the same projection, prompt,
-// schema and validator as production, bypassing HTTP, quota and the database.
+// schema and validator as production, bypassing HTTP and quota (settings are read from the admin configuration).
 //
 //   AI_ENABLED=true OPENAI_API_KEY=… npm run ai:eval:product-copilot
 //
@@ -11,6 +11,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { getAiRuntimeConfig } from '../lib/ai/runtimeConfig.js'
+import { prisma } from '../lib/prisma.js'
 import { getLlmProvider, LlmError } from '../lib/ai/provider.js'
 import { COPILOT_FIXTURES } from '../modules/catalog/contentCopilot/__fixtures__/fixtures.js'
 import { MODEL_BINDING, PROMPT_VERSION, VALIDATOR_VERSION } from '../modules/catalog/contentCopilot/constants.js'
@@ -64,10 +66,11 @@ function percentile(values: number[], p: number): number {
 }
 
 async function main() {
-  if (!config.ai.enabled || !config.ai.openaiApiKey) {
-    throw new Error('Set AI_ENABLED=true and OPENAI_API_KEY to run the L3 eval')
+  const runtime = await getAiRuntimeConfig()
+  if (!runtime.apiKey || runtime.credentialError) {
+    throw new Error('Configure an OpenAI key in admin AI settings (or OPENAI_API_KEY before the first admin save) to run the L3 eval')
   }
-  const provider = await getLlmProvider()
+  const provider = await getLlmProvider(runtime)
   const results: CaseResult[] = []
 
   for (const fixture of COPILOT_FIXTURES) {
@@ -79,7 +82,7 @@ async function main() {
     const base = { id: fixture.id, group: fixture.group, fieldStatus: {}, rejections, leaks: [] as string[] }
     try {
       const response = await provider.generateStructured({
-        model: MODEL_BINDING.model,
+        model: runtime.model,
         reasoningEffort: MODEL_BINDING.reasoningEffort,
         schemaName: MODEL_BINDING.schemaName,
         system: SYSTEM_PROMPT,
@@ -125,7 +128,9 @@ async function main() {
   const summary = {
     promptVersion: PROMPT_VERSION,
     validatorVersion: VALIDATOR_VERSION,
-    model: MODEL_BINDING.model,
+    model: runtime.model,
+    baseUrl: runtime.baseUrl,
+    configVersion: runtime.version,
     fixtures: results.length,
     structurePassRate: ok.length / Math.max(results.length, 1),
     suggestedFieldRate: fieldStatuses.filter(status => status === 'suggested').length / Math.max(fieldStatuses.length, 1),
@@ -161,6 +166,6 @@ async function main() {
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   main().catch(err => {
     process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
-    process.exit(1)
-  })
+    process.exitCode = 1
+  }).finally(() => prisma.$disconnect())
 }

@@ -25,7 +25,7 @@ export const CONFIG_GROUPS: ConfigGroupDef[] = [
   { id: 'trade', title: '交易与交付', description: '订单二次验证、交付文件与自动开通履约规则', legacyGroup: '安全' },
   { id: 'inventory', title: '库存提醒', description: '商品可用库存低位阈值与重发告警冷却', legacyGroup: '库存' },
   { id: 'merchandising', title: '商品运营', description: '自然热卖与合作伙伴权益自动计算参数' },
-  { id: 'ai', title: 'AI 辅助', description: 'AI 商品说明整理的每日调用次数（按管理员 / 商家分别计）' },
+  { id: 'ai', title: 'AI 辅助', description: '管理 API 地址、模型、密钥、连接测试、AI 开关与每日调用配额' },
   { id: 'ops', title: '高级运维', description: '凭证有效期限、列表分页上限与邮件投递服务', legacyGroup: '分页限制' },
   { id: 'system', title: '系统信息', description: '当前 API 镜像的运行版本与构建元数据，仅管理员可见' },
 ]

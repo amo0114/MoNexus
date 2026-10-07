@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-PRODUCT-001 |
-| 版本 | 1.0.5 |
+| 版本 | 1.1.0 |
 | 日期 | 2026-10-07 |
 | 状态 | Implementation Ready（全部决策 Frozen；依赖 SPEC-AI-001 v1.0.2） |
 | 产品 | MoNexus |
@@ -62,7 +62,7 @@
 
 | 条件 | 不满足时 |
 | --- | --- |
-| `AI_ENABLED && AI_PRODUCT_COPILOT_ENABLED` | 404 `NOT_FOUND` |
+| 有效配置的 AI 总开关与商品说明 Copilot 开关均开启 | 404 `NOT_FOUND` |
 | 商家：`/api/merchant` 现有链 `authenticate → requireActiveUser → requireMerchant`，商品 `merchantId` 属于本商家（同 `loadOwnedProduct`） | 404 `NOT_FOUND` |
 | 管理员：`/api/admin` 现有链 `… → requireAdmin → requireAdminMfa`，任意商品（同 `patchProductContent` admin） | 401/403（现有 MFA 行为） |
 | 商品未归档（`archivedAt == null`） | 409 `PRODUCT_ARCHIVED`（现有码） |
@@ -431,11 +431,11 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 
 ## 10. 配置
 
-- Flag：`AI_ENABLED`、`AI_PRODUCT_COPILOT_ENABLED`（SPEC-AI-001 §15）。
+- Flag：管理后台「AI 辅助」中的 AI 总开关、商品说明 Copilot 开关（SPEC-AI-001 §15）。首次后台保存前使用 `AI_ENABLED`、`AI_PRODUCT_COPILOT_ENABLED` 环境初值；保存后即时读取数据库配置。
 - 配额：`aiProductCopilotDailyQuotaAdmin`、`aiProductCopilotDailyQuotaMerchant`（SPEC-AI-001 §11.2；代码默认 0，范围 0..1000；试点数值由运营配置，不在本 Spec 冻结）。
 - 「仅管理员试点」= merchant 配额保持 0。
 - `feature = 'product_content_copilot'`；`promptVersion = 'product-content@1'`；`validatorVersion = 'product-content-validator@1'`。
-- 模型绑定（SPEC-AI-001 §6.3，D-AI-01）：`product-content@1` 固定使用 OpenAI `gpt-6-luna`、Responses API、`reasoning.effort = 'none'`、`store = false`、无工具。模型是 promptVersion 的一部分，不是 env 可调项。
+- 服务与模型（SPEC-AI-001 §6.3 / §15）：后台配置 OpenAI 兼容服务地址及 model ID，默认 OpenAI `gpt-6-luna`。`product-content@1` 保留 Responses API、`reasoning.effort = 'none'`、`store = false`、无工具契约；新服务/模型须兼容这些参数并先通过 L3。
 - `maxOutputTokens`：常量，由 §6.3 上限估算后定，随 promptVersion 版本化。
 
 ## 11. Eval
@@ -535,3 +535,4 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 | 1.0.3 | 2026-10-07 | 二次复核修复：§7.4 由「按类别覆盖」改为逐个核实提及；新增 H6 交付用语检测；H1 模糊数量覆盖非时间单位；§7.2-3 未通过的出现位置在无其他 claim 核实时直接拒绝 |
 | 1.0.4 | 2026-10-07 | 三次复核修复：§7.2-3 句子规则按每个被核实提及所在句子判定；§7.4 新增 H7 价格类数值，任何 claim 不可覆盖 |
 | 1.0.5 | 2026-10-07 | 四次复核修复：§7.2 归一化保留换行 / 段落边界；§7.4 H7 识别紧接英文的价格单位及模糊货币前缀；新增反向与正向边界回归。沿用未上线分支的 `validatorVersion = product-content-validator@1`，上线前仍须 L3 eval |
+| 1.1.0 | 2026-10-07 | API 地址、模型名称、Key、双开关、连接测试及配额在后台统一管理（SPEC-AI-001 §15）；生成格式与校验器不变。 |

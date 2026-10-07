@@ -97,6 +97,7 @@ beforeEach(async () => {
   calls.length = 0
   behaviour = async () => validOutput()
   setLlmProviderForTests(fakeProvider)
+  config.ai.openaiApiKey = 'sk-test-copilot-placeholder'
   config.ai.enabled = true
   config.ai.productCopilotEnabled = true
   config.ai.timeoutMs = savedAi.timeoutMs

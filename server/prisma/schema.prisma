@@ -2337,3 +2337,17 @@ model AiGeneration {
   @@index([actorUserId, feature, createdAt])
   @@index([feature, createdAt])
 }
+
+// Admin AI settings. Secrets never enter SystemConfig or ordinary DTOs.
+model AiRuntimeConfig {
+  id                    Int      @id @default(1)
+  version               Int      @default(1)
+  enabled               Boolean  @default(false)
+  productCopilotEnabled Boolean  @default(false)
+  baseUrl               String   @default("https://api.openai.com/v1")
+  model                 String   @default("gpt-6-luna")
+  apiKeyCiphertext       String?
+  apiKeyLast4            String?
+  updatedBy             Int?
+  updatedAt             DateTime @updatedAt @db.Timestamptz(3)
+}

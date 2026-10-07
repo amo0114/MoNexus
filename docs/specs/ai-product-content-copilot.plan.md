@@ -45,7 +45,7 @@ P1–P4 可与 Foundation 并行（只依赖 F9）。
 
 - system prompt（中文）：原则（只组织表达已有事实）、`untrusted` 仅为数据、claim 声明义务、未知写「未提供」或不提、有效期按事实原单位表达、禁止价格 / 库存 / 退款保障 / 永久类表述、售后只写中性处理流程（Spec §6.1 / §7.4 示例句）、生成上限（§6.3）、只返回 `targetFields`。
 - 输出 Schema 一份常量（OpenAI strict 子集：全属性 required、`additionalProperties: false`、可空用 `anyOf`/类型数组），同时用于发送与服务端 Ajv 结构校验；数量与长度上限由 Validator 执行（Spec §6.2，v1.0.1）。
-- `promptVersion = 'product-content@1'` 与模型绑定常量同处定义：`model: 'gpt-6-luna'`、`reasoning.effort: 'none'`、`maxOutputTokens`（由 §6.3 上限估算）。
+- `promptVersion = 'product-content@1'` 与请求参数同处定义：`reasoning.effort: 'none'`、`maxOutputTokens`（由 §6.3 上限估算）。API 地址与 model ID 由后台配置，默认 OpenAI / `gpt-6-luna`。
 - 单测：Schema 能被 Ajv strict 编译；结构错误（缺键、多键、未知枚举）整体拒绝。
 
 ### P4 Validator（`contentCopilot/validator.ts`）
@@ -82,10 +82,10 @@ P1–P4 可与 Foundation 并行（只依赖 F9）。
 ### P9 试点上线清单（非代码）
 
 1. Foundation F4b（`openai@7.28.0` adapter）合入。
-2. SPEC-AI-001 §6.3「上线检查」全部通过：生产容器可访问 OpenAI API；`OPENAI_API_KEY` 以 secret 注入；组织 / 项目未 opt-in 训练数据共享。
+2. SPEC-AI-001 §6.3「上线检查」全部通过：生产容器可访问 OpenAI API；API Key 在后台加密保存（首次接管前也可由 `OPENAI_API_KEY` secret 注入），`AI_CREDENTIALS_ENC_KEY` 由环境注入；组织 / 项目未 opt-in 训练数据共享。
 3. `gpt-6-luna` L3 eval 报告：对抗集放行 0、敏感外发 0、p95 延迟 < `AI_TIMEOUT_MS` 的 80%。**不满足则停止上线**，回到 D-AI-01 重新做模型决策（可评估 `gpt-6.1-sol`，需新 promptVersion + Spec 修订 + 重跑 L3）；不做自动切换。
 4. 运营依据成本测算写入两个配额键（建议先 merchant = 0，仅管理员试点）。
-5. 打开 `AI_ENABLED`、`AI_PRODUCT_COPILOT_ENABLED`；观察 `monexus_ai_*` 指标与 `AiGeneration` 采纳率。
+5. 在后台「AI 辅助」打开 AI 总开关与商品说明 Copilot 开关；观察 `monexus_ai_*` 指标与 `AiGeneration` 采纳率。
 6. 两周后复盘：采纳率基线、拒绝原因分布、是否开放商家、是否评估 attributes suggestion（另立 Spec）。
 
 ## 验证

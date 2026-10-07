@@ -3,8 +3,8 @@
 // background mode, no SDK retries. Nothing here logs prompts or outputs.
 
 import OpenAI from 'openai'
-import { config } from '../../config/index.js'
 import { LlmError, type LlmProvider, type LlmStructuredRequest, type LlmStructuredResult } from './provider.js'
+import { createAiFetch, DEFAULT_AI_BASE_URL, normalizeAiBaseUrl } from './endpoint.js'
 
 type OpenAiClient = Pick<OpenAI, 'responses'>
 
@@ -37,15 +37,21 @@ function readStructuredText(response: OpenAI.Responses.Response): string {
   return response.output_text
 }
 
-export function createOpenAiProvider(client?: OpenAiClient): LlmProvider {
-  const sdk: OpenAiClient = client ?? new OpenAI({
-    // Explicit key from validated config; the SDK must not read env on its own.
-    apiKey: config.ai.openaiApiKey ?? '',
+function createClient(apiKey: string, baseUrl: string) {
+  return new OpenAI({
+    apiKey,
+    baseURL: normalizeAiBaseUrl(baseUrl),
+    fetch: createAiFetch(baseUrl),
     maxRetries: 0,
+    logLevel: 'off',
   })
+}
+
+export function createOpenAiProvider(client?: OpenAiClient, apiKey = '', baseUrl = DEFAULT_AI_BASE_URL): LlmProvider {
+  const sdk: OpenAiClient = client ?? createClient(apiKey, baseUrl)
 
   return {
-    name: 'openai',
+    name: 'openai-compatible',
     async generateStructured(req: LlmStructuredRequest): Promise<LlmStructuredResult> {
       let response: OpenAI.Responses.Response
       try {
@@ -88,5 +94,19 @@ export function createOpenAiProvider(client?: OpenAiClient): LlmProvider {
         model: response.model,
       }
     },
+  }
+}
+
+/** Model lists are widely supported by OpenAI-compatible gateways. No product data is sent. */
+export async function probeOpenAiConnection(apiKey: string, model: string, baseUrl = DEFAULT_AI_BASE_URL, client?: Pick<OpenAI, 'models'>): Promise<void> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const models = await (client ?? createClient(apiKey, baseUrl)).models.list({ signal: controller.signal })
+    if (!models.data.some(item => item.id === model)) throw new LlmError('bad_request', 404)
+  } catch (err) {
+    throw controller.signal.aborted ? new LlmError('timeout') : mapSdkError(err)
+  } finally {
+    clearTimeout(timer)
   }
 }

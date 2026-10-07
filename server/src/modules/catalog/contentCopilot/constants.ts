@@ -1,14 +1,13 @@
 // SPEC-AI-PRODUCT-001 §6.3 / §10 — version-bound constants. Changing the
-// prompt, output schema, projection shape, model or call parameters requires a
+// prompt, output schema, projection shape or call parameters requires a
 // new PROMPT_VERSION; changing lexicons or judgement rules requires a new
-// VALIDATOR_VERSION (SPEC-AI-001 §12).
+// VALIDATOR_VERSION (SPEC-AI-001 §12). Endpoint/model are admin runtime settings.
 
 export const CONTENT_COPILOT_FEATURE = 'product_content_copilot' as const
 export const PROMPT_VERSION = 'product-content@1'
 export const VALIDATOR_VERSION = 'product-content-validator@1'
 
 export const MODEL_BINDING = {
-  model: 'gpt-6-luna',
   reasoningEffort: 'none',
   schemaName: 'product_content_suggestion',
   maxOutputTokens: 8000,

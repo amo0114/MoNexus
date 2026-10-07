@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-001 |
-| 版本 | 1.0.2 |
+| 版本 | 1.1.0 |
 | 日期 | 2026-10-07 |
 | 状态 | Implementation Ready（全部决策 Frozen；D-AI-01 已裁决，见 §6.3） |
 | 产品 | MoNexus |
@@ -156,19 +156,19 @@ export class LlmError extends Error {
 
 ### 6.2 约束
 
-- **只有一个** adapter 实现 + 一个测试替身。测试替身通过模块级 override 注入（同 `externalCatalog.ts` 的 `catalogClientOverrides` 惯例），**不**作为可由 env 选择的生产 provider。
+- **只有一个 OpenAI 兼容协议** adapter 实现 + 一个测试替身。测试替身通过模块级 override 注入（同 `externalCatalog.ts` 的 `catalogClientOverrides` 惯例），**不**作为可由 env 选择的生产 provider。
 - adapter 负责：HTTP/SDK 调用、把 `outputSchema` 映射到该 provider 的结构化输出机制、读取 token usage、把 provider 错误映射为 `LlmError`、响应 `signal` 中止。
 - adapter **禁止**：重试、换模型、换 provider、记录 prompt/output、把 provider 原始错误体放入 `Error.message`（错误消息只能是 `LlmErrorCode`，防止输入回显进日志 / Sentry）。
-- 新增依赖：仅官方 OpenAI JS SDK（`openai@7.28.0`，精确版本加入 `server/package.json`，见 §6.3）。只有 adapter 文件（`lib/ai/openaiProvider.ts`）可以 import 该 SDK；feature 代码、Projection、校验器只依赖 `LlmProvider` 接口。
+- 新增依赖：官方 OpenAI JS SDK（`openai@7.28.0`，精确版本加入 `server/package.json`，见 §6.3）及用于可配置地址连接期 DNS 校验的 `undici@7.29.0`。只有 adapter 文件（`lib/ai/openaiProvider.ts`）可以 import 该 SDK；feature 代码、Projection、校验器只依赖 `LlmProvider` 接口。
 
 ### 6.3 D-AI-01（Frozen，2026-10-06 裁决）
 
-**Provider 与调用形态（V1 唯一）**
+**Provider 与调用形态（1.1.0 扩展为可配置 OpenAI 兼容服务）**
 
 | 项 | 冻结值 |
 | --- | --- |
-| Provider | OpenAI API |
-| 模型 | `gpt-6-luna`（绑定在 feature 的 `promptVersion` 上，不是 env 可调项，见 §12） |
+| Provider | OpenAI 或管理员配置的第三方 OpenAI 兼容 API（默认 `https://api.openai.com/v1`） |
+| 模型 | 管理后台配置 model ID，默认 `gpt-6-luna`；服务与模型需支持本表冻结的 Responses / strict JSON Schema / reasoning.effort=none 参数 |
 | API | Responses API（`POST /v1/responses`） |
 | 结构化输出 | `text.format = { type: 'json_schema', name, schema, strict: true }` |
 | `reasoning.effort` | `'none'` |
@@ -179,11 +179,11 @@ export class LlmError extends Error {
 | 输出读取 | 只读取结构化输出文本并 `JSON.parse`；`refusal` → `LlmError('refused')`；响应 `status = 'incomplete'`（如触达 `max_output_tokens`）→ `LlmError('output_unparseable')` |
 | usage | 读取响应 `usage.input_tokens` / `usage.output_tokens` |
 
-**模型选择不是运行时 fallback。** 先以 `gpt-6-luna` 跑完整 L3 eval（§13）；若无法满足 feature Spec 的硬门槛，则停止上线，重新做模型决策（可评估 `gpt-6.1-sol`）。换模型 = 新 `promptVersion` + Spec 修订 + 重跑 L3。禁止实现自动模型切换、fallback chain、model router。
+**模型选择不是运行时 fallback。** 管理员显式配置唯一服务和模型；不自动切换、不增加路由或重试链。更换服务或模型后应先在开关关闭时运行 L3 eval，通过后再开放调用。promptVersion 现在只绑定 prompt、Projection、Schema 和调用参数；运行时模型单独记录在生成元数据与 eval 报告中（§12）。
 
 **数据出境（按 §5 分级）**
 
-| 级别 | 是否发送给 OpenAI |
+| 级别 | 是否发送给已配置的 AI 服务 |
 | --- | --- |
 | F | 允许，必须经 AI-safe Projection |
 | D | 允许，必须经 AI-safe Projection |
@@ -193,7 +193,7 @@ export class LlmError extends Error {
 
 **数据保留（准确表述，不得夸大）**
 
-- 发送到 OpenAI API 的数据默认不用于模型训练，除非组织显式 opt-in；MoNexus 不 opt-in。
+- 使用 OpenAI 官方服务时，其 API 数据默认不用于模型训练，除非组织显式 opt-in；MoNexus 不 opt-in。第三方服务的数据使用与保留规则由该服务商决定，不能套用 OpenAI 的承诺。
 - Responses 请求必须显式 `store: false`，避免 Responses 的 application state 存储（省略 `store` 时默认存储）。
 - **`store: false` 不等于 Zero Data Retention（ZDR）。** 标准 API 仍会生成 abuse-monitoring 日志（OpenAI 文档：默认最长保留 30 天，法律要求或防护需要时可能更长）。
 - V1 接受 OpenAI 标准 API 的数据处理边界；ZDR / Modified Abuse Monitoring 需 OpenAI 事先审批，**不是**试点上线的硬阻塞条件。
@@ -201,10 +201,10 @@ export class LlmError extends Error {
 
 **上线检查（非实施阻塞）**
 
-1. 生产网络能访问 OpenAI API（从生产容器实测，不以开发机为准）。
-2. 生产 API Key 已作为 secret 注入（不进仓库、日志、文档）。
-3. OpenAI 组织 / 项目的数据共享（训练 opt-in）处于关闭状态。
-4. `gpt-6-luna` 的 L3 eval 报告满足 feature 硬门槛。
+1. 生产网络能访问已配置的 AI 服务，且其支持当前请求契约（从生产容器实测）。
+2. 生产 API Key 已由后台加密保存（或首次接管前作为环境 secret 注入）；独立加密主密钥由环境注入并妥善备份，不进数据库、仓库或日志。
+3. 确认所选服务商的数据共享、保留和训练规则；使用 OpenAI 官方服务时，组织 / 项目训练 opt-in 处于关闭状态。
+4. 所选服务与模型组合的 L3 eval 报告满足 feature 硬门槛。
 
 ## 7. Structured Output 规范
 
@@ -324,7 +324,6 @@ runAiGeneration<T>(args: {
   target: { type: 'product'; id: number }
   promptVersion: string
   validatorVersion: string
-  model: string                     // 来自 feature 的 promptVersion 绑定常量（§12）
   reasoningEffort: 'none'
   schemaName: string
   system: string
@@ -337,7 +336,7 @@ runAiGeneration<T>(args: {
 
 步骤（冻结）：
 
-1. 检查 `AI_ENABLED` 与 feature flag；关闭 → `NOT_FOUND`。
+1. 读取有效 AI 配置（§15，后台保存后以数据库为准）；全局或 feature flag 关闭、密钥不可用 → `NOT_FOUND`。
 2. **短事务**：`pg_advisory_xact_lock(AI_GENERATION_LOCK_CLASS, actorUserId)` → 统计当日（`businessTime` 上海日界）该 actor 该 feature 的 `AiGeneration` 行数 → 与配额比较 → 检查同 target 是否有 `createdAt > now() - AI_TIMEOUT_MS - 5s` 的 `pending` 行 → 插入 `pending` 行 → 提交。锁只覆盖这个短事务，**不包含** provider 调用。
 3. 事务外调用 provider（带超时）。
 4. `parse`（结构级 + 领域级校验）。
@@ -358,8 +357,8 @@ runAiGeneration<T>(args: {
 
 ## 12. Prompt 与校验器版本化
 
-- 每个 feature 一个 `promptVersion` 常量（形如 `product-content@1`），并在同一处代码常量中绑定模型标识与调用参数（`model`、`reasoning.effort`、`maxOutputTokens`）。以下任一变化必须 bump：system prompt 文本、发送给 provider 的输出 Schema、Projection 结构 / 字段 / 截断规则、模型或调用参数。
-- 模型不通过 env 配置，运维无法在不经 eval 的情况下换模型。
+- 每个 feature 一个 `promptVersion` 常量（形如 `product-content@1`），绑定 prompt、Projection、Schema 与调用参数（`reasoning.effort`、`maxOutputTokens`）。这些内容变化时必须 bump；服务地址和 model ID 自 1.1.0 起独立由后台配置。
+- 更换后台服务或模型不改 promptVersion；管理员应先对新组合运行 L3。生成元数据记录模型，eval 报告记录配置版本、服务地址和模型。连接测试不能替代生成验收。
 - `validatorVersion`（形如 `product-content-validator@1`）独立：词表、等价表、判定规则变化即 bump。
 - bump 的 PR 必须附 eval 报告（§13 L3），并在 Spec 修订记录中登记。
 - prompt 与 Schema 源码位于 feature 目录下，代码评审同普通代码；不得从数据库或远程加载 prompt。
@@ -388,18 +387,49 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
   - `monexus_ai_validation_rejections_total{feature,kind}`
   - 标签只用上述有限枚举，禁止把 productId、userId、模型输出放进标签。
 
-## 15. Feature Flags 与配置
+## 15. Feature Flags 与后台统一配置（1.1.0）
+
+### 15.1 首次接管前的部署配置
 
 | Env | 类型 / 默认 | 约束 |
 | --- | --- | --- |
-| `AI_ENABLED` | boolean / `false` | 全局总闸 |
+| `AI_ENABLED` | boolean / `false` | 后台首次保存前的全局开关初值 |
 | `AI_PRODUCT_COPILOT_ENABLED` | boolean / `false` | 为 `true` 时启动校验要求 `AI_ENABLED=true`；`AI_ENABLED=true` 时要求 `OPENAI_API_KEY` 非空；不满足则 `process.exit(1)`（同 `NOTIFICATION_EMAIL_ENABLED` 惯例，`config/index.ts:668`） |
-| `OPENAI_API_KEY` | string / 无 | `AI_ENABLED=true` 时必填；只由 `config` 读取后显式传给 SDK 客户端（不依赖 SDK 隐式读取环境变量）；不得出现在日志 / 错误 / 文档 |
+| `OPENAI_API_KEY` | string / 无 | 首次后台接管前的 Key；环境 `AI_ENABLED=true` 时必填。后台接管后不再作为运行时回退，Key 始终显式传给 SDK；不得出现在日志 / 错误 / 文档 |
 | `AI_TIMEOUT_MS` | int / `40000` | `5000..50000` |
+| `AI_CREDENTIALS_ENC_KEY` | 64 位 hex / 无 | 独立 32 字节 AES-256-GCM 主密钥；后台保存 API Key 必需；只放服务器环境，开发与生产均不从 JWT 派生 |
 
 - 全部加入 `config/index.ts` 与 `.env.example`（`.env.example` 中 `OPENAI_API_KEY` 留空）。
-- 不设 `AI_PROVIDER` / `AI_MODEL` env：provider 只有一个；模型随 `promptVersion` 冻结（§12）。
-- 只新增上述 flag。未来 Shopping Agent、Risk Copilot 等在各自 Spec 中新增独立 flag，不提前创建。
+- 不设 `AI_PROVIDER` / `AI_MODEL` env：协议 adapter 只有一个；服务地址与模型名在后台配置。
+- 未来 Shopping Agent、Risk Copilot 等在各自 Spec 中新增独立 flag，不提前创建。
+
+### 15.2 管理后台接管
+
+- 入口：系统配置 → AI 辅助，包含 API 地址、模型名称、Key、全局开关、商品说明 Copilot 开关、连接测试及现有两项角色配额。
+- 新增单例 `AiRuntimeConfig`（id=1）：version、baseUrl、model、双开关、apiKeyCiphertext、apiKeyLast4、updatedBy、updatedAt。API Key 不存入数值型 `SystemConfig`；配额继续沿用原表和接口。
+- 无单例行时才读取旧环境配置。后台首次保存会接管服务地址、模型、双开关及密钥（未填写新 Key 则将现有环境 Key 加密导入）。单例存在后**整组以数据库为准**；清除 Key 不回退到环境变量，避免凭据复活。
+- 加密：AES-256-GCM，随机 12 字节 nonce、16 字节认证标签，AAD `monexus:ai-api-key:v1`，密文格式 `v1:iv:tag:ciphertext`。主密钥丢失或变更将导致旧 Key 无法解密；应恢复原主密钥或重新录入 Key，不自动使用明文或 JWT 兜底。
+- API 只返回配置版本、双开关、来源、是否配置、尾四位、解密状态、加密就绪状态、服务地址和模型。响应 `Cache-Control: no-store`；前端密钥只保留在表单内存，提交完成（包括失败）后清空，不写浏览器持久存储。
+- Key 请求语义：省略=保留，字符串=更换，null=清除并同时关闭双开关。开启 AI 必须有可解密 Key，开启 Copilot 必须先开启 AI。
+- 保存使用 `expectedVersion` + 单例事务锁（类 20261008、键 1）；并发首次保存也串行。版本冲突返回 409，不能静默覆盖。密文更新与安全审计在同一事务提交。
+- 每个新调用从数据库读配置，SDK 不缓存旧 Key；保存后无需重启。已发出的调用使用开始时的配置快照完成。解密失败只关闭 AI 能力，人工编辑路径仍可用。
+
+| 接口（均要求 active admin + 当前 MFA 会话） | 行为 |
+| --- | --- |
+| `GET /api/admin/ai/config` | 脱敏配置与状态 |
+| `PUT /api/admin/ai/config` | `{expectedVersion, enabled, productCopilotEnabled, baseUrl?, model?, apiKey?}`；保存后立即生效 |
+| `POST /api/admin/ai/test` | `{expectedVersion}`；只测试已保存配置，版本变化返回 409 |
+
+连接测试使用官方 SDK `GET {baseUrl}/models`（[OpenAI 官方文档](https://developers.openai.com/api/reference/resources/models/methods/list)，2026-10-07 核对），核对列表中是否存在配置的 model ID。地址、模型与生成使用同一配置快照。不传商品或用户内容、不触发 Responses 生成、不写 AiGeneration、不扣角色配额。
+
+地址安全：仅 HTTPS，支持自定义路径/端口；禁止 userinfo、query、fragment、本机/内网/保留 IP。连接时通过 Undici dispatcher 的 DNS lookup 检查全部解析结果并钉扎至公网 IP，拒绝混合私网解析，禁跟随重定向且限制请求 origin/路径在配置范围内。更换 baseUrl 时若已有 Key，必须同时提交新 Key 或显式清除，不能把旧 Key 隐式转发到新服务。仅模型变化可保留现有 Key。
+
+连接测试使用 10 秒 AbortSignal、无重试、每位管理员每分钟最多 5 次（当前单进程 MemoryStore；多副本需共享限流存储）。测试只证明鉴权与该模型的可见性，不证明账户余额、生成端点权限或质量；不得替代 L3 eval。
+
+连接成功与错误均返回固定脱敏结果；不回传 upstream 原始错误体。SDK 日志显式关闭。保存和连接测试只记录版本、开关、操作类别、结果码和耗时，审计不记录 Key、密文或其尾号。
+
+L3 eval 可直接使用后台保存的 Key，允许开关关闭时运行，以便先验收再开放；仍不扣配额、不写生成记录。
+
 
 ## 16. 未来 Agent Tool 统一安全规则（预冻结，本期不实现）
 
@@ -416,13 +446,13 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
 
 ## 17. 验收标准
 
-1. `AI_ENABLED=false`（默认）时：全部现有测试不变；AI 端点 404；编辑器无 AI 入口。
+1. 有效 AI 总开关为 false（默认）时：全部现有测试不变；AI 端点 404；编辑器无 AI 入口。
 2. Projection 五项测试模板（§4.2）以可复用的测试工具函数形式存在，且被首个 feature 使用。
 3. `AiGeneration` 表无任何内容列；集成测试断言一次成功调用后行内不含输入 / 输出中的哨兵串。
 4. 配额：同一 actor 并发 N 次请求，`pending + succeeded + failed` 行数不超过配额（advisory lock 保证）；上海日界在 UTC CI 下正确（CI 运行于 UTC，测试必须显式钉时间与时区，不依赖宿主时区）。
 5. 超时：测试替身阻塞 → 504 `AI_TIMEOUT`，行状态 `failed`，计入配额。
 6. 日志 / Sentry 不含 provider 原始错误体与模型输出（单测断言 `LlmError.message` 只为错误码）。
-7. OpenAI adapter 单测（mock SDK / HTTP）断言每个请求：`model` 来自 promptVersion 绑定、`store: false`、`reasoning.effort: 'none'`、`text.format.type = 'json_schema'` 且 `strict: true`、无 `tools`、无 `background`；客户端 `maxRetries: 0`；`refusal` / `incomplete` / 超时 / 429 / 5xx 映射到对应 `LlmErrorCode`。
+7. OpenAI adapter 单测（mock SDK / HTTP）断言每个请求：`model` 来自同一运行时配置快照、`store: false`、`reasoning.effort: 'none'`、`text.format.type = 'json_schema'` 且 `strict: true`、无 `tools`、无 `background`；客户端 `maxRetries: 0`；`refusal` / `incomplete` / 超时 / 429 / 5xx 映射到对应 `LlmErrorCode`。
 8. 除 adapter 文件外，`server/src` 中无任何文件 import `openai`（可用 grep 型单测或 lint 规则断言）。
 
 ## 18. 修订记录
@@ -433,3 +463,4 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
 | 1.0.0 | 2026-10-06 | D-AI-01 裁决（OpenAI / gpt-6-luna / Responses / strict JSON Schema / effort none / store=false / 无工具 / 官方 SDK 固定 `openai@6.49.0`（Node 20 约束），数据出境与保留表述）；inputHash 增加用途域分隔；模型绑定 promptVersion，删除 `AI_PROVIDER` / `AI_MODEL`，`AI_API_KEY` 更名为 `OPENAI_API_KEY`；状态 Implementation Ready |
 | 1.0.1 | 2026-10-07 | 项目运行时升级到 Node 22，SDK 改为固定 `openai@7.28.0`（取代 1.0.0 的 6.49.0 临时方案）；其余条款不变 |
 | 1.0.2 | 2026-10-07 | AI-R13 补充超限兜底：截断后仍超限必须拒绝调用 |
+| 1.1.0 | 2026-10-07 | 后台统一管理第三方兼容 API 地址、模型、Key、双开关、连接测试和角色配额；加密单例配置、即时生效、版本冲突保护；环境变量仅作首次接管前底座。 |
