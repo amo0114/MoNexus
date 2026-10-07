@@ -27,6 +27,7 @@ import {
   findTimingTerms,
   findUnboundedTerms,
   hasForbiddenMarkup,
+  isPriceTuple,
   normalizeSpace,
   regionPlatformIds,
   type CoverClass,
@@ -208,7 +209,7 @@ function judgeTuples(span: string, fact: ResolvedFact): Judgement {
   const factTuples = extractTuples(text)
   const known = (tuple: QuantityTuple) => factTuples.some(item => item.unit === tuple.unit && item.value === tuple.value)
   const covers: CoveredMention[] = [
-    ...findQuantities(span).filter(item => known(item.tuple)).map(item => ({ start: item.start, end: item.end, cover: 'quantity' as const })),
+    ...findQuantities(span).filter(item => !isPriceTuple(item.tuple) && known(item.tuple)).map(item => ({ start: item.start, end: item.end, cover: 'quantity' as const })),
     ...findDurations(span).filter(item => known(durationTuple(item.expr))).map(item => ({ start: item.start, end: item.end, cover: 'duration' as const })),
   ]
   return verifiedOrUnsupported(span, covers, '与商家填写的参数不一致')
@@ -327,19 +328,19 @@ function judgeClaimValue(claim: Claim, span: string, facts: ProductAiFacts): { r
 }
 
 /**
- * Sentence-level rules checked at every occurrence of the span (§7.2-3): an
- * offer-specific fact must be named in the same sentence, and service
- * durations must read as estimates.
+ * Sentence-level rules (§7.2-3), checked for every verified mention in the
+ * sentence that mention actually sits in — never the span as a whole, so one
+ * sentence's offer name or 「预计」 cannot vouch for another sentence.
  */
-function occurrenceReason(claim: Claim, fact: ResolvedFact, sentence: string, span: string, facts: ProductAiFacts): RejectionReason | null {
+function mentionSentenceReason(claim: Claim, fact: ResolvedFact, sentence: string, label: string, facts: ProductAiFacts): RejectionReason | null {
   if (fact.offerIndex != null && facts.offers.length > 1) {
     const offerName = normalizeSpace(facts.offers[fact.offerIndex].name)
     if (!sentence.includes(offerName)) {
-      return { kind: 'ambiguous', message: `「${span}」未指明对应的规格，已拒绝该条建议`, evidence: span }
+      return { kind: 'ambiguous', message: `「${label}」未指明对应的规格，已拒绝该条建议`, evidence: label }
     }
   }
   if (claim.kind === 'service_duration' && !containsAny(sentence, ESTIMATE_TERMS)) {
-    return unsupported(span, '服务时长必须表述为预计时长')
+    return unsupported(label, '服务时长必须表述为预计时长')
   }
   return null
 }
@@ -375,8 +376,7 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
   }
 
   const covers: CoveredMention[] = []
-  const passedOccurrences: Array<[number, number]> = []
-  const failedOccurrences: Array<{ range: [number, number]; reason: RejectionReason }> = []
+  const failed: Array<CoveredMention & { reason: RejectionReason }> = []
   for (const claim of claims) {
     const span = normalizeSpace(claim.span)
     const ranges = occurrences(unitText, span)
@@ -385,22 +385,22 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
     }
     const judged = judgeClaimValue(claim, span, facts)
     if ('reason' in judged) return judged.reason
-    for (const range of ranges) {
-      const reason = occurrenceReason(claim, judged.fact, sentenceAt(unitText, range[0], range[1]), span, facts)
-      if (reason) {
-        failedOccurrences.push({ range, reason })
-        continue
+    for (const [offset] of ranges) {
+      for (const item of judged.covers) {
+        const mention = { start: item.start + offset, end: item.end + offset, cover: item.cover }
+        const label = unitText.slice(mention.start, mention.end)
+        const reason = mentionSentenceReason(claim, judged.fact, sentenceAt(unitText, mention.start, mention.end), label, facts)
+        if (reason) failed.push({ ...mention, reason })
+        else covers.push(mention)
       }
-      passedOccurrences.push(range)
-      covers.push(...judged.covers.map(item => ({ ...item, start: item.start + range[0], end: item.end + range[0] })))
     }
   }
-  // An occurrence that failed its sentence rule is only acceptable when another
-  // claim verified the very same words there; otherwise the unit is rejected,
+  // A mention that failed its sentence rule is only acceptable when another
+  // claim verified the same words there; otherwise the unit is rejected,
   // whether or not the detector would recognise those words.
-  for (const failed of failedOccurrences) {
-    const vouched = passedOccurrences.some(([start, end]) => start <= failed.range[0] && failed.range[1] <= end)
-    if (!vouched) return failed.reason
+  for (const item of failed) {
+    const vouched = covers.some(cover => cover.cover === item.cover && cover.start <= item.start && item.end <= cover.end)
+    if (!vouched) return item.reason
   }
 
   for (const mention of detectHardFacts(unitText)) {
@@ -408,6 +408,7 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
       return { kind: 'risky_claim', message: `「${mention.text}」属于无上限或永久类表述，已拒绝该条建议`, evidence: mention.text }
     }
     if (mention.cls === 'H4') return risky(mention.text)
+    if (mention.cls === 'H7') return unsupported(mention.text, '是价格类数值，V1 不允许写入说明')
     if (!covered(mention, covers)) return unsupported(mention.text)
   }
   return null

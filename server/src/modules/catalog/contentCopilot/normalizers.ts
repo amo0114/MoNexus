@@ -115,8 +115,19 @@ const QUANTITY_UNITS: Array<[string, string]> = [
   ['个账号', 'account'], ['账号', 'account'],
   ['人', 'person'], ['位', 'person'],
   ['次', 'times'], ['积分', 'points'], ['元', 'yuan'], ['块', 'yuan'],
-  ['%', 'percent'], ['％', 'percent'],
+  ['%', 'percent'], ['％', 'percent'], ['折', 'discount'],
 ]
+
+/**
+ * V-level commercial values (§5 / §7.4 H7). Never coverable by any claim:
+ * even when a merchant attribute contains 「售价1积分」, restating it as a
+ * 「quantity」 must not get a price into generated copy.
+ */
+const PRICE_UNITS = new Set(['points', 'yuan', 'money', 'percent', 'discount'])
+
+export function isPriceTuple(tuple: QuantityTuple): boolean {
+  return PRICE_UNITS.has(tuple.unit)
+}
 
 const QUANTITY_RE = new RegExp(
   `(${NUMBER}|${VAGUE_NUMBER})\\s*(${QUANTITY_UNITS.map(([unit]) => unit).join('|')})(?![A-Za-z])`,
@@ -218,7 +229,7 @@ export function regionPlatformIds(text: string): Set<string> {
   return new Set(findRegionPlatformMentions(text).map(item => item.id))
 }
 
-export type HardFactClass = 'H1' | 'H2' | 'H3' | 'H4' | 'H5' | 'H6'
+export type HardFactClass = 'H1' | 'H2' | 'H3' | 'H4' | 'H5' | 'H6' | 'H7'
 
 export type DeliveryPhraseKind = keyof typeof DELIVERY_PHRASES
 
@@ -248,7 +259,9 @@ export type HardFactMention = Mention & { cls: HardFactClass; cover: CoverClass 
 export function detectHardFacts(text: string): HardFactMention[] {
   return [
     ...findDurations(text).map(item => ({ ...item, cls: 'H1' as const, cover: 'duration' as const })),
-    ...findQuantities(text).map(item => ({ ...item, cls: 'H1' as const, cover: 'quantity' as const })),
+    ...findQuantities(text).map(item => (isPriceTuple(item.tuple)
+      ? { ...item, cls: 'H7' as const, cover: null }
+      : { ...item, cls: 'H1' as const, cover: 'quantity' as const })),
     ...termMentions(text, UNBOUNDED_TERMS).map(item => ({ ...item, cls: 'H2' as const, cover: null })),
     ...termMentions(text, TIMING_TERMS).map(item => ({ ...item, cls: 'H3' as const, cover: 'timing' as const })),
     ...termMentions(text, PROMISE_TERMS).map(item => ({ ...item, cls: 'H4' as const, cover: null })),

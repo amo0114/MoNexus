@@ -199,6 +199,53 @@ describe('content copilot validator — contract', () => {
       expect(result.fields.description?.status).toBe('suggested')
     })
 
+    const monthYear = buildProductContentAiContext(domainInput('subscription', {
+      attributes: { serviceName: '示例订阅', serviceScope: '订阅服务' },
+      offers: [
+        offer({ id: 1, name: '月套餐', deliveryMode: 'manual_service', validityDays: 30, attributes: { entitlementSummary: '月' } }),
+        offer({ id: 2, name: '年套餐', deliveryMode: 'manual_service', validityDays: 365, attributes: { entitlementSummary: '年' } }),
+      ],
+    }))
+
+    it('checks offer attribution in the sentence of each verified mention, not the whole span (review of a5a6a4d)', () => {
+      const result = run(monthYear, output({
+        description: unit('月套餐有效期30天。年套餐有效期30天', [
+          { kind: 'duration', span: '月套餐有效期30天。年套餐有效期30天', factRef: 'offers[0].validity' },
+        ]),
+      }))
+      expect(result.fields.description?.status).toBe('rejected')
+      expect(result.issues.some(issue => issue.kind === 'ambiguous')).toBe(true)
+    })
+
+    it('checks estimate wording in the sentence of each verified service duration', () => {
+      const appointment = buildProductContentAiContext(domainInput('appointment', {
+        attributes: { deliveryChannel: 'video', timeZone: 'Asia/Shanghai' },
+        offers: [offer({ id: 1, deliveryMode: 'manual_service', attributes: { servicePackage: '咨询', estimatedMinutes: 30 } })],
+      }))
+      const result = run(appointment, output({
+        description: unit('预计30分钟。服务30分钟', [
+          { kind: 'service_duration', span: '预计30分钟。服务30分钟', factRef: 'offers[0].attributes.estimatedMinutes' },
+        ]),
+      }))
+      expect(result.fields.description?.status).toBe('rejected')
+    })
+
+    it.each([
+      ['售价1积分', '1积分'],
+      ['面值100元', '100元'],
+      ['限时8折', '8折'],
+    ])('never lets a declared attribute launder a price: 「%s」', (text, span) => {
+      const priced = buildProductContentAiContext(domainInput('subscription', {
+        attributes: { serviceName: '示例订阅', serviceScope: '订阅服务' },
+        offers: [offer({ id: 1, deliveryMode: 'manual_service', validityDays: 30, attributes: { entitlementSummary: text } })],
+      }))
+      const result = run(priced, output({
+        description: unit(text, [{ kind: 'quantity', span, factRef: 'offers[0].attributes.entitlementSummary' }]),
+      }))
+      expect(result.fields.description?.status).toBe('rejected')
+      expect(result.issues.some(issue => issue.kind === 'unsupported_fact')).toBe(true)
+    })
+
     it.each(['售价几元', '可供若干台设备使用', '支持数位用户同时使用'])('rejects vague quantity 「%s」 without a fact', text => {
       expect(run(singleManual30, output({ description: unit(text) })).fields.description?.status).toBe('rejected')
     })

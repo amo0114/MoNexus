@@ -73,6 +73,11 @@ describe('content copilot normalizers (SPEC-AI-PRODUCT-001 §7.5)', () => {
     expect(tuples.every(item => Number.isNaN(item.value))).toBe(true)
   })
 
+  it('classifies prices, points, percentages and discounts as H7', () => {
+    expect(detectHardFacts('1积分，100元，¥20，20%，8折，100GB').map(item => item.cls))
+      .toEqual(['H7', 'H7', 'H7', 'H7', 'H1', 'H7'])
+  })
+
   it('classifies delivery wording as H6', () => {
     expect(detectHardFacts('下单后自动交付，或商家人工处理，也可自动开通').filter(item => item.cls === 'H6').map(item => item.text))
       .toEqual(['下单后自动交付', '商家人工处理', '自动开通'])
