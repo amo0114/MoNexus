@@ -103,12 +103,21 @@ describe('P5 file-delivery database constraints', () => {
     const { merchant, product } = await makeMerchantWithProduct('a')
     const file = await makeFile(merchant.id, 'a1')
 
-    // file 形态缺 fixedFileId → 拒绝。
-    await expect(prisma.offer.create({
+    // 草稿可以先选 file 形态，再上传文件；完整性由发布/结算门禁校验。
+    const incomplete = await prisma.offer.create({
       data: {
-        productId: product.id, name: '坏文件规格1', price: 100,
+        productId: product.id, name: '待上传文件的草稿规格', price: 100,
         deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContentType: 'file',
       },
+    })
+    expect(incomplete.fixedFileId).toBeNull()
+
+    // 缺文件也不能混入 fixedContent，不能改成其他履约模式。
+    await expect(prisma.offer.update({
+      where: { id: incomplete.id }, data: { fixedContent: 'not-a-file' },
+    })).rejects.toThrow()
+    await expect(prisma.offer.update({
+      where: { id: incomplete.id }, data: { deliveryMode: 'manual_service' },
     })).rejects.toThrow()
 
     // file 形态还塞 fixedContent → 拒绝（文件真相源是 fixedFileId）。

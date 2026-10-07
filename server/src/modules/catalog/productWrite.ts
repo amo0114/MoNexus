@@ -263,18 +263,16 @@ export async function createProductFromV2(
           message: error.message,
         })))
       }
-      if (!(offerInput.fixedContentType === 'file' && offerInput.fixedFileId == null)
-        && !(offerInput.deliveryMode === 'instant_fixed' && offerInput.fixedContent == null && offerInput.fixedContentType !== 'file')) {
-        assertProductDeliveryConfiguration({
-          deliveryMode: offerInput.deliveryMode,
-          stockMode: offerInput.stockMode,
-          effectiveStock: 0,
-          fixedContent: offerInput.fixedContent ?? undefined,
-          fixedContentType: offerInput.fixedContentType,
-          fixedFileId: offerInput.fixedFileId,
-          allowFileForm: true,
-        })
-      }
+      assertProductDeliveryConfiguration({
+        deliveryMode: offerInput.deliveryMode,
+        stockMode: offerInput.stockMode,
+        effectiveStock: 0,
+        fixedContent: offerInput.fixedContent,
+        fixedContentType: offerInput.fixedContentType,
+        fixedFileId: offerInput.fixedFileId,
+        allowFileForm: true,
+        allowIncompleteFixedContent: true,
+      })
       const fulfillment = evaluateTemplateFulfillment({
         template,
         productAttributes: productAttributes.value,

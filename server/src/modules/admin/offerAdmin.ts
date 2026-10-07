@@ -175,6 +175,7 @@ export async function patchAdminOffer(
         fixedContentType: nextFixedContentType,
         fixedFileId: nextFixedFileId,
         allowFileForm: true,
+        allowIncompleteFixedContent: product.status === 'draft' && product.templateKey != null,
       })
       if (nextFixedFileId != null && nextFixedFileId !== offer.fixedFileId) {
         await assertPlatformDeliveryFile(tx, nextFixedFileId)
@@ -266,6 +267,7 @@ export async function createPlatformOffer(
       fixedContentType: input.fixedContentType,
       fixedFileId: input.fixedFileId,
       allowFileForm: true,
+      allowIncompleteFixedContent: product.status === 'draft' && product.templateKey != null,
     })
     if (input.fixedFileId != null) {
       await assertPlatformDeliveryFile(tx, input.fixedFileId)
