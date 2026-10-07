@@ -1,10 +1,11 @@
-// SPEC-AI-001 §6.3 (D-AI-01) — the single OpenAI adapter. Request shape is
-// frozen: Responses API, strict JSON Schema output, store=false, no tools, no
-// background mode, no SDK retries. Nothing here logs prompts or outputs.
+// SPEC-AI-001 §6.3 — Responses adapter. Legacy defaults stay unchanged;
+// output and reasoning modes are explicit runtime settings. No tools, retries,
+// background mode or content logging; store=false is always sent.
 
 import OpenAI from 'openai'
 import { LlmError, type LlmProvider, type LlmStructuredRequest, type LlmStructuredResult } from './provider.js'
 import { createAiFetch, DEFAULT_AI_BASE_URL, normalizeAiBaseUrl } from './endpoint.js'
+import { DEFAULT_AI_WIRE_SETTINGS, structuredSystem, type AiWireSettings } from './protocol.js'
 
 type OpenAiClient = Pick<OpenAI, 'responses'>
 
@@ -47,28 +48,28 @@ function createClient(apiKey: string, baseUrl: string) {
   })
 }
 
-export function createOpenAiProvider(client?: OpenAiClient, apiKey = '', baseUrl = DEFAULT_AI_BASE_URL): LlmProvider {
+export function createOpenAiProvider(client?: OpenAiClient, apiKey = '', baseUrl = DEFAULT_AI_BASE_URL, settings: AiWireSettings = DEFAULT_AI_WIRE_SETTINGS): LlmProvider {
   const sdk: OpenAiClient = client ?? createClient(apiKey, baseUrl)
 
   return {
-    name: 'openai-compatible',
+    name: `openai_responses:${settings.outputMode}:${settings.reasoningMode}`,
     async generateStructured(req: LlmStructuredRequest): Promise<LlmStructuredResult> {
       let response: OpenAI.Responses.Response
       try {
         response = await sdk.responses.create(
           {
             model: req.model,
-            instructions: req.system,
+            instructions: structuredSystem(req, settings.outputMode),
             input: JSON.stringify(req.input),
             text: {
-              format: {
+              format: settings.outputMode === 'json_object' ? { type: 'json_object' } : {
                 type: 'json_schema',
                 name: req.schemaName,
                 schema: req.outputSchema,
                 strict: true,
               },
             },
-            reasoning: { effort: req.reasoningEffort },
+            ...(settings.reasoningMode === 'none' ? { reasoning: { effort: req.reasoningEffort } } : {}),
             store: false,
             max_output_tokens: req.maxOutputTokens,
           },

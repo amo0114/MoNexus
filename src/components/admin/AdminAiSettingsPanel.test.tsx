@@ -6,6 +6,7 @@ import * as api from '../../api/adminAi'
 vi.mock('../../api/adminAi', () => ({ getAdminAiSettings: vi.fn(), updateAdminAiSettings: vi.fn(), testAdminAiConnection: vi.fn() }))
 
 const initial: api.AdminAiSettings = {
+  chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none',
   version: 4, source: 'database', enabled: false, productCopilotEnabled: false,
   apiKeyConfigured: true, apiKeyLast4: '1234', credentialError: false, encryptionReady: true, model: 'gpt-6-luna', baseUrl: 'https://api.openai.com/v1',
 }
@@ -23,6 +24,30 @@ async function mount() {
 }
 
 describe('Admin AI settings', () => {
+  it('exposes the token parameter only for Chat and saves the chosen wire field', async () => {
+    await mount()
+    expect(screen.queryByLabelText('输出长度参数（Chat）')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('接口协议'), { target: { value: 'openai_chat' } })
+    fireEvent.change(screen.getByLabelText('输出长度参数（Chat）'), { target: { value: 'max_completion_tokens' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith(expect.objectContaining({
+      protocol: 'openai_chat', chatTokenParameter: 'max_completion_tokens', model: initial.model, baseUrl: initial.baseUrl,
+    })))
+  })
+  it.each(['openai_chat', 'anthropic_messages'] as const)('saves %s without substituting the gateway or model alias', async protocol => {
+    await mount()
+    fireEvent.change(screen.getByLabelText('接口协议'), { target: { value: protocol } })
+    fireEvent.change(screen.getByLabelText('结构化输出'), { target: { value: 'json_object' } })
+    fireEvent.change(screen.getByLabelText('模型名称'), { target: { value: 'my-gateway/deepseek-flash-custom' } })
+    expect(screen.getByLabelText('API 地址（Base URL）')).toHaveValue(initial.baseUrl)
+    expect(screen.getByLabelText('推理参数')).toHaveValue('default')
+    expect(screen.getByRole('button', { name: '测试已保存的连接' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({
+      expectedVersion: 4, chatTokenParameter: 'max_tokens', protocol, outputMode: 'json_object', reasoningMode: 'default', baseUrl: initial.baseUrl,
+      model: 'my-gateway/deepseek-flash-custom', enabled: false, productCopilotEnabled: false,
+    }))
+  })
   it('shows only the suffix, preserves an untouched key, and sends the current version', async () => {
     await mount()
     expect(screen.getByLabelText('API Key')).toHaveValue('')
@@ -30,7 +55,7 @@ describe('Admin AI settings', () => {
     fireEvent.click(screen.getByLabelText('AI 总开关'))
     fireEvent.click(screen.getByLabelText('商品 Copilot（新建与说明整理）'))
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
-    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: true, productCopilotEnabled: true }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: true, productCopilotEnabled: true }))
   })
 
   it('replaces a key without persisting it locally and clears the field after saving', async () => {
@@ -39,7 +64,7 @@ describe('Admin AI settings', () => {
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: KEY } })
     expect(screen.getByRole('button', { name: '测试已保存的连接' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
-    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: KEY }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: KEY }))
     await waitFor(() => expect(screen.getByLabelText('API Key')).toHaveValue(''))
     expect(local.mock.calls.some(call => call.some(value => String(value).includes(KEY)))).toBe(false)
     local.mockRestore()
@@ -52,7 +77,7 @@ describe('Admin AI settings', () => {
     expect(screen.getByLabelText('AI 总开关')).not.toBeChecked()
     expect(screen.getByLabelText('商品 Copilot（新建与说明整理）')).not.toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
-    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: null }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: null }))
   })
 
   it('tests the saved version once, shows the result and prevents concurrent saves', async () => {
@@ -99,7 +124,7 @@ describe('Admin AI settings', () => {
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: KEY } })
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
     await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({
-      expectedVersion: 4, baseUrl: 'https://gateway.example/v1', model: 'vendor/model', enabled: false, productCopilotEnabled: false, apiKey: KEY,
+      chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', expectedVersion: 4, baseUrl: 'https://gateway.example/v1', model: 'vendor/model', enabled: false, productCopilotEnabled: false, apiKey: KEY,
     }))
   })
 })

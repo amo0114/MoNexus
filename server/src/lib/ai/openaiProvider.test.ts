@@ -38,6 +38,17 @@ function clientReturning(impl: (body: unknown, options: unknown) => Promise<unkn
 }
 
 describe('OpenAI adapter (SPEC-AI-001 §6.3 / §17-7)', () => {
+  it('supports JSON mode and omitted reasoning for a custom Responses model', async () => {
+    const { client, create } = clientReturning(async () => completed('{"ok":true}'))
+    const req = request()
+    await createOpenAiProvider(client, 'test', 'https://gateway.example/v1', { outputMode: 'json_object', reasoningMode: 'default' }).generateStructured(req)
+    const body = create.mock.calls[0][0] as Record<string, unknown>
+    expect(body.text).toEqual({ format: { type: 'json_object' } })
+    expect(body).not.toHaveProperty('reasoning')
+    expect(body.instructions).toContain(JSON.stringify(req.outputSchema))
+    expect(body.instructions).not.toContain(JSON.stringify(req.input))
+    expect(body.store).toBe(false)
+  })
   it('sends the frozen Responses request shape', async () => {
     const { client, create } = clientReturning(async () => completed('{"ok":true}'))
     const req = request()

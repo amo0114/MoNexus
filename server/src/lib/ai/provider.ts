@@ -2,6 +2,7 @@
 // only; the OpenAI SDK is imported exclusively by openaiProvider.ts.
 
 import type { AiSafe } from './safe.js'
+import type { AiWireSettings, AiProtocol } from './protocol.js'
 import { getAiRuntimeConfig } from './runtimeConfig.js'
 
 export interface LlmStructuredRequest {
@@ -51,10 +52,15 @@ export function setLlmProviderForTests(provider: LlmProvider | null): void {
   providerOverride = provider
 }
 
-export async function getLlmProvider(settings?: { apiKey: string | null; baseUrl: string }): Promise<LlmProvider> {
+export async function getLlmProvider(settings?: { apiKey: string | null; baseUrl: string; protocol: AiProtocol } & AiWireSettings): Promise<LlmProvider> {
   if (providerOverride) return providerOverride
   const runtime = settings ?? await getAiRuntimeConfig()
   if (!runtime.apiKey) throw new LlmError('unavailable')
+  if (runtime.protocol === 'openai_chat' || runtime.protocol === 'anthropic_messages') {
+    const { createCompatibleProvider } = await import('./compatibleProvider.js')
+    return createCompatibleProvider(runtime.protocol, runtime.apiKey, runtime.baseUrl, runtime)
+  }
+  if (runtime.protocol !== 'openai_responses') throw new LlmError('unavailable')
   const { createOpenAiProvider } = await import('./openaiProvider.js')
-  return createOpenAiProvider(undefined, runtime.apiKey, runtime.baseUrl)
+  return createOpenAiProvider(undefined, runtime.apiKey, runtime.baseUrl, { outputMode: runtime.outputMode, reasoningMode: runtime.reasoningMode })
 }

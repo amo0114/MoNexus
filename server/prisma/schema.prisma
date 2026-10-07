@@ -2340,6 +2340,10 @@ model AiGeneration {
 
 // Admin AI settings. Secrets never enter SystemConfig or ordinary DTOs.
 model AiRuntimeConfig {
+  chatTokenParameter    String   @default("max_tokens")
+  protocol              String   @default("openai_responses")
+  outputMode            String   @default("json_schema")
+  reasoningMode         String   @default("none")
   id                    Int      @id @default(1)
   version               Int      @default(1)
   enabled               Boolean  @default(false)

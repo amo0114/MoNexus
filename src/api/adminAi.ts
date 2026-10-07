@@ -1,5 +1,9 @@
 import api from './client'
 
+export type AiProtocol = 'openai_responses' | 'openai_chat' | 'anthropic_messages'
+export type AiOutputMode = 'json_schema' | 'json_object'
+export type AiReasoningMode = 'none' | 'default'
+
 export type AdminAiSettings = {
   version: number
   source: 'environment' | 'database'
@@ -11,6 +15,10 @@ export type AdminAiSettings = {
   encryptionReady: boolean
   model: string
   baseUrl: string
+  chatTokenParameter: 'max_tokens' | 'max_completion_tokens'
+  protocol: AiProtocol
+  outputMode: AiOutputMode
+  reasoningMode: AiReasoningMode
 }
 
 export type UpdateAdminAiSettings = {
@@ -18,6 +26,10 @@ export type UpdateAdminAiSettings = {
   enabled: boolean
   productCopilotEnabled: boolean
   baseUrl: string
+  chatTokenParameter: 'max_tokens' | 'max_completion_tokens'
+  protocol: AiProtocol
+  outputMode: AiOutputMode
+  reasoningMode: AiReasoningMode
   model: string
   apiKey?: string | null
 }

@@ -8,6 +8,8 @@ import { validate } from '../../middlewares/validate.js'
 import { encryptAiApiKey } from '../../lib/ai/credentialsCrypto.js'
 import { getAiRuntimeConfig, resolveAiRuntimeConfig, type AiRuntimeSettings } from '../../lib/ai/runtimeConfig.js'
 import { LlmError } from '../../lib/ai/provider.js'
+import { AI_PROTOCOLS, AI_OUTPUT_MODES, AI_REASONING_MODES, AI_CHAT_TOKEN_PARAMETERS } from '../../lib/ai/protocol.js'
+import { probeAnthropicConnection } from '../../lib/ai/compatibleProvider.js'
 import { probeOpenAiConnection } from '../../lib/ai/openaiProvider.js'
 import { normalizeAiBaseUrl } from '../../lib/ai/endpoint.js'
 
@@ -17,6 +19,10 @@ const updateSchema = z.object({
   expectedVersion: versionSchema,
   enabled: z.boolean(),
   productCopilotEnabled: z.boolean(),
+  chatTokenParameter: z.enum(AI_CHAT_TOKEN_PARAMETERS).optional(),
+  protocol: z.enum(AI_PROTOCOLS).optional(),
+  outputMode: z.enum(AI_OUTPUT_MODES).optional(),
+  reasoningMode: z.enum(AI_REASONING_MODES).optional(),
   baseUrl: z.string().trim().min(8).max(2048).optional(),
   model: z.string().trim().min(1).max(200).regex(/^[A-Za-z0-9][A-Za-z0-9._:/@+\-]*$/, '模型名称格式不正确').optional(),
   // Missing = preserve, null = clear, string = replace. Never accept a masked value.
@@ -33,6 +39,10 @@ function publicSettings(settings: AiRuntimeSettings) {
     apiKeyLast4: settings.apiKeyLast4,
     credentialError: settings.credentialError,
     encryptionReady: Boolean(config.ai.credentialsEncKey),
+    chatTokenParameter: settings.chatTokenParameter,
+    protocol: settings.protocol,
+    outputMode: settings.outputMode,
+    reasoningMode: settings.reasoningMode,
     baseUrl: settings.baseUrl,
     model: settings.model,
   }
@@ -51,6 +61,10 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     requireVersion(previous.version, input.expectedVersion)
     const baseUrl = normalizeAiBaseUrl(input.baseUrl ?? previous.baseUrl)
     const model = input.model ?? previous.model
+    const chatTokenParameter = input.chatTokenParameter ?? previous.chatTokenParameter
+    const protocol = input.protocol ?? previous.protocol
+    const outputMode = input.outputMode ?? previous.outputMode
+    const reasoningMode = input.reasoningMode ?? previous.reasoningMode
     if (baseUrl !== previous.baseUrl && previous.apiKeyConfigured && input.apiKey === undefined) {
       throw badRequest('更换 API 地址时，请同时填写该服务的 API Key，或清除旧密钥')
     }
@@ -73,7 +87,7 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     if (enabled && (!ciphertext || (!keyToEncrypt && previous.credentialError))) {
       throw badRequest('请先配置可用的 API Key')
     }
-    const data = { enabled, productCopilotEnabled, baseUrl, model, apiKeyCiphertext: ciphertext, apiKeyLast4: last4, updatedBy: adminUserId }
+    const data = { enabled, productCopilotEnabled, baseUrl, model, protocol, outputMode, reasoningMode, chatTokenParameter, apiKeyCiphertext: ciphertext, apiKeyLast4: last4, updatedBy: adminUserId }
     const updated = await tx.aiRuntimeConfig.upsert({
       where: { id: 1 },
       create: { id: 1, version: 1, ...data },
@@ -83,7 +97,7 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     await tx.adminLog.create({ data: {
       adminUserId, action: '更新 AI 配置', targetType: 'aiRuntimeConfig', targetId: 1,
       detail: JSON.stringify({ version: updated.version, enabled, productCopilotEnabled,
-        endpointChanged: baseUrl !== previous.baseUrl, modelChanged: model !== previous.model,
+        protocol, outputMode, reasoningMode, chatTokenParameter, endpointChanged: baseUrl !== previous.baseUrl, modelChanged: model !== previous.model,
         keyAction: input.apiKey === null ? 'clear' : keyToEncrypt ? 'replace' : 'preserve' }),
     } })
     return publicSettings(resolveAiRuntimeConfig(updated))
@@ -91,10 +105,10 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
 }
 
 function probeResult(err?: unknown) {
-  if (!err) return { ok: true, code: 'ok', message: '连接成功，所选模型已出现在服务商返回的列表中。生成权限、效果和账户余额仍需单独验证。' }
+  if (!err) return { ok: true, code: 'ok', message: '连接成功，服务商已返回所选模型的信息。生成权限、效果和账户余额仍需单独验证。' }
   if (err instanceof LlmError) {
     if (err.providerStatus === 401) return { ok: false, code: 'unauthorized', message: 'API Key 无效或已失效，请更换密钥。' }
-    if (err.providerStatus === 403 || err.providerStatus === 404) return { ok: false, code: 'model_unavailable', message: '未能确认所选模型可用，请检查模型名称、密钥权限及服务商的模型列表接口。' }
+    if (err.providerStatus === 403 || err.providerStatus === 404) return { ok: false, code: 'model_unavailable', message: '未能确认所选模型可用，请检查模型名称、密钥权限及服务商的模型信息接口。' }
     if (err.code === 'timeout') return { ok: false, code: 'timeout', message: '连接超时，请检查服务器网络后重试。' }
     if (err.code === 'rate_limited') return { ok: false, code: 'rate_limited', message: 'AI 服务暂时限制请求，请稍后重试。' }
   }
@@ -108,7 +122,8 @@ export async function testAiConnection(adminUserId: number, expectedVersion: num
   const started = Date.now()
   let result
   try {
-    await probeOpenAiConnection(settings.apiKey, settings.model, settings.baseUrl)
+    if (settings.protocol === 'anthropic_messages') await probeAnthropicConnection(settings.apiKey, settings.model, settings.baseUrl)
+    else await probeOpenAiConnection(settings.apiKey, settings.model, settings.baseUrl)
     result = probeResult()
   } catch (err) {
     result = probeResult(err)

@@ -130,7 +130,7 @@ async function main() {
     validatorVersion: VALIDATOR_VERSION,
     model: runtime.model,
     baseUrl: runtime.baseUrl,
-    configVersion: runtime.version,
+    configVersion: runtime.version, chatTokenParameter: runtime.chatTokenParameter, protocol: runtime.protocol, outputMode: runtime.outputMode, reasoningMode: runtime.reasoningMode,
     fixtures: results.length,
     structurePassRate: ok.length / Math.max(results.length, 1),
     suggestedFieldRate: fieldStatuses.filter(status => status === 'suggested').length / Math.max(fieldStatuses.length, 1),

@@ -63,7 +63,7 @@ async function main() {
   const p95LatencyMs = latencies[Math.max(0, Math.ceil(latencies.length * 0.95) - 1)] ?? 0
   const failures = evalGateFailures({ fixtures: results.length, okCases: results.filter(result => result.ok).length,
     adversarialLeaks: results.reduce((sum, result) => sum + result.leaks.length, 0), p95LatencyMs, p95GateMs: config.ai.timeoutMs })
-  const summary = { promptVersion: DRAFT_PROMPT_VERSION, validatorVersion: DRAFT_VALIDATOR_VERSION,
+  const summary = { configVersion: runtime.version, chatTokenParameter: runtime.chatTokenParameter, protocol: runtime.protocol, outputMode: runtime.outputMode, reasoningMode: runtime.reasoningMode, baseUrl: runtime.baseUrl, promptVersion: DRAFT_PROMPT_VERSION, validatorVersion: DRAFT_VALIDATOR_VERSION,
     model: runtime.model, samples: results.length, passed: results.filter(result => result.ok).length, p95LatencyMs,
     p50LatencyMs: latencies[Math.max(0, Math.ceil(latencies.length * 0.5) - 1)] ?? 0,
     averageInputTokens: results.reduce((sum, result) => sum + (result.inputTokens ?? 0), 0) / (results.length || 1),

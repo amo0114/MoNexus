@@ -11,6 +11,7 @@ import { isAiFeatureEnabled, runAiGeneration } from '../lib/ai/generation.js'
 import { markAiSafe } from '../lib/ai/safe.js'
 import { getLlmProvider, LlmError } from '../lib/ai/provider.js'
 import * as adapter from '../lib/ai/openaiProvider.js'
+import * as compatibleAdapter from '../lib/ai/compatibleProvider.js'
 import { createAiTestLimiter } from '../modules/admin/aiSettings.js'
 import { isContentCopilotAvailable } from '../modules/catalog/contentCopilot/service.js'
 
@@ -35,6 +36,41 @@ function save(body: Record<string, unknown>) {
 const getSettings = () => api.get('/api/admin/ai/config').set(authHeader(token))
 
 describe('admin AI settings', () => {
+  it('preserves legacy Responses defaults and validates protocol configuration', async () => {
+    expect((await getSettings()).body).toMatchObject({ protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none' })
+    await save({ protocol: 'unknown', apiKey: KEY }).expect(400)
+    await save({ outputMode: 'text', apiKey: KEY }).expect(400)
+    await save({ reasoningMode: 'high', apiKey: KEY }).expect(400)
+    await save({ chatTokenParameter: 'wrong', apiKey: KEY }).expect(400)
+    await save({ apiKey: KEY }).expect(200)
+    expect((await getAiRuntimeConfig()).protocol).toBe('openai_responses')
+    await expect(prisma.aiRuntimeConfig.update({ where: { id: 1 }, data: { protocol: 'unknown' } })).rejects.toThrow()
+  })
+
+  it('saves the explicit Chat token parameter and passes it to the adapter', async () => {
+    await save({ apiKey: KEY, protocol: 'openai_chat', chatTokenParameter: 'max_completion_tokens' }).expect(200)
+    expect((await getSettings()).body.chatTokenParameter).toBe('max_completion_tokens')
+    const create = vi.spyOn(compatibleAdapter, 'createCompatibleProvider').mockReturnValue({ name: 'test', generateStructured: vi.fn() })
+    await getLlmProvider()
+    expect(create).toHaveBeenCalledWith('openai_chat', KEY, 'https://api.openai.com/v1', expect.objectContaining({ chatTokenParameter: 'max_completion_tokens' }))
+  })
+
+  it.each(['openai_chat', 'anthropic_messages'] as const)('routes saved %s and retains an arbitrary gateway/model alias', async protocol => {
+    const baseUrl = 'https://custom-gateway.example/tenant/v1'
+    const saved = await save({ apiKey: KEY, protocol, outputMode: 'json_object', reasoningMode: 'default', baseUrl, model: 'merchant-alias/v4.1-flash' }).expect(200)
+    expect(saved.body).toMatchObject({ protocol, outputMode: 'json_object', reasoningMode: 'default', model: 'merchant-alias/v4.1-flash' })
+    const create = vi.spyOn(compatibleAdapter, 'createCompatibleProvider').mockReturnValue({ name: 'test', generateStructured: vi.fn() })
+    await getLlmProvider()
+    expect(create).toHaveBeenCalledWith(protocol, KEY, baseUrl, expect.objectContaining({ protocol, outputMode: 'json_object', reasoningMode: 'default' }))
+    await save({ expectedVersion: 1 }).expect(200)
+    expect((await getAiRuntimeConfig())).toMatchObject({ protocol, outputMode: 'json_object', reasoningMode: 'default', apiKey: KEY })
+    const openaiProbe = vi.spyOn(adapter, 'probeOpenAiConnection').mockResolvedValue()
+    const anthropicProbe = vi.spyOn(compatibleAdapter, 'probeAnthropicConnection').mockResolvedValue()
+    await api.post('/api/admin/ai/test').set(authHeader(token)).send({ expectedVersion: 2 }).expect(200)
+    expect(protocol === 'openai_chat' ? openaiProbe : anthropicProbe).toHaveBeenCalledExactlyOnceWith(KEY, 'merchant-alias/v4.1-flash', baseUrl)
+    expect(protocol === 'openai_chat' ? anthropicProbe : openaiProbe).not.toHaveBeenCalled()
+    expect(await prisma.aiGeneration.count()).toBe(0)
+  })
   it('encrypts credentials, only exposes suffix metadata, and audits without secrets', async () => {
     const initial = await getSettings().expect(200)
     expect(initial.body).toMatchObject({ version: 0, enabled: false, apiKeyConfigured: false, encryptionReady: true })
@@ -56,12 +92,12 @@ describe('admin AI settings', () => {
     await save({ apiKey: KEY, enabled: true, productCopilotEnabled: true }).expect(200)
     const create = vi.spyOn(adapter, 'createOpenAiProvider').mockReturnValue({ name: 'test', generateStructured: vi.fn() })
     await getLlmProvider()
-    expect(create).toHaveBeenLastCalledWith(undefined, KEY, 'https://api.openai.com/v1')
+    expect(create).toHaveBeenLastCalledWith(undefined, KEY, 'https://api.openai.com/v1', { outputMode: 'json_schema', reasoningMode: 'none' })
     await save({ expectedVersion: 1, enabled: false }).expect(200)
     expect((await getAiRuntimeConfig()).apiKey).toBe(KEY)
     await save({ expectedVersion: 2, apiKey: ROTATED, enabled: true, productCopilotEnabled: true }).expect(200)
     await getLlmProvider()
-    expect(create).toHaveBeenLastCalledWith(undefined, ROTATED, 'https://api.openai.com/v1')
+    expect(create).toHaveBeenLastCalledWith(undefined, ROTATED, 'https://api.openai.com/v1', { outputMode: 'json_schema', reasoningMode: 'none' })
     expect(create).toHaveBeenCalledTimes(2)
   })
 
@@ -171,7 +207,7 @@ describe('admin AI settings', () => {
       input: markAiSafe({ facts: {} }), outputSchema: {}, maxOutputTokens: 100,
       parse: () => ({ value: {}, issueCounts: { missing: 0, ambiguous: 0, risky_claim: 0, unsupported_fact: 0 }, suggestedFieldCount: 0 }),
     })
-    expect(create).toHaveBeenCalledWith(undefined, ROTATED, baseUrl)
+    expect(create).toHaveBeenCalledWith(undefined, ROTATED, baseUrl, { outputMode: 'json_schema', reasoningMode: 'none' })
     expect(generate.mock.calls[0][0].model).toBe('vendor/custom')
     expect((await prisma.aiGeneration.findUniqueOrThrow({ where: { id: result.generationId } })).model).toBe('vendor/custom-reported')
     const probe = vi.spyOn(adapter, 'probeOpenAiConnection').mockResolvedValue()

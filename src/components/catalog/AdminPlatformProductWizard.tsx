@@ -313,7 +313,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
         <DialogDescription>
           创建结果固定为平台自营草稿；可售量和发布需在后续独立完成。
         </DialogDescription>
-        {open && <div className="mt-5"><ProductDraftAssistant actor="admin" templates={templates} categories={categories}
+        {open && <div className="mt-5"><ProductDraftAssistant actor="admin" templates={templates} categories={categories} onCategoriesChange={setCategories}
           createDraft={createAdminPlatformProductV2} disabled={submitting}
           onActiveChange={setAssistantActive} onBusyChange={setAssistantBusy}
           onCreated={id => {

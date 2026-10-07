@@ -2,6 +2,7 @@ import type { AiRuntimeConfig, Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../prisma.js'
 import { decryptAiApiKey } from './credentialsCrypto.js'
+import type { AiProtocol, AiOutputMode, AiReasoningMode, AiChatTokenParameter } from './protocol.js'
 import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL } from './endpoint.js'
 
 export function resolveAiRuntimeConfig(row: AiRuntimeConfig | null) {
@@ -21,6 +22,10 @@ export function resolveAiRuntimeConfig(row: AiRuntimeConfig | null) {
     enabled: row?.enabled ?? config.ai.enabled,
     productCopilotEnabled: row?.productCopilotEnabled ?? config.ai.productCopilotEnabled,
     baseUrl: row?.baseUrl ?? DEFAULT_AI_BASE_URL,
+    chatTokenParameter: (row?.chatTokenParameter ?? 'max_tokens') as AiChatTokenParameter,
+    protocol: (row?.protocol ?? 'openai_responses') as AiProtocol,
+    outputMode: (row?.outputMode ?? 'json_schema') as AiOutputMode,
+    reasoningMode: (row?.reasoningMode ?? 'none') as AiReasoningMode,
     model: row?.model ?? DEFAULT_AI_MODEL,
     apiKey,
     apiKeyConfigured: row ? Boolean(row.apiKeyCiphertext) : Boolean(apiKey),

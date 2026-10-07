@@ -718,7 +718,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
       <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-1">发布新商品</h1>
       <p className="text-sm text-[var(--color-text-muted)] mb-6">按步骤完成商品配置，保存草稿后可独立补充可售量并发布</p>
 
-      {!draft && <ProductDraftAssistant actor="merchant" templates={templates} categories={categories}
+      {!draft && <ProductDraftAssistant actor="merchant" templates={templates} categories={categories} onCategoriesChange={setCategories}
         disabled={busy} createDraft={payload => adapter.createProductV2(payload)} onActiveChange={setAssistantActive}
         onCreated={id => { showToast(`商品草稿 #${id} 已创建`); navigate(`/merchant/products/${id}/edit`) }} />}
       <div hidden={assistantActive}>

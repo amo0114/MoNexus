@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-001 |
-| 版本 | 1.1.2 |
+| 版本 | 1.2.0 |
 | 日期 | 2026-10-07 |
 | 状态 | Implementation Ready（全部决策 Frozen；D-AI-01 已裁决，见 §6.3） |
 | 产品 | MoNexus |
@@ -28,13 +28,13 @@
 
 1. 冻结 AI 在 MoNexus 的职责边界与红线（§3）。
 2. 冻结 AI-safe Projection 强制规则（§4）与数据分级（§5）。
-3. 提供最小运行时：一个薄 provider 接口 + 一个 adapter、结构化输出约定、超时、配额、调用元数据、指标、feature flag（§6–§11）。
+3. 提供最小运行时：一个薄 provider 接口 + 按后台配置选择的协议 adapter、结构化输出约定、超时、配额、调用元数据、指标、feature flag（§6–§11）。
 4. 冻结 prompt 版本化、eval 分层、日志与 retention（§12–§14）。
 5. 预先冻结未来 Agent Tool 的统一安全规则（§15），但本期不实现任何 Tool。
 
 ### 2.2 非目标（本期明确不做）
 
-Agent / 工具循环、Agent SDK、MCP、Multi-Agent、向量库 / embedding / pgvector、独立 AI 服务（含 Python）、Model Router、多模型负载均衡、fallback chain、ProviderFactory、动态模型编排、通用审批工作流引擎、AI 写任何业务表。
+Agent / 工具循环、Agent SDK、MCP、Multi-Agent、向量库 / embedding / pgvector、独立 AI 服务（含 Python）、Model Router、多模型负载均衡、fallback chain、动态模型编排、通用审批工作流引擎、AI 写任何业务表。
 
 ## 3. 职责边界与红线（冻结）
 
@@ -124,7 +124,7 @@ Domain Service（现有，含权限 / ownership / visibility）
 // server/src/lib/ai/provider.ts
 export interface LlmStructuredRequest {
   model: string
-  reasoningEffort: 'none'                // V1 唯一取值（§6.3）；放宽须修订本 Spec
+  reasoningEffort: 'none'                // 功能默认值；实际是否发送由后台 reasoningMode 决定
   schemaName: string                     // 结构化输出 format 名称
   system: string
   input: AiSafe<unknown>                 // §4 AI-R14
@@ -156,19 +156,21 @@ export class LlmError extends Error {
 
 ### 6.2 约束
 
-- **只有一个 OpenAI 兼容协议** adapter 实现 + 一个测试替身。测试替身通过模块级 override 注入（同 `externalCatalog.ts` 的 `catalogClientOverrides` 惯例），**不**作为可由 env 选择的生产 provider。
+- **支持 OpenAI Responses、OpenAI Chat Completions、Anthropic Messages 三种协议**，由管理员显式选择唯一协议；另有一个测试替身。测试替身通过模块级 override 注入（同 `externalCatalog.ts` 的 `catalogClientOverrides` 惯例），**不**作为可由 env 选择的生产 provider。
 - adapter 负责：HTTP/SDK 调用、把 `outputSchema` 映射到该 provider 的结构化输出机制、读取 token usage、把 provider 错误映射为 `LlmError`、响应 `signal` 中止。
 - adapter **禁止**：重试、换模型、换 provider、记录 prompt/output、把 provider 原始错误体放入 `Error.message`（错误消息只能是 `LlmErrorCode`，防止输入回显进日志 / Sentry）。
-- 新增依赖：官方 OpenAI JS SDK（`openai@7.28.0`，精确版本加入 `server/package.json`，见 §6.3）及用于可配置地址连接期 DNS 校验的 `undici@7.29.0`。只有 adapter 文件（`lib/ai/openaiProvider.ts`）可以 import 该 SDK；feature 代码、Projection、校验器只依赖 `LlmProvider` 接口。
+- 新增依赖：官方 OpenAI JS SDK（`openai@7.28.0`，精确版本加入 `server/package.json`，见 §6.3）及用于可配置地址连接期 DNS 校验的 `undici@7.29.0`。只有 Responses adapter 文件（`lib/ai/openaiProvider.ts`）可以 import 该 SDK；Chat/Anthropic adapter 使用同一个安全 fetch，不新增 SDK；feature 代码、Projection、校验器只依赖 `LlmProvider` 接口。
 
 ### 6.3 D-AI-01（Frozen，2026-10-06 裁决）
 
-**Provider 与调用形态（1.1.0 扩展为可配置 OpenAI 兼容服务）**
+**Provider 与调用形态（1.2.0 扩展为可配置协议）**
+
+以下表格记录既有 Responses 默认配置，存量行迁移保持相同请求。新配置不绑定官方服务商、地址或模型版本，具体协议映射见后表。
 
 | 项 | 冻结值 |
 | --- | --- |
 | Provider | OpenAI 或管理员配置的第三方 OpenAI 兼容 API（默认 `https://api.openai.com/v1`） |
-| 模型 | 管理后台配置 model ID，默认 `gpt-6-luna`；服务与模型需支持本表冻结的 Responses / strict JSON Schema / reasoning.effort=none 参数 |
+| 模型 | 管理后台配置 model ID，默认 `gpt-6-luna`；服务与模型需支持管理员所选协议、结构化输出模式与推理参数 |
 | API | Responses API（`POST /v1/responses`） |
 | 结构化输出 | `text.format = { type: 'json_schema', name, schema, strict: true }` |
 | `reasoning.effort` | `'none'` |
@@ -179,7 +181,27 @@ export class LlmError extends Error {
 | 输出读取 | 只读取结构化输出文本并 `JSON.parse`；`refusal` → `LlmError('refused')`；响应 `status = 'incomplete'`（如触达 `max_output_tokens`）→ `LlmError('output_unparseable')` |
 | usage | 读取响应 `usage.input_tokens` / `usage.output_tokens` |
 
-**模型选择不是运行时 fallback。** 管理员显式配置唯一服务和模型；不自动切换、不增加路由或重试链。更换服务或模型后应先在开关关闭时运行 L3 eval，通过后再开放调用。promptVersion 现在只绑定 prompt、Projection、Schema 和调用参数；运行时模型单独记录在生成元数据与 eval 报告中（§12）。
+**协议与模型选择不是运行时 fallback。** 管理员显式配置唯一服务、协议和模型；不自动切换、不增加路由或重试链。更换服务或模型后应先在开关关闭时运行 L3 eval，通过后再开放调用。promptVersion 现在只绑定 prompt、Projection、Schema 和调用参数；运行时模型单独记录在生成元数据与 eval 报告中（§12）。
+
+
+**第三方协议配置（1.2.0）**
+
+| 配置 | 可选值 / 行为 |
+| --- | --- |
+| `protocol` | `openai_responses`（默认）、`openai_chat`、`anthropic_messages` |
+| `outputMode` | `json_schema`（默认，严格结构）、`json_object`（JSON 兼容模式） |
+| `chatTokenParameter` | `max_tokens`（兼容默认）或 `max_completion_tokens`，仅 Chat 使用 |
+| `reasoningMode` | `none`（既有默认）、`default`（不发送任何推理参数） |
+
+- API 地址是管理员填写的完整基础路径。分别追加 `/responses`、`/chat/completions`、`/messages`，不强行添加 `/v1`、官方域名或模型前缀；UI 明确显示追加的路径。模型 ID 原样发送。切换 UI 协议只把推理参数重置为“服务商默认”，不改写地址、模型或密钥，保存后才生效。
+- Responses 使用原 SDK，`store:false` 始终发送；strict 使用 `text.format.json_schema`，JSON 兼容使用 `text.format.type=json_object`；仅 `reasoningMode=none` 发送 `reasoning.effort=none`。
+- Chat 使用 Bearer 鉴权、`messages[system,user]`、`max_tokens` 或 `max_completion_tokens`（显式选择，只发送一个）、`stream:false`。strict 使用 `response_format={type:json_schema,json_schema:{name,schema,strict:true}}`，兼容模式使用 `response_format={type:json_object}`。仅 none 模式发送 `reasoning_effort=none`，具体支持情况由服务商确认，不按模型名字猜测。
+- Anthropic 使用 `x-api-key` 与 `anthropic-version:2023-06-01`（协议头，不是模型版本），顶层 system、user messages、max_tokens；strict 使用 `output_config.format={type:json_schema,schema}`，兼容模式不发送 output_config，只靠静态提示约束 JSON。仅 none 模式发送 `thinking.type=disabled`。默认模式的实际推理行为由服务商决定。
+- JSON 兼容模式在固定 system 后追加静态输出 Schema 和 JSON 要求，用户数据仍只在独立 user/input 中；不做响应修复、去围栏或失败重试。所有模式继续执行原有结构及领域校验。兼容模式不承诺服务商能保证 Schema，格式错误可能增多。
+- Chat 仅接受一个 `finish_reason=stop` 的无工具结果；拒答/content_filter 拒绝。Anthropic 仅接受 `stop_reason=end_turn`，仅读取 text，忽略 thinking/redacted_thinking；工具内容、拒答、截断或无法解析的结果拒绝。usage 只允许可入库的非负整数。
+- Chat/Anthropic 响应最多读取 2 MiB；超限拒绝。三种协议复用同一连接期 DNS/公网/重定向限制、运行时超时、配额和错误脱敏，不改变外发数据白名单。
+- 生成记录 provider 字段记录协议、输出模式、推理模式；eval 额外记录配置版本和地址。实际 model 单独记录。协议适配不增加动态路由、fallback 或自动重试。
+- 连接测试：OpenAI 两种协议沿用 models list；Anthropic 获取 `/models/{编码后的模型ID}`，允许服务商把别名解析成真实 ID。测试模型信息权限不代表生成或严格 JSON 支持。
 
 **数据出境（按 §5 分级）**
 
@@ -211,7 +233,7 @@ export class LlmError extends Error {
 ### 7.1 发送给 provider 的 Schema
 
 - 使用 JSON Schema 2020-12 的**保守子集**：`type`、`properties`、`required`（列出全部属性，可空用 `type: [..., "null"]`）、`additionalProperties: false`、`enum`、`items`、`description`。
-- 以 OpenAI Structured Outputs `strict: true` 发送：所有对象 `additionalProperties: false`，所有属性列入 `required`，可空字段用 `type: [..., "null"]`。
+- 严格输出模式按所选协议发送（见 §6.3），兼容模式把静态 Schema 放入固定提示：所有对象 `additionalProperties: false`，所有属性列入 `required`，可空字段用 `type: [..., "null"]`。
 - **不依赖** provider 执行 `maxLength`、`maxItems`、`pattern`、`format`、`minimum` 等约束；这些约束由服务端校验执行（§7.2）。即使 strict 模式接受某些约束关键字，服务端校验仍是唯一权威。
 - Schema 是静态常量，随 `promptVersion` 版本化（§12），不在运行时拼接。
 
@@ -359,7 +381,7 @@ runAiGeneration<T>(args: {
 
 ## 12. Prompt 与校验器版本化
 
-- 每个 feature 一个 `promptVersion` 常量（形如 `product-content@1`），绑定 prompt、Projection、Schema 与调用参数（`reasoning.effort`、`maxOutputTokens`）。这些内容变化时必须 bump；服务地址和 model ID 自 1.1.0 起独立由后台配置。
+- 每个 feature 一个 `promptVersion` 常量（形如 `product-content@1`），绑定 prompt、Projection、Schema 与调用参数（`reasoning.effort`、`maxOutputTokens`）。这些功能级内容变化时必须 bump；服务地址和 model ID 自 1.1.0 起、协议/输出模式/推理模式自 1.2.0 起独立由后台配置，配置组合记录在 eval 与生成元数据中。
 - 更换后台服务或模型不改 promptVersion；管理员应先对新组合运行 L3。生成元数据记录模型，eval 报告记录配置版本、服务地址和模型。连接测试不能替代生成验收。
 - `validatorVersion`（形如 `product-content-validator@1`）独立：词表、等价表、判定规则变化即 bump。
 - bump 的 PR 必须附 eval 报告（§13 L3），并在 Spec 修订记录中登记。
@@ -402,13 +424,13 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
 | `AI_CREDENTIALS_ENC_KEY` | 64 位 hex / 无 | 独立 32 字节 AES-256-GCM 主密钥；后台保存 API Key 必需；只放服务器环境，开发与生产均不从 JWT 派生 |
 
 - 全部加入 `config/index.ts` 与 `.env.example`（`.env.example` 中 `OPENAI_API_KEY` 留空）。
-- 不设 `AI_PROVIDER` / `AI_MODEL` env：协议 adapter 只有一个；服务地址与模型名在后台配置。
+- 不设 `AI_PROVIDER` / `AI_MODEL` env：协议、服务地址与模型名在后台配置。
 - 未来 Shopping Agent、Risk Copilot 等在各自 Spec 中新增独立 flag，不提前创建。
 
 ### 15.2 管理后台接管
 
-- 入口：系统配置 → AI 辅助，包含 API 地址、模型名称、Key、全局开关、商品说明 Copilot 开关、连接测试及现有两项角色配额。
-- 新增单例 `AiRuntimeConfig`（id=1）：version、baseUrl、model、双开关、apiKeyCiphertext、apiKeyLast4、updatedBy、updatedAt。API Key 不存入数值型 `SystemConfig`；配额继续沿用原表和接口。
+- 入口：系统配置 → AI 辅助，包含接口协议、输出模式、推理模式、API 地址、模型名称、Key、全局开关、商品说明 Copilot 开关、连接测试及现有两项角色配额。
+- 新增单例 `AiRuntimeConfig`（id=1）：version、protocol、outputMode、reasoningMode、chatTokenParameter、baseUrl、model、双开关、apiKeyCiphertext、apiKeyLast4、updatedBy、updatedAt。API Key 不存入数值型 `SystemConfig`；配额继续沿用原表和接口。
 - 无单例行时才读取旧环境配置。后台首次保存会接管服务地址、模型、双开关及密钥（未填写新 Key 则将现有环境 Key 加密导入）。单例存在后**整组以数据库为准**；清除 Key 不回退到环境变量，避免凭据复活。
 - 加密：AES-256-GCM，随机 12 字节 nonce、16 字节认证标签，AAD `monexus:ai-api-key:v1`，密文格式 `v1:iv:tag:ciphertext`。主密钥丢失或变更将导致旧 Key 无法解密；应恢复原主密钥或重新录入 Key，不自动使用明文或 JWT 兜底。
 - API 只返回配置版本、双开关、来源、是否配置、尾四位、解密状态、加密就绪状态、服务地址和模型。响应 `Cache-Control: no-store`；前端密钥只保留在表单内存，提交完成（包括失败）后清空，不写浏览器持久存储。
@@ -419,10 +441,10 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
 | 接口（均要求 active admin + 当前 MFA 会话） | 行为 |
 | --- | --- |
 | `GET /api/admin/ai/config` | 脱敏配置与状态 |
-| `PUT /api/admin/ai/config` | `{expectedVersion, enabled, productCopilotEnabled, baseUrl?, model?, apiKey?}`；保存后立即生效 |
+| `PUT /api/admin/ai/config` | `{expectedVersion, enabled, productCopilotEnabled, baseUrl?, model?, protocol?, outputMode?, reasoningMode?, chatTokenParameter?, apiKey?}`；保存后立即生效 |
 | `POST /api/admin/ai/test` | `{expectedVersion}`；只测试已保存配置，版本变化返回 409 |
 
-连接测试使用官方 SDK `GET {baseUrl}/models`（[OpenAI 官方文档](https://developers.openai.com/api/reference/resources/models/methods/list)，2026-10-07 核对），核对列表中是否存在配置的 model ID。地址、模型与生成使用同一配置快照。不传商品或用户内容、不触发 Responses 生成、不写 AiGeneration、不扣角色配额。
+OpenAI 两种协议的连接测试使用官方 SDK `GET {baseUrl}/models`（[OpenAI 官方文档](https://developers.openai.com/api/reference/resources/models/methods/list)，2026-10-07 核对），核对列表中是否存在配置的 model ID。Anthropic 协议查询单模型信息（§6.3）。地址、模型与生成使用同一配置快照。不传商品或用户内容、不触发 Responses 生成、不写 AiGeneration、不扣角色配额。
 
 地址安全：仅 HTTPS，支持自定义路径/端口；禁止 userinfo、query、fragment、本机/内网/保留 IP。连接时通过 Undici dispatcher 的 DNS lookup 检查全部解析结果并钉扎至公网 IP，拒绝混合私网解析，禁跟随重定向且限制请求 origin/路径在配置范围内。更换 baseUrl 时若已有 Key，必须同时提交新 Key 或显式清除，不能把旧 Key 隐式转发到新服务。仅模型变化可保留现有 Key。
 
@@ -467,4 +489,10 @@ L3 eval 可直接使用后台保存的 Key，允许开关关闭时运行，以�
 | 1.0.2 | 2026-10-07 | AI-R13 补充超限兜底：截断后仍超限必须拒绝调用 |
 | 1.1.0 | 2026-10-07 | 后台统一管理第三方兼容 API 地址、模型、Key、双开关、连接测试和角色配额；加密单例配置、即时生效、版本冲突保护；环境变量仅作首次接管前底座。 |
 | 1.1.1 | 2026-10-07 | 商品 Copilot 扩展辅助新建操作，共用开关与额度；增加 product_draft 元数据目标，不创建占位商品，交易设置由用户明确确认。 |
+| 1.2.0 | 2026-10-07 | 第三方协议显式可选 Responses/Chat/Anthropic；JSON 兼容模式与可省略推理参数；保留旧配置默认行为，不绑定官方型号/地址；共用确定性校验、超时与外发安全约束。 |
 | 1.1.2 | 2026-10-07 | 辅助新建可生成有原文依据的详细纯文案；明确人确认后转义文本写入既有富文本介绍的边界，不解释模型 HTML。 |
+
+### 1.2.0 接口资料（2026-10-07 核对）
+
+- [OpenAI Chat Completions](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)：messages、response_format、JSON mode。Chat 输出长度参数显式可选 max_tokens/max_completion_tokens，适配网关和模型差异，不做模型名猜测或自动重试切换参数。
+- [Anthropic Messages](https://platform.claude.com/docs/en/api/messages/create)：顶层 system、max_tokens、output_config.format 和文本 content。协议支持不表示目标网关/模型具备全部可选参数能力。

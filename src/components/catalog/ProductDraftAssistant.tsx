@@ -8,12 +8,14 @@ import ProductDetailsFields from './ProductDetailsFields'
 import TemplateAttributeFields from './TemplateAttributeFields'
 import ProductDraftPreview from './ProductDraftPreview'
 import ProductDraftDiff from './ProductDraftDiff'
+import DraftCategoryActions from './DraftCategoryActions'
 import { draftIntroductionHtml, getDraftChanges } from './productDraftReview'
 
 type Props = {
   actor: ProductEditorActor
   templates: ProductTemplateDefinition[]
   categories: CategoryRegistryItem[]
+  onCategoriesChange?: (items: CategoryRegistryItem[]) => void
   createDraft: (payload: CreateProductV2Request) => Promise<CreateProductV2Result>
   onCreated: (id: number) => void
   onActiveChange: (active: boolean) => void
@@ -46,8 +48,16 @@ const EXAMPLES = [
 ]
 
 /** Proposals, edits and follow-up comparisons remain local until a human saves. */
-export default function ProductDraftAssistant({ actor, templates, categories, createDraft, onCreated, onActiveChange, onBusyChange, disabled = false }: Props) {
+export default function ProductDraftAssistant({ actor, templates, categories: initialCategories, onCategoriesChange, createDraft, onCreated, onActiveChange, onBusyChange, disabled = false }: Props) {
   const id = useId()
+  const [categories, setCategories] = useState(initialCategories)
+  const [categoryBusy, setCategoryBusy] = useState(false)
+  useEffect(() => { setCategories(initialCategories) }, [initialCategories])
+  function updateCategories(items: CategoryRegistryItem[]) {
+    setCategories(items)
+    onCategoriesChange?.(items)
+    setConfirmed(false)
+  }
   const [available, setAvailable] = useState(false)
   const [active, setActive] = useState(false)
   const [source, setSource] = useState('')
@@ -79,7 +89,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
     getDraftAssistantAvailability(actor).then(value => { if (!cancelled) setAvailable(value) }).catch(() => {})
     return () => { cancelled = true; mounted.current = false; request.current?.abort() }
   }, [actor])
-  useEffect(() => { onBusyChange?.(busy !== null) }, [busy, onBusyChange])
+  useEffect(() => { onBusyChange?.(busy !== null || categoryBusy) }, [busy, categoryBusy, onBusyChange])
   useEffect(() => { if (failure) errorMessage.current?.focus() }, [failure])
 
   const template = useMemo(() => templates.find(item => item.key === proposal?.templateKey) ?? null, [templates, proposal?.templateKey])
@@ -112,7 +122,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
   }, [template, proposal, categories])
 
   function changeActive(next: boolean) {
-    if (busy === 'create') return
+    if (busy === 'create' || categoryBusy) return
     request.current?.abort()
     request.current = null
     lock.current = false
@@ -122,7 +132,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
   }
 
   async function generate() {
-    if (lock.current || !source.trim() || quotaExhausted || pending) return
+    if (lock.current || categoryBusy || !source.trim() || quotaExhausted || pending) return
     lock.current = true
     const controller = new AbortController()
     request.current = controller
@@ -199,7 +209,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
   }
 
   function review() {
-    if (busy || stale || pending) return
+    if (busy || categoryBusy || stale || pending) return
     const error = validateSettings()
     setFailure(error ?? '')
     if (!error) { setStage('review'); setSourceExpanded(false); setConfirmed(false); requestAnimationFrame(() => heading.current?.focus()) }
@@ -242,7 +252,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
   }
 
   if (!available && !active) return null
-  const blocked = busy !== null || pending !== null
+  const blocked = busy !== null || categoryBusy || pending !== null
   const currentStep = !proposal ? 0 : stage === 'edit' ? 1 : 2
   const preview = proposal && <ProductDraftPreview proposal={proposal} template={template}
     category={categories.find(item => item.id === proposal.categoryId)?.label}
@@ -291,7 +301,7 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
             onChange={event => { setSource(event.target.value); setConfirmed(false) }} />
           <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">只填写可公开的介绍，请勿填写账号、密码、卡密或实际交付内容。与 AI 说明整理共用每日额度，每次整理消耗一次。</p>
           <div className="flex flex-wrap gap-3">
-            <button type="button" className="btn-primary min-h-11" disabled={busy !== null || !source.trim() || quotaExhausted || templates.length === 0 || categories.length === 0} onClick={() => void generate()}>
+            <button type="button" className="btn-primary min-h-11" disabled={busy !== null || !source.trim() || quotaExhausted || templates.length === 0} onClick={() => void generate()}>
               {busy === 'generate' ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Sparkles className="size-4" aria-hidden="true" />}
               {busy === 'generate' ? '正在整理商品信息…' : proposal ? '整理并对比修改（消耗一次）' : '生成预填内容'}
             </button>
@@ -330,7 +340,10 @@ export default function ProductDraftAssistant({ actor, templates, categories, cr
                       }}><option value="">请选择商品形态</option>{templates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
                     <div><label htmlFor={`${id}-category`} className="mb-1 block text-sm font-semibold">商品分类（AI 建议，请核对）*</label>
                       <select id={`${id}-category`} className="input" value={proposal.categoryId ?? ''} disabled={blocked} onChange={event => patch({ categoryId: event.target.value ? Number(event.target.value) : null })}>
-                        <option value="">请选择商品分类</option>{categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select></div>
+                        <option value="">请选择商品分类</option>{categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
+                      <DraftCategoryActions actor={actor} categories={categories} onCategoriesChange={updateCategories}
+                        onSelect={categoryId => patch({ categoryId })} onBusyChange={setCategoryBusy} disabled={blocked}
+                        exampleProduct={proposal.name ?? undefined} /></div>
                     <div><label htmlFor={`${id}-description`} className="mb-1 block text-sm font-semibold">商品简介</label>
                       <textarea id={`${id}-description`} className="input min-h-24" maxLength={2000} value={proposal.description ?? ''} disabled={blocked} onChange={event => patch({ description: event.target.value })} />
                       <p className="mt-1 text-xs text-[var(--color-text-muted)]">短简介用于概括商品，完整介绍在「详细说明」中查看和修改。</p></div>

@@ -2,9 +2,13 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProductDraftAssistant from './ProductDraftAssistant'
 import * as api from '../../api/productDraftAssistant'
+import { catalogGovernanceApi } from '../../api/catalogGovernance'
+import { catalogApi } from '../../api/catalog'
+import { uploadImage } from '../../api/uploads'
 import { EMPTY_PRODUCT_DETAILS, type ProductTemplateDefinition } from '../../types/catalog'
 
 vi.mock('../../api/productDraftAssistant', () => ({ getDraftAssistantAvailability: vi.fn(), requestProductDraftSuggestion: vi.fn() }))
+vi.mock('../../api/uploads', () => ({ uploadImage: vi.fn() }))
 const template: ProductTemplateDefinition = {
   key: 'fixed_content', version: 1, label: '固定数字内容',
   productSchema: { type: 'object', properties: { contentCategory: { type: 'string', title: '内容类型' } } },
@@ -45,6 +49,7 @@ function editInfo() { fireEvent.click(screen.getByRole('button', { name: /^商�
 function confirm() { fireEvent.click(screen.getByLabelText('我已核对商品形态、分类、参数和交易设置，确认保存为草稿')) }
 
 beforeEach(() => {
+  vi.restoreAllMocks()
   vi.resetAllMocks()
   vi.mocked(api.getDraftAssistantAvailability).mockResolvedValue(true)
   vi.mocked(api.requestProductDraftSuggestion).mockImplementation(async () => structuredClone(response))
@@ -52,6 +57,87 @@ beforeEach(() => {
 })
 
 describe('AI assisted draft creation', () => {
+  async function fillCategory() {
+    fireEvent.change(screen.getByTestId('category-form-label'), { target: { value: '简历服务' } })
+    fireEvent.change(screen.getByTestId('category-form-code'), { target: { value: 'resume-service' } })
+    vi.mocked(uploadImage).mockResolvedValue({ key: 'category-cover', url: '/uploads/category-cover' })
+    fireEvent.change(screen.getByLabelText('默认封面 *'), { target: { files: [new File(['image'], 'cover.png', { type: 'image/png' })] } })
+    await screen.findByAltText('分类默认封面预览')
+  }
+
+  it('creates and selects an admin category in place, preserving generated copy and commerce through save', async () => {
+    const create = vi.spyOn(catalogGovernanceApi, 'createCategory').mockResolvedValue({ id: 9, code: 'resume-service', label: '简历服务', sortOrder: 0, iconKey: null } as never)
+    mount()
+    await generate()
+    fillCommerce()
+    editInfo()
+    fireEvent.change(screen.getByLabelText('商品名称 *'), { target: { value: '我修改的名称' } })
+    fireEvent.click(screen.getByRole('button', { name: '没有合适的分类？新建分类' }))
+    await fillCategory()
+    fireEvent.click(screen.getByRole('button', { name: '创建分类', exact: true }))
+    await waitFor(() => expect(screen.getByLabelText('商品分类（AI 建议，请核对）*')).toHaveValue('9'))
+    expect(screen.getByLabelText('商品名称 *')).toHaveValue('我修改的名称')
+    expect(screen.getByLabelText('售价（积分，由你填写）*')).toHaveValue(100)
+    expect(screen.getByLabelText('详细商品介绍')).toHaveValue(response.suggestion.introduction)
+    expect(create).toHaveBeenCalledExactlyOnceWith({ code: 'resume-service', label: '简历服务', sortOrder: 0, iconKey: undefined, description: undefined, defaultCover: { kind: 'upload', objectKey: 'category-cover' } })
+    expect(api.requestProductDraftSuggestion).toHaveBeenCalledOnce()
+    review()
+    confirm()
+    fireEvent.click(screen.getByRole('button', { name: '确认并创建草稿' }))
+    await waitFor(() => expect(createDraft).toHaveBeenCalledWith(expect.objectContaining({ categoryId: 9, name: '我修改的名称' })))
+  })
+
+  it('preserves category and product fields after a duplicate category error, and blocks duplicate writes', async () => {
+    let reject!: (reason: unknown) => void
+    const create = vi.spyOn(catalogGovernanceApi, 'createCategory').mockReturnValue(new Promise((_, fail) => { reject = fail }))
+    mount()
+    await generate()
+    editInfo()
+    fireEvent.click(screen.getByRole('button', { name: '没有合适的分类？新建分类' }))
+    await fillCategory()
+    const submit = screen.getByRole('button', { name: '创建分类', exact: true })
+    fireEvent.click(submit)
+    fireEvent.click(submit)
+    expect(create).toHaveBeenCalledOnce()
+    await act(async () => reject({ response: { data: { error: { code: 'CONFLICT', message: '分类名称已存在' } } } }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('分类名称已存在')
+    expect(screen.getByTestId('category-form-label')).toHaveValue('简历服务')
+    fireEvent.click(screen.getByRole('button', { name: '取消', exact: true }))
+    expect(screen.getByLabelText('商品名称 *')).toHaveValue('学习指南')
+    expect(screen.getByLabelText('商品分类（AI 建议，请核对）*')).toHaveValue('1')
+  })
+
+  it('lets an empty category directory generate content, then supplies the missing category in place', async () => {
+    vi.mocked(api.requestProductDraftSuggestion).mockResolvedValueOnce({ ...response, suggestion: { ...response.suggestion, categoryId: null } })
+    const refresh = vi.spyOn(catalogApi, 'listActiveCategories').mockResolvedValue([{ id: 9, code: 'resume', label: '简历服务', iconKey: null, sortOrder: 0 }])
+    render(<ProductDraftAssistant actor="admin" templates={[template]} categories={[]} createDraft={createDraft} onCreated={onCreated} onActiveChange={onActiveChange} />)
+    await generate()
+    expect(screen.getByRole('button', { name: '没有合适的分类？新建分类' })).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '刷新分类' }))
+    await screen.findByRole('option', { name: '简历服务' })
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText('商品名称 *')).toHaveValue('学习指南')
+  })
+
+  it('offers merchants an application, never a direct category write or unapproved selection', async () => {
+    const create = vi.spyOn(catalogGovernanceApi, 'createCategory')
+    const apply = vi.spyOn(catalogGovernanceApi, 'createApplication').mockResolvedValue({ id: 11, status: 'pending' } as never)
+    render(<ProductDraftAssistant actor="merchant" templates={[template]} categories={[]} createDraft={createDraft} onCreated={onCreated} onActiveChange={onActiveChange} />)
+    await generate()
+    editInfo()
+    expect(screen.queryByRole('button', { name: '没有合适的分类？新建分类' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '没有合适的分类？申请新分类' }))
+    fireEvent.change(screen.getByLabelText('分类名称 *'), { target: { value: '简历服务' } })
+    fireEvent.change(screen.getByLabelText('分类描述（至少 20 字）*'), { target: { value: '用于展示整理客户提供的简历文字与版式的人工服务商品' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交申请' }))
+    await screen.findByText(/申请已提交，等待平台审核/)
+    expect(create).not.toHaveBeenCalled()
+    expect(apply).toHaveBeenCalledExactlyOnceWith({ proposedLabel: '简历服务', description: '用于展示整理客户提供的简历文字与版式的人工服务商品', exampleProducts: '学习指南' })
+    expect(screen.queryByRole('option', { name: '简历服务' })).not.toBeInTheDocument()
+    expect(createDraft).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('商品名称 *')).toHaveValue('学习指南')
+  })
+
   it('guides missing template facts to their editor without treating them as draft blockers', async () => {
     vi.mocked(api.requestProductDraftSuggestion).mockResolvedValueOnce({ ...response, suggestion: { ...response.suggestion, attributes: {} } })
     mount([{ ...template, productSchema: { ...template.productSchema, required: ['contentCategory'] } }])
