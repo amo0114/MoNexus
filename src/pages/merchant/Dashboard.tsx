@@ -11,6 +11,7 @@ import RangeFilter from './dashboard/RangeFilter'
 import { useNavigate } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import TrafficPanel from '../../components/TrafficPanel'
+import WorkbenchSummary from '../../components/merchant/workbench/WorkbenchSummary'
 
 export default function Dashboard() {
   const { range } = useDashboardStore()
@@ -85,6 +86,9 @@ export default function Dashboard() {
         </button>
         <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">经营数据</h1>
       </div>
+
+      {/* Loads independently; a workbench failure never blocks these statistics. */}
+      <WorkbenchSummary />
 
       <SummaryCards data={summary} loading={summaryLoading} />
 

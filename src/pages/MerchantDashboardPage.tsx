@@ -19,6 +19,7 @@ import {
   rejectOrder,
   postOrderProgress,
   importMerchantInventory,
+  getMerchantOffers,
   type InventoryImportResult,
   type CapacityAdjustResult,
   type InventoryVoidResult,
@@ -53,9 +54,14 @@ import { Dialog, DialogContent, DialogTitle } from '../components/ui/Dialog'
 import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
+import WorkbenchSummary from '../components/merchant/workbench/WorkbenchSummary'
+import { parsePositiveId } from '../components/merchant/workbench/navigation'
+import { useMerchantWorkbenchStore } from '../stores/merchantWorkbench'
 
 type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions' | 'categoryApplications'
 type MerchantOrderSetter = Dispatch<SetStateAction<MerchantOrder | null>>
+type AvailabilityTarget = Pick<MerchantProduct, 'id' | 'name' | 'offers' | 'availableStock'>
+type ProductRef = Pick<MerchantProduct, 'id' | 'name' | 'offers'>
 
 const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
   { key: 'dashboard', label: '概览', Icon: Store },
@@ -275,7 +281,59 @@ export default function MerchantDashboardPage() {
 
   // --- Product Modals State ---
   const [isAvailabilityOpen, setIsAvailabilityOpen] = useState(false)
-  const [availabilityProduct, setAvailabilityProduct] = useState<MerchantProduct | null>(null)
+  const [availabilityProduct, setAvailabilityProduct] = useState<AvailabilityTarget | null>(null)
+  // Workbench deep link (Spec §8): /merchant?availabilityProductId=…&offerId=…
+  // loads the product by id — it need not be on the current list page — and
+  // opens the original dialog on exactly that Offer.
+  const [availabilityTargetOfferId, setAvailabilityTargetOfferId] = useState<number | null>(null)
+  const searchParams = new URLSearchParams(location.search)
+  const deepLinkProductId = parsePositiveId(searchParams.get('availabilityProductId'))
+  const deepLinkOfferIdRaw = searchParams.get('offerId')
+  const deepLinkOfferId = parsePositiveId(deepLinkOfferIdRaw)
+  const deepLinkActive = searchParams.has('availabilityProductId')
+
+  function clearAvailabilityDeepLink() {
+    const params = new URLSearchParams(location.search)
+    if (!params.has('availabilityProductId') && !params.has('offerId')) return
+    params.delete('availabilityProductId')
+    params.delete('offerId')
+    navigate({ pathname: location.pathname, search: params.toString() }, { replace: true, state: null })
+  }
+
+  useEffect(() => {
+    if (!deepLinkActive) return
+    if (deepLinkProductId == null || deepLinkOfferId == null) {
+      showToast('链接中的商品或规格无效', 'error')
+      clearAvailabilityDeepLink()
+      return
+    }
+    let active = true
+    const name = location.state?.availabilityProductName
+    getMerchantOffers(deepLinkProductId)
+      .then((offers) => {
+        if (!active) return
+        setAvailabilityProduct({
+          id: deepLinkProductId,
+          name: typeof name === 'string' && name ? name : `商品 #${deepLinkProductId}`,
+          offers,
+        })
+        setAvailabilityTargetOfferId(deepLinkOfferId)
+        setIsAvailabilityOpen(true)
+      })
+      .catch((error) => {
+        if (!active) return
+        showToast(isGoneOrForbidden(error) ? '商品不存在或无权管理' : getApiErrorMessage(error, '加载商品规格失败'), 'error')
+        clearAvailabilityDeepLink()
+      })
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkActive, deepLinkProductId, deepLinkOfferIdRaw, location.key])
+
+  function closeAvailability() {
+    setIsAvailabilityOpen(false)
+    setAvailabilityTargetOfferId(null)
+    clearAvailabilityDeepLink()
+  }
 
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
   const [importingProduct, setImportingProduct] = useState<{ id: number, name: string, offers?: MerchantProduct['offers'] } | null>(null)
@@ -353,8 +411,10 @@ export default function MerchantDashboardPage() {
   }
 
   function handleAvailabilityChanged() {
-    setIsAvailabilityOpen(false)
+    closeAvailability()
     setAvailabilityProduct(null)
+    // A successful availability write refreshes urgent and stock facts only.
+    void useMerchantWorkbenchStore.getState().afterAvailabilityChange()
     return loadData()
   }
 
@@ -379,7 +439,7 @@ export default function MerchantDashboardPage() {
     })
   }
 
-  function notifyCapacityAdjusted(product: MerchantProduct, result: CapacityAdjustResult, offerId: number) {
+  function notifyCapacityAdjusted(product: ProductRef, result: CapacityAdjustResult, offerId: number) {
     const offer = product.offers?.find((item) => item.id === offerId)
     const label = offer?.deliveryMode === 'manual_service' ? '服务名额' : '可售名额'
     showCompletionActivity({
@@ -391,7 +451,7 @@ export default function MerchantDashboardPage() {
     })
   }
 
-  function notifyInventoryVoided(product: MerchantProduct, result: InventoryVoidResult) {
+  function notifyInventoryVoided(product: ProductRef, result: InventoryVoidResult) {
     const offer = product.offers?.find((item) => item.id === result.offerId)
     showCompletionActivity({
       title: `已作废 ${result.voided} 个，规格剩余 ${result.availableStock} 个`,
@@ -568,6 +628,7 @@ export default function MerchantDashboardPage() {
         <div className="card max-md:p-4 max-md:min-h-0 min-h-[500px]">
           {activeTab === 'dashboard' && (
             <div className="fade-in">
+              <WorkbenchSummary />
               <h2 className="font-heading text-xl font-bold max-md:mb-4 mb-6 text-[var(--color-text)]">数据概览</h2>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {!stats ? (
@@ -611,7 +672,7 @@ export default function MerchantDashboardPage() {
               onToggleProductStatus={handleToggleProductStatus}
               onCreateProduct={() => navigate('/merchant/products/new')}
               onEditProduct={(productId) => navigate(`/merchant/products/${productId}/edit`)}
-              onManageAvailability={(product) => { setAvailabilityProduct(product); setIsAvailabilityOpen(true) }}
+              onManageAvailability={(product) => { setAvailabilityTargetOfferId(null); setAvailabilityProduct(product); setIsAvailabilityOpen(true) }}
               onManageInventory={(product) => { setImportingProduct({ id: product.id, name: product.name, offers: product.offers }); setIsInventoryModalOpen(true) }}
               onAdjustCapacity={(product) => { setCapacityProduct(product); setIsCapacityAdjustOpen(true) }}
               onViewInventoryLog={(product) => { setLogProduct(product); setIsInventoryLogOpen(true) }}
@@ -754,8 +815,9 @@ export default function MerchantDashboardPage() {
 
       <MerchantAvailabilityModal
         isOpen={isAvailabilityOpen}
-        onClose={() => setIsAvailabilityOpen(false)}
+        onClose={closeAvailability}
         product={availabilityProduct}
+        initialOfferId={availabilityTargetOfferId}
         onChanged={handleAvailabilityChanged}
         onImported={(result, offerId) => {
           if (availabilityProduct) notifyInventoryImported(availabilityProduct, result, offerId)
