@@ -98,6 +98,51 @@ describe('content copilot validator — contract', () => {
     expect(result.fields.description?.status).toBe('rejected')
   })
 
+  it('does not let a verified claim cover other hard facts inside its span', () => {
+    const days30 = buildProductContentAiContext(domainInput('subscription', {
+      attributes: { serviceName: '示例订阅', serviceScope: '订阅服务' },
+      offers: [offer({ id: 1, deliveryMode: 'manual_service', validityDays: 30, attributes: { entitlementSummary: '基础套餐' } })],
+    }))
+    const result = validateModelOutput({
+      raw: output({
+        description: unit('有效期30天，售价1积分，支持美国', [
+          { kind: 'duration', span: '有效期30天，售价1积分，支持美国', factRef: 'offers[0].validity' },
+        ]),
+      }),
+      context: days30,
+      readinessCodes: [],
+      upstreamRequested: false,
+    })
+    expect(result.fields.description?.status).toBe('rejected')
+    expect(result.issues.some(issue => issue.kind === 'unsupported_fact' && issue.field === 'description')).toBe(true)
+  })
+
+  it('checks offer attribution at every occurrence of a repeated span', () => {
+    const twoPlans = buildProductContentAiContext(domainInput('subscription', {
+      attributes: { serviceName: '示例订阅', serviceScope: '订阅服务' },
+      offers: [
+        offer({ id: 1, name: '月套餐', deliveryMode: 'manual_service', validityDays: 30, attributes: { entitlementSummary: '月' } }),
+        offer({ id: 2, name: '年套餐', deliveryMode: 'manual_service', validityDays: 365, attributes: { entitlementSummary: '年' } }),
+      ],
+    }))
+    const result = validateModelOutput({
+      raw: output({
+        description: unit('月套餐有效期30天。年套餐有效期30天。', [
+          { kind: 'duration', span: '30天', factRef: 'offers[0].validity' },
+        ]),
+      }),
+      context: twoPlans,
+      readinessCodes: [],
+      upstreamRequested: false,
+    })
+    expect(result.fields.description?.status).toBe('rejected')
+  })
+
+  it.each(['5秒内完成交付', '半天内完成交付', '几分钟内完成交付'])('rejects undeclared timing 「%s」', text => {
+    const result = validateModelOutput({ raw: output({ description: unit(text) }), context, readinessCodes: [], upstreamRequested: false })
+    expect(result.fields.description?.status).toBe('rejected')
+  })
+
   it('keeps at most 12 model issues and clips their text', () => {
     const result = validateModelOutput({
       raw: output({

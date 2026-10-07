@@ -35,6 +35,26 @@ describe('content copilot normalizers (SPEC-AI-PRODUCT-001 §7.5)', () => {
     expect(findDurations(text).map(item => item.expr)).toEqual([expected])
   })
 
+  it.each([
+    ['5秒内完成交付', 5 / 60],
+    ['3 秒钟', 3 / 60],
+    ['半天内完成交付', null],
+    ['一天半', null],
+    ['几分钟内到账', null],
+  ])('detects timing durations in %s', (text, minutes) => {
+    const found = findDurations(text)
+    expect(found).toHaveLength(1)
+    if (minutes != null) expect(found[0].expr).toEqual({ kind: 'minutes', minutes })
+    expect(detectHardFacts(text).some(item => item.cls === 'H1')).toBe(true)
+  })
+
+  it('parses half units and keeps vague counts unmatchable', () => {
+    expect(findDurations('半天')[0].expr).toEqual({ kind: 'days', days: 0.5 })
+    expect(findDurations('一天半')[0].expr).toEqual({ kind: 'days', days: 1.5 })
+    const vague = findDurations('数日')[0].expr as { days: number }
+    expect(Number.isNaN(vague.days)).toBe(true)
+  })
+
   it('does not read 「十分」 as minutes', () => {
     expect(findDurations('操作十分简单')).toEqual([])
   })

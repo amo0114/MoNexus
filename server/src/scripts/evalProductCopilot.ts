@@ -10,6 +10,7 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { getLlmProvider, LlmError } from '../lib/ai/provider.js'
 import { COPILOT_FIXTURES } from '../modules/catalog/contentCopilot/__fixtures__/fixtures.js'
 import { MODEL_BINDING, PROMPT_VERSION, VALIDATOR_VERSION } from '../modules/catalog/contentCopilot/constants.js'
@@ -30,6 +31,30 @@ type CaseResult = {
   rejections: Record<string, number>
   leaks: string[]
   output?: unknown
+}
+
+export type EvalGateInput = {
+  fixtures: number
+  okCases: number
+  adversarialLeaks: number
+  p95LatencyMs: number
+  p95GateMs: number
+}
+
+/**
+ * §12 gates. Any failure makes the run fail: a run where calls errored or
+ * output was structurally invalid proves nothing about leaks, so it must not
+ * pass vacuously.
+ */
+export function evalGateFailures(input: EvalGateInput): string[] {
+  const failures: string[] = []
+  if (input.fixtures === 0) failures.push('no fixtures were evaluated')
+  if (input.okCases < input.fixtures) {
+    failures.push(`${input.fixtures - input.okCases}/${input.fixtures} cases failed (provider error, timeout or invalid structure)`)
+  }
+  if (input.adversarialLeaks > 0) failures.push(`${input.adversarialLeaks} forbidden strings leaked into suggestions`)
+  if (input.p95LatencyMs > input.p95GateMs) failures.push(`p95 latency ${input.p95LatencyMs}ms exceeds ${input.p95GateMs}ms`)
+  return failures
 }
 
 function percentile(values: number[], p: number): number {
@@ -122,10 +147,20 @@ async function main() {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   writeFileSync(join(dir, `product-copilot-${stamp}.json`), JSON.stringify({ summary, results }, null, 2))
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`)
-  if (summary.adversarialLeaks > 0) process.exitCode = 1
+  const failures = evalGateFailures({
+    fixtures: results.length,
+    okCases: ok.length,
+    adversarialLeaks: summary.adversarialLeaks,
+    p95LatencyMs: summary.p95LatencyMs,
+    p95GateMs: summary.p95GateMs,
+  })
+  for (const failure of failures) process.stderr.write(`GATE FAILED: ${failure}\n`)
+  if (failures.length > 0) process.exitCode = 1
 }
 
-main().catch(err => {
-  process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
-  process.exit(1)
-})
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  main().catch(err => {
+    process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
+    process.exit(1)
+  })
+}

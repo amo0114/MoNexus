@@ -3,9 +3,9 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-PRODUCT-001 |
-| 版本 | 1.0.1 |
+| 版本 | 1.0.2 |
 | 日期 | 2026-10-07 |
-| 状态 | Implementation Ready（全部决策 Frozen；依赖 SPEC-AI-001 v1.0.1） |
+| 状态 | Implementation Ready（全部决策 Frozen；依赖 SPEC-AI-001 v1.0.2） |
 | 产品 | MoNexus |
 | 上位规范 | SPEC-AI-001（`docs/specs/ai-foundation.md`）、SPEC-PRODUCT-COMMERCE-002（`docs/specs/product-commerce-v2/spec.md`） |
 | 关联模块 | `server/src/modules/catalog/{productWrite.ts,publicationReadiness.ts,productV2Schema.ts,templates/*}`、`server/src/modules/merchant/{routes,controller}.ts`、`server/src/modules/admin/{routes,controller}.ts`、`server/src/lib/systemConfig.ts`、`src/pages/merchant/ProductEditPage.tsx`、`src/components/catalog/{ProductDetailsFields,AdminSourceDescriptionDialog}.tsx`、`src/api/catalog.ts` |
@@ -180,7 +180,8 @@ type ProductContentAiContext = {
 }
 ```
 
-- 上限：`JSON.stringify(context)` ≤ 24,000 字符。超限时按顺序截断 `upstreamDescriptionText` → `sourceNotes` → `currentContent.details.usageInstructions`，截断处追加「…」，并置 `truncated = true`；`facts` 永不截断。
+- 上限：`JSON.stringify(context)` ≤ 24,000 字符。超限时按顺序截断 `upstreamDescriptionText` → `sourceNotes` → `details.usageInstructions` → `details.purchaseNotes` → `details.afterSalesInstructions` → `details.faq`（从末尾逐条移除）→ `details.highlights`（同上）→ `currentContent.description`，文本截断处追加「…」，并置 `truncated = true`；`facts` 永不截断。
+- **兜底（fail-closed）**：全部不可信字段截断后仍超限（例如 20 个规格且属性均接近上限），Projection 抛错，服务返回 422 `AI_CONTEXT_TOO_LARGE`；不调用 provider、不写 `AiGeneration`、不消耗配额。不得发送超限 context。
 - Projection 文件：`server/src/modules/catalog/contentCopilot/projection.ts`，导出 `buildProductContentAiContext()`，返回 `AiSafe<ProductContentAiContext>`。必须满足 SPEC-AI-001 §4.2 的五项测试；Sentinel 测试至少覆盖 `fixedContent`、`fixedStructuredContent`、`externalSku`（含 Xboard 商品，其 SKU 被读取但不得投影）、`price`、`stock`、`deliveryFields[].placeholder`、上游 capacity、`sourceSnapshot.planId`。
 
 ## 6. 输出
@@ -286,6 +287,7 @@ type Issue = {
 
 1. 每个 `claim.span` 必须是所在单元文本的子串（空白归一化后比较），否则拒绝单元（模型虚报声明）。
 2. `factRef` 必须解析到 `facts` 中存在且值非 `null` 的节点；`kind` 与节点类型须兼容（见 §7.3 表），否则产生 `unsupported_fact`。
+3. **逐处核对**：span 在单元内出现多次时，与句子相关的规则（多规格时同句须出现规格名、`service_duration` 的「预计」语义）在每一处出现位置分别判定；只有通过判定的出现位置被视为已核实。全部位置都不通过 → 按首个失败原因拒绝单元；部分通过 → 未通过的位置不被覆盖，由 §7.4 检测器拒绝。
 
 ### 7.3 Claim 判定（语义归一化，不是字符串匹配）
 
@@ -304,11 +306,21 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 
 ### 7.4 未声明硬事实检测（防模型漏报 claim）
 
-对每个单元文本独立运行确定性检测器，识别以下硬事实提及；**每一处提及必须被某个已判定成立的 claim span 覆盖**，否则：H1/H3/H5 → `unsupported_fact`，H2/H4 → `risky_claim`；均拒绝单元。
+对每个单元文本独立运行确定性检测器，识别以下硬事实提及；**每一处提及必须被某个已判定成立、且类别匹配的 claim 出现位置覆盖**，否则：H1/H3/H5 → `unsupported_fact`，H2/H4 → `risky_claim`；均拒绝单元。
+
+**按类别覆盖**：一个已核实的 claim 只覆盖其 span 内与自身 kind 对应的提及，宽 span 不能替其他事实背书（例如把「有效期30天，售价1积分，支持美国」整句声明为 `duration`，只覆盖「30天」，价格与地区仍需各自的 claim）：
+
+| claim kind | 可覆盖的提及 |
+| --- | --- |
+| `duration` / `service_duration` | H1 时长 |
+| `quantity` | H1 时长与 H1 数量（两者都已按 §7.3 与声明文本核对） |
+| `region` / `platform` | H5 |
+| `delivery_method` / `delivery_timing` | H3 |
+| `price` / `stock` / `refund` / `guarantee` | 无 |
 
 | 类 | 识别内容 |
 | --- | --- |
-| H1 数量 | 阿拉伯 / 中文数字（含 两、半、十、百、千、万）+ 单位：时间（秒、分钟、小时、天、日、周、星期、个月、月、季度、季、年）、容量 / 流量（B、KB、MB、GB、TB、G、M、T、兆）、速率（Mbps、Gbps、兆）、设备 / 人数（台、设备、终端、人、位、账号）、次、积分、元、¥、$、% |
+| H1 数量 | 阿拉伯 / 中文数字（含 两、半、十、百、千、万）或模糊数量（几、数、若干）+ 单位，含「半天 / 半日 / 半小时 / 半年」与「X 天半」等形式：时间（毫秒、秒、秒钟、分钟、小时、钟头、天、日、周、星期、个月、月、季度、季、年；不含单字「分」）、容量 / 流量（B、KB、MB、GB、TB、G、M、T、兆）、速率（Mbps、Gbps、兆）、设备 / 人数（台、设备、终端、人、位、账号）、次、积分、元、¥、$、% |
 | H2 无界 / 永久 | 永久、终身、永不过期、长期有效、不限、无限、无限制、不限速、不限量、无上限 |
 | H3 时效 | 秒发、秒到、即时、立即到账、实时、马上、全天候 |
 | H4 承诺 | 包退、包换、包赔、退款、退货、赔付、保证、保障、担保、无条件、100%、绝对、官方、正品、不封号、永不封号、稳定不掉线 |
@@ -383,6 +395,7 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 | 504 / 502 / 网络超时 | 「AI 暂时不可用，你可以继续手动编辑」；允许重试（提示会消耗次数） |
 | 404 | 隐藏入口（功能被关闭） |
 | 全部字段被拒 | 展示 issues，提示「没有可直接采纳的建议，请参考提示手动完善」 |
+| 422 `AI_CONTEXT_TOO_LARGE` | 「商品规格与参数信息过多，暂不支持 AI 整理，请手动编辑」（不消耗次数） |
 
 ## 9. API
 
@@ -410,7 +423,7 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 
 ### 9.3 新增 ErrorCode
 
-`AI_PRODUCT_TEMPLATE_REQUIRED`（409），以及 SPEC-AI-001 §9.2 的 `AI_QUOTA_EXCEEDED`、`AI_GENERATION_IN_PROGRESS`、`AI_TIMEOUT`、`AI_PROVIDER_ERROR`、`AI_OUTPUT_INVALID`。
+`AI_PRODUCT_TEMPLATE_REQUIRED`（409）、`AI_CONTEXT_TOO_LARGE`（422，§5.4 兜底），以及 SPEC-AI-001 §9.2 的 `AI_QUOTA_EXCEEDED`、`AI_GENERATION_IN_PROGRESS`、`AI_TIMEOUT`、`AI_PROVIDER_ERROR`、`AI_OUTPUT_INVALID`。
 
 ## 10. 配置
 
@@ -451,6 +464,8 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 ### 11.3 模型 eval（手动，L3）
 
 `server/src/scripts/evalProductCopilot.ts`（`npm --prefix server run ai:eval:product-copilot`）：对全部 fixtures 调用真实 provider，输出本地报告（gitignored 目录）。报告指标：结构通过率、字段 `suggested` 率、单元拒绝率（按原因）、对抗样本放行数（必须为 0）、p50 / p95 延迟、平均 tokens。`promptVersion` / `validatorVersion` / 模型变更时必跑，报告摘要附在 PR 中。
+
+**退出码（门禁）**：以下任一情况脚本以非零退出码结束——存在未成功的样本（provider 错误、超时、结构无效）、对抗放行数 > 0、p95 延迟超过 `AI_TIMEOUT_MS` 的 80%、或没有样本。全部调用失败时不得因「放行数为 0」而通过。
 
 **上线门禁**：首先以 `gpt-6-luna` 跑完整 L3。若未满足 §12 硬门槛（对抗放行 0、敏感外发 0）或 p95 延迟门槛，则**停止上线**，回到 D-AI-01 重新做模型决策（可评估 `gpt-6.1-sol`）；换模型 = 新 `promptVersion` + Spec 修订 + 重跑 L3。不实现自动模型切换、fallback chain 或 model router。
 
@@ -512,3 +527,4 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 | 1.0.0-rc1 | 2026-10-06 | 初稿 |
 | 1.0.0 | 2026-10-06 | 评审裁决：CP-08 改为来源保持型时长；CP-09 改为 `perpetual_access` 忠实投影 + Validator 管控；CP-10 冻结并允许中性售后流程；采纳上报改为 `appliedFieldCount`（CP-12）；新增 `xboardPeriod` 精确推导；D-AI-01 落定；状态 Implementation Ready |
 | 1.0.1 | 2026-10-07 | 实施前精化：§6.2 明确「结构失败整体拒绝 / 上限单元级拒绝或截断」；§8.1 入口位置；依赖 SPEC-AI-001 v1.0.1（Node 22 + `openai@7.28.0`） |
+| 1.0.2 | 2026-10-07 | 复核修复：§7.2 逐处核对 span 归属；§7.4 按 claim 类别覆盖提及、H1 补齐秒 / 半天 / 模糊数量；§5.4 截断扩展到全部不可信字段并在仍超限时 422 `AI_CONTEXT_TOO_LARGE`（fail-closed）；§11.3 L3 退出码门禁；validatorVersion 不变（未上线） |

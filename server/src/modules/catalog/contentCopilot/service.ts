@@ -24,7 +24,7 @@ import {
   VALIDATOR_VERSION,
 } from './constants.js'
 import { MODEL_OUTPUT_SCHEMA } from './outputSchema.js'
-import { buildProductContentAiContext } from './projection.js'
+import { buildProductContentAiContext, ContentContextTooLargeError } from './projection.js'
 import { SYSTEM_PROMPT } from './prompt.js'
 import type { ContentSuggestionRequest } from './schema.js'
 import {
@@ -132,7 +132,7 @@ export async function generateContentSuggestion(
   const readinessCodes = readiness.details.map(detail => detail.code)
   const targetFields = input.targetFields ?? [...CONTENT_FIELDS]
 
-  const context = buildProductContentAiContext({
+  const context = buildContext({
     actorKind: actor.kind,
     template,
     categoryLabel: product.category.label,
@@ -186,6 +186,18 @@ export async function generateContentSuggestion(
     validatorVersion: VALIDATOR_VERSION,
     fields: value.fields,
     issues: value.issues,
+  }
+}
+
+// Refused before any provider call or quota use (SPEC-AI-PRODUCT-001 §5.4).
+function buildContext(input: Parameters<typeof buildProductContentAiContext>[0]) {
+  try {
+    return buildProductContentAiContext(input)
+  } catch (err) {
+    if (err instanceof ContentContextTooLargeError) {
+      throw new HttpError(422, 'AI_CONTEXT_TOO_LARGE', '商品规格与参数信息过多，暂不支持 AI 整理，请手动编辑')
+    }
+    throw err
   }
 }
 

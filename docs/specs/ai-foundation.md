@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-001 |
-| 版本 | 1.0.1 |
+| 版本 | 1.0.2 |
 | 日期 | 2026-10-07 |
 | 状态 | Implementation Ready（全部决策 Frozen；D-AI-01 已裁决，见 §6.3） |
 | 产品 | MoNexus |
@@ -82,7 +82,7 @@ Domain Service（现有，含权限 / ownership / visibility）
 - **AI-R10**：LLM 输入**只能**来自 AI-safe Projection。禁止把 Prisma Entity、数据库原始行、完整 API DTO（含 `getProductEditor`、admin order detail 等）、`JSON.stringify(entity)` 或其片段直接放入 prompt。
 - **AI-R11**：Projection 是纯函数 `build<Feature>AiContext(domainInput) → <Feature>AiContext`，**逐字段显式构造**；禁止对源对象使用对象展开（`...entity`）、`Object.assign`、`pick` 之外的反射式复制。
 - **AI-R12**：每个 Context 类型必须把字段分到以下分区之一（§5 的分级）：`facts`（可信结构化事实）、`declared`（商家在结构化字段中的声明）、`untrusted`（用户/商家/上游自由文本）。**`sensitive` 分级的数据不得出现在任何分区**。
-- **AI-R13**：Context 必须有大小上限（每个 feature 声明字符上限），超限由 Projection 截断并在 context 内标记 `truncated: true`，不得静默丢弃整个分区。
+- **AI-R13**：Context 必须有大小上限（每个 feature 声明字符上限），超限由 Projection 截断并在 context 内标记 `truncated: true`，不得静默丢弃整个分区。截断全部可截断字段后仍超限时必须拒绝本次调用（fail-closed，不调用 provider、不计配额），**不得**发送超限 context。
 - **AI-R14**：Projection 输出用类型品牌标记为 AI-safe：
 
   ```ts
@@ -432,3 +432,4 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
 | 1.0.0-rc1 | 2026-10-06 | 初稿：冻结职责边界、Projection、数据分级、provider 接口、元数据、配额、版本化、eval 分层、Agent Tool 规则；D-AI-01 未决 |
 | 1.0.0 | 2026-10-06 | D-AI-01 裁决（OpenAI / gpt-6-luna / Responses / strict JSON Schema / effort none / store=false / 无工具 / 官方 SDK 固定 `openai@6.49.0`（Node 20 约束），数据出境与保留表述）；inputHash 增加用途域分隔；模型绑定 promptVersion，删除 `AI_PROVIDER` / `AI_MODEL`，`AI_API_KEY` 更名为 `OPENAI_API_KEY`；状态 Implementation Ready |
 | 1.0.1 | 2026-10-07 | 项目运行时升级到 Node 22，SDK 改为固定 `openai@7.28.0`（取代 1.0.0 的 6.49.0 临时方案）；其余条款不变 |
+| 1.0.2 | 2026-10-07 | AI-R13 补充超限兜底：截断后仍超限必须拒绝调用 |

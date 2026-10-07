@@ -70,6 +70,8 @@ function failureFor(err: unknown): Failure {
       return { code, message: '上一次整理仍在进行中，请稍后' }
     case 'AI_PRODUCT_TEMPLATE_REQUIRED':
       return { code, message: getApiErrorMessage(err, '请先为商品选择商品形态') }
+    case 'AI_CONTEXT_TOO_LARGE':
+      return { code, message: getApiErrorMessage(err, '商品信息过多，暂不支持 AI 整理，请手动编辑') }
     default:
       return { code, message: 'AI 暂时不可用，你可以继续手动编辑' }
   }

@@ -1,4 +1,4 @@
-# Plan：AI Foundation（SPEC-AI-001 v1.0.1）
+# Plan：AI Foundation（SPEC-AI-001 v1.0.2）
 
 配套 spec：`docs/specs/ai-foundation.md`。从 `develop` 拉 `feat/ai-foundation`，PR 目标 `develop`。本计划只拆任务与依赖，实施细节以 Spec 为准；Spec 与代码事实冲突时停止并回报，不自行改 Spec。
 

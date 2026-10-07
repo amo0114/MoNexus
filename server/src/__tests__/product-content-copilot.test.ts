@@ -206,6 +206,30 @@ describe('product content copilot — preconditions (§4)', () => {
     expect(calls).toHaveLength(0)
   })
 
+  it('refuses an oversized context with 422 before any provider call or quota use', async () => {
+    const { token, productId } = await merchantWithProduct('copilot-oversized@test.local')
+    await prisma.offer.updateMany({
+      where: { productId },
+      data: { attributes: { contentScope: '范'.repeat(500) } },
+    })
+    await prisma.offer.createMany({
+      data: Array.from({ length: 49 }, (_, index) => ({
+        productId,
+        name: `规格${index}`,
+        price: 100,
+        deliveryMode: 'instant_fixed',
+        stockMode: 'unlimited',
+        fixedContent: 'x',
+        sortOrder: index + 1,
+        attributes: { contentScope: '范'.repeat(500) },
+      })),
+    })
+    const res = await suggest(token, productId).expect(422)
+    expect(res.body.error.code).toBe('AI_CONTEXT_TOO_LARGE')
+    expect(calls).toHaveLength(0)
+    expect(await prisma.aiGeneration.count()).toBe(0)
+  })
+
   it('rejects useUpstreamDescription on the merchant route', async () => {
     const { token, productId } = await merchantWithProduct('copilot-upstream@test.local')
     await suggest(token, productId, { useUpstreamDescription: true }).expect(400)

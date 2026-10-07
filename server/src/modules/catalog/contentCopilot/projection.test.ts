@@ -3,7 +3,7 @@ import { assertNoSentinel, assertUnknownPreserved, collectKeyPaths } from '../..
 import { EMPTY_PRODUCT_DETAILS } from '../templates/types.js'
 import { FIXTURE_SENSITIVE_SKU, domainInput, offer } from './__fixtures__/fixtures.js'
 import { MAX_CONTEXT_CHARS } from './constants.js'
-import { buildProductContentAiContext, deriveXboardPeriod } from './projection.js'
+import { ContentContextTooLargeError, buildProductContentAiContext, deriveXboardPeriod } from './projection.js'
 
 const SNAPSHOT = {
   planId: 4242,
@@ -172,6 +172,31 @@ describe('content copilot projection (SPEC-AI-001 §4.2, SPEC-AI-PRODUCT-001 §5
     expect(context.facts.xboard).toEqual({ periods: ['monthly', 'yearly'] })
     expect(context.facts.offers[0].xboardPeriod).toBe('monthly')
     expect(context.untrusted.upstreamDescriptionText).toBeNull()
+  })
+
+  it('truncates every untrusted field before giving up, then refuses instead of exceeding the limit', () => {
+    const fullOffers = (count: number) => Array.from({ length: count }, (_, index) => offer({
+      id: index + 1,
+      name: `规格${index + 1}`,
+      deliveryMode: 'manual_service',
+      validityDays: 30,
+      attributes: { entitlementSummary: '权'.repeat(500), quotaText: '额'.repeat(200), regionText: '区'.repeat(200) },
+    }))
+    const heavyDetails = {
+      highlights: ['亮'.repeat(40), '点'.repeat(40)],
+      usageInstructions: '用'.repeat(4_000),
+      purchaseNotes: '须'.repeat(2_000),
+      afterSalesInstructions: '售'.repeat(2_000),
+      faq: [{ question: '问'.repeat(100), answer: '答'.repeat(1_000) }],
+    }
+
+    const fits = buildProductContentAiContext(domainInput('subscription', { offers: fullOffers(10), details: heavyDetails, description: '简'.repeat(2_000) }))
+    expect(JSON.stringify(fits).length).toBeLessThanOrEqual(MAX_CONTEXT_CHARS)
+    expect(fits.truncated).toBe(true)
+    expect(fits.facts.offers).toHaveLength(10)
+
+    expect(() => buildProductContentAiContext(domainInput('subscription', { offers: fullOffers(20), details: heavyDetails })))
+      .toThrow(ContentContextTooLargeError)
   })
 
   it('truncates untrusted text in the frozen order and flags it', () => {

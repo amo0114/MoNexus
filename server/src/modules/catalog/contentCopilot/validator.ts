@@ -25,7 +25,8 @@ import {
   hasForbiddenMarkup,
   normalizeSpace,
   regionPlatformIds,
-  type Mention,
+  type CoverClass,
+  type HardFactMention,
 } from './normalizers.js'
 import { isModelOutput, type Claim, type ModelOutput } from './outputSchema.js'
 import type { DeclaredAttr, ProductAiFacts, ProductContentAiContext, Validity } from './projection.js'
@@ -222,59 +223,92 @@ function judgeDeliveryTiming(span: string, fact: ResolvedFact): RejectionReason 
   return null
 }
 
-function judgeServiceDuration(span: string, sentence: string, fact: ResolvedFact): RejectionReason | null {
+function judgeServiceDuration(span: string, fact: ResolvedFact): RejectionReason | null {
   if (fact.type !== 'declared' || fact.value.kind !== 'integer' || fact.value.unit !== 'minute' || fact.value.value == null) {
     return unsupported(span)
   }
   const durations = findDurations(span).filter(item => item.expr.kind === 'minutes')
   if (durations.length !== 1) return unsupported(span, '不是可核对的服务时长')
   const minutes = (durations[0].expr as { minutes: number }).minutes
-  if (minutes !== fact.value.value) return unsupported(span, '与预计服务时长不一致')
-  return containsAny(sentence, ESTIMATE_TERMS) ? null : unsupported(span, '服务时长必须表述为预计时长')
+  return minutes === fact.value.value ? null : unsupported(span, '与预计服务时长不一致')
 }
 
-function sentenceAround(text: string, span: string): string {
-  const index = text.indexOf(span)
-  if (index < 0) return text
-  const before = text.slice(0, index)
-  const startCut = Math.max(...['。', '！', '？', '!', '?', '；', ';', '\n'].map(mark => before.lastIndexOf(mark)))
-  const after = text.slice(index + span.length)
-  const ends = ['。', '！', '？', '!', '?', '；', ';', '\n'].map(mark => after.indexOf(mark)).filter(i => i >= 0)
-  const endCut = ends.length > 0 ? index + span.length + Math.min(...ends) : text.length
+/** Mentions a verified claim of each kind may cover (§7.4): nothing outside its own kind. */
+const CLAIM_COVERS: Record<Claim['kind'], CoverClass[]> = {
+  duration: ['duration'],
+  quantity: ['duration', 'quantity'],
+  region: ['regionPlatform'],
+  platform: ['regionPlatform'],
+  delivery_method: ['timing'],
+  delivery_timing: ['timing'],
+  service_duration: ['duration'],
+  price: [],
+  stock: [],
+  refund: [],
+  guarantee: [],
+}
+
+const SENTENCE_BREAKS = ['。', '！', '？', '!', '?', '；', ';', '\n']
+
+function sentenceAt(text: string, start: number, end: number): string {
+  const before = text.slice(0, start)
+  const startCut = Math.max(...SENTENCE_BREAKS.map(mark => before.lastIndexOf(mark)))
+  const after = text.slice(end)
+  const ends = SENTENCE_BREAKS.map(mark => after.indexOf(mark)).filter(index => index >= 0)
+  const endCut = ends.length > 0 ? end + Math.min(...ends) : text.length
   return text.slice(startCut + 1, endCut)
 }
 
-function judgeClaim(claim: Claim, unitText: string, facts: ProductAiFacts): RejectionReason | null {
-  const span = normalizeSpace(claim.span)
-  if (claim.kind === 'price' || claim.kind === 'stock') return unsupported(span, '是价格或库存类数值')
-  if (claim.kind === 'refund' || claim.kind === 'guarantee') return risky(span)
+/** Judges the claim's value against its fact, independent of where the span occurs. */
+function judgeClaimValue(claim: Claim, span: string, facts: ProductAiFacts): { reason: RejectionReason } | { fact: ResolvedFact } {
+  if (claim.kind === 'price' || claim.kind === 'stock') return { reason: unsupported(span, '是价格或库存类数值') }
+  if (claim.kind === 'refund' || claim.kind === 'guarantee') return { reason: risky(span) }
 
   const fact = resolveFactRef(facts, claim.factRef)
-  if (!fact) return unsupported(span)
+  if (!fact) return { reason: unsupported(span) }
 
-  const sentence = sentenceAround(unitText, span)
+  let reason: RejectionReason | null
+  switch (claim.kind) {
+    case 'duration':
+      reason = judgeDuration(span, fact)
+      break
+    case 'quantity':
+      reason = judgeTuples(span, fact)
+      break
+    case 'region':
+    case 'platform':
+      reason = judgeRegionPlatform(span, fact)
+      break
+    case 'delivery_method':
+      reason = judgeDeliveryMethod(span, fact)
+      break
+    case 'delivery_timing':
+      reason = judgeDeliveryTiming(span, fact)
+      break
+    case 'service_duration':
+      reason = judgeServiceDuration(span, fact)
+      break
+  }
+  return reason ? { reason } : { fact }
+}
+
+/**
+ * Sentence-level rules are checked at every occurrence of the span (§7.3):
+ * an offer-specific fact only covers occurrences whose sentence names that
+ * offer, so one claim cannot vouch for the same words in another offer's
+ * sentence.
+ */
+function occurrenceReason(claim: Claim, fact: ResolvedFact, sentence: string, span: string, facts: ProductAiFacts): RejectionReason | null {
   if (fact.offerIndex != null && facts.offers.length > 1) {
     const offerName = normalizeSpace(facts.offers[fact.offerIndex].name)
     if (!sentence.includes(offerName)) {
       return { kind: 'ambiguous', message: `「${span}」未指明对应的规格，已拒绝该条建议`, evidence: span }
     }
   }
-
-  switch (claim.kind) {
-    case 'duration':
-      return judgeDuration(span, fact)
-    case 'quantity':
-      return judgeTuples(span, fact)
-    case 'region':
-    case 'platform':
-      return judgeRegionPlatform(span, fact)
-    case 'delivery_method':
-      return judgeDeliveryMethod(span, fact)
-    case 'delivery_timing':
-      return judgeDeliveryTiming(span, fact)
-    case 'service_duration':
-      return judgeServiceDuration(span, sentence, fact)
+  if (claim.kind === 'service_duration' && !containsAny(sentence, ESTIMATE_TERMS)) {
+    return unsupported(span, '服务时长必须表述为预计时长')
   }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -292,8 +326,11 @@ function occurrences(text: string, span: string): Array<[number, number]> {
   }
 }
 
-function covered(mention: Mention, ranges: Array<[number, number]>): boolean {
-  return ranges.some(([start, end]) => mention.start >= start && mention.end <= end)
+type VerifiedRange = { start: number; end: number; covers: CoverClass[] }
+
+function covered(mention: HardFactMention, ranges: VerifiedRange[]): boolean {
+  return mention.cover != null && ranges.some(range =>
+    mention.start >= range.start && mention.end <= range.end && range.covers.includes(mention.cover as CoverClass))
 }
 
 function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): RejectionReason | null {
@@ -306,16 +343,29 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
     return { kind: 'format', message: '事实声明超出上限，已拒绝该条建议', evidence: null }
   }
 
-  const verifiedRanges: Array<[number, number]> = []
+  const verified: VerifiedRange[] = []
   for (const claim of claims) {
     const span = normalizeSpace(claim.span)
     const ranges = occurrences(unitText, span)
     if (ranges.length === 0) {
       return { kind: 'format', message: '事实声明与文本不一致，已拒绝该条建议', evidence: null }
     }
-    const reason = judgeClaim(claim, unitText, facts)
-    if (reason) return reason
-    verifiedRanges.push(...ranges)
+    const judged = judgeClaimValue(claim, span, facts)
+    if ('reason' in judged) return judged.reason
+    let firstFailure: RejectionReason | null = null
+    for (const [start, end] of ranges) {
+      const reason = occurrenceReason(claim, judged.fact, sentenceAt(unitText, start, end), span, facts)
+      if (reason) {
+        firstFailure ??= reason
+      } else {
+        verified.push({ start, end, covers: CLAIM_COVERS[claim.kind] })
+      }
+    }
+    // No occurrence passed: report why. Occurrences that failed while others
+    // passed stay uncovered and are rejected by the detector below.
+    if (!verified.some(range => ranges.some(([start, end]) => range.start === start && range.end === end))) {
+      return firstFailure
+    }
   }
 
   for (const mention of detectHardFacts(unitText)) {
@@ -323,7 +373,7 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
       return { kind: 'risky_claim', message: `「${mention.text}」属于无上限或永久类表述，已拒绝该条建议`, evidence: mention.text }
     }
     if (mention.cls === 'H4') return risky(mention.text)
-    if (!covered(mention, verifiedRanges)) return unsupported(mention.text)
+    if (!covered(mention, verified)) return unsupported(mention.text)
   }
   return null
 }

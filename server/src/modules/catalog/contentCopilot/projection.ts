@@ -310,30 +310,53 @@ export function buildProductContentAiContext(input: ContentCopilotDomainInput): 
   return markAiSafe(truncateToLimit(context))
 }
 
+/**
+ * Thrown when the context still exceeds MAX_CONTEXT_CHARS after every
+ * untrusted field was truncated. Facts are never cut (AI-R13), so the request
+ * must be refused before any provider call rather than sent over the limit.
+ */
+export class ContentContextTooLargeError extends Error {
+  constructor() {
+    super('content copilot context exceeds the frozen size limit')
+  }
+}
+
+type TruncationStep =
+  | { kind: 'text'; get: () => string | null; set: (value: string) => void }
+  | { kind: 'list'; list: () => unknown[] }
+
 function truncateToLimit(context: ProductContentAiContext): ProductContentAiContext {
   const over = () => JSON.stringify(context).length - MAX_CONTEXT_CHARS
   const untrusted = context.untrusted
-  const steps: Array<{ get: () => string | null; set: (value: string) => void }> = [
-    { get: () => untrusted.upstreamDescriptionText, set: value => { untrusted.upstreamDescriptionText = value || null } },
-    { get: () => untrusted.sourceNotes, set: value => { untrusted.sourceNotes = value || null } },
-    {
-      get: () => untrusted.currentContent.details.usageInstructions || null,
-      set: value => { untrusted.currentContent.details.usageInstructions = value },
-    },
+  const details = untrusted.currentContent.details
+  const textStep = (get: () => string | null, set: (value: string) => void): TruncationStep => ({ kind: 'text', get, set })
+  // Frozen order (§5.4): least valuable untrusted text first, facts never.
+  const steps: TruncationStep[] = [
+    textStep(() => untrusted.upstreamDescriptionText, value => { untrusted.upstreamDescriptionText = value || null }),
+    textStep(() => untrusted.sourceNotes, value => { untrusted.sourceNotes = value || null }),
+    textStep(() => details.usageInstructions || null, value => { details.usageInstructions = value }),
+    textStep(() => details.purchaseNotes || null, value => { details.purchaseNotes = value }),
+    textStep(() => details.afterSalesInstructions || null, value => { details.afterSalesInstructions = value }),
+    { kind: 'list', list: () => details.faq },
+    { kind: 'list', list: () => details.highlights },
+    textStep(() => untrusted.currentContent.description, value => { untrusted.currentContent.description = value || null }),
   ]
   for (const step of steps) {
-    let overflow = over()
-    if (overflow <= 0) break
-    const current = step.get()
-    if (!current) continue
-    step.set(cut(current, overflow))
-    context.truncated = true
-    overflow = over()
-    // JSON escaping can make the char count drift; trim once more if needed.
-    while (overflow > 0 && step.get()) {
-      step.set(cut(step.get() as string, overflow))
-      overflow = over()
+    if (over() <= 0) break
+    if (step.kind === 'list') {
+      const list = step.list()
+      while (over() > 0 && list.length > 0) {
+        list.pop()
+        context.truncated = true
+      }
+      continue
+    }
+    // JSON escaping can make the char count drift; keep trimming until it fits.
+    while (over() > 0 && step.get()) {
+      step.set(cut(step.get() as string, over()))
+      context.truncated = true
     }
   }
+  if (over() > 0) throw new ContentContextTooLargeError()
   return context
 }

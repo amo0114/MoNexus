@@ -142,6 +142,7 @@ export type ErrorCode =
   | 'AI_PROVIDER_ERROR'
   | 'AI_OUTPUT_INVALID'
   | 'AI_PRODUCT_TEMPLATE_REQUIRED'
+  | 'AI_CONTEXT_TOO_LARGE'
 
 export interface ErrorDetail {
   field: string

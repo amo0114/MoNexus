@@ -50,9 +50,13 @@ export type DurationExpr =
 
 export type Mention = { start: number; end: number; text: string }
 
+// Vague counts (「几分钟」「数日」「若干天」) are still hard timing facts; they
+// parse to NaN so they can never match a fact and are always rejected.
+const VAGUE_NUMBER = '几|数|若干'
+
 const DURATION_RE = new RegExp(
   // Bare 「分」 is deliberately absent: 「十分简单」 would read as ten minutes.
-  `(?:(${NUMBER})\\s*个?\\s*(个月|星期|季度|小时|钟头|分钟|天|日|周|月|季|年)|半\\s*个?\\s*(年|个月|月|小时))`,
+  `(?:(${NUMBER}|${VAGUE_NUMBER})\\s*个?\\s*(个月|星期|季度|小时|钟头|分钟|毫秒|秒钟|秒|天|日|周|月|季|年)(半)?|半\\s*个?\\s*(年|个月|月|小时|钟头|天|日))`,
   'g',
 )
 
@@ -75,6 +79,11 @@ function durationFrom(value: number, unit: string): DurationExpr {
     case '小时':
     case '钟头':
       return { kind: 'minutes', minutes: value * 60 }
+    case '秒':
+    case '秒钟':
+      return { kind: 'minutes', minutes: value / 60 }
+    case '毫秒':
+      return { kind: 'minutes', minutes: value / 60_000 }
     default:
       // 分钟
       return { kind: 'minutes', minutes: value }
@@ -85,12 +94,12 @@ export function findDurations(text: string): Array<Mention & { expr: DurationExp
   const out: Array<Mention & { expr: DurationExpr }> = []
   for (const match of text.matchAll(DURATION_RE)) {
     const start = match.index ?? 0
-    if (match[3]) {
-      out.push({ start, end: start + match[0].length, text: match[0], expr: durationFrom(0.5, match[3]) })
+    if (match[4]) {
+      out.push({ start, end: start + match[0].length, text: match[0], expr: durationFrom(0.5, match[4]) })
       continue
     }
-    const value = parseNumberToken(match[1])
-    if (value == null) continue
+    const parsed = parseNumberToken(match[1])
+    const value = parsed == null ? Number.NaN : parsed + (match[3] ? 0.5 : 0)
     out.push({ start, end: start + match[0].length, text: match[0], expr: durationFrom(value, match[2]) })
   }
   return out
@@ -209,15 +218,24 @@ export function regionPlatformIds(text: string): Set<string> {
 
 export type HardFactClass = 'H1' | 'H2' | 'H3' | 'H4' | 'H5'
 
+/**
+ * What kind of verified claim may cover a mention. A claim only covers
+ * mentions of its own kind inside its span, so a wide span verified as a
+ * duration cannot launder a price or a region (§7.4). H2/H4 have no cover.
+ */
+export type CoverClass = 'duration' | 'quantity' | 'timing' | 'regionPlatform'
+
+export type HardFactMention = Mention & { cls: HardFactClass; cover: CoverClass | null }
+
 /** §7.4 detector: every hard-fact mention in a unit, with its class. */
-export function detectHardFacts(text: string): Array<Mention & { cls: HardFactClass }> {
+export function detectHardFacts(text: string): HardFactMention[] {
   return [
-    ...findDurations(text).map(item => ({ ...item, cls: 'H1' as const })),
-    ...findQuantities(text).map(item => ({ ...item, cls: 'H1' as const })),
-    ...termMentions(text, UNBOUNDED_TERMS).map(item => ({ ...item, cls: 'H2' as const })),
-    ...termMentions(text, TIMING_TERMS).map(item => ({ ...item, cls: 'H3' as const })),
-    ...termMentions(text, PROMISE_TERMS).map(item => ({ ...item, cls: 'H4' as const })),
-    ...findRegionPlatformMentions(text).map(item => ({ ...item, cls: 'H5' as const })),
+    ...findDurations(text).map(item => ({ ...item, cls: 'H1' as const, cover: 'duration' as const })),
+    ...findQuantities(text).map(item => ({ ...item, cls: 'H1' as const, cover: 'quantity' as const })),
+    ...termMentions(text, UNBOUNDED_TERMS).map(item => ({ ...item, cls: 'H2' as const, cover: null })),
+    ...termMentions(text, TIMING_TERMS).map(item => ({ ...item, cls: 'H3' as const, cover: 'timing' as const })),
+    ...termMentions(text, PROMISE_TERMS).map(item => ({ ...item, cls: 'H4' as const, cover: null })),
+    ...findRegionPlatformMentions(text).map(item => ({ ...item, cls: 'H5' as const, cover: 'regionPlatform' as const })),
   ]
 }
 
