@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Prisma } from '@prisma/client'
 import { config } from '../../../config/index.js'
 import { prisma } from '../../../lib/prisma.js'
-import { api, authHeader, createTestMerchant, createTestProduct, getDefaultOfferId, loginAs } from '../../../__tests__/helpers.js'
+import { api, authHeader, createTestMerchant, createTestProduct, createTestUser, getDefaultOfferId, loginAs } from '../../../__tests__/helpers.js'
 import * as readiness from '../../catalog/publicationReadiness.js'
 import * as repository from './repository.js'
 import { getAvailability, getDrafts, getItem, getUrgent } from './service.js'
@@ -212,5 +212,102 @@ describe('merchant workbench PR1', () => {
     const none = await getItem(owner.merchant.id, 'draft_incomplete', product.id, NOW)
     if (none.state !== 'match') throw Error('Expected match')
     expect(none.item.action).toMatchObject({ kind: 'edit_product', focus: 'offers', offerId: null })
+  })
+})
+
+describe('merchant workbench PR3 evidence', () => {
+  const keysOf = (items: Array<{ key: string }>) => items.map(item => item.key).sort()
+
+  it('AC03: cards follow unpublish, archive/restore and offer disable/enable done through business APIs', async () => {
+    const { owner, product, offerId } = await fixture()
+    const merchant = authHeader((await loginAs(owner.user.email, 'pass123')).accessToken)
+    await createTestUser('workbench-admin@test.local', 'admin123', 'admin')
+    const admin = authHeader((await loginAs('workbench-admin@test.local', 'admin123')).accessToken)
+    // Sold-out inventory offer (default) plus a low capacity offer; a draft with a missing cover.
+    await prisma.inventoryItem.deleteMany({ where: { offerId } })
+    const low = await prisma.offer.create({ data: { productId: product.id, name: 'Low', price: 100, deliveryMode: 'manual_service', stockMode: 'limited', stock: 2 } })
+    await api.put(`/api/merchant/products/${product.id}`).set(merchant)
+      .send({ imageUrl: '/assets/e2e-cover.png', images: ['/assets/e2e-cover.png'] }).expect(200)
+    const draft = await createTestProduct('Draft target', 100, 0, [], owner.merchant.id)
+    await prisma.product.update({ where: { id: draft.id }, data: { status: 'draft' } })
+
+    const urgent = async () => (await api.get(`${base}/urgent`).set(merchant).expect(200)).body
+    const availability = async () => keysOf((await api.get(`${base}/availability`).set(merchant).expect(200)).body.items)
+    const draftIds = async () => (await api.get(`${base}/drafts`).set(merchant).expect(200)).body.results
+      .filter((row: { state: string }) => row.state === 'match').map((row: { targetId: number }) => row.targetId)
+    const item = async (rule: string, id: number) => (await api.get(`${base}/items/${rule}/${id}`).set(merchant).expect(200)).body.state
+    const soldKey = `low_availability:${offerId}`, lowKey = `low_availability:${low.id}`
+
+    expect(keysOf((await urgent()).soldOut.items)).toEqual([soldKey])
+    expect(await availability()).toEqual([soldKey, lowKey].sort())
+    expect(await draftIds()).toEqual([draft.id])
+
+    // Offer disable / enable (merchant offer API).
+    await api.put(`/api/merchant/products/${product.id}/offers/${low.id}`).set(merchant).send({ status: 'inactive' }).expect(200)
+    expect(await availability()).toEqual([soldKey])
+    expect(await item('low_availability', low.id)).toBe('ineligible')
+    await api.put(`/api/merchant/products/${product.id}/offers/${low.id}`).set(merchant).send({ status: 'active' }).expect(200)
+    expect(await availability()).toEqual([soldKey, lowKey].sort())
+
+    // Unpublish removes every availability card of the product; publishing again restores them.
+    await api.post(`/api/merchant/products/${product.id}/unpublish`).set(merchant).expect(200)
+    expect((await urgent()).soldOut.items).toEqual([])
+    expect(await availability()).toEqual([])
+    expect(await item('low_availability', low.id)).toBe('ineligible')
+    await api.post(`/api/merchant/products/${product.id}/publish`).set(merchant).expect(200)
+    expect(await availability()).toEqual([soldKey, lowKey].sort())
+
+    // Platform archive / restore (admin product lifecycle API) for an active product and a draft.
+    await api.post(`/api/admin/products/${product.id}/archive`).set(admin).send({ reason: 'workbench AC03' }).expect(200)
+    expect(await availability()).toEqual([])
+    expect(await item('low_availability', offerId)).toBe('ineligible')
+    await api.post(`/api/admin/products/${draft.id}/archive`).set(admin).send({ reason: 'workbench AC03' }).expect(200)
+    expect(await draftIds()).toEqual([])
+    expect(await item('draft_incomplete', draft.id)).toBe('ineligible')
+    // Restore: a never-published draft returns as a draft card; a published product returns inactive
+    // (no cards) until the merchant re-enables its offers and publishes it again.
+    await api.post(`/api/admin/products/${draft.id}/restore`).set(admin).expect(200)
+    expect(await draftIds()).toEqual([draft.id])
+    await api.post(`/api/admin/products/${product.id}/restore`).set(admin).expect(200)
+    expect(await availability()).toEqual([])
+    // Archive also deactivated the offers; the merchant re-enables them before publishing again.
+    for (const id of [offerId, low.id]) {
+      await api.put(`/api/merchant/products/${product.id}/offers/${id}`).set(merchant).send({ status: 'active' }).expect(200)
+    }
+    expect(await availability()).toEqual([])
+    await api.post(`/api/merchant/products/${product.id}/publish`).set(merchant).expect(200)
+    expect(await availability()).toEqual([soldKey, lowKey].sort())
+  })
+
+  it('AC10: buyer email and order internal notes never reach workbench responses', async () => {
+    const { owner, product, offerId } = await fixture()
+    const merchant = authHeader((await loginAs(owner.user.email, 'pass123')).accessToken)
+    const { user: buyer } = await createTestUser('secret-buyer-sentinel@test.local', 'pass123', 'user', 5000)
+    await prisma.user.update({ where: { id: buyer.id }, data: { nickname: 'SECRET_BUYER_NICKNAME' } })
+    const order = await prisma.order.create({ data: { userId: buyer.id, merchantId: owner.merchant.id, productId: product.id, offerId, price: 100,
+      status: 'processing', deliveryModeSnapshot: 'manual_service', fulfillmentDeadline: new Date(Date.now() + 60 * 60 * 1000),
+      purchaseFormAnswers: { account: 'SECRET_ANSWER' }, productNameSnapshot: 'Snapshot' } })
+    await prisma.orderStatusEvent.create({ data: { orderId: order.id, actorUserId: owner.user.id, actorRole: 'merchant', fromStatus: 'pending',
+      toStatus: 'processing', action: 'start_fulfillment', publicNote: 'visible progress', internalNote: 'SECRET_INTERNAL_NOTE' } })
+
+    const bodies = await Promise.all(['urgent', 'availability', 'drafts', `items/fulfillment_due/${order.id}`]
+      .map(async path => (await api.get(`${base}/${path}`).set(merchant).expect(200)).body))
+    expect(bodies[0].fulfillment.items.map((row: { targetId: number }) => row.targetId)).toEqual([order.id])
+    expect(bodies[3].state).toBe('match')
+    const fieldNames = new Set<string>()
+    const walk = (value: unknown) => {
+      if (Array.isArray(value)) value.forEach(walk)
+      else if (value && typeof value === 'object') for (const [key, child] of Object.entries(value)) { fieldNames.add(key); walk(child) }
+    }
+    for (const body of bodies) {
+      const text = JSON.stringify(body)
+      for (const sentinel of ['secret-buyer-sentinel', 'SECRET_INTERNAL_NOTE', 'SECRET_BUYER_NICKNAME', 'SECRET_ANSWER', 'visible progress', owner.user.email]) {
+        expect(text).not.toContain(sentinel)
+      }
+      walk(body)
+    }
+    for (const forbidden of ['email', 'nickname', 'userId', 'internalNote', 'publicNote', 'purchaseFormAnswers', 'content', 'fixedContent']) {
+      expect(fieldNames.has(forbidden)).toBe(false)
+    }
   })
 })
