@@ -308,7 +308,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && !submitting && !assistantBusy) onClose() }}>
-      <DialogContent className="max-w-3xl max-h-[90dvh] overflow-y-auto" data-testid="admin-platform-product-wizard">
+      <DialogContent className={`${assistantActive ? 'max-w-6xl' : 'max-w-3xl'} max-h-[90dvh] overflow-y-auto`} data-testid="admin-platform-product-wizard">
         <DialogTitle>新建平台商品</DialogTitle>
         <DialogDescription>
           创建结果固定为平台自营草稿；可售量和发布需在后续独立完成。
