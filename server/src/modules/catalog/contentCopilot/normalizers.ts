@@ -39,9 +39,17 @@ export function parseNumberToken(token: string): number | null {
   return total + section + (digit ?? 0)
 }
 
-/** Collapse whitespace so spans and mentions are compared on the same text. */
+/**
+ * Canonicalise claims and unit text identically while preserving sentence
+ * boundaries. Folding a paragraph break into a space would let one offer's
+ * name (or estimate wording) vouch for facts in the following paragraph.
+ */
 export function normalizeSpace(text: string): string {
-  return text.replace(/\s+/g, ' ').trim()
+  return text
+    .replace(/\r\n?|[\u2028\u2029]/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n(?: *\n)* */g, '\n')
+    .trim()
 }
 
 export type DurationExpr =
@@ -130,10 +138,12 @@ export function isPriceTuple(tuple: QuantityTuple): boolean {
 }
 
 const QUANTITY_RE = new RegExp(
-  `(${NUMBER}|${VAGUE_NUMBER})\\s*(${QUANTITY_UNITS.map(([unit]) => unit).join('|')})(?![A-Za-z])`,
+  `(${NUMBER}|${VAGUE_NUMBER})\\s*(${QUANTITY_UNITS.map(([unit]) =>
+    `${escapeRegExp(unit)}${/^[A-Za-z]+$/.test(unit) ? '(?![A-Za-z])' : ''}`,
+  ).join('|')})`,
   'gi',
 )
-const MONEY_PREFIX_RE = new RegExp(`[¥￥$]\\s*(${NUMBER})`, 'g')
+const MONEY_PREFIX_RE = new RegExp(`[¥￥$]\\s*(${NUMBER}|${VAGUE_NUMBER})`, 'g')
 
 export type QuantityTuple = { value: number; unit: string }
 
@@ -159,8 +169,7 @@ export function findQuantities(text: string): Array<Mention & { tuple: QuantityT
     out.push({ start, end: start + match[0].length, text: match[0], tuple: { value, unit } })
   }
   for (const match of text.matchAll(MONEY_PREFIX_RE)) {
-    const value = parseNumberToken(match[1])
-    if (value == null) continue
+    const value = parseNumberToken(match[1]) ?? Number.NaN
     const start = match.index ?? 0
     out.push({ start, end: start + match[0].length, text: match[0], tuple: { value, unit: 'money' } })
   }

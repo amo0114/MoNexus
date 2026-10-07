@@ -4,6 +4,7 @@ import {
   extractTuples,
   findDurations,
   hasForbiddenMarkup,
+  normalizeSpace,
   parseNumberToken,
   regionPlatformIds,
 } from './normalizers.js'
@@ -76,6 +77,43 @@ describe('content copilot normalizers (SPEC-AI-PRODUCT-001 §7.5)', () => {
   it('classifies prices, points, percentages and discounts as H7', () => {
     expect(detectHardFacts('1积分，100元，¥20，20%，8折，100GB').map(item => item.cls))
       .toEqual(['H7', 'H7', 'H7', 'H7', 'H1', 'H7'])
+  })
+
+  describe('text boundaries (review of 507f01b)', () => {
+    it('normalises horizontal whitespace without merging lines or paragraphs', () => {
+      for (const separator of ['\n', '\r\n', '\r', '\u2028', '\u2029', '\n\n']) {
+        const text = `  月套餐\t 30天 ${separator} 年套餐\u00a0 365天  `
+        const normalised = normalizeSpace(text)
+        expect(normalised, JSON.stringify(separator)).toBe('月套餐 30天\n年套餐 365天')
+        expect(normalizeSpace(normalised)).toBe(normalised)
+      }
+    })
+
+    it('detects Chinese price units and percentages immediately before Latin text', () => {
+      for (const [text, price] of [
+        ['优惠20%OFF', '20%'], ['优惠20％OFF', '20％'],
+        ['售价1元VIP', '1元'], ['售价1积分VIP', '1积分'],
+        ['折扣8折VIP', '8折'], ['售价几块VIP', '几块'],
+      ]) {
+        const mentions = detectHardFacts(text).filter(item => item.cls === 'H7')
+        expect(mentions.map(item => item.text), text).toEqual([price])
+        expect(text.slice(mentions[0].start, mentions[0].end)).toBe(price)
+      }
+    })
+
+    it('detects vague currency prefixes as unmatchable H7 values', () => {
+      for (const text of ['¥若干', '$几', '￥数', '¥ 几', '$ 若干']) {
+        expect(detectHardFacts(text).map(item => item.cls), text).toEqual(['H7'])
+        expect(extractTuples(text), text).toEqual([{ value: Number.NaN, unit: 'money' }])
+      }
+    })
+
+    it('still requires a word boundary after Latin capacity and speed units', () => {
+      expect(extractTuples('100GBundle 50MBasic')).toEqual([])
+      expect(extractTuples('100GB，50Mbps')).toEqual([
+        { value: 100, unit: 'GB' }, { value: 50, unit: 'Mbps' },
+      ])
+    })
   })
 
   it('classifies delivery wording as H6', () => {

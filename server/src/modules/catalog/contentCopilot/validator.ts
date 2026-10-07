@@ -366,7 +366,8 @@ function covered(mention: HardFactMention, covers: CoveredMention[]): boolean {
 }
 
 function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): RejectionReason | null {
-  // Normalise each part but keep the question/answer boundary as a sentence break.
+  // Preserve line/paragraph breaks inside each part, and keep the FAQ
+  // question/answer boundary. Claims use the same canonical text and offsets.
   const unitText = texts.map(normalizeSpace).join('\n')
   if (texts.some(hasForbiddenMarkup)) {
     return { kind: 'format', message: '包含链接、联系方式或标记，已拒绝该条建议', evidence: null }

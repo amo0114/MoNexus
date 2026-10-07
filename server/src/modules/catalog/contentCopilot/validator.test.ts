@@ -246,6 +246,83 @@ describe('content copilot validator — contract', () => {
       expect(result.issues.some(issue => issue.kind === 'unsupported_fact')).toBe(true)
     })
 
+    describe('text boundaries (review of 507f01b)', () => {
+      const separators = ['\n', '\r\n', '\r', '\u2028', '\u2029', '\n\n']
+
+      it.each(separators)('does not borrow another paragraph’s offer name across %j', separator => {
+        const text = `月套餐有效期30天${separator}年套餐有效期30天`
+        for (const span of ['30天', text]) {
+          const result = run(monthYear, output({ description: unit(text, [
+            { kind: 'duration', span, factRef: 'offers[0].validity' },
+          ]) }))
+          expect(result.fields.description?.status, span).toBe('rejected')
+          expect(result.issues.some(issue => issue.kind === 'ambiguous')).toBe(true)
+        }
+      })
+
+      it('does not borrow estimate wording across lines or paragraphs', () => {
+        const appointment = buildProductContentAiContext(domainInput('appointment', {
+          offers: [offer({ id: 1, deliveryMode: 'manual_service', attributes: { estimatedMinutes: 30 } })],
+        }))
+        for (const separator of separators) {
+          const text = `预计30分钟${separator}服务30分钟`
+          const result = run(appointment, output({ description: unit(text, [
+            { kind: 'service_duration', span: text, factRef: 'offers[0].attributes.estimatedMinutes' },
+          ]) }))
+          expect(result.fields.description?.status, JSON.stringify(separator)).toBe('rejected')
+          expect(result.issues.some(issue => issue.kind === 'unsupported_fact')).toBe(true)
+        }
+      })
+
+      it('accepts correctly attributed paragraphs with normalised claim whitespace', () => {
+        const text = '月套餐有效期30\t天\r\n\r\n年套餐有效期365 天'
+        const result = run(monthYear, output({ description: unit(text, [
+          { kind: 'duration', span: '30 天', factRef: 'offers[0].validity' },
+          { kind: 'duration', span: '365\t天', factRef: 'offers[1].validity' },
+        ]) }))
+        expect(result.fields.description).toMatchObject({ status: 'suggested', value: text })
+
+        // Identical words remain usable when each paragraph has its own fact.
+        expect(run(mixed, output({ description: unit('人工套餐有效期30天\n自动套餐有效期30天', [
+          { kind: 'duration', span: '30天', factRef: 'offers[0].validity' },
+          { kind: 'duration', span: '30天', factRef: 'offers[1].validity' },
+        ]) })).fields.description?.status).toBe('suggested')
+      })
+
+      it('accepts multiline service copy when every paragraph is an estimate', () => {
+        const appointment = buildProductContentAiContext(domainInput('appointment', {
+          offers: [offer({ id: 1, deliveryMode: 'manual_service', attributes: { estimatedMinutes: 30 } })],
+        }))
+        const text = '预计30分钟\r\n预计30分钟'
+        const result = run(appointment, output({ description: unit(text, [
+          { kind: 'service_duration', span: '预计30分钟\n预计30分钟', factRef: 'offers[0].attributes.estimatedMinutes' },
+        ]) }))
+        expect(result.fields.description).toMatchObject({ status: 'suggested', value: text })
+      })
+
+      it('rejects H7 boundary cases both undeclared and inside an otherwise valid quantity claim', () => {
+        for (const price of ['优惠20%OFF', '售价1元VIP', '售价1积分VIP', '折扣8折VIP', '售价几块VIP', '售价¥若干', '售价$几', '售价￥数']) {
+          const text = `100GB，${price}`
+          const priced = buildProductContentAiContext(domainInput('subscription', {
+            offers: [offer({ id: 1, attributes: { entitlementSummary: text } })],
+          }))
+          const declared = run(priced, output({ description: unit(text, [
+            { kind: 'quantity', span: text, factRef: 'offers[0].attributes.entitlementSummary' },
+          ]) }))
+          expect(declared.fields.description?.status, text).toBe('rejected')
+          expect(declared.issues.some(issue => issue.kind === 'unsupported_fact' && issue.evidence !== '100GB'), text).toBe(true)
+          const undeclared = run(priced, output({
+            description: unit(price),
+            purchaseNotes: unit(price),
+            faq: [{ question: '如何购买？', answer: price, claims: [] }],
+          }))
+          for (const field of ['description', 'purchaseNotes', 'faq'] as const) {
+            expect(undeclared.fields[field]?.status, `${field}: ${price}`).toBe('rejected')
+          }
+        }
+      })
+    })
+
     it.each(['售价几元', '可供若干台设备使用', '支持数位用户同时使用'])('rejects vague quantity 「%s」 without a fact', text => {
       expect(run(singleManual30, output({ description: unit(text) })).fields.description?.status).toBe('rejected')
     })
