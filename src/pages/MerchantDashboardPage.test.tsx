@@ -13,7 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import MerchantDashboardPage from './MerchantDashboardPage'
@@ -283,6 +283,71 @@ describe('merchant resource completion feedback', () => {
     fireEvent.click(await prepare(kind))
     await waitFor(() => expect(hasToast(kind === 'void' ? '已作废 1 个交付单元；当前规格剩余 8，商品汇总 19' : title(kind), 'success')).toBe(true))
     expect(useAppStore.getState().islandNotice).toBeNull()
+  })
+})
+
+describe('workbench availability deep link', () => {
+  const offers = [
+    { id: 11, name: '月卡', price: 100, status: 'active', deliveryMode: 'instant_inventory', stockMode: 'limited', stock: 0, availableStock: 2 },
+    { id: 12, name: '季卡', price: 200, status: 'active', deliveryMode: 'instant_fixed', stockMode: 'limited', stock: 5 },
+  ]
+
+  function LocationProbe() {
+    const location = useLocation()
+    return <output data-testid="location-search">{location.search}</output>
+  }
+
+  function renderAt(search: string, state?: unknown) {
+    return render(
+      <MemoryRouter initialEntries={[{ pathname: '/merchant', search, state }]}>
+        <MerchantDashboardPage />
+        <LocationProbe />
+      </MemoryRouter>,
+    )
+  }
+
+  function expectNoAvailabilityWrites() {
+    expect(merchantApi.adjustMerchantOfferCapacity).not.toHaveBeenCalled()
+    expect(merchantApi.importMerchantOfferInventory).not.toHaveBeenCalled()
+    expect(merchantApi.voidMerchantOfferInventory).not.toHaveBeenCalled()
+    expect(merchantApi.updateMerchantOffer).not.toHaveBeenCalled()
+  }
+
+  it('loads the product by id and opens the dialog on exactly that Offer; closing keeps other params', async () => {
+    merchantApi.getMerchantOffers.mockResolvedValue(offers)
+    renderAt('?availabilityProductId=88&offerId=12&tab=keep', { availabilityProductName: '工作台商品' })
+    expect(await screen.findByTestId('availability-offer-select')).toHaveValue('12')
+    expect(merchantApi.getMerchantOffers).toHaveBeenCalledWith(88)
+    expect(screen.getByTestId('merchant-availability-modal')).toHaveTextContent('工作台商品')
+    expect(screen.getByTestId('availability-capacity-form')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    await waitFor(() => expect(screen.getByTestId('location-search')).toHaveTextContent('?tab=keep'))
+    expect(screen.queryByTestId('merchant-availability-modal')).not.toBeInTheDocument()
+    expectNoAvailabilityWrites()
+  })
+
+  it('does not fall back to the default Offer when the target is not on the product', async () => {
+    merchantApi.getMerchantOffers.mockResolvedValue(offers)
+    renderAt('?availabilityProductId=88&offerId=99')
+    expect(await screen.findByTestId('merchant-availability-target-missing')).toBeInTheDocument()
+    expect(screen.queryByTestId('availability-offer-select')).not.toBeInTheDocument()
+    expectNoAvailabilityWrites()
+  })
+
+  it('rejects malformed ids without any request and clears them', async () => {
+    renderAt('?availabilityProductId=88&offerId=abc')
+    await waitFor(() => expect(hasToast('链接中的商品或规格无效', 'error')).toBe(true))
+    expect(merchantApi.getMerchantOffers).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByTestId('location-search')).toBeEmptyDOMElement())
+  })
+
+  it('reports a product that is gone or not owned', async () => {
+    merchantApi.getMerchantOffers.mockRejectedValue({ isAxiosError: true, response: { status: 404, data: {} } })
+    renderAt('?availabilityProductId=88&offerId=12')
+    await waitFor(() => expect(hasToast('商品不存在或无权管理', 'error')).toBe(true))
+    expect(screen.queryByTestId('merchant-availability-modal')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('location-search')).toBeEmptyDOMElement())
   })
 })
 

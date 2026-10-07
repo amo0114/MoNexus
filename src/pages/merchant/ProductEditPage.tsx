@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Eye, Loader2, Package } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
@@ -55,6 +55,8 @@ import {
 import ProductInformationSection from './productEditor/ProductInformationSection'
 import OfferEditingSection from './productEditor/OfferEditingSection'
 import PurchaseFormSection from './productEditor/PurchaseFormSection'
+import { focusEditorAnchor, resolveEditorFocus } from './productEditor/editorFocus'
+import { parseEditorFocus, parsePositiveId } from '../../components/merchant/workbench/navigation'
 
 const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
@@ -86,7 +88,10 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const productId = Number(idParam)
   const validId = Number.isInteger(productId) && productId > 0
   const navigate = useNavigate()
+  const location = useLocation()
   const showToast = useAppStore((s) => s.showToast)
+  const appliedFocusRef = useRef<string | null>(null)
+  const [focusNotice, setFocusNotice] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(!validId)
@@ -237,6 +242,36 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     void loadEditor()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actor, productId])
+
+  // Workbench deep link (Spec §8.1): ?focus=…&offerId=… positions the editor
+  // once per URL after the freshly loaded editor DTO is rendered. Positioning
+  // never edits, saves or publishes anything.
+  useEffect(() => {
+    if (loading || notFound || loadError) return
+    const params = new URLSearchParams(location.search)
+    if (!params.has('focus') && !params.has('offerId')) return
+    const key = `${productId}:${location.search}`
+    if (appliedFocusRef.current === key) return
+    appliedFocusRef.current = key
+    const target = resolveEditorFocus({
+      focus: parseEditorFocus(params.get('focus')),
+      focusProvided: params.has('focus'),
+      offerId: parsePositiveId(params.get('offerId')),
+      offerIdProvided: params.has('offerId'),
+      offerIds: offers.map(offer => offer.id),
+      hasAttributes: selectedTemplate != null,
+      canShowOffers: capabilities?.manageOffers === true,
+    })
+    setActiveViewTab(target.inPreview ? 'preview' : 'form')
+    setFocusNotice(target.notice)
+    requestAnimationFrame(() => {
+      if (!focusEditorAnchor(target.anchor)) {
+        setActiveViewTab('preview')
+        setFocusNotice('目标区域暂不可用，已显示发布检查。')
+        requestAnimationFrame(() => { focusEditorAnchor('publication-checklist') })
+      }
+    })
+  }, [loading, notFound, loadError, location.search, productId, offers, selectedTemplate, capabilities])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -575,6 +610,12 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           )}
         </div>
       </div>
+
+      {focusNotice && (
+        <p className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" role="status" data-testid="product-edit-focus-notice">
+          {focusNotice}
+        </p>
+      )}
 
       {/* Mid-Screen & Mobile Tab Switcher (768px - 1023px) (REQ-P7 §4.2) */}
       <div className="flex lg:hidden mb-6 border-b border-[var(--color-border)] gap-2" data-testid="product-edit-view-tabs">

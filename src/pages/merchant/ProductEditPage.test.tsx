@@ -216,11 +216,12 @@ function createEditTransport(options: {
 async function renderEditPage(
   transport: CatalogTransport & { calls: Array<{ method: 'get' | 'post' | 'patch'; url: string; body?: unknown }> },
   actor: 'merchant' | 'admin' = 'merchant',
+  search = '',
 ) {
   useAppStore.setState({ toasts: [] })
   const prefix = actor === 'admin' ? '/admin' : '/merchant'
   render(
-    <MemoryRouter initialEntries={[`${prefix}/products/42/edit`]}>
+    <MemoryRouter initialEntries={[`${prefix}/products/42/edit${search}`]}>
       <Routes>
         <Route
           path={`${prefix}/products/:id/edit`}
@@ -231,6 +232,51 @@ async function renderEditPage(
   )
   await waitFor(() => expect(screen.getByTestId('product-edit-name')).toBeInTheDocument())
 }
+
+describe('ProductEditPage workbench focus (Spec §8.1)', () => {
+  async function renderFocused(search: string) {
+    const transport = createEditTransport({})
+    await renderEditPage(transport, 'merchant', search)
+    return transport
+  }
+
+  function expectReadOnly(transport: ReturnType<typeof createEditTransport>) {
+    expect(transport.calls.filter(call => call.method !== 'get')).toEqual([])
+    expect(merchantMocks.updateMerchantOffer).not.toHaveBeenCalled()
+  }
+
+  it.each([
+    ['images', 'product-images-uploader', '已定位到商品封面'],
+    ['purchase-notes', 'product-details-purchaseNotes', '已定位到购买须知'],
+    ['after-sales', 'product-details-afterSalesInstructions', '已定位到售后说明'],
+    ['attributes', 'product-edit-attributes', '已定位到商品参数'],
+    ['category', 'product-category-field', '如分类已停用，请更换分类或联系平台'],
+    ['offers&offerId=9', 'product-edit-offer-9', '已定位到对应规格'],
+    ['publication', 'publication-checklist', '已定位到发布检查'],
+  ])('focus=%s moves keyboard focus into its anchor without writing', async (focus, anchor, notice) => {
+    const transport = await renderFocused(`?focus=${focus}`)
+    await waitFor(() => expect(screen.getByTestId(anchor).contains(document.activeElement)).toBe(true))
+    expect(screen.getByTestId('product-edit-focus-notice')).toHaveTextContent(notice)
+    expectReadOnly(transport)
+  })
+
+  it.each([
+    ['?focus=offers&offerId=99', '目标规格不可用'],
+    ['?focus=offers&offerId=9abc', '目标规格不可用'],
+    ['?focus=%23product-edit-name', '未识别的定位目标'],
+  ])('%s falls back to the publication checklist', async (search, notice) => {
+    const transport = await renderFocused(search)
+    await waitFor(() => expect(screen.getByTestId('publication-checklist').contains(document.activeElement)).toBe(true))
+    expect(screen.getByTestId('product-edit-focus-notice')).toHaveTextContent(notice)
+    expect(screen.getByTestId('product-edit-name')).not.toHaveFocus()
+    expectReadOnly(transport)
+  })
+
+  it('does nothing without focus parameters', async () => {
+    await renderFocused('')
+    expect(screen.queryByTestId('product-edit-focus-notice')).not.toBeInTheDocument()
+  })
+})
 
 describe('ProductEditPage (spec §9.2 / §10.3)', () => {
   beforeEach(() => {

@@ -1,6 +1,6 @@
 # 商家待办与经营建议 V1：实施计划
 
-版本：0.2.1；日期：2026-10-07。状态：PR1 后端已实现并通过本地验证，PR2/PR3 待实施。契约：[SPEC-MERCHANT-WORKBENCH-001](./merchant-workbench-v1.md)。实际检查见 [PR1 验证记录](./merchant-workbench-pr1-verification.md)，不代表已部署或完成前端验收。
+版本：0.2.2；日期：2026-10-07。状态：PR1 后端、PR2 前端已实现并通过本地验证（仅本地提交），PR3 待实施。契约：[SPEC-MERCHANT-WORKBENCH-001](./merchant-workbench-v1.md)。实际检查见 [PR1 验证记录](./merchant-workbench-pr1-verification.md)、[PR2 验证记录](./merchant-workbench-pr2-verification.md)，不代表已部署、CI 通过或 V1 验收。
 
 ## 1. 分支与协作
 
@@ -51,6 +51,8 @@
 - 无工作台迁移；如测量发现需要索引，另以 EXPLAIN 和实际负载证据评审，不能借此恢复原偏好表设计。
 
 ## 3. PR2：商家工作台与导航
+
+状态：已实现，本地单测/构建/浏览器冒烟通过，见 [PR2 验证记录](./merchant-workbench-pr2-verification.md)。CI 与评审未执行。
 
 ### 修改范围
 
@@ -104,3 +106,5 @@ npx vitest run src/components/merchant/workbench
 0.2.0：采纳实施前评审八项意见，移除暂缓 PR，将开关、分页和刷新路径简化；补齐发布参数、缺项导航、SLA 等号及 SQL 时区测试；迁入独立分支提交。
 
 0.2.1：完成 PR1，只读查询和共享发布评估已落地；补充本地验证记录。前端与试点仍属于后续范围。
+
+0.2.2：完成 PR2，前端工作台、共享刷新状态和精确导航落地；补充本地验证记录。CI、评审与试点仍属 PR3。

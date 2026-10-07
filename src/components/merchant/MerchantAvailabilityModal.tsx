@@ -15,10 +15,18 @@ import type { MerchantProduct } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import { captureFeedbackOwner } from '../../lib/completionFeedback'
 
+type AvailabilityProduct = Pick<MerchantProduct, 'id' | 'name' | 'offers' | 'availableStock'>
+
 interface Props {
   isOpen: boolean
   onClose: () => void
-  product: MerchantProduct | null
+  product: AvailabilityProduct | null
+  /**
+   * Workbench deep link: open on exactly this Offer. When it is not one of the
+   * product's Offers the dialog refuses to show any action instead of falling
+   * back to the default Offer.
+   */
+  initialOfferId?: number | null
   onChanged: () => Promise<void> | void
   onImported?: (result: InventoryImportResult, offerId: number) => void
   onCapacityAdjusted?: (result: CapacityAdjustResult, offerId: number) => void
@@ -26,7 +34,7 @@ interface Props {
 }
 
 /** T-CAT-FE-002: one Offer selector, then exactly one availability action. */
-export default function MerchantAvailabilityModal({ isOpen, onClose, product, onChanged, onImported, onCapacityAdjusted, onInventoryVoided }: Props) {
+export default function MerchantAvailabilityModal({ isOpen, onClose, product, initialOfferId = null, onChanged, onImported, onCapacityAdjusted, onInventoryVoided }: Props) {
   const showToast = useAppStore((state) => state.showToast)
   const [importOfferId, setImportOfferId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -38,6 +46,7 @@ export default function MerchantAvailabilityModal({ isOpen, onClose, product, on
 
   const offers = product?.offers ?? []
   const importOffer = offers.find((offer) => offer.id === importOfferId) ?? null
+  const targetMissing = initialOfferId != null && !offers.some((offer) => offer.id === initialOfferId)
 
   async function handleCapacity(request: CapacityAdjustRequest) {
     if (!product || inFlight.current) return
@@ -126,15 +135,23 @@ export default function MerchantAvailabilityModal({ isOpen, onClose, product, on
           商品：{product?.name ?? ''}。先选择规格，系统再按该规格的履约方式显示唯一可用操作。
         </DialogDescription>
         <div className="mt-4">
-          <ProductAvailabilityStep
-            offers={offers}
-            productAvailableStock={product?.availableStock}
-            onOpenImport={(offerId) => setImportOfferId(offerId)}
-            onAdjustCapacity={handleCapacity}
-            onVoidInventory={handleVoid}
-            confirmInventoryVoid
-            busy={submitting}
-          />
+          {targetMissing ? (
+            <p className="rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] p-3 text-sm text-[var(--color-warning-text)]" role="alert" data-testid="merchant-availability-target-missing">
+              目标规格不可用（可能已删除或不属于该商品）。请关闭后从商品管理重新选择规格。
+            </p>
+          ) : (
+            <ProductAvailabilityStep
+              key={initialOfferId ?? 'default'}
+              offers={offers}
+              productAvailableStock={product?.availableStock}
+              onOpenImport={(offerId) => setImportOfferId(offerId)}
+              onAdjustCapacity={handleCapacity}
+              onVoidInventory={handleVoid}
+              confirmInventoryVoid
+              busy={submitting}
+              initialOfferId={initialOfferId}
+            />
+          )}
         </div>
       </DialogContent>
     </Dialog>

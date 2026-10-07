@@ -28,6 +28,8 @@ interface Props {
   /** External busy state (e.g. parent background refresh). */
   busy?: boolean
   disabled?: boolean
+  /** Preselect this Offer (workbench deep link). The caller guarantees it is in `offers`. */
+  initialOfferId?: number | null
 }
 
 /**
@@ -51,6 +53,7 @@ export default function ProductAvailabilityStep({
   productAvailableStock,
   busy = false,
   disabled = false,
+  initialOfferId = null,
 }: Props) {
   const capacityId = useId()
   const capacityDeltaId = useId()
@@ -58,7 +61,7 @@ export default function ProductAvailabilityStep({
   const voidCountId = useId()
   const voidReasonId = useId()
 
-  const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
+  const [selectedOfferId, setSelectedOfferId] = useState<number | null>(initialOfferId)
   const [capacityDelta, setCapacityDelta] = useState('')
   const [capacityReason, setCapacityReason] = useState('')
   const [voidCount, setVoidCount] = useState('')
@@ -71,9 +74,10 @@ export default function ProductAvailabilityStep({
   useEffect(() => {
     setSelectedOfferId((current) => {
       if (current != null && offers.some((offer) => offer.id === current)) return current
+      if (initialOfferId != null && offers.some((offer) => offer.id === initialOfferId)) return initialOfferId
       return offers[0]?.id ?? null
     })
-  }, [offers])
+  }, [offers, initialOfferId])
 
   const selectedOffer = offers.find((offer) => offer.id === selectedOfferId) ?? offers[0] ?? null
   const action = selectedOffer ? getOfferAvailabilityAction(selectedOffer) : null
