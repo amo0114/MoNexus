@@ -138,6 +138,72 @@ describe('content copilot validator — contract', () => {
     expect(result.fields.description?.status).toBe('rejected')
   })
 
+  describe('per-mention verification (review of dbc8b58)', () => {
+    const singleManual30 = buildProductContentAiContext(domainInput('subscription', {
+      attributes: { serviceName: '示例订阅', serviceScope: '订阅服务' },
+      offers: [offer({ id: 1, deliveryMode: 'manual_service', validityDays: 30, attributes: { entitlementSummary: '基础套餐' } })],
+    }))
+    const run = (ctx: typeof singleManual30, raw: ReturnType<typeof output>) =>
+      validateModelOutput({ raw, context: ctx, readinessCodes: [], upstreamRequested: false })
+
+    it('a duration claim does not vouch for a second, unmatched duration in its span', () => {
+      const result = run(singleManual30, output({
+        description: unit('有效期30天，5分钟内完成交付', [
+          { kind: 'duration', span: '有效期30天，5分钟内完成交付', factRef: 'offers[0].validity' },
+        ]),
+      }))
+      expect(result.fields.description?.status).toBe('rejected')
+    })
+
+    it('a manual delivery claim does not vouch for timing words', () => {
+      const result = run(singleManual30, output({
+        description: unit('人工处理，秒到', [
+          { kind: 'delivery_method', span: '人工处理，秒到', factRef: 'offers[0].deliveryMethod' },
+        ]),
+      }))
+      expect(result.fields.description?.status).toBe('rejected')
+    })
+
+    it('rejects delivery wording that no claim verified', () => {
+      expect(run(singleManual30, output({ description: unit('由商家人工处理。') })).fields.description?.status).toBe('rejected')
+      expect(run(singleManual30, output({
+        description: unit('由商家人工处理。', [{ kind: 'delivery_method', span: '商家人工处理', factRef: 'offers[0].deliveryMethod' }]),
+      })).fields.description?.status).toBe('suggested')
+    })
+
+    const mixed = buildProductContentAiContext(domainInput('subscription', {
+      attributes: { serviceName: '示例订阅', serviceScope: '订阅服务' },
+      offers: [
+        offer({ id: 1, name: '人工套餐', deliveryMode: 'manual_service', validityDays: 30, attributes: { entitlementSummary: '人工' } }),
+        offer({ id: 2, name: '自动套餐', deliveryMode: 'instant_inventory', validityDays: 30, attributes: { entitlementSummary: '自动' } }),
+      ],
+    }))
+
+    it('rejects a repeated span whose second occurrence belongs to another offer', () => {
+      const result = run(mixed, output({
+        description: unit('人工套餐由商家人工处理。自动套餐由商家人工处理。', [
+          { kind: 'delivery_method', span: '商家人工处理', factRef: 'offers[0].deliveryMethod' },
+        ]),
+      }))
+      expect(result.fields.description?.status).toBe('rejected')
+      expect(result.issues.some(issue => issue.kind === 'ambiguous')).toBe(true)
+    })
+
+    it('accepts identical words when each occurrence is verified by its own claim', () => {
+      const result = run(mixed, output({
+        description: unit('人工套餐有效期30天。自动套餐有效期30天。', [
+          { kind: 'duration', span: '30天', factRef: 'offers[0].validity' },
+          { kind: 'duration', span: '30天', factRef: 'offers[1].validity' },
+        ]),
+      }))
+      expect(result.fields.description?.status).toBe('suggested')
+    })
+
+    it.each(['售价几元', '可供若干台设备使用', '支持数位用户同时使用'])('rejects vague quantity 「%s」 without a fact', text => {
+      expect(run(singleManual30, output({ description: unit(text) })).fields.description?.status).toBe('rejected')
+    })
+  })
+
   it.each(['5秒内完成交付', '半天内完成交付', '几分钟内完成交付'])('rejects undeclared timing 「%s」', text => {
     const result = validateModelOutput({ raw: output({ description: unit(text) }), context, readinessCodes: [], upstreamRequested: false })
     expect(result.fields.description?.status).toBe('rejected')

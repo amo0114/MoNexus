@@ -67,6 +67,17 @@ describe('content copilot normalizers (SPEC-AI-PRODUCT-001 §7.5)', () => {
     expect(extractTuples('¥ 20')).toEqual([{ value: 20, unit: 'money' }])
   })
 
+  it('keeps vague quantities as unmatchable facts', () => {
+    const tuples = extractTuples('几元，若干台')
+    expect(tuples.map(item => item.unit)).toEqual(['yuan', 'device'])
+    expect(tuples.every(item => Number.isNaN(item.value))).toBe(true)
+  })
+
+  it('classifies delivery wording as H6', () => {
+    expect(detectHardFacts('下单后自动交付，或商家人工处理，也可自动开通').filter(item => item.cls === 'H6').map(item => item.text))
+      .toEqual(['下单后自动交付', '商家人工处理', '自动开通'])
+  })
+
   it('ignores idiomatic 「一次性」 and 「一位」', () => {
     expect(extractTuples('一次性兑换码，每一位用户限购')).toEqual([])
   })

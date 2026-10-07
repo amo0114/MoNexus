@@ -1,4 +1,4 @@
-# Plan：AI 商品内容 Copilot（SPEC-AI-PRODUCT-001 v1.0.2）
+# Plan：AI 商品内容 Copilot（SPEC-AI-PRODUCT-001 v1.0.3）
 
 配套 spec：`docs/specs/ai-product-content-copilot.md`；上位：`docs/specs/ai-foundation.md`（及其 plan）。从 `develop` 拉 `feat/ai-product-copilot`（或在 Foundation 合入后拉），PR 目标 `develop`。本计划只拆任务与依赖；实施以 Spec 为准，发现 Spec 与代码不符时停止并回报。
 

@@ -15,18 +15,25 @@ import {
   MAX_SPAN_LENGTH,
   type ContentField,
 } from './constants.js'
-import { DELIVERY_PHRASES, ESTIMATE_TERMS, PERIOD_MONTHS } from './lexicon.js'
+import { ESTIMATE_TERMS, PERIOD_MONTHS } from './lexicon.js'
 import {
   detectHardFacts,
   extractTuples,
+  findDeliveryPhrases,
   findDurations,
   findPromiseTerms,
+  findQuantities,
+  findRegionPlatformMentions,
+  findTimingTerms,
   findUnboundedTerms,
   hasForbiddenMarkup,
   normalizeSpace,
   regionPlatformIds,
   type CoverClass,
+  type DeliveryPhraseKind,
+  type DurationExpr,
   type HardFactMention,
+  type QuantityTuple,
 } from './normalizers.js'
 import { isModelOutput, type Claim, type ModelOutput } from './outputSchema.js'
 import type { DeclaredAttr, ProductAiFacts, ProductContentAiContext, Validity } from './projection.js'
@@ -157,95 +164,122 @@ function containsAny(text: string, phrases: readonly string[]): boolean {
   return phrases.some(phrase => text.includes(phrase))
 }
 
-function judgeDuration(span: string, fact: ResolvedFact): RejectionReason | null {
-  const durations = findDurations(span).filter(item => item.expr.kind !== 'minutes')
-  if (durations.length !== 1) return unsupported(span, '不是可核对的时长表达')
-  const expr = durations[0].expr
+type CoveredMention = { start: number; end: number; cover: CoverClass }
+type Judgement = { reason: RejectionReason } | { covers: CoveredMention[] }
+
+const reject = (reason: RejectionReason): Judgement => ({ reason })
+
+/**
+ * Every hard-fact mention inside a claim span is verified individually; the
+ * claim covers only the mentions that matched its fact (§7.3 / §7.4). A wide
+ * span therefore cannot vouch for a second duration, a price, a region or a
+ * timing word it happens to contain — those stay uncovered and the detector
+ * rejects the unit.
+ */
+function verifiedOrUnsupported(span: string, covers: CoveredMention[], why: string): Judgement {
+  return covers.length > 0 ? { covers } : reject(unsupported(span, why))
+}
+
+function judgeDuration(span: string, fact: ResolvedFact): Judgement {
+  const durations = findDurations(span)
+  if (durations.length === 0) return reject(unsupported(span, '不是可核对的时长表达'))
+  let matches: (expr: DurationExpr) => boolean
   if (fact.type === 'validity') {
-    if (fact.value.kind !== 'days') return unsupported(span, '没有可写入文案的有效期天数')
-    if (expr.kind !== 'days') return unsupported(span, '有效期是按天配置的，只能写成天数')
-    return expr.days === fact.value.days ? null : unsupported(span, '与配置的有效期天数不一致')
-  }
-  if (fact.type === 'xboardPeriod') {
+    if (fact.value.kind !== 'days') return reject(unsupported(span, '没有可写入文案的有效期天数'))
+    const days = fact.value.days
+    // Days facts only support day/week wording (CP-08).
+    matches = expr => expr.kind === 'days' && expr.days === days
+  } else if (fact.type === 'xboardPeriod') {
     const months = PERIOD_MONTHS[fact.value]
-    if (months == null) return unsupported(span, '该套餐周期不是时长')
-    if (expr.kind !== 'months') return unsupported(span, '套餐周期只能写成月 / 年')
-    return expr.months === months ? null : unsupported(span, '与套餐周期不一致')
+    if (months == null) return reject(unsupported(span, '该套餐周期不是时长'))
+    // Period facts only support calendar wording (CP-08).
+    matches = expr => expr.kind === 'months' && expr.months === months
+  } else {
+    return reject(unsupported(span))
   }
-  return unsupported(span)
+  const covers = durations.filter(item => matches(item.expr)).map(item => ({ start: item.start, end: item.end, cover: 'duration' as const }))
+  return verifiedOrUnsupported(span, covers, '与配置的有效期或套餐周期不一致')
 }
 
-function judgeTuples(span: string, fact: ResolvedFact): RejectionReason | null {
-  if (fact.type !== 'declared') return unsupported(span)
+function judgeTuples(span: string, fact: ResolvedFact): Judgement {
+  if (fact.type !== 'declared') return reject(unsupported(span))
   const text = declaredText(fact.value)
-  if (!text) return unsupported(span)
-  const spanTuples = extractTuples(span)
-  if (spanTuples.length === 0) return unsupported(span, '不是可核对的数量表达')
+  if (!text) return reject(unsupported(span))
   const factTuples = extractTuples(text)
-  const ok = spanTuples.every(tuple => factTuples.some(item => item.unit === tuple.unit && item.value === tuple.value))
-  return ok ? null : unsupported(span, '与商家填写的参数不一致')
+  const known = (tuple: QuantityTuple) => factTuples.some(item => item.unit === tuple.unit && item.value === tuple.value)
+  const covers: CoveredMention[] = [
+    ...findQuantities(span).filter(item => known(item.tuple)).map(item => ({ start: item.start, end: item.end, cover: 'quantity' as const })),
+    ...findDurations(span).filter(item => known(durationTuple(item.expr))).map(item => ({ start: item.start, end: item.end, cover: 'duration' as const })),
+  ]
+  return verifiedOrUnsupported(span, covers, '与商家填写的参数不一致')
 }
 
-function judgeRegionPlatform(span: string, fact: ResolvedFact): RejectionReason | null {
-  if (fact.type !== 'declared') return unsupported(span)
+function durationTuple(expr: DurationExpr): QuantityTuple {
+  if (expr.kind === 'days') return { value: expr.days, unit: 'day' }
+  if (expr.kind === 'months') return { value: expr.months, unit: 'month' }
+  return { value: expr.minutes, unit: 'minute' }
+}
+
+function judgeRegionPlatform(span: string, fact: ResolvedFact): Judgement {
+  if (fact.type !== 'declared') return reject(unsupported(span))
   const text = declaredText(fact.value)
-  if (!text) return unsupported(span)
-  const spanIds = regionPlatformIds(span)
-  if (spanIds.size === 0) return unsupported(span, '无法识别的地区或平台')
+  if (!text) return reject(unsupported(span))
   const factIds = regionPlatformIds(text)
-  return [...spanIds].every(id => factIds.has(id)) ? null : unsupported(span, '与商家填写的地区或平台不一致')
+  const covers = findRegionPlatformMentions(span)
+    .filter(item => factIds.has(item.id))
+    .map(item => ({ start: item.start, end: item.end, cover: 'regionPlatform' as const }))
+  return verifiedOrUnsupported(span, covers, '与商家填写的地区或平台不一致')
 }
 
-function judgeDeliveryMethod(span: string, fact: ResolvedFact): RejectionReason | null {
-  const saysInstant = containsAny(span, DELIVERY_PHRASES.instant)
-  const saysManual = containsAny(span, DELIVERY_PHRASES.manual)
-  const saysAutoOpen = containsAny(span, DELIVERY_PHRASES.autoOpen)
+function isInstantFact(fact: ResolvedFact): boolean {
+  return fact.type === 'deliveryMethod' && fact.value !== 'manual_service'
+}
+
+function judgeDeliveryMethod(span: string, fact: ResolvedFact): Judgement {
+  let expected: DeliveryPhraseKind
   if (fact.type === 'deliveryMethod') {
-    const instant = fact.value !== 'manual_service'
-    if (saysAutoOpen) return unsupported(span, '自动开通需要引用自动开通配置')
-    if (instant && saysInstant && !saysManual) return null
-    if (!instant && saysManual && !saysInstant) return null
-    return unsupported(span, '与配置的交付方式不一致')
+    expected = fact.value === 'manual_service' ? 'manual' : 'instant'
+  } else if (fact.type === 'flag' && fact.value) {
+    expected = 'autoOpen'
+  } else {
+    return reject(unsupported(span, '与交付配置不一致'))
   }
-  if (fact.type === 'flag') {
-    return fact.value && saysAutoOpen && !saysInstant && !saysManual
-      ? null
-      : unsupported(span, '与自动开通配置不一致')
+  const phrases = findDeliveryPhrases(span)
+  if (phrases.length === 0 || phrases.some(item => item.phrase !== expected)) {
+    return reject(unsupported(span, '与配置的交付方式不一致'))
   }
-  return unsupported(span)
+  // Timing words are only true for instant delivery; for manual or
+  // auto-provisioned offers they stay uncovered (「人工处理，秒到」).
+  const timing = isInstantFact(fact) ? findTimingTerms(span) : []
+  return {
+    covers: [
+      ...phrases.map(item => ({ start: item.start, end: item.end, cover: 'delivery' as const })),
+      ...timing.map(item => ({ start: item.start, end: item.end, cover: 'timing' as const })),
+    ],
+  }
 }
 
-function judgeDeliveryTiming(span: string, fact: ResolvedFact): RejectionReason | null {
-  if (fact.type !== 'deliveryMethod' || fact.value === 'manual_service') {
-    return unsupported(span, '只有自动交付的规格可以描述交付时效')
-  }
-  if (extractTuples(span).length > 0) return unsupported(span, '没有可核对的时效数值')
-  return null
+function judgeDeliveryTiming(span: string, fact: ResolvedFact): Judgement {
+  if (!isInstantFact(fact)) return reject(unsupported(span, '只有自动交付的规格可以描述交付时效'))
+  if (extractTuples(span).length > 0) return reject(unsupported(span, '没有可核对的时效数值'))
+  const phrases = findDeliveryPhrases(span)
+  if (phrases.some(item => item.phrase !== 'instant')) return reject(unsupported(span, '与配置的交付方式不一致'))
+  const covers: CoveredMention[] = [
+    ...findTimingTerms(span).map(item => ({ start: item.start, end: item.end, cover: 'timing' as const })),
+    ...phrases.map(item => ({ start: item.start, end: item.end, cover: 'delivery' as const })),
+  ]
+  return verifiedOrUnsupported(span, covers, '不是可核对的时效表达')
 }
 
-function judgeServiceDuration(span: string, fact: ResolvedFact): RejectionReason | null {
+function judgeServiceDuration(span: string, fact: ResolvedFact): Judgement {
   if (fact.type !== 'declared' || fact.value.kind !== 'integer' || fact.value.unit !== 'minute' || fact.value.value == null) {
-    return unsupported(span)
+    return reject(unsupported(span))
   }
-  const durations = findDurations(span).filter(item => item.expr.kind === 'minutes')
-  if (durations.length !== 1) return unsupported(span, '不是可核对的服务时长')
-  const minutes = (durations[0].expr as { minutes: number }).minutes
-  return minutes === fact.value.value ? null : unsupported(span, '与预计服务时长不一致')
-}
-
-/** Mentions a verified claim of each kind may cover (§7.4): nothing outside its own kind. */
-const CLAIM_COVERS: Record<Claim['kind'], CoverClass[]> = {
-  duration: ['duration'],
-  quantity: ['duration', 'quantity'],
-  region: ['regionPlatform'],
-  platform: ['regionPlatform'],
-  delivery_method: ['timing'],
-  delivery_timing: ['timing'],
-  service_duration: ['duration'],
-  price: [],
-  stock: [],
-  refund: [],
-  guarantee: [],
+  const minutes = fact.value.value
+  const covers = findDurations(span)
+    .filter(item => item.expr.kind === 'minutes' && item.expr.minutes === minutes)
+    .map(item => ({ start: item.start, end: item.end, cover: 'duration' as const }))
+  return verifiedOrUnsupported(span, covers, '与预计服务时长不一致')
 }
 
 const SENTENCE_BREAKS = ['。', '！', '？', '!', '?', '；', ';', '\n']
@@ -260,43 +294,42 @@ function sentenceAt(text: string, start: number, end: number): string {
 }
 
 /** Judges the claim's value against its fact, independent of where the span occurs. */
-function judgeClaimValue(claim: Claim, span: string, facts: ProductAiFacts): { reason: RejectionReason } | { fact: ResolvedFact } {
+function judgeClaimValue(claim: Claim, span: string, facts: ProductAiFacts): { reason: RejectionReason } | { fact: ResolvedFact; covers: CoveredMention[] } {
   if (claim.kind === 'price' || claim.kind === 'stock') return { reason: unsupported(span, '是价格或库存类数值') }
   if (claim.kind === 'refund' || claim.kind === 'guarantee') return { reason: risky(span) }
 
   const fact = resolveFactRef(facts, claim.factRef)
   if (!fact) return { reason: unsupported(span) }
 
-  let reason: RejectionReason | null
+  let judgement: Judgement
   switch (claim.kind) {
     case 'duration':
-      reason = judgeDuration(span, fact)
+      judgement = judgeDuration(span, fact)
       break
     case 'quantity':
-      reason = judgeTuples(span, fact)
+      judgement = judgeTuples(span, fact)
       break
     case 'region':
     case 'platform':
-      reason = judgeRegionPlatform(span, fact)
+      judgement = judgeRegionPlatform(span, fact)
       break
     case 'delivery_method':
-      reason = judgeDeliveryMethod(span, fact)
+      judgement = judgeDeliveryMethod(span, fact)
       break
     case 'delivery_timing':
-      reason = judgeDeliveryTiming(span, fact)
+      judgement = judgeDeliveryTiming(span, fact)
       break
     case 'service_duration':
-      reason = judgeServiceDuration(span, fact)
+      judgement = judgeServiceDuration(span, fact)
       break
   }
-  return reason ? { reason } : { fact }
+  return 'reason' in judgement ? judgement : { fact, covers: judgement.covers }
 }
 
 /**
- * Sentence-level rules are checked at every occurrence of the span (§7.3):
- * an offer-specific fact only covers occurrences whose sentence names that
- * offer, so one claim cannot vouch for the same words in another offer's
- * sentence.
+ * Sentence-level rules checked at every occurrence of the span (§7.2-3): an
+ * offer-specific fact must be named in the same sentence, and service
+ * durations must read as estimates.
  */
 function occurrenceReason(claim: Claim, fact: ResolvedFact, sentence: string, span: string, facts: ProductAiFacts): RejectionReason | null {
   if (fact.offerIndex != null && facts.offers.length > 1) {
@@ -326,11 +359,9 @@ function occurrences(text: string, span: string): Array<[number, number]> {
   }
 }
 
-type VerifiedRange = { start: number; end: number; covers: CoverClass[] }
-
-function covered(mention: HardFactMention, ranges: VerifiedRange[]): boolean {
-  return mention.cover != null && ranges.some(range =>
-    mention.start >= range.start && mention.end <= range.end && range.covers.includes(mention.cover as CoverClass))
+function covered(mention: HardFactMention, covers: CoveredMention[]): boolean {
+  return mention.cover != null && covers.some(item =>
+    item.cover === mention.cover && mention.start >= item.start && mention.end <= item.end)
 }
 
 function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): RejectionReason | null {
@@ -343,7 +374,9 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
     return { kind: 'format', message: '事实声明超出上限，已拒绝该条建议', evidence: null }
   }
 
-  const verified: VerifiedRange[] = []
+  const covers: CoveredMention[] = []
+  const passedOccurrences: Array<[number, number]> = []
+  const failedOccurrences: Array<{ range: [number, number]; reason: RejectionReason }> = []
   for (const claim of claims) {
     const span = normalizeSpace(claim.span)
     const ranges = occurrences(unitText, span)
@@ -352,20 +385,22 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
     }
     const judged = judgeClaimValue(claim, span, facts)
     if ('reason' in judged) return judged.reason
-    let firstFailure: RejectionReason | null = null
-    for (const [start, end] of ranges) {
-      const reason = occurrenceReason(claim, judged.fact, sentenceAt(unitText, start, end), span, facts)
+    for (const range of ranges) {
+      const reason = occurrenceReason(claim, judged.fact, sentenceAt(unitText, range[0], range[1]), span, facts)
       if (reason) {
-        firstFailure ??= reason
-      } else {
-        verified.push({ start, end, covers: CLAIM_COVERS[claim.kind] })
+        failedOccurrences.push({ range, reason })
+        continue
       }
+      passedOccurrences.push(range)
+      covers.push(...judged.covers.map(item => ({ ...item, start: item.start + range[0], end: item.end + range[0] })))
     }
-    // No occurrence passed: report why. Occurrences that failed while others
-    // passed stay uncovered and are rejected by the detector below.
-    if (!verified.some(range => ranges.some(([start, end]) => range.start === start && range.end === end))) {
-      return firstFailure
-    }
+  }
+  // An occurrence that failed its sentence rule is only acceptable when another
+  // claim verified the very same words there; otherwise the unit is rejected,
+  // whether or not the detector would recognise those words.
+  for (const failed of failedOccurrences) {
+    const vouched = passedOccurrences.some(([start, end]) => start <= failed.range[0] && failed.range[1] <= end)
+    if (!vouched) return failed.reason
   }
 
   for (const mention of detectHardFacts(unitText)) {
@@ -373,7 +408,7 @@ function validateUnit(texts: string[], claims: Claim[], facts: ProductAiFacts): 
       return { kind: 'risky_claim', message: `「${mention.text}」属于无上限或永久类表述，已拒绝该条建议`, evidence: mention.text }
     }
     if (mention.cls === 'H4') return risky(mention.text)
-    if (!covered(mention, verified)) return unsupported(mention.text)
+    if (!covered(mention, covers)) return unsupported(mention.text)
   }
   return null
 }

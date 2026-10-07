@@ -3,6 +3,7 @@
 // 「100GB」, 「美区」 = 「美国」), not substring matching against the input.
 
 import {
+  DELIVERY_PHRASES,
   PLATFORM_LEXICON,
   PROMISE_TERMS,
   REGION_LEXICON,
@@ -118,7 +119,7 @@ const QUANTITY_UNITS: Array<[string, string]> = [
 ]
 
 const QUANTITY_RE = new RegExp(
-  `(${NUMBER})\\s*(${QUANTITY_UNITS.map(([unit]) => unit).join('|')})(?![A-Za-z])`,
+  `(${NUMBER}|${VAGUE_NUMBER})\\s*(${QUANTITY_UNITS.map(([unit]) => unit).join('|')})(?![A-Za-z])`,
   'gi',
 )
 const MONEY_PREFIX_RE = new RegExp(`[¥￥$]\\s*(${NUMBER})`, 'g')
@@ -138,10 +139,11 @@ const IDIOMATIC_ONE_UNITS = new Set(['times', 'person'])
 export function findQuantities(text: string): Array<Mention & { tuple: QuantityTuple }> {
   const out: Array<Mention & { tuple: QuantityTuple }> = []
   for (const match of text.matchAll(QUANTITY_RE)) {
-    const value = parseNumberToken(match[1])
     const unit = canonicalQuantityUnit(match[2])
-    if (value == null || unit == null) continue
+    if (unit == null) continue
     if (match[1] === '一' && IDIOMATIC_ONE_UNITS.has(unit)) continue
+    // Vague counts (「几元」「若干台」) are NaN: present as a fact, never matchable.
+    const value = parseNumberToken(match[1]) ?? Number.NaN
     const start = match.index ?? 0
     out.push({ start, end: start + match[0].length, text: match[0], tuple: { value, unit } })
   }
@@ -216,14 +218,29 @@ export function regionPlatformIds(text: string): Set<string> {
   return new Set(findRegionPlatformMentions(text).map(item => item.id))
 }
 
-export type HardFactClass = 'H1' | 'H2' | 'H3' | 'H4' | 'H5'
+export type HardFactClass = 'H1' | 'H2' | 'H3' | 'H4' | 'H5' | 'H6'
+
+export type DeliveryPhraseKind = keyof typeof DELIVERY_PHRASES
+
+/** H6 — delivery-method wording (自动交付 / 人工处理 / 自动开通); a transaction fact. */
+export function findDeliveryPhrases(text: string): Array<Mention & { phrase: DeliveryPhraseKind }> {
+  const kindOf = new Map<string, DeliveryPhraseKind>()
+  for (const [kind, phrases] of Object.entries(DELIVERY_PHRASES) as Array<[DeliveryPhraseKind, readonly string[]]>) {
+    for (const phrase of phrases) kindOf.set(phrase, kind)
+  }
+  return termMentions(text, [...kindOf.keys()]).map(item => ({ ...item, phrase: kindOf.get(item.text) as DeliveryPhraseKind }))
+}
+
+export function findTimingTerms(text: string): Mention[] {
+  return termMentions(text, TIMING_TERMS)
+}
 
 /**
  * What kind of verified claim may cover a mention. A claim only covers
  * mentions of its own kind inside its span, so a wide span verified as a
  * duration cannot launder a price or a region (§7.4). H2/H4 have no cover.
  */
-export type CoverClass = 'duration' | 'quantity' | 'timing' | 'regionPlatform'
+export type CoverClass = 'duration' | 'quantity' | 'timing' | 'regionPlatform' | 'delivery'
 
 export type HardFactMention = Mention & { cls: HardFactClass; cover: CoverClass | null }
 
@@ -236,6 +253,7 @@ export function detectHardFacts(text: string): HardFactMention[] {
     ...termMentions(text, TIMING_TERMS).map(item => ({ ...item, cls: 'H3' as const, cover: 'timing' as const })),
     ...termMentions(text, PROMISE_TERMS).map(item => ({ ...item, cls: 'H4' as const, cover: null })),
     ...findRegionPlatformMentions(text).map(item => ({ ...item, cls: 'H5' as const, cover: 'regionPlatform' as const })),
+    ...findDeliveryPhrases(text).map(item => ({ ...item, cls: 'H6' as const, cover: 'delivery' as const })),
   ]
 }
 
