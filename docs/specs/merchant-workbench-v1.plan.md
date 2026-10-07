@@ -1,6 +1,6 @@
 # 商家待办与经营建议 V1：实施计划
 
-版本：0.2.2；日期：2026-10-07。状态：PR1 后端、PR2 前端已实现并通过本地验证（仅本地提交），PR3 待实施。契约：[SPEC-MERCHANT-WORKBENCH-001](./merchant-workbench-v1.md)。实际检查见 [PR1 验证记录](./merchant-workbench-pr1-verification.md)、[PR2 验证记录](./merchant-workbench-pr2-verification.md)，不代表已部署、CI 通过或 V1 验收。
+版本：0.2.3；日期：2026-10-07。状态：PR1 后端、PR2 前端已实现并通过本地验证（仅本地提交）；PR3 已完成本地联调与 AC 汇总，CI、发布说明与试点待定。契约：[SPEC-MERCHANT-WORKBENCH-001](./merchant-workbench-v1.md)。实际检查见 [PR1 验证记录](./merchant-workbench-pr1-verification.md)、[PR2 验证记录](./merchant-workbench-pr2-verification.md)、[PR3 本地验证记录](./merchant-workbench-pr3-verification.md)，不代表已部署、CI 通过或 V1 验收。
 
 ## 1. 分支与协作
 
@@ -83,6 +83,8 @@
 
 ## 4. PR3：验收、试点与发布说明
 
+状态：第 1、2 项已在本地完成，见 [PR3 本地验证记录](./merchant-workbench-pr3-verification.md)（AC03、AC10 部分覆盖）；推送、CI（需 `run-e2e`）、第 3–5 项未开始。
+
 1. 汇总 14 项 AC 的测试文件和实际执行结果，不以文档草案充当验收记录。
 2. 验证默认关闭、开启、再关闭；原编辑/库存/订单/邮件回归。
 3. 说明登录时检查、无离线日报、无暂缓；数据保护上限存在且截断可见。
@@ -108,3 +110,5 @@ npx vitest run src/components/merchant/workbench
 0.2.1：完成 PR1，只读查询和共享发布评估已落地；补充本地验证记录。前端与试点仍属于后续范围。
 
 0.2.2：完成 PR2，前端工作台、共享刷新状态和精确导航落地；补充本地验证记录。CI、评审与试点仍属 PR3。
+
+0.2.3：PR3 本地联调（仅可丢弃库）与 AC01–AC14 证据汇总完成；结论为需打 run-e2e。CI、发布说明与试点未执行。
