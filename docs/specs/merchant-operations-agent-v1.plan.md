@@ -1,6 +1,6 @@
 # 商家经营 Agent V1：实施与验收计划
 
-版本0.2.1，2026-10-08。依据：[SPEC-MERCHANT-AGENT-001](./merchant-operations-agent-v1.md)。状态：A0–A2 已在本地完成（见[验证记录](./merchant-operations-agent-v1-verification.md)），A3 未开始；无 Agent 可用功能、真实模型评测或部署完成声明。
+版本0.2.1，2026-10-08。依据：[SPEC-MERCHANT-AGENT-001](./merchant-operations-agent-v1.md)。状态：A0–A3 已在本地完成（见[验证记录](./merchant-operations-agent-v1-verification.md)，L3 最终轮 24/24、安全违规 0，仅覆盖 openai_chat + json_object + default + deepseek-v4.1-flash）；无 Agent 可用功能、真实模型评测或部署完成声明。
 
 ## 1. 分支与 PR 顺序
 
@@ -125,6 +125,8 @@
 出口：三条旅程在真实前后端+受控模型替身上完成。仍不能据此宣称真实模型可靠。
 
 ## 5. A3：真实模型评测与整体回归
+
+状态（2026-10-08）：L3 已用用户提供的网关与模型完成并本地提交；后端全量、E2E、浏览器联调未执行（按用户要求不做过度测试）。
 
 ### L1/L2/L2.5
 

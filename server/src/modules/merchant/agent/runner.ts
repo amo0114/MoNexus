@@ -20,7 +20,7 @@ import { countIssues, suggestedFieldCount, validateModelOutput, type ValidatedSu
 import type { WorkbenchAction } from '../workbench/rules.js'
 import { AGENT_FEATURE, AGENT_LIMITS, DECISION_SCHEMA_NAME } from './constants.js'
 import { PLANNING_SYSTEM_PROMPT } from './prompt.js'
-import { AgentOutputInvalidError, DECISION_SCHEMA, parseDecision, type Decision } from './schema.js'
+import { AgentOutputInvalidError, DECISION_SCHEMA, parseDecision, ToolArgumentsError, type Decision } from './schema.js'
 import { AgentRunState, boundObservation, executeTool, type CoverageNote, type EvidenceCard, type Observation } from './tools.js'
 
 export type TurnInput = {
@@ -105,6 +105,11 @@ export async function runAgentTurn(
       }))
     } catch (error) {
       if (error instanceof AiTaskBudgetError) return finish('limited', 'timeout')
+      if (error instanceof ToolArgumentsError) {
+        // Uses a decision step but no tool call; the model may correct itself within budget.
+        observations.push({ tool: error.tool, status: 'invalid_arguments' })
+        continue
+      }
       throw error
     }
 

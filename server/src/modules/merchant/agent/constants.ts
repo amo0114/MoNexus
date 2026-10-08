@@ -3,10 +3,10 @@
 // shape requires bumping the matching version (SPEC-AI-001 §12).
 
 export const AGENT_FEATURE = 'merchant_operations_agent' as const
-export const AGENT_PROMPT_VERSION = 'merchant-agent@1'
-export const AGENT_VALIDATOR_VERSION = 'merchant-agent-validator@1'
+export const AGENT_PROMPT_VERSION = 'merchant-agent@4'
+export const AGENT_VALIDATOR_VERSION = 'merchant-agent-validator@3'
 export const TOOL_CATALOG_VERSION = 'merchant-agent-tools@1'
-export const BUDGET_VERSION = 'merchant-agent-budget@1'
+export const BUDGET_VERSION = 'merchant-agent-budget@2'
 export const DECISION_SCHEMA_NAME = 'merchant_agent_decision'
 
 export const AGENT_LIMITS = {
@@ -16,7 +16,8 @@ export const AGENT_LIMITS = {
   runMs: 45_000,
   callMs: 15_000,
   reserveMs: 1_000,
-  planningMaxOutputTokens: 1_200,
+  // L3 (deepseek-v4.1-flash, default reasoning): 1200 truncated long answers; see verification record.
+  planningMaxOutputTokens: 1_600,
   contentMaxOutputTokens: 3_000,
   callInputChars: 40_000,
   runInputChars: 120_000,

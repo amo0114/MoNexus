@@ -115,6 +115,11 @@ export class AgentOutputInvalidError extends Error {
   constructor(reason: string) { super(`agent output invalid: ${reason}`) }
 }
 
+/** A well-formed tool decision with unusable arguments; reported back to the model, not fatal. */
+export class ToolArgumentsError extends Error {
+  constructor(readonly tool: ToolName, reason: string) { super(`tool arguments invalid: ${reason}`) }
+}
+
 const validateShape = new Ajv2020({ strict: false }).compile(DECISION_SCHEMA)
 
 type RawTool = {
@@ -135,6 +140,15 @@ function required<T>(value: T | null, what: string): T {
 }
 
 function toolCall(tool: RawTool): ToolCall {
+  try {
+    return toolArguments(tool)
+  } catch (error) {
+    if (error instanceof AgentOutputInvalidError) throw new ToolArgumentsError(tool.name, error.message)
+    throw error
+  }
+}
+
+function toolArguments(tool: RawTool): ToolCall {
   switch (tool.name) {
     case 'read_workbench':
       return { name: tool.name, group: required(tool.group, 'group') as (typeof WORKBENCH_GROUPS)[number], cursorRef: tool.cursorRef }
@@ -157,7 +171,24 @@ function toolCall(tool: RawTool): ToolCall {
   }
 }
 
-export function parseDecision(raw: unknown): Decision {
+const TOOL_FIELDS = ['group', 'cursorRef', 'query', 'status', 'productRef', 'itemRef', 'targetFields', 'topic'] as const
+
+/**
+ * JSON-compatible output mode does not enforce the schema, and models often
+ * omit the unused branches. Absent keys mean null; wrong types still fail.
+ */
+function fillOmittedNulls(raw: unknown): unknown {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const decision: Record<string, unknown> = { tool: null, answer: null, clarify: null, prepareContent: null, ...raw }
+  const tool = decision.tool
+  if (tool !== null && typeof tool === 'object' && !Array.isArray(tool)) {
+    decision.tool = { ...Object.fromEntries(TOOL_FIELDS.map(field => [field, null])), ...tool }
+  }
+  return decision
+}
+
+export function parseDecision(input: unknown): Decision {
+  const raw = fillOmittedNulls(input)
   if (!validateShape(raw)) throw new AgentOutputInvalidError('schema')
   const decision = raw as RawDecision
   switch (decision.kind) {
