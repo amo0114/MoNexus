@@ -1,21 +1,18 @@
-// SPEC-AI-001 §9–§11 — the only entry point that calls an LLM provider.
-// It owns flags, per-actor daily quota, in-flight dedupe, the timeout, the
-// AiGeneration metadata row and metrics. Prompts, inputs and outputs are never
-// persisted or logged (AI-R20).
+// SPEC-AI-001 §9–§11 — AI feature registry, flags, per-actor quota keys,
+// effective reasoning mode and input hashing. Model calls, the quota slot,
+// timeout, AiGeneration metadata and metrics live in the run container
+// (task.ts). Prompts, inputs and outputs are never persisted or logged (AI-R20).
 
 import { createHmac } from 'node:crypto'
-import { Prisma } from '@prisma/client'
+import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
-import { businessDateString, businessDayStartUtc } from '../businessTime.js'
 import { forbidden, HttpError, notFound } from '../httpError.js'
-import { logger } from '../logger.js'
 import { prisma } from '../prisma.js'
 import { getSystemConfigValue, type SystemConfigKey } from '../systemConfig.js'
-import { aiGenerationDuration, aiGenerationTotal, aiTokensTotal } from './metrics.js'
-import { getLlmProvider, LlmError } from './provider.js'
 import type { AiReasoningMode } from './protocol.js'
 import type { AiSafe } from './safe.js'
 import { aiMerchantAgentEnabled, aiProductCopilotEnabled, getAiRuntimeConfig, type AiRuntimeSettings } from './runtimeConfig.js'
+import { runAiTask } from './task.js'
 
 export const AI_FEATURES = ['product_content_copilot', 'merchant_operations_agent'] as const
 export type AiFeature = (typeof AI_FEATURES)[number]
@@ -28,8 +25,6 @@ export type IssueCounts = {
   unsupported_fact: number
 }
 
-const AI_GENERATION_LOCK_CLASS = 20261007
-const IN_FLIGHT_GRACE_MS = 5_000
 const INPUT_HASH_DOMAIN = 'monexus:ai-input-hash:v1\0'
 // SPEC-AI-001 AI-R21a: computed once per agent run, before the quota slot is claimed.
 const AGENT_RUN_INPUT_HASH_DOMAIN = 'monexus:ai-agent-run-input:v1\0'
@@ -117,165 +112,29 @@ export interface RunAiGenerationArgs<T> {
   parse: (raw: unknown) => { value: T; issueCounts: IssueCounts; suggestedFieldCount: number }
 }
 
-type FailureCode = 'AI_TIMEOUT' | 'AI_PROVIDER_ERROR' | 'AI_OUTPUT_INVALID'
-
-function failureFor(err: unknown): { code: FailureCode; httpError: HttpError } {
-  if (err instanceof LlmError) {
-    if (err.code === 'timeout') {
-      return { code: 'AI_TIMEOUT', httpError: new HttpError(504, 'AI_TIMEOUT', 'AI 整理超时，请稍后重试或继续手动编辑') }
-    }
-    if (err.code === 'output_unparseable') {
-      return { code: 'AI_OUTPUT_INVALID', httpError: new HttpError(502, 'AI_OUTPUT_INVALID', 'AI 返回的内容无法使用，请稍后重试') }
-    }
-    return { code: 'AI_PROVIDER_ERROR', httpError: new HttpError(502, 'AI_PROVIDER_ERROR', 'AI 服务暂时不可用，请稍后重试或继续手动编辑') }
-  }
-  return { code: 'AI_OUTPUT_INVALID', httpError: new HttpError(502, 'AI_OUTPUT_INVALID', 'AI 返回的内容无法使用，请稍后重试') }
-}
-
-async function claimGenerationSlot<T>(args: RunAiGenerationArgs<T>, inputHash: string, providerName: string, model: string) {
-  const now = new Date()
-  const dayStart = businessDayStartUtc(businessDateString(now))
-  const inFlightSince = new Date(now.getTime() - config.ai.timeoutMs - IN_FLIGHT_GRACE_MS)
-
-  return prisma.$transaction(async tx => {
-    // Serialises quota checks per actor; the provider call happens outside.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${AI_GENERATION_LOCK_CLASS}::int4, ${args.actor.userId}::int4)`
-
-    const quota = await getAiDailyQuota(args.feature, args.actor.role, tx)
-    const used = await tx.aiGeneration.count({
-      where: { actorUserId: args.actor.userId, feature: args.feature, createdAt: { gte: dayStart } },
-    })
-    if (quota <= 0 || used >= quota) {
-      throw new HttpError(429, 'AI_QUOTA_EXCEEDED', '今日 AI 整理次数已用完，明天再试')
-    }
-
-    const inFlight = await tx.aiGeneration.count({
-      where: {
-        actorUserId: args.actor.userId,
-        feature: args.feature,
-        targetType: args.target.type,
-        targetId: args.target.id,
-        status: 'pending',
-        createdAt: { gt: inFlightSince },
-      },
-    })
-    if (inFlight > 0) {
-      throw new HttpError(409, 'AI_GENERATION_IN_PROGRESS', '上一次整理仍在进行中，请稍后')
-    }
-
-    return tx.aiGeneration.create({
-      data: {
-        feature: args.feature,
-        actorUserId: args.actor.userId,
-        actorRole: args.actor.role,
-        targetType: args.target.type,
-        targetId: args.target.id,
-        provider: providerName,
-        model,
-        promptVersion: args.promptVersion,
-        validatorVersion: args.validatorVersion,
-        inputHash,
-        status: 'pending',
-      },
-      select: { id: true },
-    })
-  })
-}
-
+/** Single-call consumer of the run container (SPEC-AI-001 §11.1); behaviour unchanged. */
 export async function runAiGeneration<T>(args: RunAiGenerationArgs<T>): Promise<{ generationId: number; value: T }> {
-  const runtime = await getAiRuntimeConfig()
-  if (!await isAiFeatureEnabled(args.feature, runtime)) throw notFound()
-
-  const provider = await getLlmProvider({ ...runtime, reasoningMode: effectiveReasoningMode(args.feature, runtime) })
-  const inputHash = computeAiInputHash(args.input)
-  const row = await claimGenerationSlot(args, inputHash, provider.name, runtime.model)
-
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), config.ai.timeoutMs)
-  const startedAt = Date.now()
-  let usage: { inputTokens: number | null; outputTokens: number | null } = { inputTokens: null, outputTokens: null }
-  let reportedModel = runtime.model
-
-  try {
-    let result
-    try {
-      result = await provider.generateStructured({
-        model: runtime.model,
-        reasoningEffort: args.reasoningEffort,
+  return runAiTask<T>({
+    feature: args.feature,
+    actor: args.actor,
+    target: args.target,
+    promptVersion: args.promptVersion,
+    validatorVersion: args.validatorVersion,
+    inputHash: computeAiInputHash(args.input),
+    deadlineMs: config.ai.timeoutMs,
+    run: async task => {
+      const raw = await task.generate({
         schemaName: args.schemaName,
         system: args.system,
         input: args.input,
         outputSchema: args.outputSchema,
         maxOutputTokens: args.maxOutputTokens,
-        signal: controller.signal,
       })
-    } catch (err) {
-      // An abort we triggered is a timeout regardless of how the SDK surfaced it.
-      throw controller.signal.aborted ? new LlmError('timeout') : err
-    }
-    usage = result.usage
-    reportedModel = result.model || runtime.model
-    const parsed = args.parse(result.output)
-    const latencyMs = Date.now() - startedAt
-
-    await prisma.aiGeneration.update({
-      where: { id: row.id },
-      data: {
-        status: 'succeeded',
-        model: reportedModel,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        latencyMs,
-        issueCounts: parsed.issueCounts as unknown as Prisma.InputJsonValue,
-        suggestedFieldCount: parsed.suggestedFieldCount,
-        completedAt: new Date(),
-      },
-    })
-    recordMetrics(args.feature, 'succeeded', 'none', latencyMs, usage)
-    return { generationId: row.id, value: parsed.value }
-  } catch (err) {
-    const failure = failureFor(err)
-    const latencyMs = Date.now() - startedAt
-    await prisma.aiGeneration.update({
-      where: { id: row.id },
-      data: {
-        status: 'failed',
-        errorCode: failure.code,
-        model: reportedModel,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        latencyMs,
-        completedAt: new Date(),
-      },
-    })
-    recordMetrics(args.feature, 'failed', failure.code, latencyMs, usage)
-    logger.warn(
-      {
-        generationId: row.id,
-        feature: args.feature,
-        errorCode: failure.code,
-        llmErrorCode: err instanceof LlmError ? err.code : 'parse',
-        latencyMs,
-      },
-      'ai generation failed',
-    )
-    throw failure.httpError
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
-function recordMetrics(
-  feature: AiFeature,
-  status: 'succeeded' | 'failed',
-  errorCode: string,
-  latencyMs: number,
-  usage: { inputTokens: number | null; outputTokens: number | null },
-) {
-  aiGenerationTotal.inc({ feature, status, error_code: errorCode })
-  aiGenerationDuration.observe({ feature }, latencyMs / 1000)
-  if (usage.inputTokens != null) aiTokensTotal.inc({ feature, direction: 'input' }, usage.inputTokens)
-  if (usage.outputTokens != null) aiTokensTotal.inc({ feature, direction: 'output' }, usage.outputTokens)
+      const parsed = args.parse(raw)
+      task.setContentCounts(parsed.issueCounts, parsed.suggestedFieldCount)
+      return { value: parsed.value }
+    },
+  })
 }
 
 /**

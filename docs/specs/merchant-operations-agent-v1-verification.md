@@ -50,3 +50,36 @@ TZ=UTC TEST_DATABASE_URL="$AGENT_DB" REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000
 - 后端全量套件、E2E、CI：未运行（A0 只本地提交，按授权不推送）。
 - 真实模型调用：无（A0 不涉及模型调用）。
 - A1–A3、MA01–MA12：未开始。
+
+## A1：受控运行容器、只读工具与决策循环（2026-10-08）
+
+按用户要求本阶段只做针对性验证，不跑后端全量、E2E 或真实模型。
+
+### 实现
+
+- `server/src/lib/ai/task.ts` `runAiTask`：一次 run 一行 AiGeneration、一次额度；固定配置快照与有效推理模式；整次 deadline、单次调用上限与收尾余量；客户端断开取消；usage 累计（任一步未知则为 null）；Agent 行写入 stepCount/toolCallCount/stopReason。`runAiGeneration` 改为它的单调用消费方，商品 Copilot/草稿助手行为不变。
+- `server/src/modules/merchant/agent/`：
+  - `schema.ts`：turn 请求（strict）与下一步决定的静态 JSON Schema（固定根对象 + 可空分支），服务端按 kind 取唯一分支。
+  - `tools.ts`：`read_workbench`（urgent/availability/drafts，草稿每 run 最多两批）、`find_products`、`inspect_product`（与发布相同的 readiness + 封闭动作）、`read_item`、`read_product_content`（复用拆出的 `prepareContentSuggestionContext`）、`read_help`。模型只见不透明 ref（P*/I*/C*/A*）、档位与缺项代码；准确数值、名称与动作只在证据卡中返回商家。工具失败报告为 unavailable/not_found，不终止 run。
+  - `runner.ts`：模型决定下一步；服务端校验引用与动作、执行工具；最多 4 次规划、3 次工具、单次调用输入 ≤40000 字符、累计 ≤120000 字符；重复调用 → `no_progress`；超出 → `limited`。`prepare_content` 仅在本 run 读取过该商品内容后可用，使用内容 Copilot 的 prompt/schema/validator 生成一次，只返回提案（10 分钟有效），不写入。
+  - `service.ts` / `routes.ts`：`GET /api/merchant/agent/availability`、`POST /api/merchant/agent/turns`；选中资源先校验归属（外来/不存在统一 404，不占额度）；每一步与返回前重查账号状态、会话、商家状态与开关；`res.on('close')` 且未完成响应才取消。
+- 内容 Copilot：`generateContentSuggestion` 拆出 `prepareContentSuggestionContext`，原端点行为不变。
+
+### 实际执行
+
+| 检查 | 结果 |
+| --- | --- |
+| `npx tsc --noEmit`（server，含测试） | 通过 |
+| `runAiGeneration` 改造后回归：admin-ai-settings、product-content-copilot、product-draft-assistant、ai-merchant-agent-foundation | 4 个文件 / 61 个用例通过 |
+| 新增 `src/__tests__/merchant-agent.test.ts` | 6 个用例通过 |
+| `npm --prefix server run build` | 通过 |
+| 最终定向回归：admin-ai-settings、product-content-copilot、product-draft-assistant、ai-merchant-agent-foundation、merchant-agent、`src/lib/ai`、`src/modules/catalog/contentCopilot`、`src/modules/merchant/workbench/workbench.test.ts`（可丢弃库 `monexus_test_merchant_agent`，`TZ=UTC`） | 12 个文件 / 218 个用例通过 |
+
+新增用例：模型选工具后基于观察结果回答（动作由服务端证据解析；模型输入不含 ID 与准确数量；元数据步数/工具数/usage/stopReason）；伪造引用 → 502 且记 output_invalid；工具预算用尽与重复调用 → limited；外来选择 404、额度 0 → 429、Agent 关闭 → 404，均不调用模型、不占额度，availability 分别返回 quota/disabled；读取内容 → 生成提案不写库，文案步骤输入不含规划观察与交付密文；真实 HTTP 断开时 provider 收到中止、run 记 client_disconnected。
+
+### 简化与未完成
+
+- run 总输出 token（8000）未单独计数，由单次上限（规划 1200×4 + 文案 3000）约束。
+- 用户自由输入的凭据/联系方式模式拦截、回答文本的无根据因果/承诺检查尚未实现（只校验引用与动作）；需在 A2/A3 前补齐或在 L3 中暴露。
+- 工具级指标与 DB statement timeout 未加。
+- A2（前端对话与提案审阅）、A3（真实模型 L3）未开始；MA01–MA12 未验收。
