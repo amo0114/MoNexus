@@ -78,6 +78,20 @@ describe('MerchantAvailabilityModal (T-CAT-FE-002)', () => {
     expect(screen.queryByRole('button', { name: /调整/ })).not.toBeInTheDocument()
   })
 
+  it('opens on the exact workbench target Offer', () => {
+    render(<MerchantAvailabilityModal isOpen onClose={vi.fn()} product={product} initialOfferId={43} onChanged={vi.fn()} />)
+    expect(screen.getByTestId('availability-offer-select')).toHaveValue('43')
+    expect(screen.getByTestId('availability-capacity-form')).toBeInTheDocument()
+    expect(screen.queryByTestId('merchant-availability-target-missing')).not.toBeInTheDocument()
+  })
+
+  it('reports an unavailable target Offer instead of falling back to the default one', () => {
+    render(<MerchantAvailabilityModal isOpen onClose={vi.fn()} product={product} initialOfferId={99} onChanged={vi.fn()} />)
+    expect(screen.getByTestId('merchant-availability-target-missing')).toHaveTextContent('目标规格不可用')
+    expect(screen.queryByTestId('availability-offer-select')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('availability-inventory')).not.toBeInTheDocument()
+  })
+
   it('keeps preview before confirm and targets the already-selected inventory Offer', async () => {
     const onImported = vi.fn()
     render(<MerchantAvailabilityModal isOpen onClose={vi.fn()} product={product} onChanged={vi.fn()} onImported={onImported} />)

@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { workbenchRoutes } from './workbench/routes.js'
 import { authenticate, requireActiveUser, requireMerchant, requireVerifiedEmail } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
@@ -43,6 +44,7 @@ router.post('/register', authenticate, requireActiveUser, validate(applyMerchant
 // All other routes require merchant role
 router.use(authenticate, requireActiveUser, requireMerchant)
 router.use(createDraftAssistantRouter('merchant'))
+router.use('/workbench', workbenchRoutes)
 
 router.get('/me', controller.me)
 router.put('/me', validate(updateMerchantSchema), controller.updateMe)
