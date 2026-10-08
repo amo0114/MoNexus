@@ -109,7 +109,7 @@ flowchart TD
 
 c0964c2 的 `LlmStructuredRequest.reasoningEffort` 和 `RunAiGenerationArgs.reasoningEffort` 都仅允许 `'none'`；但 adapter 只有在运行时 reasoningMode=none 时才发送禁用推理参数，default 时省略。因此“类型写none”不等于每次线上都禁用推理，也不能据此保证 Agent 规划质量。
 
-本期决定：统一请求增加/迁移为 `reasoningMode: 'none' | 'default'`，default 意味着服务商默认，不代表已保证某种推理强度。`runAiTask` 接收同一类型。原 `runAiGeneration` 调用签名可保留兼容入口，但必须把其旧参数与原后台 reasoningMode 映射为同样的既有线上行为；不能为了 Agent 改变商品 Copilot 的推理配置。
+本期决定（A0 实施后的形式，见 SPEC-AI-001 1.3.0 §6.2）：有效推理模式 `'none' | 'default'` 按 feature 在构造 provider 时确定并传给 adapter，provider name 含有效模式并写入元数据；请求中的 `reasoningEffort: 'none'` 仅是 none 模式下发送的取值，不再被理解为“总是关闭推理”。default 意味着服务商默认，不代表已保证某种推理强度。商品 Copilot 继续使用全局 reasoningMode，行为不变；`runAiTask` 按同一规则取 Agent 的有效模式。
 
 新增 Agent 专属 `merchantAgentReasoningMode`（默认default），沿后台配置版本与快照生效，不改变全局现有 reasoningMode。Agent规划和专用文案步骤均使用该run的有效模式；复用的是文案prompt/schema/validator，新的调用模式须独立评测。所有 Provider 的name/元数据必须反映实际生效模式，不能记录原全局模式。
 

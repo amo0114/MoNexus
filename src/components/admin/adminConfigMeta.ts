@@ -7,7 +7,7 @@ export type ConfigGroupId =
   | 'trade' // 交易与交付 (9)
   | 'inventory' // 库存提醒 (2)
   | 'merchandising' // 商品运营 (8)
-  | 'ai' // AI 辅助 (2)
+  | 'ai' // AI 辅助 (3)
   | 'ops' // 高级运维 (3)
   | 'system' // 系统信息 (build artifact)
 
@@ -432,7 +432,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     description: '系统自动授予的合作伙伴权益有效天数（1～365 天）；不影响管理员手动授予的期限。',
   },
 
-  // h. AI 辅助 (2 项) — SPEC-AI-001 §11.2：0 = 该角色不可调用；试点数值按成本测算配置
+  // h. AI 辅助 (3 项) — SPEC-AI-001 §11.2：0 = 该角色不可调用；试点数值按成本测算配置
   aiProductCopilotDailyQuotaAdmin: {
     key: 'aiProductCopilotDailyQuotaAdmin',
     group: 'ai',
@@ -452,6 +452,16 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     unit: '次/日',
     label: '商家每日 AI 整理次数',
     description: '每位商家账号每个自然日（北京时间）的 AI 调用次数；辅助新建和说明整理共用；0 表示不可使用。',
+  },
+  aiMerchantAgentDailyQuotaMerchant: {
+    key: 'aiMerchantAgentDailyQuotaMerchant',
+    group: 'ai',
+    type: 'integer',
+    min: 0,
+    max: 1000,
+    unit: '次/日',
+    label: '商家每日经营助手次数',
+    description: '每位商家账号每个自然日（北京时间）可发起的经营助手任务次数；与 AI 整理额度分开计算；0 表示不可使用。',
   },
 
   // g. 高级运维 (3 项)

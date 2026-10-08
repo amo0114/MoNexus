@@ -21,6 +21,9 @@ export function resolveAiRuntimeConfig(row: AiRuntimeConfig | null) {
     source: row ? 'database' as const : 'environment' as const,
     enabled: row?.enabled ?? config.ai.enabled,
     productCopilotEnabled: row?.productCopilotEnabled ?? config.ai.productCopilotEnabled,
+    // No env bootstrap: the agent can only be switched on from admin settings.
+    merchantAgentEnabled: row?.merchantAgentEnabled ?? false,
+    merchantAgentReasoningMode: (row?.merchantAgentReasoningMode ?? 'default') as AiReasoningMode,
     baseUrl: row?.baseUrl ?? DEFAULT_AI_BASE_URL,
     chatTokenParameter: (row?.chatTokenParameter ?? 'max_tokens') as AiChatTokenParameter,
     protocol: (row?.protocol ?? 'openai_responses') as AiProtocol,
@@ -44,4 +47,10 @@ export type AiRuntimeSettings = Awaited<ReturnType<typeof getAiRuntimeConfig>>
 
 export function aiProductCopilotEnabled(settings: AiRuntimeSettings): boolean {
   return settings.enabled && settings.productCopilotEnabled && Boolean(settings.apiKey) && !settings.credentialError
+}
+
+/** The agent reads workbench facts, so it also needs MERCHANT_WORKBENCH_ENABLED (env, restart to change). */
+export function aiMerchantAgentEnabled(settings: AiRuntimeSettings): boolean {
+  return settings.enabled && settings.merchantAgentEnabled && Boolean(settings.apiKey) && !settings.credentialError
+    && config.merchantWorkbenchEnabled
 }

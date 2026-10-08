@@ -19,6 +19,9 @@ const updateSchema = z.object({
   expectedVersion: versionSchema,
   enabled: z.boolean(),
   productCopilotEnabled: z.boolean(),
+  // Optional so older clients keep working: missing = preserve (see below for AI-off).
+  merchantAgentEnabled: z.boolean().optional(),
+  merchantAgentReasoningMode: z.enum(AI_REASONING_MODES).optional(),
   chatTokenParameter: z.enum(AI_CHAT_TOKEN_PARAMETERS).optional(),
   protocol: z.enum(AI_PROTOCOLS).optional(),
   outputMode: z.enum(AI_OUTPUT_MODES).optional(),
@@ -35,6 +38,10 @@ function publicSettings(settings: AiRuntimeSettings) {
     source: settings.source,
     enabled: settings.enabled,
     productCopilotEnabled: settings.productCopilotEnabled,
+    merchantAgentEnabled: settings.merchantAgentEnabled,
+    merchantAgentReasoningMode: settings.merchantAgentReasoningMode,
+    // Deployment env, read-only here: changing it requires a backend restart.
+    merchantWorkbenchEnabled: config.merchantWorkbenchEnabled,
     apiKeyConfigured: settings.apiKeyConfigured,
     apiKeyLast4: settings.apiKeyLast4,
     credentialError: settings.credentialError,
@@ -65,6 +72,7 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     const protocol = input.protocol ?? previous.protocol
     const outputMode = input.outputMode ?? previous.outputMode
     const reasoningMode = input.reasoningMode ?? previous.reasoningMode
+    const merchantAgentReasoningMode = input.merchantAgentReasoningMode ?? previous.merchantAgentReasoningMode
     if (baseUrl !== previous.baseUrl && previous.apiKeyConfigured && input.apiKey === undefined) {
       throw badRequest('更换 API 地址时，请同时填写该服务的 API Key，或清除旧密钥')
     }
@@ -83,11 +91,14 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     }
     const enabled = input.apiKey === null ? false : input.enabled
     const productCopilotEnabled = input.apiKey === null ? false : input.productCopilotEnabled
-    if (productCopilotEnabled && !enabled) throw badRequest('请先开启 AI 总开关')
+    // Turning AI off (or clearing the key) also switches the agent off unless the client said otherwise.
+    const merchantAgentEnabled = input.apiKey === null ? false
+      : input.merchantAgentEnabled ?? (enabled ? previous.merchantAgentEnabled : false)
+    if ((productCopilotEnabled || merchantAgentEnabled) && !enabled) throw badRequest('请先开启 AI 总开关')
     if (enabled && (!ciphertext || (!keyToEncrypt && previous.credentialError))) {
       throw badRequest('请先配置可用的 API Key')
     }
-    const data = { enabled, productCopilotEnabled, baseUrl, model, protocol, outputMode, reasoningMode, chatTokenParameter, apiKeyCiphertext: ciphertext, apiKeyLast4: last4, updatedBy: adminUserId }
+    const data = { enabled, productCopilotEnabled, merchantAgentEnabled, merchantAgentReasoningMode, baseUrl, model, protocol, outputMode, reasoningMode, chatTokenParameter, apiKeyCiphertext: ciphertext, apiKeyLast4: last4, updatedBy: adminUserId }
     const updated = await tx.aiRuntimeConfig.upsert({
       where: { id: 1 },
       create: { id: 1, version: 1, ...data },
@@ -96,7 +107,7 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     // Only operation metadata; neither plaintext, ciphertext nor even key suffixes.
     await tx.adminLog.create({ data: {
       adminUserId, action: '更新 AI 配置', targetType: 'aiRuntimeConfig', targetId: 1,
-      detail: JSON.stringify({ version: updated.version, enabled, productCopilotEnabled,
+      detail: JSON.stringify({ version: updated.version, enabled, productCopilotEnabled, merchantAgentEnabled, merchantAgentReasoningMode,
         protocol, outputMode, reasoningMode, chatTokenParameter, endpointChanged: baseUrl !== previous.baseUrl, modelChanged: model !== previous.model,
         keyAction: input.apiKey === null ? 'clear' : keyToEncrypt ? 'replace' : 'preserve' }),
     } })

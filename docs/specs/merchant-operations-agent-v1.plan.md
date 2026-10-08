@@ -1,6 +1,6 @@
 # 商家经营 Agent V1：实施与验收计划
 
-版本0.2.0，2026-10-07。依据：[SPEC-MERCHANT-AGENT-001](./merchant-operations-agent-v1.md)。状态：方案待评审，无Agent实现、真实模型评测或部署完成声明。
+版本0.2.1，2026-10-08。依据：[SPEC-MERCHANT-AGENT-001](./merchant-operations-agent-v1.md)。状态：A0 已在本地完成（见[验证记录](./merchant-operations-agent-v1-verification.md)），A1–A3 未开始；无 Agent 可用功能、真实模型评测或部署完成声明。
 
 ## 1. 分支与 PR 顺序
 
@@ -17,6 +17,8 @@
 
 ## 2. A0：已合入依赖的基线核验与 Agent 规范调整
 
+状态（2026-10-08）：已在 `feat/merchant-operations-agent` 本地完成并提交，未推送；结果见[验证记录](./merchant-operations-agent-v1-verification.md)。
+
 ### 输入与产物
 
 输入：依赖已经合入的develop及工作台/Node22/商品AI三个PR与SHA。c0964c2仅为调研观察，不直接合入Agent或工作台；上游尚未合入时停留在文档评审，不复制Provider或新建平行基础设施。
@@ -31,7 +33,7 @@
 4. 修订Foundation：task容器、应用层工具、独立feature/target/flag/quota、Agent计数/HMAC语义；原商品Copilot仍单次调用。
 5. 新增merchantAgentEnabled=false和merchantAgentReasoningMode=default，Agent只配merchant额度0。后台显式说明工作台环境开关重启生效、AI运行时开关保存生效。
 6. QUOTA_KEYS改成显式supportedRoles/部分角色键映射；不支持角色在配置读取前403拒绝，原Copilot两角色行为不变。
-7. Provider/task请求显式表达none/default，旧runAiGeneration签名可保留兼容映射，三种adapter按有效模式发送/省略参数。元数据反映实际模式；不能只改TypeScript类型却漏改Chat硬编码none。
+7. 有效推理模式按feature在构造provider时确定（Copilot用全局reasoningMode，Agent用merchantAgentReasoningMode），三种adapter按有效模式发送/省略参数，provider name与元数据反映实际模式；旧runAiGeneration签名不变、Copilot行为不变。
 8. 注册Agent feature/target CHECK；新增nullable计数列及Agent限定的accepted为空、suggested 0..6、issueCounts固定键非负约束。按Spec §9.1实现初始run输入HMAC，保持旧hash用途域与行为。
 
 ### 验证与出口

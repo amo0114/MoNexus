@@ -7,16 +7,17 @@ import { createHmac } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { businessDateString, businessDayStartUtc } from '../businessTime.js'
-import { HttpError, notFound } from '../httpError.js'
+import { forbidden, HttpError, notFound } from '../httpError.js'
 import { logger } from '../logger.js'
 import { prisma } from '../prisma.js'
 import { getSystemConfigValue, type SystemConfigKey } from '../systemConfig.js'
 import { aiGenerationDuration, aiGenerationTotal, aiTokensTotal } from './metrics.js'
 import { getLlmProvider, LlmError } from './provider.js'
+import type { AiReasoningMode } from './protocol.js'
 import type { AiSafe } from './safe.js'
-import { aiProductCopilotEnabled, getAiRuntimeConfig, type AiRuntimeSettings } from './runtimeConfig.js'
+import { aiMerchantAgentEnabled, aiProductCopilotEnabled, getAiRuntimeConfig, type AiRuntimeSettings } from './runtimeConfig.js'
 
-export const AI_FEATURES = ['product_content_copilot'] as const
+export const AI_FEATURES = ['product_content_copilot', 'merchant_operations_agent'] as const
 export type AiFeature = (typeof AI_FEATURES)[number]
 export type AiActorRole = 'merchant' | 'admin'
 
@@ -30,12 +31,22 @@ export type IssueCounts = {
 const AI_GENERATION_LOCK_CLASS = 20261007
 const IN_FLIGHT_GRACE_MS = 5_000
 const INPUT_HASH_DOMAIN = 'monexus:ai-input-hash:v1\0'
+// SPEC-AI-001 AI-R21a: computed once per agent run, before the quota slot is claimed.
+const AGENT_RUN_INPUT_HASH_DOMAIN = 'monexus:ai-agent-run-input:v1\0'
 
-const QUOTA_KEYS: Record<AiFeature, Record<AiActorRole, SystemConfigKey>> = {
+// Each feature lists only the roles it supports; a missing role has no quota key at all.
+const QUOTA_KEYS: Record<AiFeature, Partial<Record<AiActorRole, SystemConfigKey>>> = {
   product_content_copilot: {
     admin: 'aiProductCopilotDailyQuotaAdmin',
     merchant: 'aiProductCopilotDailyQuotaMerchant',
   },
+  merchant_operations_agent: {
+    merchant: 'aiMerchantAgentDailyQuotaMerchant',
+  },
+}
+
+export function aiFeatureSupportsRole(feature: AiFeature, role: AiActorRole): boolean {
+  return QUOTA_KEYS[feature][role] !== undefined
 }
 
 export async function isAiFeatureEnabled(feature: AiFeature, settings?: AiRuntimeSettings): Promise<boolean> {
@@ -43,7 +54,14 @@ export async function isAiFeatureEnabled(feature: AiFeature, settings?: AiRuntim
   switch (feature) {
     case 'product_content_copilot':
       return aiProductCopilotEnabled(runtime)
+    case 'merchant_operations_agent':
+      return aiMerchantAgentEnabled(runtime)
   }
+}
+
+/** The reasoning mode a call of this feature runs with (SPEC-AI-001 1.3.0 §6.2). */
+export function effectiveReasoningMode(feature: AiFeature, settings: AiRuntimeSettings): AiReasoningMode {
+  return feature === 'merchant_operations_agent' ? settings.merchantAgentReasoningMode : settings.reasoningMode
 }
 
 export async function getAiDailyQuota(
@@ -51,7 +69,10 @@ export async function getAiDailyQuota(
   role: AiActorRole,
   tx?: Prisma.TransactionClient,
 ): Promise<number> {
-  return getSystemConfigValue(QUOTA_KEYS[feature][role], tx)
+  const key = QUOTA_KEYS[feature][role]
+  // Rejected before any quota row is read: an unsupported role never gets a fake quota.
+  if (!key) throw forbidden('当前账号角色不能使用该 AI 功能')
+  return getSystemConfigValue(key, tx)
 }
 
 function canonicalJson(value: unknown): string {
@@ -67,8 +88,17 @@ function canonicalJson(value: unknown): string {
 
 /** AI-R21: domain-separated HMAC so this message space never overlaps other jwtSecret HMACs. */
 export function computeAiInputHash(input: unknown): string {
+  return domainHmac(INPUT_HASH_DOMAIN, input)
+}
+
+/** AI-R21a: fingerprint of an agent run's whitelisted initial input, in its own domain. */
+export function computeAiAgentRunInputHash(runInput: unknown): string {
+  return domainHmac(AGENT_RUN_INPUT_HASH_DOMAIN, runInput)
+}
+
+function domainHmac(domain: string, input: unknown): string {
   return createHmac('sha256', config.jwtSecret)
-    .update(INPUT_HASH_DOMAIN + canonicalJson(input))
+    .update(domain + canonicalJson(input))
     .digest('hex')
 }
 
@@ -156,7 +186,7 @@ export async function runAiGeneration<T>(args: RunAiGenerationArgs<T>): Promise<
   const runtime = await getAiRuntimeConfig()
   if (!await isAiFeatureEnabled(args.feature, runtime)) throw notFound()
 
-  const provider = await getLlmProvider(runtime)
+  const provider = await getLlmProvider({ ...runtime, reasoningMode: effectiveReasoningMode(args.feature, runtime) })
   const inputHash = computeAiInputHash(args.input)
   const row = await claimGenerationSlot(args, inputHash, provider.name, runtime.model)
 

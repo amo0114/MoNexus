@@ -13,6 +13,8 @@ export default function AdminAiSettingsPanel() {
   const [loadError, setLoadError] = useState(false)
   const [enabled, setEnabled] = useState(false)
   const [copilotEnabled, setCopilotEnabled] = useState(false)
+  const [agentEnabled, setAgentEnabled] = useState(false)
+  const [agentReasoningMode, setAgentReasoningMode] = useState<AiReasoningMode>('default')
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
   const [chatTokenParameter, setChatTokenParameter] = useState<AdminAiSettings['chatTokenParameter']>('max_tokens')
@@ -31,6 +33,8 @@ export default function AdminAiSettingsPanel() {
     setSettings(value)
     setEnabled(value.enabled)
     setCopilotEnabled(value.productCopilotEnabled)
+    setAgentEnabled(value.merchantAgentEnabled)
+    setAgentReasoningMode(value.merchantAgentReasoningMode)
     setBaseUrl(value.baseUrl)
     setModel(value.model)
     setChatTokenParameter(value.chatTokenParameter)
@@ -76,6 +80,8 @@ export default function AdminAiSettingsPanel() {
       expectedVersion: settings.version,
       enabled: clearKey ? false : enabled,
       productCopilotEnabled: clearKey ? false : copilotEnabled,
+      merchantAgentEnabled: clearKey ? false : agentEnabled,
+      merchantAgentReasoningMode: agentReasoningMode,
       baseUrl: baseUrl.trim(),
       model: model.trim(),
       protocol, outputMode, reasoningMode, chatTokenParameter,
@@ -114,6 +120,7 @@ export default function AdminAiSettingsPanel() {
   )
 
   const dirty = apiKey.length > 0 || clearKey || enabled !== settings.enabled || copilotEnabled !== settings.productCopilotEnabled
+    || agentEnabled !== settings.merchantAgentEnabled || agentReasoningMode !== settings.merchantAgentReasoningMode
     || baseUrl !== settings.baseUrl || model !== settings.model
     || chatTokenParameter !== settings.chatTokenParameter || protocol !== settings.protocol || outputMode !== settings.outputMode || reasoningMode !== settings.reasoningMode
   return (
@@ -196,13 +203,13 @@ export default function AdminAiSettingsPanel() {
         {settings.apiKeyConfigured && <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={clearKey} disabled={busy !== null} onChange={e => {
             setClearKey(e.target.checked); setApiKey(''); setTestResult(null)
-            if (e.target.checked) { setEnabled(false); setCopilotEnabled(false) }
+            if (e.target.checked) { setEnabled(false); setCopilotEnabled(false); setAgentEnabled(false) }
           }} />清除已保存密钥，同时关闭 AI
         </label>}
         <label className="flex items-center gap-2 text-sm font-semibold">
           <input type="checkbox" checked={enabled} disabled={busy !== null || clearKey} onChange={e => {
             setEnabled(e.target.checked)
-            if (!e.target.checked) setCopilotEnabled(false)
+            if (!e.target.checked) { setCopilotEnabled(false); setAgentEnabled(false) }
           }} />AI 总开关
         </label>
         <label className="flex items-center gap-2 text-sm">
@@ -210,6 +217,22 @@ export default function AdminAiSettingsPanel() {
             onChange={e => setCopilotEnabled(e.target.checked)} />商品 Copilot（新建与说明整理）
         </label>
         <p className="text-xs text-[var(--color-text-muted)]">两个开关均开启且对应角色的配额大于 0 时，新建页显示 AI 辅助创建；已选择形态的商品编辑页显示 AI 整理。两种操作共用每日额度。</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={agentEnabled} disabled={busy !== null || !enabled || clearKey}
+            onChange={e => setAgentEnabled(e.target.checked)} />商家经营助手
+        </label>
+        <div>
+          <label htmlFor="admin-ai-agent-reasoning" className="block text-sm font-semibold mb-1">经营助手推理参数</label>
+          <select id="admin-ai-agent-reasoning" className="input w-full" value={agentReasoningMode} disabled={busy !== null}
+            onChange={e => setAgentReasoningMode(e.target.value as AiReasoningMode)}>
+            <option value="default">使用服务商默认值（不发送推理参数）</option>
+            <option value="none">显式关闭推理（服务商须支持）</option>
+          </select>
+          <p className="text-xs text-[var(--color-text-muted)] mt-1">只用于经营助手，不影响商品 Copilot。更换后须对新组合重新评测。</p>
+        </div>
+        <p className="text-xs text-[var(--color-text-muted)]" data-testid="admin-ai-agent-dependency">
+          经营助手另需商家每日次数大于 0，并依赖商家待办工作台数据（服务器环境变量 MERCHANT_WORKBENCH_ENABLED，当前{settings.merchantWorkbenchEnabled ? '已开启' : '未开启'}）。该环境变量修改后需重启后端才生效；本页开关保存后对新请求立即生效。
+        </p>
       </div>
       {error && <div role="alert" className="text-sm text-[var(--color-danger)]">{error}
         <button type="button" className="btn-secondary btn-sm ml-2" disabled={busy !== null} onClick={() => void load()}>重新加载 AI 配置</button>
