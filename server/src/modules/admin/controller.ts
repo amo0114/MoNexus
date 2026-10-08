@@ -93,6 +93,30 @@ export async function getProductEditor(req: Request, res: Response, next: NextFu
   } catch (err) { next(err) }
 }
 
+export async function createContentSuggestion(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { generateContentSuggestion } = await import('../catalog/contentCopilot/service.js')
+    res.json(await generateContentSuggestion(
+      { kind: 'admin', userId: req.user!.userId },
+      req.params.id as unknown as number,
+      req.body,
+    ))
+  } catch (err) { next(err) }
+}
+
+export async function reportContentSuggestionApplied(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { recordContentSuggestionApplied } = await import('../catalog/contentCopilot/service.js')
+    await recordContentSuggestionApplied(
+      { kind: 'admin', userId: req.user!.userId },
+      req.params.id as unknown as number,
+      req.params.generationId as unknown as number,
+      req.body.appliedFieldCount,
+    )
+    res.status(204).end()
+  } catch (err) { next(err) }
+}
+
 export async function createPlatformOffer(req: Request, res: Response, next: NextFunction) {
   try {
     res.status(201).json(await offerAdmin.createPlatformOffer(

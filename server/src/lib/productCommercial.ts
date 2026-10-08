@@ -21,6 +21,8 @@ export interface ProductDeliveryConfiguration {
   fixedFileId?: number | null
   /** 是否允许 file 形态。商品级写路径不收文件（file 规格只能经规格管理创建）。 */
   allowFileForm?: boolean
+  /** 仅由服务端根据模板草稿状态开启；允许稍后补交付内容，不放宽配置形态校验。 */
+  allowIncompleteFixedContent?: boolean
 }
 
 const HTTP_URL_PATTERN = /^https?:\/\/\S+$/i
@@ -41,13 +43,13 @@ export function assertProductDeliveryConfiguration(config: ProductDeliveryConfig
     throw badRequest('仅固定内容交付支持 fixedContent')
   }
 
-  // P5 file 形态不变量（与 DB CHECK Offer_fixed_file_form_check 同规则）：
+  // 文件形态由 DB CHECK 兜底；完整性由写入状态及发布/结算门禁校验。
   // 文件真相源是 fixedFileId，fixedContent 保持 text/url 语义不得混用。
   if (config.fixedContentType === 'file') {
     if (config.deliveryMode !== 'instant_fixed') {
       throw badRequest('文件交付只支持固定内容交付模式')
     }
-    if (config.fixedFileId == null) {
+    if (config.fixedFileId == null && !config.allowIncompleteFixedContent) {
       throw badRequest('文件交付必须选择已上传的交付文件')
     }
     if (config.fixedContent != null) {
@@ -71,10 +73,10 @@ export function assertProductDeliveryConfiguration(config: ProductDeliveryConfig
 
   if (config.deliveryMode === 'instant_fixed' && config.fixedContentType !== 'file') {
     const content = config.fixedContent?.trim()
-    if (!content) {
+    if (!content && !config.allowIncompleteFixedContent) {
       throw badRequest('固定内容交付必须填写交付内容')
     }
-    if (config.fixedContentType === 'url' && (content.length > 2048 || !HTTP_URL_PATTERN.test(content))) {
+    if (content && config.fixedContentType === 'url' && (content.length > 2048 || !HTTP_URL_PATTERN.test(content))) {
       throw badRequest('链接必须以 http(s):// 开头且不超过 2048 字符')
     }
   }

@@ -1,0 +1,84 @@
+{
+  "templateKey": "manual_service",
+  "categoryId": 3,
+  "name": "简历排版服务",
+  "description": {
+    "text": "围绕客户提供的简历文字与版式进行整理，帮助简历呈现更清晰有条理。适合求职准备阶段，希望梳理已有简历内容与排版的用户；基础版包含单份简历排版。",
+    "sourceQuotes": [
+      "简历排版服务，服务内容为整理客户提供的简历文字和版式。",
+      "适用于求职准备，基础版包含单份简历排版。"
+    ]
+  },
+  "introduction": [
+    {
+      "text": "这项服务聚焦简历文字和版式的整理，围绕客户已经提供的材料进行呈现上的梳理，让简历内容更清楚、有条理，便于阅读。",
+      "sourceQuotes": [
+        "简历排版服务，服务内容为整理客户提供的简历文字和版式。"
+      ],
+      "section": "overview"
+    },
+    {
+      "text": "服务内容包括整理客户提供的简历文字与版式，重点在于梳理已有简历材料的表达呈现和版面安排。",
+      "sourceQuotes": [
+        "服务内容为整理客户提供的简历文字和版式。"
+      ],
+      "section": "content"
+    },
+    {
+      "text": "适用于求职准备阶段，适合已经准备好简历文字、希望整理简历版式与内容呈现的用户。",
+      "sourceQuotes": [
+        "适用于求职准备"
+      ],
+      "section": "audience"
+    },
+    {
+      "text": "基础版包含单份简历排版，适用于求职准备。",
+      "sourceQuotes": [
+        "适用于求职准备，基础版包含单份简历排版。"
+      ],
+      "section": "scope"
+    }
+  ],
+  "offerName": "基础版",
+  "productAttributes": [
+    {
+      "key": "serviceScope",
+      "values": [
+        "整理客户提供的简历文字和版式"
+      ]
+    }
+  ],
+  "offerAttributes": [
+    {
+      "key": "servicePackage",
+      "values": [
+        "单份简历排版"
+      ]
+    }
+  ],
+  "details": {
+    "highlights": [
+      {
+        "text": "整理客户提供的简历文字与版式",
+        "sourceQuotes": [
+          "整理客户提供的简历文字和版式"
+        ]
+      },
+      {
+        "text": "面向求职准备场景",
+        "sourceQuotes": [
+          "适用于求职准备"
+        ]
+      },
+      {
+        "text": "基础版包含简历排版",
+        "sourceQuotes": [
+          "基础版包含单份简历排版"
+        ]
+      }
+    ],
+    "usageInstructions": null,
+    "purchaseNotes": null,
+    "afterSalesInstructions": null
+  }
+}

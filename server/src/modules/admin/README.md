@@ -19,6 +19,8 @@ Privileged surface for the platform operator: user / merchant / product / settle
 | GET | `/api/admin/products` | All platform products (includes `inactive`). |
 | POST | `/api/admin/products` | Platform-owned product (no `merchantId`). |
 | PUT | `/api/admin/products/:id` | Partial update. |
+| POST | `/api/admin/products/:id/content-suggestions` | AI content copilot (SPEC-AI-PRODUCT-001); `useUpstreamDescription` only for Xboard-imported products (local `latestDescriptionText`, no remote fetch). Writes no product data. |
+| POST | `/api/admin/products/:id/content-suggestions/:generationId/applied` | Best-effort telemetry `{ appliedFieldCount }`. |
 | POST | `/api/admin/products/:id/inventory` | Bulk import inventory items; updates `Product.stock`; writes `AdminLog`. |
 
 ### Merchant management

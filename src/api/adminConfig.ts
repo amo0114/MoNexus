@@ -46,6 +46,9 @@ export type AdminSystemConfigKey =
   | 'partnerSpendWindowDays'
   | 'partnerMinPromotionPoints'
   | 'partnerEntitlementDays'
+  // AI 辅助 (2)
+  | 'aiProductCopilotDailyQuotaAdmin'
+  | 'aiProductCopilotDailyQuotaMerchant'
   // 高级运维 (3)
   | 'refreshTokenMaxAgeDays'
   | 'defaultPageSize'

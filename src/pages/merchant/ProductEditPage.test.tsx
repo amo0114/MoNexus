@@ -46,6 +46,20 @@ vi.mock('../../components/merchant/ProductImageUploader', () => ({
   },
 }))
 
+const suggestionMocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  report: vi.fn(),
+}))
+
+vi.mock('../../api/contentSuggestion', async () => {
+  const actual = await vi.importActual<typeof import('../../api/contentSuggestion')>('../../api/contentSuggestion')
+  return {
+    ...actual,
+    requestContentSuggestion: suggestionMocks.request,
+    reportContentSuggestionApplied: suggestionMocks.report,
+  }
+})
+
 vi.mock('../../api/uploads', () => ({
   uploadImage: vi.fn(),
   UploadError: class UploadError extends Error {
@@ -1224,5 +1238,49 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(tabPreview).toBeInTheDocument()
     fireEvent.click(tabPreview)
     fireEvent.click(tabForm)
+  })
+
+  describe('AI content suggestion entry (SPEC-AI-PRODUCT-001 §8)', () => {
+    function aiEditor() {
+      const dto = editorDto()
+      return { ...dto, capabilities: { ...dto.capabilities, aiContentSuggestion: true } }
+    }
+
+    it('is hidden without the capability', async () => {
+      await renderEditPage(createEditTransport({}))
+      expect(screen.queryByTestId('product-edit-ai-suggestion')).toBeNull()
+    })
+
+    it('is disabled while the editor has unsaved changes', async () => {
+      await renderEditPage(createEditTransport({ editor: aiEditor() }))
+      const open = screen.getByTestId('product-edit-ai-suggestion-open')
+      expect(open).not.toBeDisabled()
+      fireEvent.change(screen.getByTestId('product-edit-name'), { target: { value: '改了名字' } })
+      expect(open).toBeDisabled()
+    })
+
+    it('fills adopted suggestions into the form without saving', async () => {
+      suggestionMocks.request.mockResolvedValue({
+        generationId: 1,
+        basedOnContentVersion: 3,
+        promptVersion: 'product-content@1',
+        validatorVersion: 'product-content-validator@1',
+        fields: { description: { status: 'suggested', value: 'AI 整理后的简介', rejectedItemCount: 0 } },
+        issues: [],
+      })
+      suggestionMocks.report.mockResolvedValue(undefined)
+      const transport = createEditTransport({ editor: aiEditor() })
+      await renderEditPage(transport)
+
+      fireEvent.click(screen.getByTestId('product-edit-ai-suggestion-open'))
+      fireEvent.click(await screen.findByTestId('content-suggestion-generate'))
+      fireEvent.click(await screen.findByTestId('content-suggestion-select-description'))
+      fireEvent.click(screen.getByTestId('content-suggestion-apply'))
+
+      await waitFor(() => expect(screen.getByTestId('product-edit-description')).toHaveValue('AI 整理后的简介'))
+      expect(screen.getByTestId('product-edit-dirty')).toBeInTheDocument()
+      expect(transport.calls.some(call => call.method === 'patch')).toBe(false)
+      expect(suggestionMocks.request).toHaveBeenCalledWith('merchant', 42, expect.objectContaining({ expectedContentVersion: 3 }))
+    })
   })
 })

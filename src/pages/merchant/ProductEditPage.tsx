@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Eye, Loader2, Package } from 'lucide-react'
+import { ArrowLeft, Eye, Loader2, Package, Sparkles } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
   catalogApi,
@@ -33,6 +33,7 @@ import {
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
+import ProductContentSuggestionDialog from '../../components/catalog/ProductContentSuggestionDialog'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
 import {
   serializePurchaseFormFields,
@@ -111,6 +112,8 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [offerDraftsBaseline, setOfferDraftsBaseline] = useState('')
   const [offerConflictLabels, setOfferConflictLabels] = useState<string[]>([])
   const [capabilities, setCapabilities] = useState<ProductEditorDto['capabilities'] | null>(null)
+  const [isXboardProduct, setIsXboardProduct] = useState(false)
+  const [suggestionOpen, setSuggestionOpen] = useState(false)
   const [offers, setOffers] = useState<ProductEditorDto['offers']>([])
   const [publicationIssues, setPublicationIssues] = useState<ProductEditorPublicationIssue[]>([])
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
@@ -191,6 +194,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     setTemplateKey(nextTemplateKey)
     setSavedTemplateKey(nextTemplateKey)
     setCapabilities(dto.capabilities)
+    setIsXboardProduct(dto.sourceDescription != null)
     setOffers(dto.offers)
     const drafts = draftsFromOffers(dto.offers)
     setOfferDrafts(drafts)
@@ -684,6 +688,30 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             onInsertDescriptionImage={handleInsertDescriptionImage}
           />
 
+          {capabilities?.aiContentSuggestion && (
+            <section
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+              data-testid="product-edit-ai-suggestion"
+            >
+              <div className="text-sm">
+                <p className="font-bold text-[var(--color-text)]">AI 整理说明</p>
+                <p className="text-[var(--color-text-muted)]">
+                  {dirty ? '请先保存或放弃未保存的修改' : '基于已配置的商品信息整理简介、亮点、使用说明、须知与常见问题'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary min-h-11 px-4"
+                disabled={busy || dirty}
+                onClick={() => setSuggestionOpen(true)}
+                data-testid="product-edit-ai-suggestion-open"
+              >
+                <Sparkles className="mr-1 h-4 w-4" />
+                AI 整理说明
+              </button>
+            </section>
+          )}
+
           {capabilities?.manageOffers && (
             <OfferEditingSection
               actor={actor}
@@ -740,6 +768,26 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             </button>
           </div>
         </div>
+
+        <ProductContentSuggestionDialog
+          open={suggestionOpen}
+          actor={actor}
+          productId={productId}
+          contentVersion={contentVersion}
+          canUseUpstream={actor === 'admin' && isXboardProduct}
+          current={{ description: form.description, details: form.details }}
+          onApply={(patch) => setForm(prev => ({
+            ...prev,
+            description: patch.description ?? prev.description,
+            details: { ...prev.details, ...patch.details },
+          }))}
+          onClose={() => setSuggestionOpen(false)}
+          onReload={() => {
+            setSuggestionOpen(false)
+            void loadEditor()
+          }}
+          onUnavailable={() => setCapabilities(prev => (prev ? { ...prev, aiContentSuggestion: false } : prev))}
+        />
 
         <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
           <LivePreviewSandbox product={previewData} />

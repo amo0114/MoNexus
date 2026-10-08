@@ -3,6 +3,7 @@ import { getAdminConfig, updateAdminConfig, AdminSystemConfig, AdminSystemConfig
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import AdminMailPanel from './AdminMailPanel'
+import AdminAiSettingsPanel from './AdminAiSettingsPanel'
 import AdminSystemInfoPanel from './AdminSystemInfoPanel'
 import MemberTierConfigPanel from './MemberTierConfigPanel'
 import RegistrationControlPanel from './RegistrationControlPanel'
@@ -268,6 +269,7 @@ export default function AdminConfigPanel() {
 
         {/* 组内主体 */}
         <div className="p-4 sm:p-6">
+          {activeGroup === 'ai' && <AdminAiSettingsPanel />}
           {activeGroup === 'system' ? (
             <AdminSystemInfoPanel />
           ) : activeGroup === 'registration' ? (

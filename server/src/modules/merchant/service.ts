@@ -1651,6 +1651,7 @@ function assertOfferCommercialInput(input: {
   fixedContent?: string | null
   fixedContentType: string
   fixedFileId?: number | null
+  allowIncompleteFixedContent?: boolean
 }) {
   assertOriginalPriceAtLeastSale(input.price, input.originalPrice ?? null)
   assertProductDeliveryConfiguration({
@@ -1663,6 +1664,7 @@ function assertOfferCommercialInput(input: {
     fixedFileId: input.fixedFileId ?? null,
     // 规格是 file 形态的唯一入口；商品级写路径保持 text/url。
     allowFileForm: true,
+    allowIncompleteFixedContent: input.allowIncompleteFixedContent,
   })
 }
 
@@ -1709,6 +1711,8 @@ async function insertOffer(
   productId: number,
   input: OfferWriteInput & { name: string; price: number }
 ) {
+  const product = await lockProductRow(tx, productId)
+  const allowIncompleteFixedContent = product.status === 'draft' && product.templateKey != null
   const deliveryMode = input.deliveryMode ?? 'instant_inventory'
   const stockMode = input.stockMode ?? (deliveryMode === 'instant_inventory' ? 'limited' : 'unlimited')
   const fixedContentType = input.fixedContentType ?? 'text'
@@ -1723,10 +1727,11 @@ async function insertOffer(
     deliveryMode,
     stockMode,
     incomingStock: input.stock,
-    effectiveStock: input.stock,
+    effectiveStock: input.stock ?? (allowIncompleteFixedContent ? 0 : undefined),
     fixedContent: structuredWrite.fixedContent,
     fixedContentType,
     fixedFileId,
+    allowIncompleteFixedContent,
   })
   assertDeliveryFieldsAllowed(deliveryMode, input.deliveryFields)
   await assertAutoProvisionAllowed(tx, merchantId, input.autoProvision ?? false, deliveryMode, input.deliveryFields)
@@ -1810,7 +1815,7 @@ export async function updateMyOffer(
     // Same lock order as admin patchAdminOffer: Product FOR UPDATE, then load
     // the offer, then CAS. Without the row lock two transactions can both read
     // the same digest and both write.
-    await lockProductRow(tx, productId)
+    const product = await lockProductRow(tx, productId)
     const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
     if (!offer) throw notFound('规格不存在')
 
@@ -1865,6 +1870,7 @@ export async function updateMyOffer(
       fixedContent: nextFixedContent,
       fixedContentType,
       fixedFileId: nextFixedFileId,
+      allowIncompleteFixedContent: product.status === 'draft' && product.templateKey != null,
     })
     if (nextFixedFileId != null && nextFixedFileId !== offer.fixedFileId) {
       await assertMyDeliveryFile(tx, merchantId, nextFixedFileId)

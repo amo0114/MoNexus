@@ -346,6 +346,8 @@ export type ProductEditorCapabilities = {
   manageAssurance: boolean
   applyAssurance: boolean
   adoptSourceDescription: boolean
+  /** SPEC-AI-PRODUCT-001 §8.1: AI content copilot entry is available. */
+  aiContentSuggestion?: boolean
 }
 
 export type ProductEditorSourceDescription = {

@@ -24,6 +24,12 @@ import { categoryApplicationRoutes } from '../catalog/applicationRoutes.js'
 import { merchantAssuranceRouter } from '../catalog/assurance/routes.js'
 import { z } from 'zod'
 import { createProductV2Schema, patchProductContentSchema } from '../catalog/productV2Schema.js'
+import { createDraftAssistantRouter } from '../catalog/draftAssistant/routes.js'
+import {
+  contentSuggestionAppliedSchema,
+  contentSuggestionParamSchema,
+  merchantContentSuggestionSchema,
+} from '../catalog/contentCopilot/schema.js'
 
 const offerParamSchema = z.object({
   id: z.coerce.number().int().positive('必须是正整数'),
@@ -37,6 +43,7 @@ router.post('/register', authenticate, requireActiveUser, validate(applyMerchant
 
 // All other routes require merchant role
 router.use(authenticate, requireActiveUser, requireMerchant)
+router.use(createDraftAssistantRouter('merchant'))
 router.use('/workbench', workbenchRoutes)
 
 router.get('/me', controller.me)
@@ -50,6 +57,9 @@ router.post('/products', (req, res, next) => {
 router.put('/products/:id', validate({ params: idParamSchema, body: updateMerchantProductSchema }), controller.updateProduct)
 router.patch('/products/:id/content', validate({ params: idParamSchema, body: patchProductContentSchema }), controller.patchProductContent)
 router.get('/products/:id/editor', validate({ params: idParamSchema }), controller.getProductEditor)
+// SPEC-AI-PRODUCT-001 §9 — suggestions only; saving still goes through PATCH /content.
+router.post('/products/:id/content-suggestions', validate({ params: idParamSchema, body: merchantContentSuggestionSchema }), controller.createContentSuggestion)
+router.post('/products/:id/content-suggestions/:generationId/applied', validate({ params: contentSuggestionParamSchema, body: contentSuggestionAppliedSchema }), controller.reportContentSuggestionApplied)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)

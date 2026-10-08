@@ -20,7 +20,8 @@ export default function ProductCreatePage() {
         <ArrowLeft className="w-4 h-4" /> 返回
       </button>
       <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-6">新建平台商品</h1>
-      <AdminPlatformProductWizard open onClose={goToAdmin} onCreated={goToAdmin} />
+      <AdminPlatformProductWizard open onClose={goToAdmin} onCreated={goToAdmin}
+        onAssistantCreated={id => navigate(`/admin/products/${id}/edit`)} />
     </div>
   )
 }

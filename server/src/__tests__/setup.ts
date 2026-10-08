@@ -24,6 +24,8 @@ beforeEach(async ({ task }) => {
   profileTests += 1
   await timeTestOperation('reset.cache', () => __resetCacheForTests())
   await timeTestOperation('reset.truncate', () => prisma.$executeRawUnsafe(`TRUNCATE TABLE
+    "AiGeneration",
+    "AiRuntimeConfig",
     "TrafficEvent",
     "TrafficDailyVisitor",
     "TrafficAggregationState",

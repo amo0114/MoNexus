@@ -85,6 +85,7 @@ export default function CategoryFormDialog({
   category,
   busy,
   onSubmit,
+  submitError,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -92,6 +93,7 @@ export default function CategoryFormDialog({
   category: CategoryAdminDto | null
   busy: boolean
   onSubmit: (form: CategoryFormState, editing: boolean) => Promise<void>
+  submitError?: string
 }) {
   const editing = mode === 'edit'
   const [form, setForm] = useState<CategoryFormState>(EMPTY_CATEGORY_FORM)
@@ -102,6 +104,7 @@ export default function CategoryFormDialog({
 
   useEffect(() => {
     if (!open) return
+    codeTouchedRef.current = false
     setFormError(null)
     setErrors({})
     if (category) {
@@ -216,6 +219,7 @@ export default function CategoryFormDialog({
           {/* D-UX-17 / §6.3: code & icon live in advanced settings; code is
               auto-derived from the name until edited manually. */}
           <details
+            open={errors.code ? true : undefined}
             className="rounded-lg border border-[var(--color-border)] p-3"
             data-testid="category-advanced-settings"
           >
@@ -274,9 +278,9 @@ export default function CategoryFormDialog({
             </div>
           </details>
 
-          {formError && (
+          {(submitError || formError) && (
             <p role="alert" data-testid="category-form-error" className="text-sm text-[var(--color-danger)]">
-              {formError}
+              {submitError || formError}
             </p>
           )}
         </div>

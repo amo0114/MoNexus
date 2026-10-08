@@ -313,7 +313,7 @@ describe('GET /api/admin/orders filter & pagination', () => {
 })
 
 describe('GET /api/admin/config metadata', () => {
-  const expectedGroups = ['奖励发放', '分页限制', '库存', '会员等级', '安全', '文件交付', '订单', '账户与注册', '商品运营']
+  const expectedGroups = ['奖励发放', '分页限制', '库存', '会员等级', '安全', '文件交付', '订单', '账户与注册', '商品运营', 'AI 辅助']
 
   it('should attach Chinese description and group to all known keys', async () => {
     const { accessToken } = await loginAdmin('aq-config-admin@test.local')
@@ -339,6 +339,7 @@ describe('GET /api/admin/config metadata', () => {
     expect(byKey.get('lowStockThreshold').group).toBe('库存')
     expect(byKey.get('memberTierGoldThreshold').group).toBe('会员等级')
     expect(byKey.get('refreshTokenMaxAgeDays').group).toBe('安全')
+    expect(byKey.get('aiProductCopilotDailyQuotaMerchant').group).toBe('AI 辅助')
     expect(byKey.get('memberTierSilverBonusBps').hint).toContain('万分')
     expect(byKey.get('registerReward').description).toContain('注册')
     expect(byKey.get('hotWindowDays').group).toBe('商品运营')
