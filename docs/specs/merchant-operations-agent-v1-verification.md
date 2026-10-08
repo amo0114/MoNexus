@@ -83,3 +83,32 @@ TZ=UTC TEST_DATABASE_URL="$AGENT_DB" REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000
 - 用户自由输入的凭据/联系方式模式拦截、回答文本的无根据因果/承诺检查尚未实现（只校验引用与动作）；需在 A2/A3 前补齐或在 L3 中暴露。
 - 工具级指标与 DB statement timeout 未加。
 - A2（前端对话与提案审阅）、A3（真实模型 L3）未开始；MA01–MA12 未验收。
+
+## A2：对话与文案审阅闭环（2026-10-08）
+
+按用户要求只做针对性单测/组件测试，未新增 E2E、未做浏览器冒烟。
+
+### 实现
+
+- `src/api/merchant/agent.ts`：availability 与 turn 调用；仅 turn 请求 55 秒超时并支持取消，全局 15 秒不变。
+- `src/stores/merchantAgent.ts`：只在内存的对话历史、选中对象与提案交接；同一时间一个请求；切换账号/登出清空并丢弃旧响应；取消提示仍计次数；404/429 分别更新为不可用/额度用完。提案交接只在内存，不写 URL、history state 或浏览器存储，只能对同一商品、同一会话、未过期时使用一次。
+- `src/components/merchant/agent/`：`AgentPanel` 放在 `/merchant/workbench`（与规则列表并存，不可用时隐藏）；示例只填输入框，发送才发起计费调用；结果按服务端证据卡渲染（复用 `WorkbenchCard`、缺项标签与封闭导航），模型文字为纯文本；展示澄清候选、提案入口、实际执行的工具和覆盖不完整提示，limited 时标明未完成。
+- 入口：工作台卡片“帮我处理”（只选中对象，不发请求）；首页摘要“问经营助手”。
+- 编辑器：`ProductEditPage` 接收交接的提案，校验会话、商品、未过期、`contentVersion` 一致、可编辑且无未保存修改，否则提示失效；复用 `ProductContentSuggestionDialog`（新增 `preset` 模式：无生成控件、不另计额度、不上报采纳遥测），默认不勾选，“填入已选内容”只改表单，保存仍走原接口与 CAS。
+- 后端小改：发布检查证据卡附带封闭动作，供前端逐项定位（模型观察仍只含代码与 actionRef）。
+
+### 实际执行
+
+| 检查 | 结果 |
+| --- | --- |
+| 新增 `src/stores/merchantAgent.test.ts`、`src/components/merchant/agent/AgentPanel.test.tsx`；`ProductEditPage.test.tsx` 新增交接用例 | 3 个文件 / 42 个用例通过（含原有编辑器用例） |
+| `ProductContentSuggestionDialog` 原有测试 | 10 个用例通过 |
+| 前端全量 `npx vitest run --maxWorkers=4` | 193 个文件 / 1635 个用例通过 |
+| `npm run build` | 通过 |
+| 后端 `tsc --noEmit` 与 `merchant-agent.test.ts` | 通过（6 个用例） |
+
+### 未执行
+
+- 390px/1280px 浏览器检查、键盘与焦点、真实前后端联调、新 E2E：未执行。
+- 提案“保存后单项重查”只依赖原编辑器保存与发布检查，未加专门联动。
+- A3（真实模型 L3）未开始；MA01–MA12 未验收。

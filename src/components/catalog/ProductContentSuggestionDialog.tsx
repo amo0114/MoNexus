@@ -37,6 +37,11 @@ interface Props {
   onClose: () => void
   onReload: () => void
   onUnavailable: () => void
+  /**
+   * A proposal prepared elsewhere (merchant operations agent). The dialog then
+   * only reviews it: no generation controls, no extra quota, no applied telemetry.
+   */
+  preset?: Omit<ContentSuggestionResponse, 'generationId'> | null
 }
 
 const FIELD_LABELS: Record<ContentSuggestionField, string> = {
@@ -143,6 +148,7 @@ export default function ProductContentSuggestionDialog({
   onClose,
   onReload,
   onUnavailable,
+  preset = null,
 }: Props) {
   const isMobile = useIsMobileViewport()
   const guard = useRef(createLatestRequestGuard()).current
@@ -150,11 +156,15 @@ export default function ProductContentSuggestionDialog({
   const [sourceNotes, setSourceNotes] = useState('')
   const [useUpstream, setUseUpstream] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<ContentSuggestionResponse | null>(null)
+  const [result, setResult] = useState<Omit<ContentSuggestionResponse, 'generationId'> & { generationId?: number } | null>(null)
   const [failure, setFailure] = useState<Failure | null>(null)
   const [quotaExhausted, setQuotaExhausted] = useState(false)
   const [selected, setSelected] = useState<ContentSuggestionField[]>([])
   const [pane, setPane] = useState<'current' | 'suggestion'>('suggestion')
+
+  useEffect(() => {
+    if (open && preset) setResult(preset)
+  }, [open, preset])
 
   useEffect(() => {
     if (open) return
@@ -221,7 +231,9 @@ export default function ProductContentSuggestionDialog({
     }
     if (Object.keys(details).length > 0) patch.details = details
     onApply(patch)
-    void reportContentSuggestionApplied(actor, productId, result.generationId, selected.length).catch(() => {})
+    if (!preset && result.generationId != null) {
+      void reportContentSuggestionApplied(actor, productId, result.generationId, selected.length).catch(() => {})
+    }
     onClose()
   }
 
@@ -231,12 +243,13 @@ export default function ProductContentSuggestionDialog({
   return (
     <Dialog open={open} onOpenChange={next => { if (!next) onClose() }}>
       <DialogContent className="max-h-[90dvh] max-w-4xl overflow-y-auto" data-testid="content-suggestion-dialog">
-        <DialogTitle>AI 整理说明</DialogTitle>
+        <DialogTitle>{preset ? '经营助手文案提案' : 'AI 整理说明'}</DialogTitle>
         <DialogDescription>
           AI 只基于已配置的商品信息整理说明文字，不会修改价格、库存、规格或交付配置。建议需要你逐项核对后才会填入编辑区，填入后仍需手动保存。
         </DialogDescription>
 
         <div className="mt-4 space-y-4 text-sm">
+          {!preset && <>
           <fieldset className="space-y-2" disabled={loading}>
             <legend className="mb-1 font-semibold text-[var(--color-text)]">整理哪些字段</legend>
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
@@ -288,6 +301,7 @@ export default function ProductContentSuggestionDialog({
               {loading ? '正在整理…' : result || failure ? '重新整理（消耗一次）' : '开始整理'}
             </button>
           </div>
+          </>}
 
           {failure && (
             <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3" data-testid="content-suggestion-error">

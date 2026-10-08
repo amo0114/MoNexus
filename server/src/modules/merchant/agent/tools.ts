@@ -28,7 +28,7 @@ export type EvidenceCard =
   | { ref: string; kind: 'workbench_item'; item: WorkbenchItem; actionRef: string }
   | { ref: string; kind: 'product'; productId: number; name: string; status: string }
   | { ref: string; kind: 'readiness'; productId: number; name: string; status: string; ready: boolean
-      issues: Array<{ code: string; field: string; offerId: number | null; actionRef: string }> }
+      issues: Array<{ code: string; field: string; offerId: number | null; actionRef: string; action: WorkbenchAction }> }
   | { ref: string; kind: 'content'; productId: number; name: string; filledFields: ContentField[]; emptyFields: ContentField[] }
 
 export type CoverageNote = { group: string; status: string; matchedTotal: number | null; shown: number; truncated: boolean; hasMore?: boolean }
@@ -200,10 +200,10 @@ async function inspectProduct(state: AgentRunState, call: Extract<ToolCall, { na
   if (product.archivedAt) return { tool: call.name, status: 'archived' }
   const { readiness, availabilityOfferIds } = await inspectProductReadiness(product.id)
   const ref = call.productRef
-  const issues = readiness.details.map(detail => ({
-    code: detail.code, field: detail.field, offerId: detail.offerId,
-    actionRef: state.action(readinessAction(product.id, detail, availabilityOfferIds), ref),
-  }))
+  const issues = readiness.details.map(detail => {
+    const action = readinessAction(product.id, detail, availabilityOfferIds)
+    return { code: detail.code, field: detail.field, offerId: detail.offerId, action, actionRef: state.action(action, ref) }
+  })
   state.evidence.set(ref, { ref, kind: 'readiness', productId: product.id, name: product.name, status: product.status, ready: readiness.ready, issues })
   return { tool: call.name, status: 'ok', data: {
     productRef: ref,

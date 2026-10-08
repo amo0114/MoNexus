@@ -1,6 +1,6 @@
 # 商家经营 Agent V1：实施与验收计划
 
-版本0.2.1，2026-10-08。依据：[SPEC-MERCHANT-AGENT-001](./merchant-operations-agent-v1.md)。状态：A0、A1 已在本地完成（见[验证记录](./merchant-operations-agent-v1-verification.md)），A2–A3 未开始；无 Agent 可用功能、真实模型评测或部署完成声明。
+版本0.2.1，2026-10-08。依据：[SPEC-MERCHANT-AGENT-001](./merchant-operations-agent-v1.md)。状态：A0–A2 已在本地完成（见[验证记录](./merchant-operations-agent-v1-verification.md)），A3 未开始；无 Agent 可用功能、真实模型评测或部署完成声明。
 
 ## 1. 分支与 PR 顺序
 
@@ -90,6 +90,8 @@
 出口：仅A1通过不算完整Agent交付；还缺商家实际旅程和模型质量。
 
 ## 4. A2：对话与文案审阅闭环
+
+状态（2026-10-08）：已在本地完成并提交，未推送；按用户要求未做浏览器/E2E 验证，见验证记录。
 
 ### 文件责任范围
 
