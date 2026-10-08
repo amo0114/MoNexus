@@ -25,8 +25,8 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-export PATH="${NODE20_BIN:-/root/.nvm/versions/node/v20.19.5/bin}:$PATH"
-[[ "$(node --version)" == 'v20.19.5' ]] || fail "Node 20.19.5 required (got $(node --version))"
+export PATH="${NODE22_BIN:-/root/.nvm/versions/node/v22.23.1/bin}:$PATH"
+[[ "$(node --version)" == 'v22.23.1' ]] || fail "Node 22.23.1 required (got $(node --version))"
 [[ "$(npm --version)" == 10.* ]] || fail "npm 10 required (got $(npm --version))"
 [[ -f "$DBGUARD" && -x "$PRISMA" && -x "$VITEST" && -f "$SCHEMA" ]] || fail 'dbguard/prisma/vitest/schema missing'
 

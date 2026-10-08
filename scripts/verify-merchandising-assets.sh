@@ -5,8 +5,8 @@ set +x
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-export PATH="${NODE20_BIN:-/root/.nvm/versions/node/v20.19.5/bin}:$PATH"
-[[ "$(node --version)" == 'v20.19.5' ]] || { printf '[merch-assets] BLOCKED: Node 20.19.5 required (got %s)\n' "$(node --version)" >&2; exit 2; }
+export PATH="${NODE22_BIN:-/root/.nvm/versions/node/v22.23.1/bin}:$PATH"
+[[ "$(node --version)" == 'v22.23.1' ]] || { printf '[merch-assets] BLOCKED: Node 22.23.1 required (got %s)\n' "$(node --version)" >&2; exit 2; }
 [[ "$(npm --version)" == 10.* ]] || { printf '[merch-assets] BLOCKED: npm 10 required (got %s)\n' "$(npm --version)" >&2; exit 2; }
 [[ -x "$ROOT/node_modules/.bin/playwright" ]] || { printf '%s\n' '[merch-assets] BLOCKED: Playwright unavailable' >&2; exit 2; }
 

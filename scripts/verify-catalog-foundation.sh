@@ -92,9 +92,9 @@ if [[ "$BASE_URL" =~ ^(postgres|postgresql)://[^:]+:([^@]+)@ ]]; then
   BASE_PW="${BASH_REMATCH[2]}"
 fi
 
-# ── Node 20 / npm 10 (frozen engine floor for F0). ──────────────────────────
-NODE20_BIN="${NODE20_BIN:-/root/.nvm/versions/node/v20.19.5/bin}"
-export PATH="$NODE20_BIN:$PATH"
+# ── Node 22 / npm 10 (frozen engine floor for F0). ──────────────────────────
+NODE22_BIN="${NODE22_BIN:-/root/.nvm/versions/node/v22.23.1/bin}"
+export PATH="$NODE22_BIN:$PATH"
 
 PRISMA_BIN="$SERVER_DIR/node_modules/.bin/prisma"
 SCHEMA="$SERVER_DIR/prisma/schema.prisma"
@@ -237,7 +237,7 @@ gate_0_env() {
   node_v="$(node --version)"
   npm_v="$(npm --version)"
   say "node=$node_v npm=$npm_v"
-  [[ "$node_v" == "v20.19.5" ]] || { fail "node must be v20.19.5 (got $node_v)"; return 1; }
+  [[ "$node_v" == "v22.23.1" ]] || { fail "node must be v22.23.1 (got $node_v)"; return 1; }
   [[ "$npm_v" == 10.* ]] || { fail "npm must be 10.x (got $npm_v)"; return 1; }
 
   [[ -x "$PRISMA_BIN" ]] || { fail "prisma binary not found at $PRISMA_BIN"; return 1; }
@@ -273,7 +273,7 @@ gate_0_env() {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Gate 1 — prisma format --check / validate / generate under Node 20 (static).
+# Gate 1 — prisma format --check / validate / generate under Node 22 (static).
 # All run from the server cwd so Prisma resolves server/.env (validate/generate
 # need a resolvable DATABASE_URL, not a live connection).
 # ─────────────────────────────────────────────────────────────────────────────

@@ -88,11 +88,11 @@
 | 层级 | 技术 |
 | --- | --- |
 | **前端** | React 18、TypeScript、Vite 6、React Router 6、Zustand、Tailwind CSS、Radix UI、Axios、Sentry |
-| **后端** | Node.js 20、Express 4、TypeScript、Zod、Prisma 6、JWT + Cookie 刷新令牌 |
+| **后端** | Node.js 22、Express 4、TypeScript、Zod、Prisma 6、JWT + Cookie 刷新令牌 |
 | **数据** | PostgreSQL 16、Redis 7（可选）、MinIO / S3 兼容存储 |
 | **运维** | Docker Compose、nginx、GitHub Actions、Vitest、Playwright、pino、prom-client |
 
-**运行时约束：** Node.js `>=20 <21`，npm `>=10 <11`（见 `.nvmrc`）。
+**运行时约束：** Node.js `>=22 <23`，npm `>=10 <11`（见 `.nvmrc`）。
 
 ---
 
@@ -152,7 +152,7 @@ MoNexus-new/
 
 ### 环境要求
 
-- [Node.js 20](https://nodejs.org/) 与 npm 10
+- [Node.js 22](https://nodejs.org/) 与 npm 10
 - [Docker](https://docs.docker.com/get-docker/)（用于 PostgreSQL / Redis）
 - Git
 

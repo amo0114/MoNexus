@@ -110,7 +110,7 @@
 ### 7.2 发布顺序（O-RT-06 / CHK-REL-002）
 
 1. **准备**：合并代码但保持 realtime=false；先部署 Nginx/Caddy 新 location、后端依赖与 endpoint、metrics、health。
-2. **本地实现 gate**：Node 20 下从 clean worktree 跑 `bash scripts/verify-notification-realtime.sh --local`。它保留 build/test/E2E 原始计数与 exit evidence，并同时检查 session/proxy self-test、冻结提交祖先、三重 schema/migration 零 diff、专用库 migration status/drift 与 secret scanner。它只允许输出 `local implementation gate`；不能替代下面任一部署证据。
+2. **本地实现 gate**：Node 22 下从 clean worktree 跑 `bash scripts/verify-notification-realtime.sh --local`。它保留 build/test/E2E 原始计数与 exit evidence，并同时检查 session/proxy self-test、冻结提交祖先、三重 schema/migration 零 diff、专用库 migration status/drift 与 secret scanner。它只允许输出 `local implementation gate`；不能替代下面任一部署证据。
 3. **LISTEN session gate**：以实际部署数据库角色 + production-like URL 跑 `RT_SESSION_ENV_FILE=<git-ignored-file> bash scripts/verify-notification-realtime-listen-session.sh`（AC-RT-029/CHK-INF-007）——endpoint 必须是 direct/session-pool（非 transaction pool），PID distinct=1、t≈0/30/60 三轮唯一 payload 均在 SQL 成功后 5 秒内收到、4 个 aux worker 在 0..54 秒完成 40/40 事务且无权限错误；证据 7×24h 或 endpoint/role/revision 变化即过期。失败 / 过期 → 保持 realtime=false。
 4. **部署代理 smoke**：从代理外部执行 `NOTIFICATION_REALTIME_PROXY_BASE=https://<site> NOTIFICATION_REALTIME_PROXY_TOKEN=<out-of-band-token> bash scripts/verify-notification-realtime-proxy.sh`。脚本只证明 response/transport（包括 `stream.ready` 实际业务字节 ≤2 秒）与可选 metrics 未回显 secret；Nginx/Caddy/app 三层日志必须另附查询证据。
 5. **验证关闭态**：notifications REST 正常、匿名 stream 401；若提供
