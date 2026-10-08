@@ -24,6 +24,7 @@ export function resolveAiRuntimeConfig(row: AiRuntimeConfig | null) {
     // No env bootstrap: the agent can only be switched on from admin settings.
     merchantAgentEnabled: row?.merchantAgentEnabled ?? false,
     merchantAgentReasoningMode: (row?.merchantAgentReasoningMode ?? 'default') as AiReasoningMode,
+    merchantAgentAudience: (row?.merchantAgentAudience ?? 'pilot') as 'pilot' | 'all',
     baseUrl: row?.baseUrl ?? DEFAULT_AI_BASE_URL,
     chatTokenParameter: (row?.chatTokenParameter ?? 'max_tokens') as AiChatTokenParameter,
     protocol: (row?.protocol ?? 'openai_responses') as AiProtocol,

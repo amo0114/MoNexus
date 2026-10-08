@@ -5,6 +5,7 @@ import {
   approveMerchant,
   rejectMerchant,
   suspendMerchant,
+  setMerchantAgentPilot,
 } from '../../api/adminMerchant'
 import { getApiErrorMessage } from '../../api/error'
 import { Merchant } from '../../types/merchant'
@@ -151,6 +152,16 @@ export default function AdminMerchantPanel({ active = true }: Props) {
     }
   }
 
+  async function handleAgentPilot(merchant: Merchant, enabled: boolean) {
+    try {
+      await setMerchantAgentPilot(merchant.id, enabled)
+      showToast(enabled ? `已将「${merchant.name}」加入经营助手试点` : `已将「${merchant.name}」移出经营助手试点`)
+      void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '操作失败'), 'error')
+    }
+  }
+
   async function handleSuspendMerchant(id: number) {
     try {
       await suspendMerchant(id)
@@ -218,6 +229,7 @@ export default function AdminMerchantPanel({ active = true }: Props) {
                 <th>联系人</th>
                 <th>平台抽成</th>
                 <th>状态</th>
+                <th>经营助手试点</th>
                 <th className="text-right">操作</th>
               </tr>
             </thead>
@@ -238,6 +250,14 @@ export default function AdminMerchantPanel({ active = true }: Props) {
                   <td data-label="状态">
                     <MerchantStatusPill status={m.status} />
                   </td>
+                  <td className="text-sm whitespace-nowrap" data-label="经营助手试点" data-testid={`admin-merchant-agent-pilot-${m.id}`}>
+                    {m.agentPilot ? <span className="mr-2 font-semibold text-[var(--color-primary)]">试点中</span> : null}
+                    {m.status === 'active' && (
+                      <ActionLink tone={m.agentPilot ? 'danger' : 'primary'} onClick={() => handleAgentPilot(m, !m.agentPilot)}>
+                        {m.agentPilot ? '移出试点' : '加入试点'}
+                      </ActionLink>
+                    )}
+                  </td>
                   <td className="text-right space-x-3 whitespace-nowrap" data-label="操作">
                     {m.status === 'pending' && (
                       <>
@@ -256,7 +276,7 @@ export default function AdminMerchantPanel({ active = true }: Props) {
               ))}
               {!loading && merchants.length === 0 && (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={6}>
                     <EmptyState compact icon={Store} title="暂无商家" description="没有符合条件的商家数据" />
                   </td>
                 </tr>

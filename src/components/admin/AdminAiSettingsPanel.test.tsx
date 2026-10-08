@@ -8,7 +8,7 @@ vi.mock('../../api/adminAi', () => ({ getAdminAiSettings: vi.fn(), updateAdminAi
 const initial: api.AdminAiSettings = {
   chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none',
   version: 4, source: 'database', enabled: false, productCopilotEnabled: false,
-  merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantWorkbenchEnabled: false,
+  merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot', merchantWorkbenchEnabled: false,
   apiKeyConfigured: true, apiKeyLast4: '1234', credentialError: false, encryptionReady: true, model: 'gpt-6-luna', baseUrl: 'https://api.openai.com/v1',
 }
 const KEY = 'sk-ui-SECRET_SENTINEL_123456'
@@ -47,7 +47,7 @@ describe('Admin AI settings', () => {
     await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({
       expectedVersion: 4, chatTokenParameter: 'max_tokens', protocol, outputMode: 'json_object', reasoningMode: 'default', baseUrl: initial.baseUrl,
       model: 'my-gateway/deepseek-flash-custom', enabled: false, productCopilotEnabled: false,
-      merchantAgentEnabled: false, merchantAgentReasoningMode: 'default',
+      merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot',
     }))
   })
   it('shows only the suffix, preserves an untouched key, and sends the current version', async () => {
@@ -57,7 +57,7 @@ describe('Admin AI settings', () => {
     fireEvent.click(screen.getByLabelText('AI 总开关'))
     fireEvent.click(screen.getByLabelText('商品 Copilot（新建与说明整理）'))
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
-    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: true, productCopilotEnabled: true }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: true, productCopilotEnabled: true }))
   })
 
   it('replaces a key without persisting it locally and clears the field after saving', async () => {
@@ -66,7 +66,7 @@ describe('Admin AI settings', () => {
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: KEY } })
     expect(screen.getByRole('button', { name: '测试已保存的连接' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
-    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: KEY }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: KEY }))
     await waitFor(() => expect(screen.getByLabelText('API Key')).toHaveValue(''))
     expect(local.mock.calls.some(call => call.some(value => String(value).includes(KEY)))).toBe(false)
     local.mockRestore()
@@ -79,7 +79,7 @@ describe('Admin AI settings', () => {
     expect(screen.getByLabelText('AI 总开关')).not.toBeChecked()
     expect(screen.getByLabelText('商品 Copilot（新建与说明整理）')).not.toBeChecked()
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
-    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: null }))
+    await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({ chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot', expectedVersion: 4, baseUrl: initial.baseUrl, model: initial.model, enabled: false, productCopilotEnabled: false, apiKey: null }))
   })
 
   it('tests the saved version once, shows the result and prevents concurrent saves', async () => {
@@ -126,8 +126,8 @@ describe('Admin AI settings', () => {
     fireEvent.change(screen.getByLabelText('API Key'), { target: { value: KEY } })
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
     await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenCalledWith({
-      chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', expectedVersion: 4, baseUrl: 'https://gateway.example/v1', model: 'vendor/model', enabled: false, productCopilotEnabled: false, apiKey: KEY,
-      merchantAgentEnabled: false, merchantAgentReasoningMode: 'default',
+      chatTokenParameter: 'max_tokens', protocol: 'openai_responses', outputMode: 'json_schema', reasoningMode: 'none', merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot', expectedVersion: 4, baseUrl: 'https://gateway.example/v1', model: 'vendor/model', enabled: false, productCopilotEnabled: false, apiKey: KEY,
+      merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot',
     }))
   })
 })
@@ -142,10 +142,11 @@ describe('merchant operations agent settings', () => {
     expect(screen.getByTestId('admin-ai-agent-dependency')).toHaveTextContent('当前已开启')
     fireEvent.click(agent)
     fireEvent.change(screen.getByLabelText('经营助手推理参数'), { target: { value: 'none' } })
+    fireEvent.change(screen.getByLabelText('经营助手开放范围'), { target: { value: 'all' } })
     expect(screen.getByLabelText('推理参数')).toHaveValue('none')
     fireEvent.click(screen.getByRole('button', { name: '保存 AI 配置' }))
     await waitFor(() => expect(api.updateAdminAiSettings).toHaveBeenLastCalledWith(expect.objectContaining({
-      enabled: true, productCopilotEnabled: false, reasoningMode: 'none', merchantAgentEnabled: true, merchantAgentReasoningMode: 'none',
+      enabled: true, productCopilotEnabled: false, reasoningMode: 'none', merchantAgentEnabled: true, merchantAgentReasoningMode: 'none', merchantAgentAudience: 'all',
     })))
 
     await waitFor(() => expect(screen.getByLabelText('商家经营助手')).toBeChecked())

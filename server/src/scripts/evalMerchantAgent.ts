@@ -339,7 +339,7 @@ async function main() {
   config.merchantWorkbenchEnabled = true
   config.ai.credentialsEncKey ??= randomBytes(32).toString('hex')
   const runtimeRow = {
-    enabled: true, merchantAgentEnabled: true, merchantAgentReasoningMode: settings.reasoningMode, productCopilotEnabled: false,
+    enabled: true, merchantAgentEnabled: true, merchantAgentAudience: 'all', merchantAgentReasoningMode: settings.reasoningMode, productCopilotEnabled: false,
     protocol: settings.protocol, outputMode: settings.outputMode, model: settings.model, baseUrl: settings.baseUrl,
     // Placeholder only: the real key stays in this process (provider override below).
     apiKeyCiphertext: encryptAiApiKey('eval-placeholder-key-not-used'), apiKeyLast4: 'used',

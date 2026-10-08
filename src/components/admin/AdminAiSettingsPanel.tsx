@@ -15,6 +15,7 @@ export default function AdminAiSettingsPanel() {
   const [copilotEnabled, setCopilotEnabled] = useState(false)
   const [agentEnabled, setAgentEnabled] = useState(false)
   const [agentReasoningMode, setAgentReasoningMode] = useState<AiReasoningMode>('default')
+  const [agentAudience, setAgentAudience] = useState<AdminAiSettings['merchantAgentAudience']>('pilot')
   const [baseUrl, setBaseUrl] = useState('')
   const [model, setModel] = useState('')
   const [chatTokenParameter, setChatTokenParameter] = useState<AdminAiSettings['chatTokenParameter']>('max_tokens')
@@ -35,6 +36,7 @@ export default function AdminAiSettingsPanel() {
     setCopilotEnabled(value.productCopilotEnabled)
     setAgentEnabled(value.merchantAgentEnabled)
     setAgentReasoningMode(value.merchantAgentReasoningMode)
+    setAgentAudience(value.merchantAgentAudience)
     setBaseUrl(value.baseUrl)
     setModel(value.model)
     setChatTokenParameter(value.chatTokenParameter)
@@ -82,6 +84,7 @@ export default function AdminAiSettingsPanel() {
       productCopilotEnabled: clearKey ? false : copilotEnabled,
       merchantAgentEnabled: clearKey ? false : agentEnabled,
       merchantAgentReasoningMode: agentReasoningMode,
+      merchantAgentAudience: agentAudience,
       baseUrl: baseUrl.trim(),
       model: model.trim(),
       protocol, outputMode, reasoningMode, chatTokenParameter,
@@ -121,6 +124,7 @@ export default function AdminAiSettingsPanel() {
 
   const dirty = apiKey.length > 0 || clearKey || enabled !== settings.enabled || copilotEnabled !== settings.productCopilotEnabled
     || agentEnabled !== settings.merchantAgentEnabled || agentReasoningMode !== settings.merchantAgentReasoningMode
+    || agentAudience !== settings.merchantAgentAudience
     || baseUrl !== settings.baseUrl || model !== settings.model
     || chatTokenParameter !== settings.chatTokenParameter || protocol !== settings.protocol || outputMode !== settings.outputMode || reasoningMode !== settings.reasoningMode
   return (
@@ -221,6 +225,14 @@ export default function AdminAiSettingsPanel() {
           <input type="checkbox" checked={agentEnabled} disabled={busy !== null || !enabled || clearKey}
             onChange={e => setAgentEnabled(e.target.checked)} />商家经营助手
         </label>
+        <div>
+          <label htmlFor="admin-ai-agent-audience" className="block text-sm font-semibold mb-1">经营助手开放范围</label>
+          <select id="admin-ai-agent-audience" className="input w-full" value={agentAudience} disabled={busy !== null}
+            onChange={e => setAgentAudience(e.target.value as AdminAiSettings['merchantAgentAudience'])}>
+            <option value="pilot">仅试点商家（在「商家管理」中逐个加入）</option>
+            <option value="all">全部已激活商家</option>
+          </select>
+        </div>
         <div>
           <label htmlFor="admin-ai-agent-reasoning" className="block text-sm font-semibold mb-1">经营助手推理参数</label>
           <select id="admin-ai-agent-reasoning" className="input w-full" value={agentReasoningMode} disabled={busy !== null}

@@ -9,7 +9,7 @@ import { encryptAiApiKey } from '../lib/ai/credentialsCrypto.js'
 import { setLlmProviderForTests, type LlmProvider, type LlmStructuredRequest } from '../lib/ai/provider.js'
 import { prisma } from '../lib/prisma.js'
 import { EMPTY_PRODUCT_DETAILS } from '../modules/catalog/templates/types.js'
-import { api, authHeader, createTestMerchant, createTestProduct, getDefaultOfferId, loginAs } from './helpers.js'
+import { api, authHeader, createTestMerchant, createTestProduct, createTestUser, getDefaultOfferId, loginAs } from './helpers.js'
 import { getActiveCategoryIdByLabel } from './catalogFixture.js'
 
 type Script = (req: LlmStructuredRequest, step: number) => Promise<unknown> | unknown
@@ -35,7 +35,7 @@ const observations = (req: LlmStructuredRequest) => (req.input as unknown as { o
 async function enableAgent(quota = 5) {
   config.ai.credentialsEncKey = 'ab'.repeat(32)
   await prisma.aiRuntimeConfig.create({ data: {
-    id: 1, version: 1, enabled: true, merchantAgentEnabled: true,
+    id: 1, version: 1, enabled: true, merchantAgentEnabled: true, merchantAgentAudience: 'all',
     apiKeyCiphertext: encryptAiApiKey('sk-test-AGENT_KEY_1234567890'), apiKeyLast4: '7890',
   } })
   await prisma.systemConfig.upsert({ where: { key: 'aiMerchantAgentDailyQuotaMerchant' }, create: { key: 'aiMerchantAgentDailyQuotaMerchant', value: quota }, update: { value: quota } })
@@ -163,6 +163,26 @@ describe('merchant agent turns', () => {
     expect(await prisma.aiGeneration.findUniqueOrThrow({ where: { id: res.body.generationId } }))
       .toMatchObject({ stepCount: 3, toolCallCount: 1, suggestedFieldCount: 1, stopReason: 'proposal' })
     expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).contentVersion).toBe(1)
+  })
+
+  it('limits the agent to pilot merchants an admin marked, when the audience is the pilot list', async () => {
+    const { merchantId, token } = await merchant('agent-pilot@test.local')
+    await prisma.aiRuntimeConfig.update({ where: { id: 1 }, data: { merchantAgentAudience: 'pilot' } })
+    expect((await api.get('/api/merchant/agent/availability').set(authHeader(token)).expect(200)).body).toMatchObject({ available: false, reason: 'disabled' })
+    await turn(token, { message: '今天先处理什么？' }).expect(404)
+    expect(await prisma.aiGeneration.count()).toBe(0)
+
+    await createTestUser('agent-pilot-admin@test.local', 'admin123', 'admin')
+    const admin = authHeader((await loginAs('agent-pilot-admin@test.local', 'admin123')).accessToken)
+    const listed = await api.put(`/api/admin/merchants/${merchantId}/agent-pilot`).set(admin).send({ enabled: true }).expect(200)
+    expect(listed.body.agentPilot).toBe(true)
+    expect(await prisma.adminLog.count({ where: { action: '加入经营助手试点', targetId: merchantId } })).toBe(1)
+    expect((await api.get('/api/merchant/agent/availability').set(authHeader(token)).expect(200)).body).toMatchObject({ available: true, reason: 'ready' })
+    script = () => tool({ name: 'read_help', topic: 'publication' })
+    await turn(token, { message: '发布规则是什么？' }).expect(200)
+
+    await api.put(`/api/admin/merchants/${merchantId}/agent-pilot`).set(admin).send({ enabled: false }).expect(200)
+    await turn(token, { message: '再问一次' }).expect(404)
   })
 
   it('cancels the run when the HTTP client disconnects mid-call', async () => {

@@ -144,6 +144,8 @@ export interface Merchant {
   updatedAt: string
   approvedAt: string | null
   approvedBy: number | null
+  /** Admin-only: in the merchant operations agent pilot. */
+  agentPilot?: boolean
 }
 
 export interface AuthUser {

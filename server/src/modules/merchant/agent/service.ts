@@ -28,6 +28,13 @@ async function activeMerchantId(userId: number): Promise<number> {
   return merchant.id
 }
 
+/** Pilot gate (SPEC-MERCHANT-AGENT-001): with audience 'pilot' only merchants marked by an admin may use the agent. */
+async function inAgentAudience(merchantId: number): Promise<boolean> {
+  if ((await getAiRuntimeConfig()).merchantAgentAudience === 'all') return true
+  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId }, select: { agentPilot: true } })
+  return merchant?.agentPilot === true
+}
+
 /** Current user/merchant/session/switch state, not the request's original snapshot. */
 async function assertStillAllowed(user: AuthPayload) {
   const [account, session] = await Promise.all([
@@ -38,14 +45,15 @@ async function assertStillAllowed(user: AuthPayload) {
   ])
   if (!account || account.status === '已封禁') throw forbidden('账号不可用')
   if (!session) throw sessionRevoked()
-  await activeMerchantId(user.userId)
-  if (!await isAiFeatureEnabled(AGENT_FEATURE)) throw notFound()
+  const merchantId = await activeMerchantId(user.userId)
+  if (!await isAiFeatureEnabled(AGENT_FEATURE) || !await inAgentAudience(merchantId)) throw notFound()
 }
 
 export async function getAgentAvailability(user: AuthPayload) {
-  await activeMerchantId(user.userId)
+  const merchantId = await activeMerchantId(user.userId)
   const limits = { messageMax: AGENT_LIMITS.messageMax, sourceNotesMax: AGENT_LIMITS.sourceNotesMax, recentMessages: AGENT_LIMITS.recentMessages }
-  if (!await isAiFeatureEnabled(AGENT_FEATURE)) return { available: false, reason: 'disabled' as const, limits }
+  // Outside the pilot looks exactly like a disabled agent: the entry stays hidden.
+  if (!await isAiFeatureEnabled(AGENT_FEATURE) || !await inAgentAudience(merchantId)) return { available: false, reason: 'disabled' as const, limits }
   const quota = await getAiDailyQuota(AGENT_FEATURE, 'merchant')
   const used = await prisma.aiGeneration.count({
     where: { actorUserId: user.userId, feature: AGENT_FEATURE, createdAt: { gte: businessDayStartUtc(businessDateString(new Date())) } },
@@ -70,6 +78,7 @@ async function selectedRef(state: AgentRunState, selected: TurnRequest['selected
 export async function runAgentTurnRequest(user: AuthPayload, body: TurnRequest, signal: AbortSignal): Promise<TurnResult & { generationId: number }> {
   if (!await isAiFeatureEnabled(AGENT_FEATURE)) throw notFound()
   const merchantId = await activeMerchantId(user.userId)
+  if (!await inAgentAudience(merchantId)) throw notFound()
   const state = new AgentRunState(merchantId, user.userId)
   const selected = await selectedRef(state, body.selectedResource)
   const input = {

@@ -309,6 +309,8 @@ model Merchant {
   description    String?
   status         String    @default("pending") // pending | active | suspended | rejected
   commissionRate Decimal   @default(0.10) @db.Decimal(5, 4)
+  // SPEC-MERCHANT-AGENT-001 pilot allowlist; only read when the agent audience is 'pilot'.
+  agentPilot     Boolean   @default(false)
   contactEmail   String?
   contactPhone   String?
   createdAt      DateTime  @default(now())
@@ -2355,6 +2357,7 @@ model AiRuntimeConfig {
   // SPEC-MERCHANT-AGENT-001 A0: admin-only switch and the agent's own reasoning mode.
   merchantAgentEnabled       Boolean @default(false)
   merchantAgentReasoningMode String  @default("default") // none | default
+  merchantAgentAudience      String  @default("pilot") // pilot (Merchant.agentPilot only) | all
   baseUrl               String   @default("https://api.openai.com/v1")
   model                 String   @default("gpt-6-luna")
   apiKeyCiphertext       String?

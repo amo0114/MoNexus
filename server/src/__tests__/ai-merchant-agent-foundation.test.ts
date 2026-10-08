@@ -46,14 +46,14 @@ function save(body: Record<string, unknown>) {
 describe('admin settings for the merchant agent', () => {
   it('defaults the agent off with its own default reasoning mode and exposes the workbench dependency read-only', async () => {
     const body = (await api.get('/api/admin/ai/config').set(authHeader(token)).expect(200)).body
-    expect(body).toMatchObject({ merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantWorkbenchEnabled: true, reasoningMode: 'none' })
+    expect(body).toMatchObject({ merchantAgentEnabled: false, merchantAgentReasoningMode: 'default', merchantAgentAudience: 'pilot', merchantWorkbenchEnabled: true, reasoningMode: 'none' })
     config.merchantWorkbenchEnabled = false
     expect((await api.get('/api/admin/ai/config').set(authHeader(token))).body.merchantWorkbenchEnabled).toBe(false)
   })
 
   it('saves the agent switch and mode independently of the global reasoning mode and audits only flags', async () => {
-    const saved = await save({ apiKey: KEY, enabled: true, merchantAgentEnabled: true, merchantAgentReasoningMode: 'none', reasoningMode: 'default' }).expect(200)
-    expect(saved.body).toMatchObject({ enabled: true, productCopilotEnabled: false, merchantAgentEnabled: true, merchantAgentReasoningMode: 'none', reasoningMode: 'default' })
+    const saved = await save({ apiKey: KEY, enabled: true, merchantAgentEnabled: true, merchantAgentReasoningMode: 'none', merchantAgentAudience: 'all', reasoningMode: 'default' }).expect(200)
+    expect(saved.body).toMatchObject({ enabled: true, productCopilotEnabled: false, merchantAgentEnabled: true, merchantAgentReasoningMode: 'none', merchantAgentAudience: 'all', reasoningMode: 'default' })
     const log = await prisma.adminLog.findFirstOrThrow({ where: { adminUserId: adminId, action: '更新 AI 配置' }, orderBy: { id: 'desc' } })
     expect(JSON.parse(log.detail!)).toMatchObject({ merchantAgentEnabled: true, merchantAgentReasoningMode: 'none' })
     expect(log.detail).not.toContain(KEY)

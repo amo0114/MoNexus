@@ -56,6 +56,7 @@ const defaultConfig = {
   // SPEC-AI-001 §11.2
   aiProductCopilotDailyQuotaAdmin: 0,
   aiProductCopilotDailyQuotaMerchant: 0,
+  aiMerchantAgentDailyQuotaMerchant: 0,
 } as const
 
 async function clearSystemConfig() {

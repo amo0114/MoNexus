@@ -278,6 +278,7 @@ POST不写业务表，但会计费并写调用元数据。requestId仅用于客�
 - 复用 AiRuntimeConfig 的同一服务地址/密钥/协议/模型，无自动fallback；新增 merchantAgentEnabled 默认false，并扩展后台配置、清除Key时关闭、配置版本CAS与审计。
 - 新增 `aiMerchantAgentDailyQuotaMerchant`，默认0；V1不开放管理员消费入口，不为管理员创建虚假额度键。
 - 将 `QUOTA_KEYS` 从每feature强制包含两种角色的Record改为显式feature能力映射（角色映射允许部分键，并列出supportedRoles）。商品Copilot仍支持merchant/admin；Agent只支持merchant。`getAiDailyQuota`/claim在查配置前拒绝不支持的角色（403），不能把undefined传入SystemConfig、默认为管理员配额或偷偷补0键。类型、调用方和权限测试一并调整。
+- 试点范围（0.2.1）：后台“经营助手开放范围”默认 `pilot`，只有在「商家管理」中被管理员逐个“加入试点”的已激活商家（`Merchant.agentPilot`）可用；`all` 为全部已激活商家。范围外的商家与开关关闭一样：availability 返回 disabled、turn 返回 404，不占额度；每一步与返回前都会重查。加入/移出试点写 AdminLog。
 - 有效条件：统一AI开关、Agent开关、密钥可用、merchant额度>0，以及 `MERCHANT_WORKBENCH_ENABLED`（当前Agent依赖它的数据能力）。后台须分别展示：工作台环境变量修改后重启后端生效；AI/Agent运行时开关保存即对新run及下一步检查生效。不能承诺编辑环境文件即刻中止在途run；停机/重启由连接关闭和deadline兜底。关闭Agent不影响旧工作台/商品Copilot。
 - 同一run只占一行AiGeneration、一次日配额；行含该run所有规划/专用生成的usage累计、总耗时、stepCount/toolCallCount/stopReason等有限元数据。扩展feature/target CHECK及必要nullable计数列；不建对话、工具结果或提案内容表。
 - 配额短事务/advisory lock沿用；事务内不调用模型。取消、超时、执行中关闭均计入已开始run的额度；非法输入/初始越权/初始关闭不占槽。初始已选商品可投影超限时在占槽前拒绝；后续工具才发现超限则本run已产生消耗，不能谎称不扣次数。

@@ -8,7 +8,7 @@ import {
   revokeDeliveryFileSchema,
   listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
   listAdminAuditQuerySchema, listPointLogsQuerySchema,
-  listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
+  listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema, merchantAgentPilotSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
@@ -258,6 +258,7 @@ router.put('/merchants/:id/approve', validate({ params: idParamSchema }), contro
 router.put('/merchants/:id/reject', validate({ params: idParamSchema, body: reviewMerchantSchema }), controller.rejectMerchant)
 router.put('/merchants/:id/suspend', validate({ params: idParamSchema }), controller.suspendMerchant)
 router.put('/merchants/:id/commission', validate({ params: idParamSchema, body: updateCommissionSchema }), controller.updateCommission)
+router.put('/merchants/:id/agent-pilot', validate({ params: idParamSchema, body: merchantAgentPilotSchema }), controller.setMerchantAgentPilot)
 
 // Settlements
 router.get('/settlements', validate({ query: listSettlementsQuerySchema }), controller.listSettlements)

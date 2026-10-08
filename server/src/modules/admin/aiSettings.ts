@@ -22,6 +22,7 @@ const updateSchema = z.object({
   // Optional so older clients keep working: missing = preserve (see below for AI-off).
   merchantAgentEnabled: z.boolean().optional(),
   merchantAgentReasoningMode: z.enum(AI_REASONING_MODES).optional(),
+  merchantAgentAudience: z.enum(['pilot', 'all']).optional(),
   chatTokenParameter: z.enum(AI_CHAT_TOKEN_PARAMETERS).optional(),
   protocol: z.enum(AI_PROTOCOLS).optional(),
   outputMode: z.enum(AI_OUTPUT_MODES).optional(),
@@ -40,6 +41,7 @@ function publicSettings(settings: AiRuntimeSettings) {
     productCopilotEnabled: settings.productCopilotEnabled,
     merchantAgentEnabled: settings.merchantAgentEnabled,
     merchantAgentReasoningMode: settings.merchantAgentReasoningMode,
+    merchantAgentAudience: settings.merchantAgentAudience,
     // Deployment env, read-only here: changing it requires a backend restart.
     merchantWorkbenchEnabled: config.merchantWorkbenchEnabled,
     apiKeyConfigured: settings.apiKeyConfigured,
@@ -73,6 +75,7 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     const outputMode = input.outputMode ?? previous.outputMode
     const reasoningMode = input.reasoningMode ?? previous.reasoningMode
     const merchantAgentReasoningMode = input.merchantAgentReasoningMode ?? previous.merchantAgentReasoningMode
+    const merchantAgentAudience = input.merchantAgentAudience ?? previous.merchantAgentAudience
     if (baseUrl !== previous.baseUrl && previous.apiKeyConfigured && input.apiKey === undefined) {
       throw badRequest('更换 API 地址时，请同时填写该服务的 API Key，或清除旧密钥')
     }
@@ -98,7 +101,7 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     if (enabled && (!ciphertext || (!keyToEncrypt && previous.credentialError))) {
       throw badRequest('请先配置可用的 API Key')
     }
-    const data = { enabled, productCopilotEnabled, merchantAgentEnabled, merchantAgentReasoningMode, baseUrl, model, protocol, outputMode, reasoningMode, chatTokenParameter, apiKeyCiphertext: ciphertext, apiKeyLast4: last4, updatedBy: adminUserId }
+    const data = { enabled, productCopilotEnabled, merchantAgentEnabled, merchantAgentReasoningMode, merchantAgentAudience, baseUrl, model, protocol, outputMode, reasoningMode, chatTokenParameter, apiKeyCiphertext: ciphertext, apiKeyLast4: last4, updatedBy: adminUserId }
     const updated = await tx.aiRuntimeConfig.upsert({
       where: { id: 1 },
       create: { id: 1, version: 1, ...data },
@@ -107,7 +110,7 @@ export async function updateAiSettings(adminUserId: number, input: z.infer<typeo
     // Only operation metadata; neither plaintext, ciphertext nor even key suffixes.
     await tx.adminLog.create({ data: {
       adminUserId, action: '更新 AI 配置', targetType: 'aiRuntimeConfig', targetId: 1,
-      detail: JSON.stringify({ version: updated.version, enabled, productCopilotEnabled, merchantAgentEnabled, merchantAgentReasoningMode,
+      detail: JSON.stringify({ version: updated.version, enabled, productCopilotEnabled, merchantAgentEnabled, merchantAgentReasoningMode, merchantAgentAudience,
         protocol, outputMode, reasoningMode, chatTokenParameter, endpointChanged: baseUrl !== previous.baseUrl, modelChanged: model !== previous.model,
         keyAction: input.apiKey === null ? 'clear' : keyToEncrypt ? 'replace' : 'preserve' }),
     } })

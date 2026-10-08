@@ -152,3 +152,10 @@ TZ=UTC TEST_DATABASE_URL="$AGENT_DB" REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000
 - 网关偶发错误与单次超时在多轮中出现（共 4 次）；按规范不自动重试，商家会看到可重试的失败。
 - 自动检查是启发式规则，人工复核由实现者完成，未经第三方评审。
 - 前端未做浏览器联调；MA01–MA12 中涉及浏览器的证据仍缺。
+
+## 试点名单（2026-10-08）
+
+- 迁移 `20261008150000_ai_merchant_agent_pilot`：`Merchant.agentPilot`（默认 false）；`AiRuntimeConfig.merchantAgentAudience`（`pilot`/`all`，默认 `pilot`）。
+- 管理端：`PUT /api/admin/merchants/:id/agent-pilot {enabled}`（AdminLog 记录）；商家管理列表新增“经营助手试点”列（已激活商家可加入/移出）；AI 设置新增“经营助手开放范围”。
+- 商家端：范围外等同关闭（availability disabled、turn 404、不占额度），每一步与返回前重查。
+- 验证：`merchant-agent.test.ts` 新增试点用例（未加入 → disabled/404 且无生成记录；管理员加入后可用并有审计；移出后再次 404），`ai-merchant-agent-foundation.test.ts`、`system-config.test.ts`（补充新增配置键，修复 PR #243 首轮 CI 的计数失败）、`admin-query.test.ts` 通过；前端全量 193 个文件 / 1635 个用例、前后端构建通过。
