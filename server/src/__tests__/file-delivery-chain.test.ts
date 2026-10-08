@@ -118,6 +118,22 @@ describe('public serialization for file offers', () => {
 })
 
 describe('purchase freezes the file into the order', () => {
+  it('refuses an incomplete live file offer without charging or creating an order', async () => {
+    const { accessToken, fileId } = await setupMerchantWithFile('file-missing@test.local')
+    const { productId, offerId } = await createFileProduct(accessToken, fileId, '缺文件防御检查')
+    const { user } = await createTestUser('file-missing-buyer@test.local', 'pass123', 'user', 1000)
+    const buyer = await loginAs('file-missing-buyer@test.local', 'pass123')
+    // Simulate an incomplete row outside the normal publication/write gates.
+    await prisma.offer.update({ where: { id: offerId }, data: { fixedFileId: null } })
+    const preview = await api.get(`/api/checkout/preview?productId=${productId}&offerId=${offerId}`)
+      .set(authHeader(buyer.accessToken)).expect(200)
+    expect(preview.body.purchasable).toBe(false)
+    await api.post('/api/orders').set(authHeader(buyer.accessToken))
+      .send({ productId, offerId, expectedPrice: 120 }).expect(400)
+    expect(await prisma.order.count({ where: { productId, offerId } })).toBe(0)
+    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).balance).toBe(1000)
+  })
+
   it('writes DeliveryRecord.fileId in the order transaction; swapping the offer file leaves old orders intact', async () => {
     const { accessToken, fileId } = await setupMerchantWithFile('file-buy@test.local')
     const { productId, offerId } = await createFileProduct(accessToken, fileId, '购买文件商品')

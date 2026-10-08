@@ -34,7 +34,7 @@ https://staging.monexus.oai-o.com
 Use a current Ubuntu VPS with at least 2 vCPU, 4 GB RAM, 40 GB SSD, and inbound
 TCP 80/443. The staging host must be a different server from the production
 site. The host does not need Node: the staging launcher performs its preflight
-inside Docker's Node 20 image when Node is absent.
+inside Docker's Node 22 image when Node is absent.
 
 Create a DNS-only A record before Caddy obtains a certificate:
 

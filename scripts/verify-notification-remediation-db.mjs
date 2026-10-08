@@ -3,8 +3,8 @@ import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
-if (Number(process.versions.node.split('.')[0]) !== 20) {
-  throw new Error('Notification remediation verification requires Node.js 20')
+if (Number(process.versions.node.split('.')[0]) !== 22) {
+  throw new Error('Notification remediation verification requires Node.js 22')
 }
 if (process.argv.length > 2) throw new Error('This verifier accepts no database URL or other arguments')
 

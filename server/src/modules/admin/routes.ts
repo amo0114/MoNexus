@@ -8,7 +8,7 @@ import {
   revokeDeliveryFileSchema,
   listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
   listAdminAuditQuerySchema, listPointLogsQuerySchema,
-  listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema,
+  listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema, merchantAgentPilotSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
@@ -25,6 +25,11 @@ import {
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import { createProductV2Schema, patchProductContentSchema, draftOfferV2WriteSchema } from '../catalog/productV2Schema.js'
+import {
+  adminContentSuggestionSchema,
+  contentSuggestionAppliedSchema,
+  contentSuggestionParamSchema,
+} from '../catalog/contentCopilot/schema.js'
 import * as controller from './controller.js'
 import * as abuseController from './abuseController.js'
 import * as storageController from './storageController.js'
@@ -43,6 +48,8 @@ import { adminAssuranceRouter } from '../catalog/assurance/routes.js'
 import { adminSourceDescriptionRouter } from '../catalog/sourceDescriptionRoutes.js'
 import { rechargeAdminRoutes } from '../recharge/adminRoutes.js'
 import { getBuildInfo } from './buildInfo.js'
+import { aiSettingsRoutes } from './aiSettings.js'
+import { createDraftAssistantRouter } from '../catalog/draftAssistant/routes.js'
 import { z } from 'zod'
 import { platformReport } from '../traffic/controller.js'
 import { trafficQuerySchema } from '../traffic/schema.js'
@@ -57,6 +64,8 @@ const adminOfferParamSchema = z.object({
   offerId: z.coerce.number().int().positive('必须是正整数'),
 })
 
+router.use(aiSettingsRoutes)
+router.use(createDraftAssistantRouter('admin'))
 router.use('/portable-backups', portableBackupRoutes)
 router.use('/value-policies', valuePolicyGovernanceRoutes)
 // T-CAT-BE-001 §7.2：admin product-categories（列表/CRUD/排序/启停/删除）。
@@ -140,6 +149,9 @@ router.post('/products', (req, res, next) => {
 router.put('/products/:id', validate({ params: idParamSchema, body: updateProductSchema }), controller.updateProduct)
 router.patch('/products/:id/content', validate({ params: idParamSchema, body: patchProductContentSchema }), controller.patchProductContent)
 router.get('/products/:id/editor', validate({ params: idParamSchema }), controller.getProductEditor)
+// SPEC-AI-PRODUCT-001 §9 — suggestions only; saving still goes through PATCH /content.
+router.post('/products/:id/content-suggestions', validate({ params: idParamSchema, body: adminContentSuggestionSchema }), controller.createContentSuggestion)
+router.post('/products/:id/content-suggestions/:generationId/applied', validate({ params: contentSuggestionParamSchema, body: contentSuggestionAppliedSchema }), controller.reportContentSuggestionApplied)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
@@ -246,6 +258,7 @@ router.put('/merchants/:id/approve', validate({ params: idParamSchema }), contro
 router.put('/merchants/:id/reject', validate({ params: idParamSchema, body: reviewMerchantSchema }), controller.rejectMerchant)
 router.put('/merchants/:id/suspend', validate({ params: idParamSchema }), controller.suspendMerchant)
 router.put('/merchants/:id/commission', validate({ params: idParamSchema, body: updateCommissionSchema }), controller.updateCommission)
+router.put('/merchants/:id/agent-pilot', validate({ params: idParamSchema, body: merchantAgentPilotSchema }), controller.setMerchantAgentPilot)
 
 // Settlements
 router.get('/settlements', validate({ query: listSettlementsQuerySchema }), controller.listSettlements)

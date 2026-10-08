@@ -1303,6 +1303,20 @@ export async function suspendMerchant(adminUserId: number, merchantId: number) {
   })
 }
 
+/** SPEC-MERCHANT-AGENT-001 pilot allowlist; only changes who may use the operations agent. */
+export async function setMerchantAgentPilot(adminUserId: number, merchantId: number, enabled: boolean) {
+  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
+  if (!merchant) throw notFound('商家不存在')
+  return prisma.$transaction(async tx => {
+    const updated = await tx.merchant.update({ where: { id: merchantId }, data: { agentPilot: enabled } })
+    await tx.adminLog.create({ data: {
+      adminUserId, action: enabled ? '加入经营助手试点' : '移出经营助手试点', targetType: 'merchant', targetId: merchantId,
+      detail: `商家 ${merchant.name}${enabled ? '加入' : '移出'}经营助手试点`,
+    } })
+    return updated
+  })
+}
+
 export async function updateCommission(adminUserId: number, merchantId: number, commissionRate: number) {
   const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
   if (!merchant) throw notFound('商家不存在')

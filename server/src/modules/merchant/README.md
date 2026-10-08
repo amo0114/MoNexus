@@ -15,6 +15,8 @@ Self-service surface for approved merchants: profile, products, inventory, order
 | PUT | `/api/merchant/products/:id` | Merchant | Update — **only own products**; foreign products return 404 (not 403). |
 | POST | `/api/merchant/products/:id/inventory` | Merchant | Bulk insert distinct per-buyer delivery units; availability is derived from `InventoryItem(status=available)`, not `Product.stock`. |
 | POST | `/api/merchant/products/:id/capacity/adjust` | Merchant | Adjust remaining capacity for limited fixed-content / manual-service products with a mandatory reason. |
+| POST | `/api/merchant/products/:id/content-suggestions` | Merchant | AI content copilot (SPEC-AI-PRODUCT-001): returns validated suggestions for the six explanatory fields only; writes no product data. Own templated products only (others 404); requires `expectedContentVersion`; per-role daily quota. |
+| POST | `/api/merchant/products/:id/content-suggestions/:generationId/applied` | Merchant | Best-effort telemetry `{ appliedFieldCount }`; never affects product state. |
 | GET | `/api/merchant/products/:id/inventory/logs` | Merchant | Quantity-only audit trail for import / sale / void / capacity adjustment. Never returns delivery content. |
 | GET | `/api/merchant/orders` | Merchant | Orders whose `product.merchantId = me`. |
 | GET | `/api/merchant/orders/:id` | Merchant | Order detail. `delivery.content` is **not** exposed (see orders module). |

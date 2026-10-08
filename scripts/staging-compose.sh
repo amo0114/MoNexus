@@ -83,7 +83,7 @@ preflight_file() {
     -v "$ROOT_DIR:$ROOT_DIR:ro" \
     -v "$candidate_env_file:$candidate_env_file:ro" \
     -w "$ROOT_DIR" \
-    node:20-bookworm-slim \
+    node:22-bookworm-slim \
     bash scripts/check-prod-env.sh \
       --mode staging \
       --env-file "$candidate_env_file"

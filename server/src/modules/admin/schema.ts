@@ -478,6 +478,8 @@ export const updateCommissionSchema = z.object({
   commissionRate: z.number().min(0).max(1),
 })
 
+export const merchantAgentPilotSchema = z.object({ enabled: z.boolean() }).strict()
+
 export const listSettlementsQuerySchema = z.object({
   status: z.enum(['pending', 'settled', 'holding', 'voided']).optional(),
   page: z.coerce.number().int().positive().default(1),

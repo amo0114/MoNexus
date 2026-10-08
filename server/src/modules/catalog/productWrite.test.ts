@@ -76,7 +76,7 @@ async function merchantSetup(email: string) {
   return { token: accessToken, merchantId: merchant.id }
 }
 
-async function seedDeliveryFile(merchantId: number | null, marker: string, status = 'active') {
+async function seedDeliveryFile(merchantId: number | null, marker: string, status = 'active', uploadedByUserId?: number) {
   const hex = Buffer.from(marker).toString('hex').padEnd(64, '0').slice(0, 64)
   return prisma.deliveryFile.create({
     data: {
@@ -87,6 +87,7 @@ async function seedDeliveryFile(merchantId: number | null, marker: string, statu
       sha256: hex,
       merchantId,
       status,
+      uploadedByUserId,
     },
   })
 }
@@ -163,6 +164,83 @@ function v2DigitalFileBody(categoryId: number, fixedFileId: number | null, name:
 }
 
 describe('createProduct v2 (SPEC-PRODUCT-COMMERCE-002 §9.1)', () => {
+  it.each(['admin', 'merchant'] as const)('saves and edits an incomplete digital-file draft as %s, requiring a file before publication', async actor => {
+    const email = `v2-incomplete-file-${actor}@test.local`
+    let merchantId: number | null = null
+    let uploadedByUserId: number | undefined
+    let token: string
+    if (actor === 'admin') {
+      const { user } = await createTestUser(email, 'pass123', 'admin')
+      uploadedByUserId = user.id
+      token = (await loginAs(email, 'pass123')).accessToken
+    } else {
+      const owner = await merchantSetup(email)
+      merchantId = owner.merchantId
+      token = owner.token
+    }
+    const base = `/api/${actor}/products`
+    const categoryId = await getActiveCategoryIdByLabel('充值卡密')
+    const body = v2DigitalFileBody(categoryId, null, 'Canva 爆款封面与排版模板')
+    body.attributes = { contentCategory: '封面与排版模板' }
+    body.description = '面向小红书穿搭博主的 Canva 封面与排版模板，新手可以直接改字换图。'
+    body.offers[0].price = 2000
+    body.offers[0].stockMode = 'limited'
+    const richDescription = '<p>内容与服务<br>可编辑的视觉模板，方便围绕穿搭主题组织画面与文字。</p>'
+    const fileCount = await prisma.deliveryFile.count()
+    const created = await api.post(base).set(authHeader(token))
+      .send({ ...body, richDescription }).expect(201)
+    expect(created.body).toMatchObject({ status: 'draft', nextStep: 'availability' })
+    const productId = created.body.id
+    const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } })
+    expect(product).toMatchObject({
+      name: body.name,
+      description: body.description,
+      richDescription: '<p>内容与服务<br />可编辑的视觉模板，方便围绕穿搭主题组织画面与文字。</p>',
+    })
+    const offer = await prisma.offer.findFirstOrThrow({ where: { productId } })
+    expect(offer).toMatchObject({ fixedContentType: 'file', fixedFileId: null, fixedContent: null, stock: 0, price: 2000 })
+    expect(await prisma.deliveryFile.count()).toBe(fileCount)
+    await api.get(`${base}/${productId}/editor`).set(authHeader(token)).expect(200)
+    await api.get(`/api/products/${productId}`).set(authHeader(token)).expect(404)
+    await api.get(`/api/checkout/preview?productId=${productId}&offerId=${offer.id}`)
+      .set(authHeader(token)).expect(400)
+
+    const editOffer = (offerId: number, input: Record<string, unknown>) => {
+      const url = `${base}/${productId}/offers/${offerId}`
+      return (actor === 'admin' ? api.patch(url) : api.put(url)).set(authHeader(token)).send(input)
+    }
+    // Continue configuring the draft without a file, including adding another specification.
+    await editOffer(offer.id, { name: '基础版', stockMode: 'unlimited', fixedFileId: null }).expect(200)
+    await editOffer(offer.id, { fixedContent: '不能把文本当成交付文件' }).expect(400)
+    await editOffer(offer.id, { deliveryMode: 'manual_service', fixedContentType: 'file' }).expect(400)
+    const extra = await api.post(`${base}/${productId}/offers`).set(authHeader(token))
+      .send({ ...body.offers[0], name: '扩展版' }).expect(201)
+    const coverKey = uniqueObjectKey(`v2-incomplete-${actor}`)
+    await seedStoredObject(coverKey)
+    await api.patch(`${base}/${productId}/content`).set(authHeader(token)).send({
+      expectedContentVersion: 1,
+      attributes: { contentCategory: '封面与排版模板', formats: ['PDF'], usageLicense: '个人使用' },
+      details: publishableDetails,
+      images: [{ kind: 'upload', objectKey: coverKey }],
+    }).expect(200)
+    const denied = await api.post(`${base}/${productId}/publish`).set(authHeader(token)).expect(422)
+    expect(denied.body.error.code).toBe('PRODUCT_NOT_READY')
+    expect(denied.body.error.details.length).toBeGreaterThan(0)
+    expect(denied.body.error.details.every((detail: { code: string }) =>
+      ['OFFER_NOT_SELLABLE', 'FULFILLMENT_CONFIG_INVALID'].includes(detail.code))).toBe(true)
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).status).toBe('draft')
+
+    const file = await seedDeliveryFile(merchantId, `complete-${actor}`, 'active', uploadedByUserId)
+    for (const offerId of [offer.id, extra.body.id]) {
+      await editOffer(offerId, { fixedFileId: file.id, stockMode: 'unlimited' }).expect(200)
+    }
+    await api.post(`${base}/${productId}/publish`).set(authHeader(token)).expect(200)
+    // The draft allowance must never weaken edits to a live product.
+    await editOffer(offer.id, { fixedFileId: null }).expect(400)
+    expect((await prisma.offer.findUniqueOrThrow({ where: { id: offer.id } })).fixedFileId).toBe(file.id)
+    expect((await prisma.product.findUniqueOrThrow({ where: { id: productId } })).status).toBe('active')
+  })
+
   it('atomically creates a templated draft with offers and no secret inventory', async () => {
     const token = await merchantToken('v2-create@test.local')
     const categoryId = await getActiveCategoryIdByLabel('充值卡密')

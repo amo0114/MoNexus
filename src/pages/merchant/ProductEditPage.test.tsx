@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { Dispatch, SetStateAction } from 'react'
 import ProductEditPage from './ProductEditPage'
+import { useMerchantAgentStore } from '../../stores/merchantAgent'
 
 const merchantMocks = vi.hoisted(() => ({
   uploadDeliveryFile: vi.fn(),
@@ -45,6 +46,20 @@ vi.mock('../../components/merchant/ProductImageUploader', () => ({
     )
   },
 }))
+
+const suggestionMocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  report: vi.fn(),
+}))
+
+vi.mock('../../api/contentSuggestion', async () => {
+  const actual = await vi.importActual<typeof import('../../api/contentSuggestion')>('../../api/contentSuggestion')
+  return {
+    ...actual,
+    requestContentSuggestion: suggestionMocks.request,
+    reportContentSuggestionApplied: suggestionMocks.report,
+  }
+})
 
 vi.mock('../../api/uploads', () => ({
   uploadImage: vi.fn(),
@@ -216,11 +231,12 @@ function createEditTransport(options: {
 async function renderEditPage(
   transport: CatalogTransport & { calls: Array<{ method: 'get' | 'post' | 'patch'; url: string; body?: unknown }> },
   actor: 'merchant' | 'admin' = 'merchant',
+  search = '',
 ) {
   useAppStore.setState({ toasts: [] })
   const prefix = actor === 'admin' ? '/admin' : '/merchant'
   render(
-    <MemoryRouter initialEntries={[`${prefix}/products/42/edit`]}>
+    <MemoryRouter initialEntries={[`${prefix}/products/42/edit${search}`]}>
       <Routes>
         <Route
           path={`${prefix}/products/:id/edit`}
@@ -231,6 +247,82 @@ async function renderEditPage(
   )
   await waitFor(() => expect(screen.getByTestId('product-edit-name')).toBeInTheDocument())
 }
+
+describe('ProductEditPage merchant agent proposal hand-off', () => {
+  function handOff(basedOnContentVersion: number) {
+    useMerchantAgentStore.getState().reset(null)
+    useMerchantAgentStore.getState().handOff({
+      proposalId: 'p1', productId: 42, basedOnContentVersion, promptVersion: 'product-content@1', validatorVersion: 'v',
+      createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      fields: { description: { status: 'suggested', value: '经营助手的新简介', rejectedItemCount: 0 } }, issues: [],
+    })
+  }
+
+  it('opens the review dialog for a matching proposal and only fills the unsaved form', async () => {
+    handOff(3)
+    const transport = createEditTransport({})
+    await renderEditPage(transport)
+    expect(await screen.findByText('经营助手文案提案')).toBeInTheDocument()
+    expect(screen.queryByTestId('content-suggestion-generate')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    fireEvent.click(screen.getByTestId('content-suggestion-apply'))
+    await waitFor(() => expect(screen.getByTestId('product-edit-description')).toHaveValue('经营助手的新简介'))
+    expect(transport.calls.filter(call => call.method !== 'get')).toEqual([])
+    expect(useMerchantAgentStore.getState().handoff).toBeNull()
+  })
+
+  it('refuses a proposal based on an older content version', async () => {
+    handOff(2)
+    await renderEditPage(createEditTransport({}))
+    expect(await screen.findByTestId('product-edit-agent-notice')).toHaveTextContent('已失效')
+    expect(screen.queryByText('经营助手文案提案')).not.toBeInTheDocument()
+  })
+})
+
+describe('ProductEditPage workbench focus (Spec §8.1)', () => {
+  async function renderFocused(search: string) {
+    const transport = createEditTransport({})
+    await renderEditPage(transport, 'merchant', search)
+    return transport
+  }
+
+  function expectReadOnly(transport: ReturnType<typeof createEditTransport>) {
+    expect(transport.calls.filter(call => call.method !== 'get')).toEqual([])
+    expect(merchantMocks.updateMerchantOffer).not.toHaveBeenCalled()
+  }
+
+  it.each([
+    ['images', 'product-images-uploader', '已定位到商品封面'],
+    ['purchase-notes', 'product-details-purchaseNotes', '已定位到购买须知'],
+    ['after-sales', 'product-details-afterSalesInstructions', '已定位到售后说明'],
+    ['attributes', 'product-edit-attributes', '已定位到商品参数'],
+    ['category', 'product-category-field', '如分类已停用，请更换分类或联系平台'],
+    ['offers&offerId=9', 'product-edit-offer-9', '已定位到对应规格'],
+    ['publication', 'publication-checklist', '已定位到发布检查'],
+  ])('focus=%s moves keyboard focus into its anchor without writing', async (focus, anchor, notice) => {
+    const transport = await renderFocused(`?focus=${focus}`)
+    await waitFor(() => expect(screen.getByTestId(anchor).contains(document.activeElement)).toBe(true))
+    expect(screen.getByTestId('product-edit-focus-notice')).toHaveTextContent(notice)
+    expectReadOnly(transport)
+  })
+
+  it.each([
+    ['?focus=offers&offerId=99', '目标规格不可用'],
+    ['?focus=offers&offerId=9abc', '目标规格不可用'],
+    ['?focus=%23product-edit-name', '未识别的定位目标'],
+  ])('%s falls back to the publication checklist', async (search, notice) => {
+    const transport = await renderFocused(search)
+    await waitFor(() => expect(screen.getByTestId('publication-checklist').contains(document.activeElement)).toBe(true))
+    expect(screen.getByTestId('product-edit-focus-notice')).toHaveTextContent(notice)
+    expect(screen.getByTestId('product-edit-name')).not.toHaveFocus()
+    expectReadOnly(transport)
+  })
+
+  it('does nothing without focus parameters', async () => {
+    await renderFocused('')
+    expect(screen.queryByTestId('product-edit-focus-notice')).not.toBeInTheDocument()
+  })
+})
 
 describe('ProductEditPage (spec §9.2 / §10.3)', () => {
   beforeEach(() => {
@@ -1178,5 +1270,49 @@ describe('ProductEditPage (spec §9.2 / §10.3)', () => {
     expect(tabPreview).toBeInTheDocument()
     fireEvent.click(tabPreview)
     fireEvent.click(tabForm)
+  })
+
+  describe('AI content suggestion entry (SPEC-AI-PRODUCT-001 §8)', () => {
+    function aiEditor() {
+      const dto = editorDto()
+      return { ...dto, capabilities: { ...dto.capabilities, aiContentSuggestion: true } }
+    }
+
+    it('is hidden without the capability', async () => {
+      await renderEditPage(createEditTransport({}))
+      expect(screen.queryByTestId('product-edit-ai-suggestion')).toBeNull()
+    })
+
+    it('is disabled while the editor has unsaved changes', async () => {
+      await renderEditPage(createEditTransport({ editor: aiEditor() }))
+      const open = screen.getByTestId('product-edit-ai-suggestion-open')
+      expect(open).not.toBeDisabled()
+      fireEvent.change(screen.getByTestId('product-edit-name'), { target: { value: '改了名字' } })
+      expect(open).toBeDisabled()
+    })
+
+    it('fills adopted suggestions into the form without saving', async () => {
+      suggestionMocks.request.mockResolvedValue({
+        generationId: 1,
+        basedOnContentVersion: 3,
+        promptVersion: 'product-content@1',
+        validatorVersion: 'product-content-validator@1',
+        fields: { description: { status: 'suggested', value: 'AI 整理后的简介', rejectedItemCount: 0 } },
+        issues: [],
+      })
+      suggestionMocks.report.mockResolvedValue(undefined)
+      const transport = createEditTransport({ editor: aiEditor() })
+      await renderEditPage(transport)
+
+      fireEvent.click(screen.getByTestId('product-edit-ai-suggestion-open'))
+      fireEvent.click(await screen.findByTestId('content-suggestion-generate'))
+      fireEvent.click(await screen.findByTestId('content-suggestion-select-description'))
+      fireEvent.click(screen.getByTestId('content-suggestion-apply'))
+
+      await waitFor(() => expect(screen.getByTestId('product-edit-description')).toHaveValue('AI 整理后的简介'))
+      expect(screen.getByTestId('product-edit-dirty')).toBeInTheDocument()
+      expect(transport.calls.some(call => call.method === 'patch')).toBe(false)
+      expect(suggestionMocks.request).toHaveBeenCalledWith('merchant', 42, expect.objectContaining({ expectedContentVersion: 3 }))
+    })
   })
 })

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Eye, Loader2, Package } from 'lucide-react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Eye, Loader2, Package, Sparkles } from 'lucide-react'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import {
   catalogApi,
@@ -33,6 +33,7 @@ import {
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
+import ProductContentSuggestionDialog from '../../components/catalog/ProductContentSuggestionDialog'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
 import {
   serializePurchaseFormFields,
@@ -55,6 +56,11 @@ import {
 import ProductInformationSection from './productEditor/ProductInformationSection'
 import OfferEditingSection from './productEditor/OfferEditingSection'
 import PurchaseFormSection from './productEditor/PurchaseFormSection'
+import { focusEditorAnchor, resolveEditorFocus } from './productEditor/editorFocus'
+import type { AgentProposal } from '../../api/merchant/agent'
+import { useAgentSessionKey } from '../../components/merchant/agent/useMerchantAgent'
+import { useMerchantAgentStore } from '../../stores/merchantAgent'
+import { parseEditorFocus, parsePositiveId } from '../../components/merchant/workbench/navigation'
 
 const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
@@ -86,7 +92,15 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const productId = Number(idParam)
   const validId = Number.isInteger(productId) && productId > 0
   const navigate = useNavigate()
+  const location = useLocation()
   const showToast = useAppStore((s) => s.showToast)
+  const appliedFocusRef = useRef<string | null>(null)
+  const [focusNotice, setFocusNotice] = useState<string | null>(null)
+  // SPEC-MERCHANT-AGENT-001 §7.2 — agent proposal handed over in memory only.
+  const agentSessionKey = useAgentSessionKey()
+  const agentHandoffTakenRef = useRef(false)
+  const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null)
+  const [agentNotice, setAgentNotice] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(!validId)
@@ -106,6 +120,8 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [offerDraftsBaseline, setOfferDraftsBaseline] = useState('')
   const [offerConflictLabels, setOfferConflictLabels] = useState<string[]>([])
   const [capabilities, setCapabilities] = useState<ProductEditorDto['capabilities'] | null>(null)
+  const [isXboardProduct, setIsXboardProduct] = useState(false)
+  const [suggestionOpen, setSuggestionOpen] = useState(false)
   const [offers, setOffers] = useState<ProductEditorDto['offers']>([])
   const [publicationIssues, setPublicationIssues] = useState<ProductEditorPublicationIssue[]>([])
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
@@ -186,6 +202,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     setTemplateKey(nextTemplateKey)
     setSavedTemplateKey(nextTemplateKey)
     setCapabilities(dto.capabilities)
+    setIsXboardProduct(dto.sourceDescription != null)
     setOffers(dto.offers)
     const drafts = draftsFromOffers(dto.offers)
     setOfferDrafts(drafts)
@@ -237,6 +254,51 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     void loadEditor()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actor, productId])
+
+  useEffect(() => {
+    if (actor !== 'merchant' || loading || notFound || loadError || agentHandoffTakenRef.current) return
+    agentHandoffTakenRef.current = true
+    const handoff = useMerchantAgentStore.getState().takeHandoff(productId, agentSessionKey)
+    if (!handoff) return
+    if (!handoff.usable) {
+      setAgentNotice('经营助手的文案提案已过期，请回到经营助手重新生成。')
+    } else if (!capabilities?.editContent || dirty || handoff.proposal.basedOnContentVersion !== contentVersion) {
+      // Never apply a proposal over newer content or unsaved edits.
+      setAgentNotice('商品内容已变化或有未保存的修改，这份文案提案已失效，请回到经营助手重新生成。')
+    } else {
+      setAgentProposal(handoff.proposal)
+    }
+  }, [actor, loading, notFound, loadError, productId, agentSessionKey, capabilities, dirty, contentVersion])
+
+  // Workbench deep link (Spec §8.1): ?focus=…&offerId=… positions the editor
+  // once per URL after the freshly loaded editor DTO is rendered. Positioning
+  // never edits, saves or publishes anything.
+  useEffect(() => {
+    if (loading || notFound || loadError) return
+    const params = new URLSearchParams(location.search)
+    if (!params.has('focus') && !params.has('offerId')) return
+    const key = `${productId}:${location.search}`
+    if (appliedFocusRef.current === key) return
+    appliedFocusRef.current = key
+    const target = resolveEditorFocus({
+      focus: parseEditorFocus(params.get('focus')),
+      focusProvided: params.has('focus'),
+      offerId: parsePositiveId(params.get('offerId')),
+      offerIdProvided: params.has('offerId'),
+      offerIds: offers.map(offer => offer.id),
+      hasAttributes: selectedTemplate != null,
+      canShowOffers: capabilities?.manageOffers === true,
+    })
+    setActiveViewTab(target.inPreview ? 'preview' : 'form')
+    setFocusNotice(target.notice)
+    requestAnimationFrame(() => {
+      if (!focusEditorAnchor(target.anchor)) {
+        setActiveViewTab('preview')
+        setFocusNotice('目标区域暂不可用，已显示发布检查。')
+        requestAnimationFrame(() => { focusEditorAnchor('publication-checklist') })
+      }
+    })
+  }, [loading, notFound, loadError, location.search, productId, offers, selectedTemplate, capabilities])
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -576,6 +638,18 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         </div>
       </div>
 
+      {agentNotice && (
+        <p className="mb-4 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-sm text-[var(--color-warning-text)]" role="status" data-testid="product-edit-agent-notice">
+          {agentNotice}
+        </p>
+      )}
+
+      {focusNotice && (
+        <p className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" role="status" data-testid="product-edit-focus-notice">
+          {focusNotice}
+        </p>
+      )}
+
       {/* Mid-Screen & Mobile Tab Switcher (768px - 1023px) (REQ-P7 §4.2) */}
       <div className="flex lg:hidden mb-6 border-b border-[var(--color-border)] gap-2" data-testid="product-edit-view-tabs">
         <button
@@ -643,6 +717,30 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             onInsertDescriptionImage={handleInsertDescriptionImage}
           />
 
+          {capabilities?.aiContentSuggestion && (
+            <section
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4"
+              data-testid="product-edit-ai-suggestion"
+            >
+              <div className="text-sm">
+                <p className="font-bold text-[var(--color-text)]">AI 整理说明</p>
+                <p className="text-[var(--color-text-muted)]">
+                  {dirty ? '请先保存或放弃未保存的修改' : '基于已配置的商品信息整理简介、亮点、使用说明、须知与常见问题'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn-secondary min-h-11 px-4"
+                disabled={busy || dirty}
+                onClick={() => setSuggestionOpen(true)}
+                data-testid="product-edit-ai-suggestion-open"
+              >
+                <Sparkles className="mr-1 h-4 w-4" />
+                AI 整理说明
+              </button>
+            </section>
+          )}
+
           {capabilities?.manageOffers && (
             <OfferEditingSection
               actor={actor}
@@ -699,6 +797,46 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             </button>
           </div>
         </div>
+
+        <ProductContentSuggestionDialog
+          open={suggestionOpen}
+          actor={actor}
+          productId={productId}
+          contentVersion={contentVersion}
+          canUseUpstream={actor === 'admin' && isXboardProduct}
+          current={{ description: form.description, details: form.details }}
+          onApply={(patch) => setForm(prev => ({
+            ...prev,
+            description: patch.description ?? prev.description,
+            details: { ...prev.details, ...patch.details },
+          }))}
+          onClose={() => setSuggestionOpen(false)}
+          onReload={() => {
+            setSuggestionOpen(false)
+            void loadEditor()
+          }}
+          onUnavailable={() => setCapabilities(prev => (prev ? { ...prev, aiContentSuggestion: false } : prev))}
+        />
+
+        {agentProposal && (
+          <ProductContentSuggestionDialog
+            open
+            actor={actor}
+            productId={productId}
+            contentVersion={contentVersion}
+            canUseUpstream={false}
+            current={{ description: form.description, details: form.details }}
+            preset={agentProposal}
+            onApply={(patch) => setForm(prev => ({
+              ...prev,
+              description: patch.description ?? prev.description,
+              details: { ...prev.details, ...patch.details },
+            }))}
+            onClose={() => setAgentProposal(null)}
+            onReload={() => setAgentProposal(null)}
+            onUnavailable={() => setAgentProposal(null)}
+          />
+        )}
 
         <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
           <LivePreviewSandbox product={previewData} />

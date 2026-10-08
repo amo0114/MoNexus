@@ -10,6 +10,7 @@ import { useAppStore } from '../../stores/appStore'
 import { captureFeedbackOwner } from '../../lib/completionFeedback'
 import { showProductPublished } from '../../lib/productPublicationFeedback'
 import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
+import ProductDraftAssistant from '../../components/catalog/ProductDraftAssistant'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
 import {
@@ -145,6 +146,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
   const [step, setStep] = useState(0)
+  const [assistantActive, setAssistantActive] = useState(false)
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
   const [templatesLoading, setTemplatesLoading] = useState(true)
   const [templatesError, setTemplatesError] = useState(false)
@@ -716,6 +718,10 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
       <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-1">发布新商品</h1>
       <p className="text-sm text-[var(--color-text-muted)] mb-6">按步骤完成商品配置，保存草稿后可独立补充可售量并发布</p>
 
+      {!draft && <ProductDraftAssistant actor="merchant" templates={templates} categories={categories} onCategoriesChange={setCategories}
+        disabled={busy} createDraft={payload => adapter.createProductV2(payload)} onActiveChange={setAssistantActive}
+        onCreated={id => { showToast(`商品草稿 #${id} 已创建`); navigate(`/merchant/products/${id}/edit`) }} />}
+      <div hidden={assistantActive}>
       {/* 4-Phase Visual Stepper (REQ-P7 §4.1) */}
       <div className="mb-6 sm:mb-8" data-testid="wizard-stepper-container">
         <ol className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3" data-testid="wizard-steps">
@@ -1033,6 +1039,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
         <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'wizard' ? 'hidden lg:block' : 'block'}`}>
           <LivePreviewSandbox product={previewData} />
         </aside>
+      </div>
       </div>
     </div>
   )

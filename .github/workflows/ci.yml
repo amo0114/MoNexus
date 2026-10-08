@@ -172,7 +172,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: server/package-lock.json
 
@@ -212,7 +212,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: package-lock.json
 
@@ -295,7 +295,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -338,6 +338,7 @@ jobs:
 
           appendFileSync(process.env.GITHUB_ENV, [
             `MFA_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`,
+            `AI_CREDENTIALS_ENC_KEY=${randomBytes(32).toString('hex')}`,
             `E2E_ADMIN_MFA_TOTP_SECRET=${factor}`,
           ].join('\n') + '\n')
           NODE
@@ -491,7 +492,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -582,7 +583,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json

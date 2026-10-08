@@ -21,9 +21,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
-NODE20_BIN="/root/.nvm/versions/node/v20.19.5/bin"
-if [[ -d "$NODE20_BIN" ]]; then
-  export PATH="$NODE20_BIN:$PATH"
+NODE22_BIN="/root/.nvm/versions/node/v22.23.1/bin"
+if [[ -d "$NODE22_BIN" ]]; then
+  export PATH="$NODE22_BIN:$PATH"
 fi
 
 DBGUARD="$ROOT/scripts/cmi/dbguard.sh"

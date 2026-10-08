@@ -4,9 +4,9 @@ set +x
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
-export PATH="${NODE20_BIN:-/root/.nvm/versions/node/v20.19.5/bin}:$PATH"
+export PATH="${NODE22_BIN:-/root/.nvm/versions/node/v22.23.1/bin}:$PATH"
 fail() { printf '[merch] FAIL: %s\n' "$*" >&2; exit 1; }
-[[ "$(node --version)" == 'v20.19.5' ]] || fail "Node 20.19.5 required (got $(node --version))"
+[[ "$(node --version)" == 'v22.23.1' ]] || fail "Node 22.23.1 required (got $(node --version))"
 [[ "$(npm --version)" == 10.* ]] || fail "npm 10 required (got $(npm --version))"
 git diff --check || fail 'git diff --check failed'
 

@@ -23,8 +23,8 @@ fi
 echo "[compat] TypeScript production build (no schema or migration changes)"
 node_major="${NODE_VERSION:-$(node -p 'process.versions.node.split(".")[0]')}"
 npm_major="$(npm --version | cut -d. -f1)"
-if [[ "$node_major" != "20" || "$npm_major" != "10" ]]; then
-  echo "server_build=PENDING (repository requires Node 20.x/npm 10.x; found Node ${node_major}.x/npm ${npm_major}.x)"
+if [[ "$node_major" != "22" || "$npm_major" != "10" ]]; then
+  echo "server_build=PENDING (repository requires Node 22.x/npm 10.x; found Node ${node_major}.x/npm ${npm_major}.x)"
 elif (cd server && npm run build); then
   echo "server_build=PASS"
 else

@@ -1,4 +1,4 @@
-const expectedNodeMajor = 20
+const expectedNodeMajor = 22
 const expectedNpmMajor = 10
 
 const nodeMajor = Number(process.versions.node.split('.')[0])

@@ -58,6 +58,8 @@ export default defineConfig({
           // 不应被整套测试累计的登录次数误伤。
           env: {
             NODE_ENV: 'test',
+            // Local E2E only; deployed servers require their own stable master key.
+            AI_CREDENTIALS_ENC_KEY: process.env.AI_CREDENTIALS_ENC_KEY || 'ab'.repeat(32),
             API_RATE_LIMIT_MAX: '10000',
             // SPEC-NOTIFY-001：E2E 需要站内通知 API 可用
             NOTIFICATION_ENABLED: 'true',

@@ -1012,7 +1012,7 @@ Use `release_action=deploy_candidate` for a new artifact build. Keep `dry_run=tr
 Required production host checks before the first live deploy:
 
 - nginx serves `/opt/monexus/current/frontend` and proxies `/api/` to the backend process.
-- Node.js 20, npm, tar, curl, PostgreSQL access, and either systemd or PM2 are available.
+- Node.js 22, npm, tar, curl, PostgreSQL access, and either systemd or PM2 are available.
 - A non-root deploy user can write `/opt/monexus/releases` and restart only `monexus-api`.
 - TLS and DNS are already configured for frontend and API origins.
 
