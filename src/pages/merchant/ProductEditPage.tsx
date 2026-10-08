@@ -57,6 +57,9 @@ import ProductInformationSection from './productEditor/ProductInformationSection
 import OfferEditingSection from './productEditor/OfferEditingSection'
 import PurchaseFormSection from './productEditor/PurchaseFormSection'
 import { focusEditorAnchor, resolveEditorFocus } from './productEditor/editorFocus'
+import type { AgentProposal } from '../../api/merchant/agent'
+import { useAgentSessionKey } from '../../components/merchant/agent/useMerchantAgent'
+import { useMerchantAgentStore } from '../../stores/merchantAgent'
 import { parseEditorFocus, parsePositiveId } from '../../components/merchant/workbench/navigation'
 
 const STATUS_LABEL: Record<string, string> = {
@@ -93,6 +96,11 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const showToast = useAppStore((s) => s.showToast)
   const appliedFocusRef = useRef<string | null>(null)
   const [focusNotice, setFocusNotice] = useState<string | null>(null)
+  // SPEC-MERCHANT-AGENT-001 §7.2 — agent proposal handed over in memory only.
+  const agentSessionKey = useAgentSessionKey()
+  const agentHandoffTakenRef = useRef(false)
+  const [agentProposal, setAgentProposal] = useState<AgentProposal | null>(null)
+  const [agentNotice, setAgentNotice] = useState<string | null>(null)
 
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(!validId)
@@ -246,6 +254,21 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     void loadEditor()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actor, productId])
+
+  useEffect(() => {
+    if (actor !== 'merchant' || loading || notFound || loadError || agentHandoffTakenRef.current) return
+    agentHandoffTakenRef.current = true
+    const handoff = useMerchantAgentStore.getState().takeHandoff(productId, agentSessionKey)
+    if (!handoff) return
+    if (!handoff.usable) {
+      setAgentNotice('经营助手的文案提案已过期，请回到经营助手重新生成。')
+    } else if (!capabilities?.editContent || dirty || handoff.proposal.basedOnContentVersion !== contentVersion) {
+      // Never apply a proposal over newer content or unsaved edits.
+      setAgentNotice('商品内容已变化或有未保存的修改，这份文案提案已失效，请回到经营助手重新生成。')
+    } else {
+      setAgentProposal(handoff.proposal)
+    }
+  }, [actor, loading, notFound, loadError, productId, agentSessionKey, capabilities, dirty, contentVersion])
 
   // Workbench deep link (Spec §8.1): ?focus=…&offerId=… positions the editor
   // once per URL after the freshly loaded editor DTO is rendered. Positioning
@@ -615,6 +638,12 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         </div>
       </div>
 
+      {agentNotice && (
+        <p className="mb-4 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-sm text-[var(--color-warning-text)]" role="status" data-testid="product-edit-agent-notice">
+          {agentNotice}
+        </p>
+      )}
+
       {focusNotice && (
         <p className="mb-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-text)]" role="status" data-testid="product-edit-focus-notice">
           {focusNotice}
@@ -788,6 +817,26 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           }}
           onUnavailable={() => setCapabilities(prev => (prev ? { ...prev, aiContentSuggestion: false } : prev))}
         />
+
+        {agentProposal && (
+          <ProductContentSuggestionDialog
+            open
+            actor={actor}
+            productId={productId}
+            contentVersion={contentVersion}
+            canUseUpstream={false}
+            current={{ description: form.description, details: form.details }}
+            preset={agentProposal}
+            onApply={(patch) => setForm(prev => ({
+              ...prev,
+              description: patch.description ?? prev.description,
+              details: { ...prev.details, ...patch.details },
+            }))}
+            onClose={() => setAgentProposal(null)}
+            onReload={() => setAgentProposal(null)}
+            onUnavailable={() => setAgentProposal(null)}
+          />
+        )}
 
         <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
           <LivePreviewSandbox product={previewData} />

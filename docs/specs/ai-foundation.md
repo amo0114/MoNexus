@@ -3,11 +3,12 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-001 |
-| 版本 | 1.2.0 |
-| 日期 | 2026-10-07 |
+| 版本 | 1.3.0 |
+| 日期 | 2026-10-08 |
 | 状态 | Implementation Ready（全部决策 Frozen；D-AI-01 已裁决，见 §6.3） |
 | 产品 | MoNexus |
 | 首个消费方 | SPEC-AI-PRODUCT-001（`docs/specs/ai-product-content-copilot.md`） |
+| 多步消费方 | SPEC-MERCHANT-AGENT-001（`docs/specs/merchant-operations-agent-v1.md`，1.3.0 起；本文只定义共享运行时与元数据，Agent 行为见该 Spec） |
 | 关联模块 | `server/src/config/index.ts`、`server/src/lib/systemConfig.ts`、`server/src/lib/httpError.ts`、`server/src/lib/metrics.ts`、`server/src/lib/logger.ts`、`server/src/lib/errorReporter.ts`、`server/prisma/schema.prisma`、`server/src/lib/ai/`（新） |
 
 ---
@@ -124,7 +125,7 @@ Domain Service（现有，含权限 / ownership / visibility）
 // server/src/lib/ai/provider.ts
 export interface LlmStructuredRequest {
   model: string
-  reasoningEffort: 'none'                // 功能默认值；实际是否发送由后台 reasoningMode 决定
+  reasoningEffort: 'none'                // 仅为 none 模式下发送的取值；是否发送由该次调用的有效 reasoningMode 决定（§6.2）
   schemaName: string                     // 结构化输出 format 名称
   system: string
   input: AiSafe<unknown>                 // §4 AI-R14
@@ -158,6 +159,7 @@ export class LlmError extends Error {
 
 - **支持 OpenAI Responses、OpenAI Chat Completions、Anthropic Messages 三种协议**，由管理员显式选择唯一协议；另有一个测试替身。测试替身通过模块级 override 注入（同 `externalCatalog.ts` 的 `catalogClientOverrides` 惯例），**不**作为可由 env 选择的生产 provider。
 - adapter 负责：HTTP/SDK 调用、把 `outputSchema` 映射到该 provider 的结构化输出机制、读取 token usage、把 provider 错误映射为 `LlmError`、响应 `signal` 中止。
+- **有效推理模式（1.3.0）**：`reasoningMode` 是构造 provider 时传入的线协议设置，不是请求字段。运行时按 feature 选定该次调用的有效模式：商品 Copilot 使用全局 `reasoningMode`；商家经营 Agent 使用 `merchantAgentReasoningMode`。`none` 时三种 adapter 分别发送 `reasoning.effort`/`reasoning_effort` 为 `none` 或 Anthropic `thinking: disabled`；`default` 时一律省略，不追加模型专属参数。provider `name` 含有效模式并写入 `AiGeneration.provider`，元数据记录的是实际生效模式。
 - adapter **禁止**：重试、换模型、换 provider、记录 prompt/output、把 provider 原始错误体放入 `Error.message`（错误消息只能是 `LlmErrorCode`，防止输入回显进日志 / Sentry）。
 - 新增依赖：官方 OpenAI JS SDK（`openai@7.28.0`，精确版本加入 `server/package.json`，见 §6.3）及用于可配置地址连接期 DNS 校验的 `undici@7.29.0`。只有 Responses adapter 文件（`lib/ai/openaiProvider.ts`）可以 import 该 SDK；Chat/Anthropic adapter 使用同一个安全 fetch，不新增 SDK；feature 代码、Projection、校验器只依赖 `LlmProvider` 接口。
 
@@ -291,10 +293,10 @@ export class LlmError extends Error {
 // SPEC-AI-001 §10 — AI 调用元数据。禁止增加任何存放 prompt / input / output 原文的列。
 model AiGeneration {
   id                 Int       @id @default(autoincrement())
-  feature            String    // CHECK: 'product_content_copilot'（新 feature 需迁移扩展）
+  feature            String    // CHECK: 'product_content_copilot' | 'merchant_operations_agent'
   actorUserId        Int?
   actorRole          String    // CHECK: 'merchant' | 'admin'
-  targetType         String    // CHECK: 'product' | 'product_draft'
+  targetType         String    // CHECK: 'product' | 'product_draft' | 'merchant_agent'（仅且必须用于 Agent）
   targetId           Int
   provider           String
   model              String
@@ -308,7 +310,10 @@ model AiGeneration {
   latencyMs          Int?
   issueCounts        Json?     // { missing, ambiguous, risky_claim, unsupported_fact }：只有计数
   suggestedFieldCount Int?
-  acceptedFieldCount Int?      // null = 前端未上报
+  acceptedFieldCount Int?      // null = 前端未上报；Agent 行恒为 null
+  stepCount          Int?      // 仅 Agent run：模型调用步数
+  toolCallCount      Int?      // 仅 Agent run：领域工具调用次数
+  stopReason         String?   // 仅 Agent run：稳定的小写停止原因码
   createdAt          DateTime  @default(now()) @db.Timestamptz(3)
   completedAt        DateTime? @db.Timestamptz(3)
 
@@ -325,6 +330,8 @@ model AiGeneration {
 
 - **AI-R20**：任何表、日志、Sentry 事件、指标标签都不得存 prompt、`input`、`output`、`issues` 文案或建议文本。`issueCounts` 只存计数。
 - **AI-R21**：`inputHash = HMAC-SHA256(config.jwtSecret, "monexus:ai-input-hash:v1\0" + canonicalJson(input))`，输出 hex。复用现有 secret（不新增 `AI_HASH_SECRET`），HMAC 防止低熵输入被字典还原（同 `orders/idempotency.ts:104` 的动机）；固定的用途域前缀（含 `\0` 分隔）保证该 HMAC 的消息空间与同一 secret 的其他 HMAC 用途（如 checkout `requestDigest`、JWT 签名）不重叠。前缀版本号 `v1` 随 canonical 规则变化 bump。用途仅限去重统计与 eval 关联；JWT secret 轮换导致 hash 不连续是可接受的。`canonicalJson`：对象键按 Unicode 码点排序、无多余空白、数组保持顺序。
+- **AI-R21a（1.3.0）**：Agent run 只在占槽前计算一次 run 初始输入指纹 `HMAC-SHA256(config.jwtSecret, "monexus:ai-agent-run-input:v1\0" + canonicalJson(runInput))`，算法与 canonical 规则同 AI-R21，用途域独立；不记录逐步输入或工具结果的 hash。白名单输入对象的组成见 SPEC-MERCHANT-AGENT-001 §9.1。
+- **Agent 行约束（数据库 CHECK）**：`feature='merchant_operations_agent'` 当且仅当 `targetType='merchant_agent'`，且 `actorRole='merchant'`；`acceptedFieldCount` 必须为空；`suggestedFieldCount` 为空或 0..6；`issueCounts` 为空或恰为四个非负整数计数；`stopReason` 为小写下划线码。非 Agent 行的三个 run 计数列必须为空。
 - **AI-R22**：用户删除时 `actorUserId` 置空（同 `SecurityEvent` 惯例），元数据保留。
 - Retention：V1 元数据不自动清理（不含内容、非敏感）；如需清理另立任务，必须走 `cronLease`。
 
@@ -372,6 +379,7 @@ runAiGeneration<T>(args: {
 自 1.1.1 起商品 Copilot 包含说明整理和辅助新建（SPEC-AI-PRODUCT-002），两种操作共用同一 feature 的角色额度与开关。新建操作尚无商品 ID，以 `targetType=product_draft`、`targetId=actorUserId` 去重，禁止创建占位商品；prompt/schema/projection/validator 独立。形态与分类可作为待确认候选展示，但必须经人工明确核对后走原创建接口；价格、有效期与交付设置仍由用户填写/选择。
 
 - 以 `SystemConfig` 范围键实现，沿用 `RANGE_CONFIG_KEYS` 与管理后台现有配置界面、AdminLog。
+- 1.3.0 起额度映射按 feature 显式声明所支持的角色（不再要求每个 feature 两种角色都有键）。不支持的角色在读取额度前以 403 拒绝，不为其创建虚假额度键。商品 Copilot 仍支持 merchant/admin；商家经营 Agent 只支持 merchant：`aiMerchantAgentDailyQuotaMerchant`（默认 0，上限 1000），与 Copilot 额度分别计数。一个 Agent run 只占一行、一次额度，以 `targetType=merchant_agent`、`targetId=actorUserId` 做在途去重（同一账号同时只允许一个 run）。
 - V1 两个键（每个 feature 按角色各一，使「仅管理员试点」无需新增 flag）：
   - `aiProductCopilotDailyQuotaAdmin`
   - `aiProductCopilotDailyQuotaMerchant`
@@ -425,7 +433,7 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
 
 - 全部加入 `config/index.ts` 与 `.env.example`（`.env.example` 中 `OPENAI_API_KEY` 留空）。
 - 不设 `AI_PROVIDER` / `AI_MODEL` env：协议、服务地址与模型名在后台配置。
-- 未来 Shopping Agent、Risk Copilot 等在各自 Spec 中新增独立 flag，不提前创建。
+- 未来 Shopping Agent、Risk Copilot 等在各自 Spec 中新增独立 flag，不提前创建。商家经营 Agent 的开关不设 env，只在后台单例配置中（§15.2）。
 
 ### 15.2 管理后台接管
 
@@ -434,14 +442,15 @@ L3 指标至少包含：结构校验通过率、各类 issue 触发率、单元�
 - 无单例行时才读取旧环境配置。后台首次保存会接管服务地址、模型、双开关及密钥（未填写新 Key 则将现有环境 Key 加密导入）。单例存在后**整组以数据库为准**；清除 Key 不回退到环境变量，避免凭据复活。
 - 加密：AES-256-GCM，随机 12 字节 nonce、16 字节认证标签，AAD `monexus:ai-api-key:v1`，密文格式 `v1:iv:tag:ciphertext`。主密钥丢失或变更将导致旧 Key 无法解密；应恢复原主密钥或重新录入 Key，不自动使用明文或 JWT 兜底。
 - API 只返回配置版本、双开关、来源、是否配置、尾四位、解密状态、加密就绪状态、服务地址和模型。响应 `Cache-Control: no-store`；前端密钥只保留在表单内存，提交完成（包括失败）后清空，不写浏览器持久存储。
-- Key 请求语义：省略=保留，字符串=更换，null=清除并同时关闭双开关。开启 AI 必须有可解密 Key，开启 Copilot 必须先开启 AI。
+- Key 请求语义：省略=保留，字符串=更换，null=清除并同时关闭全部 AI 开关。开启 AI 必须有可解密 Key，开启 Copilot 或经营 Agent 必须先开启 AI。
+- 1.3.0 单例新增 `merchantAgentEnabled`（默认 false）与 `merchantAgentReasoningMode`（默认 `default`，只作用于 Agent，不改变全局 `reasoningMode`）。PUT 中两字段可省略（省略=保留；关闭 AI 总开关且未显式提交时 Agent 一并关闭），数据库约束保证 Agent 开启时 AI 总开关开启。Agent 有效条件：AI 总开关、Agent 开关、可解密 Key，以及部署环境 `MERCHANT_WORKBENCH_ENABLED`（Agent 复用工作台数据能力）。GET 只读返回该环境开关状态；它需重启后端才生效，而本页开关保存后即对新请求生效，后台须分别说明。
 - 保存使用 `expectedVersion` + 单例事务锁（类 20261008、键 1）；并发首次保存也串行。版本冲突返回 409，不能静默覆盖。密文更新与安全审计在同一事务提交。
 - 每个新调用从数据库读配置，SDK 不缓存旧 Key；保存后无需重启。已发出的调用使用开始时的配置快照完成。解密失败只关闭 AI 能力，人工编辑路径仍可用。
 
 | 接口（均要求 active admin + 当前 MFA 会话） | 行为 |
 | --- | --- |
 | `GET /api/admin/ai/config` | 脱敏配置与状态 |
-| `PUT /api/admin/ai/config` | `{expectedVersion, enabled, productCopilotEnabled, baseUrl?, model?, protocol?, outputMode?, reasoningMode?, chatTokenParameter?, apiKey?}`；保存后立即生效 |
+| `PUT /api/admin/ai/config` | `{expectedVersion, enabled, productCopilotEnabled, merchantAgentEnabled?, merchantAgentReasoningMode?, baseUrl?, model?, protocol?, outputMode?, reasoningMode?, chatTokenParameter?, apiKey?}`；保存后立即生效 |
 | `POST /api/admin/ai/test` | `{expectedVersion}`；只测试已保存配置，版本变化返回 409 |
 
 OpenAI 两种协议的连接测试使用官方 SDK `GET {baseUrl}/models`（[OpenAI 官方文档](https://developers.openai.com/api/reference/resources/models/methods/list)，2026-10-07 核对），核对列表中是否存在配置的 model ID。Anthropic 协议查询单模型信息（§6.3）。地址、模型与生成使用同一配置快照。不传商品或用户内容、不触发 Responses 生成、不写 AiGeneration、不扣角色配额。
@@ -455,9 +464,9 @@ OpenAI 两种协议的连接测试使用官方 SDK `GET {baseUrl}/models`（[Ope
 L3 eval 可直接使用后台保存的 Key，允许开关关闭时运行，以便先验收再开放；仍不扣配额、不写生成记录。
 
 
-## 16. 未来 Agent Tool 统一安全规则（预冻结，本期不实现）
+## 16. Agent Tool 统一安全规则
 
-适用于任何未来让模型调用工具的 feature（如 Shopping Agent、Risk Copilot）：
+适用于任何让模型调用工具的 feature。首个消费方是商家经营 Agent（SPEC-MERCHANT-AGENT-001）：由模型在应用层结构化输出中选择工具，服务器执行；不使用 provider 原生 function calling，规划与生成仍经本运行时的超时、额度与元数据边界。
 
 1. **只读**：工具只能调用现有只读 service；新增任何写工具必须单独 Spec，并且写动作必须经人在 UI 中显式确认后由现有接口执行，模型不得直接触发。
 2. **作用域服务端推导**：身份、角色、merchantId、visibility audience 一律来自 `req.user` 与现有鉴权链；模型传入的身份类参数一律忽略或拒绝。他人资源返回与 HTTP 一致的「不存在」。
@@ -491,6 +500,7 @@ L3 eval 可直接使用后台保存的 Key，允许开关关闭时运行，以�
 | 1.1.1 | 2026-10-07 | 商品 Copilot 扩展辅助新建操作，共用开关与额度；增加 product_draft 元数据目标，不创建占位商品，交易设置由用户明确确认。 |
 | 1.2.0 | 2026-10-07 | 第三方协议显式可选 Responses/Chat/Anthropic；JSON 兼容模式与可省略推理参数；保留旧配置默认行为，不绑定官方型号/地址；共用确定性校验、超时与外发安全约束。 |
 | 1.1.2 | 2026-10-07 | 辅助新建可生成有原文依据的详细纯文案；明确人确认后转义文本写入既有富文本介绍的边界，不解释模型 HTML。 |
+| 1.3.0 | 2026-10-08 | 商家经营 Agent 基础（SPEC-MERCHANT-AGENT-001 A0）：按 feature 的有效推理模式；按 feature 声明支持角色的额度映射与 Agent 商家额度；后台单例新增 Agent 开关与独立推理模式；AiGeneration 增加 Agent feature/target、run 计数列与 Agent 行约束；run 初始输入 HMAC 用途域；§16 由预冻结转为生效。商品 Copilot 行为不变。 |
 
 ### 1.2.0 接口资料（2026-10-07 核对）
 

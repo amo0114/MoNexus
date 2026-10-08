@@ -1,6 +1,7 @@
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { AlertTriangle, ClipboardList, PackageX, Timer } from 'lucide-react'
 import type { DraftIssue, WorkbenchAction, WorkbenchItem } from '../../../api/merchant/workbench'
+import { useMerchantAgentStore } from '../../../stores/merchantAgent'
 import { useMerchantWorkbenchStore } from '../../../stores/merchantWorkbench'
 import { actionTarget, productNameOf } from './navigation'
 
@@ -82,6 +83,32 @@ function ActionLink({ action, item, className, children, testId }: {
 
 const MAX_VISIBLE_ISSUES = 3
 
+/** Secondary entry: selects this item for the operations agent; never starts a run by itself. */
+function AskAgentButton({ item }: { item: WorkbenchItem }) {
+  const navigate = useNavigate()
+  const ready = useMerchantAgentStore(state => state.availability === 'ready')
+  if (!ready) return null
+  const evidence = item.evidence
+  const label = evidence.kind === 'inventory' || evidence.kind === 'capacity' ? `${evidence.productName} · ${evidence.offerName}`
+    : evidence.kind === 'fulfillment' ? `订单 #${item.targetId}` : evidence.productName
+  const type = item.rule === 'fulfillment_due' ? 'order' : item.rule === 'low_availability' ? 'offer' : 'product'
+  return (
+    <button
+      type="button"
+      className="btn-secondary btn-sm min-h-11 shrink-0 px-3 text-sm"
+      data-testid="workbench-card-ask-agent"
+      onClick={() => {
+        useMerchantAgentStore.getState().select({ type, id: item.targetId, label })
+        const panel = document.getElementById('merchant-agent')
+        if (panel) panel.scrollIntoView({ block: 'start' })
+        else navigate('/merchant/workbench')
+      }}
+    >
+      帮我处理
+    </button>
+  )
+}
+
 export default function WorkbenchCard({ item, stale }: { item: WorkbenchItem; stale: boolean }) {
   const evidence = item.evidence
   const urgent = item.priority === 'urgent'
@@ -148,14 +175,17 @@ export default function WorkbenchCard({ item, stale }: { item: WorkbenchItem; st
           )}
         </div>
 
-        <ActionLink
-          action={item.action}
-          item={item}
-          className={`${urgent ? 'btn-primary' : 'btn-secondary'} min-h-11 shrink-0 px-4 text-sm`}
-          testId="workbench-card-action"
-        >
-          {actionLabel(item)}
-        </ActionLink>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <ActionLink
+            action={item.action}
+            item={item}
+            className={`${urgent ? 'btn-primary' : 'btn-secondary'} min-h-11 shrink-0 px-4 text-sm`}
+            testId="workbench-card-action"
+          >
+            {actionLabel(item)}
+          </ActionLink>
+          <AskAgentButton item={item} />
+        </div>
       </div>
     </li>
   )

@@ -19,6 +19,12 @@ export type AdminAiSettings = {
   protocol: AiProtocol
   outputMode: AiOutputMode
   reasoningMode: AiReasoningMode
+  merchantAgentEnabled: boolean
+  merchantAgentReasoningMode: AiReasoningMode
+  /** pilot = only merchants marked in merchant management; all = every active merchant. */
+  merchantAgentAudience: 'pilot' | 'all'
+  /** Server env MERCHANT_WORKBENCH_ENABLED; read-only here, changes need a backend restart. */
+  merchantWorkbenchEnabled: boolean
 }
 
 export type UpdateAdminAiSettings = {
@@ -30,6 +36,9 @@ export type UpdateAdminAiSettings = {
   protocol: AiProtocol
   outputMode: AiOutputMode
   reasoningMode: AiReasoningMode
+  merchantAgentEnabled: boolean
+  merchantAgentReasoningMode: AiReasoningMode
+  merchantAgentAudience: 'pilot' | 'all'
   model: string
   apiKey?: string | null
 }

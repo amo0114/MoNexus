@@ -10,6 +10,7 @@ import {
 } from '../../../stores/merchantWorkbench'
 import WorkbenchCard from './WorkbenchCard'
 import { useMerchantWorkbench } from './useMerchantWorkbench'
+import { useMerchantAgent } from '../agent/useMerchantAgent'
 
 // Spec §3.1 — home summary shared by /merchant and /merchant/dashboard:
 // urgent first (full count, at most 3 cards), then at most 5 normal cards,
@@ -20,6 +21,7 @@ const NORMAL_PREVIEW = 5
 
 export default function WorkbenchSummary() {
   const state = useMerchantWorkbench()
+  const agentReady = useMerchantAgent().availability === 'ready'
   const { availability } = state
 
   // Hidden until the probe answers; hidden for a collection 404 (module off)
@@ -54,6 +56,11 @@ export default function WorkbenchSummary() {
             {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <RefreshCw className="h-4 w-4" aria-hidden="true" />}
             刷新
           </button>
+          {agentReady && (
+            <Link to="/merchant/workbench#merchant-agent" className="btn-secondary btn-sm inline-flex min-h-11 items-center" data-testid="workbench-ask-agent">
+              问经营助手
+            </Link>
+          )}
           <Link to="/merchant/workbench" className="btn-secondary btn-sm inline-flex min-h-11 items-center" data-testid="workbench-view-all">
             查看全部
           </Link>

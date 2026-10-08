@@ -475,6 +475,12 @@ export async function suspendMerchant(req: Request, res: Response, next: NextFun
   } catch (err) { next(err) }
 }
 
+export async function setMerchantAgentPilot(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminService.setMerchantAgentPilot(req.user!.userId, req.params.id as unknown as number, req.body.enabled))
+  } catch (err) { next(err) }
+}
+
 export async function updateCommission(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await adminService.updateCommission(req.user!.userId, req.params.id as unknown as number, req.body.commissionRate))

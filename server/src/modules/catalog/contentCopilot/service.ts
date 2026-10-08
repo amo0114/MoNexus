@@ -62,7 +62,56 @@ export async function generateContentSuggestion(
   input: ContentSuggestionRequest,
 ) {
   if (!await isAiFeatureEnabled(CONTENT_COPILOT_FEATURE)) throw notFound()
+  const { context, readinessCodes, contentVersion, useUpstreamDescription } = await prepareContentSuggestionContext(actor, productId, input)
 
+  const { generationId, value } = await runAiGeneration<ValidatedSuggestion>({
+    feature: CONTENT_COPILOT_FEATURE,
+    actor: { userId: actor.userId, role: actorRole(actor) },
+    target: { type: 'product', id: productId },
+    promptVersion: PROMPT_VERSION,
+    validatorVersion: VALIDATOR_VERSION,
+    reasoningEffort: MODEL_BINDING.reasoningEffort,
+    schemaName: MODEL_BINDING.schemaName,
+    system: SYSTEM_PROMPT,
+    input: context,
+    outputSchema: MODEL_OUTPUT_SCHEMA,
+    maxOutputTokens: MODEL_BINDING.maxOutputTokens,
+    parse: raw => {
+      const validated = validateModelOutput({
+        raw,
+        context,
+        readinessCodes,
+        upstreamRequested: useUpstreamDescription,
+        onReject: kind => aiValidationRejectionsTotal.inc({ feature: CONTENT_COPILOT_FEATURE, kind }),
+      })
+      return {
+        value: validated,
+        issueCounts: countIssues(validated.issues),
+        suggestedFieldCount: suggestedFieldCount(validated.fields),
+      }
+    },
+  })
+
+  return {
+    generationId,
+    basedOnContentVersion: contentVersion,
+    promptVersion: PROMPT_VERSION,
+    validatorVersion: VALIDATOR_VERSION,
+    fields: value.fields,
+    issues: value.issues,
+  }
+}
+
+/**
+ * Ownership-checked read and AI-safe context for one product (§5). Shared by
+ * the copilot endpoint and the merchant agent's read_product_content tool;
+ * no feature flag or quota here — each caller gates its own feature.
+ */
+export async function prepareContentSuggestionContext(
+  actor: ContentCopilotActor,
+  productId: number,
+  input: Partial<Pick<ContentSuggestionRequest, 'expectedContentVersion' | 'targetFields' | 'sourceNotes' | 'useUpstreamDescription'>>,
+) {
   const product = await prisma.product.findFirst({
     where: ownershipWhere(actor, productId),
     select: {
@@ -116,7 +165,7 @@ export async function generateContentSuggestion(
   if (useUpstreamDescription && !link) {
     throw new HttpError(400, 'BAD_REQUEST', '该商品不是 Xboard 导入商品，不能参考上游介绍')
   }
-  if (product.contentVersion !== input.expectedContentVersion) {
+  if (input.expectedContentVersion !== undefined && product.contentVersion !== input.expectedContentVersion) {
     throw new HttpError(409, CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED as ErrorCode, '商品内容已更新，请刷新后再试')
   }
 
@@ -150,42 +199,7 @@ export async function generateContentSuggestion(
     sourceNotes: input.sourceNotes ?? null,
   })
 
-  const { generationId, value } = await runAiGeneration<ValidatedSuggestion>({
-    feature: CONTENT_COPILOT_FEATURE,
-    actor: { userId: actor.userId, role: actorRole(actor) },
-    target: { type: 'product', id: productId },
-    promptVersion: PROMPT_VERSION,
-    validatorVersion: VALIDATOR_VERSION,
-    reasoningEffort: MODEL_BINDING.reasoningEffort,
-    schemaName: MODEL_BINDING.schemaName,
-    system: SYSTEM_PROMPT,
-    input: context,
-    outputSchema: MODEL_OUTPUT_SCHEMA,
-    maxOutputTokens: MODEL_BINDING.maxOutputTokens,
-    parse: raw => {
-      const validated = validateModelOutput({
-        raw,
-        context,
-        readinessCodes,
-        upstreamRequested: useUpstreamDescription,
-        onReject: kind => aiValidationRejectionsTotal.inc({ feature: CONTENT_COPILOT_FEATURE, kind }),
-      })
-      return {
-        value: validated,
-        issueCounts: countIssues(validated.issues),
-        suggestedFieldCount: suggestedFieldCount(validated.fields),
-      }
-    },
-  })
-
-  return {
-    generationId,
-    basedOnContentVersion: product.contentVersion,
-    promptVersion: PROMPT_VERSION,
-    validatorVersion: VALIDATOR_VERSION,
-    fields: value.fields,
-    issues: value.issues,
-  }
+  return { context, readinessCodes, contentVersion: product.contentVersion, useUpstreamDescription }
 }
 
 // Refused before any provider call or quota use (SPEC-AI-PRODUCT-001 §5.4).

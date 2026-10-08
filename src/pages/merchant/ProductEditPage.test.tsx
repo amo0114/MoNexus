@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import type { Dispatch, SetStateAction } from 'react'
 import ProductEditPage from './ProductEditPage'
+import { useMerchantAgentStore } from '../../stores/merchantAgent'
 
 const merchantMocks = vi.hoisted(() => ({
   uploadDeliveryFile: vi.fn(),
@@ -246,6 +247,37 @@ async function renderEditPage(
   )
   await waitFor(() => expect(screen.getByTestId('product-edit-name')).toBeInTheDocument())
 }
+
+describe('ProductEditPage merchant agent proposal hand-off', () => {
+  function handOff(basedOnContentVersion: number) {
+    useMerchantAgentStore.getState().reset(null)
+    useMerchantAgentStore.getState().handOff({
+      proposalId: 'p1', productId: 42, basedOnContentVersion, promptVersion: 'product-content@1', validatorVersion: 'v',
+      createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      fields: { description: { status: 'suggested', value: '经营助手的新简介', rejectedItemCount: 0 } }, issues: [],
+    })
+  }
+
+  it('opens the review dialog for a matching proposal and only fills the unsaved form', async () => {
+    handOff(3)
+    const transport = createEditTransport({})
+    await renderEditPage(transport)
+    expect(await screen.findByText('经营助手文案提案')).toBeInTheDocument()
+    expect(screen.queryByTestId('content-suggestion-generate')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    fireEvent.click(screen.getByTestId('content-suggestion-apply'))
+    await waitFor(() => expect(screen.getByTestId('product-edit-description')).toHaveValue('经营助手的新简介'))
+    expect(transport.calls.filter(call => call.method !== 'get')).toEqual([])
+    expect(useMerchantAgentStore.getState().handoff).toBeNull()
+  })
+
+  it('refuses a proposal based on an older content version', async () => {
+    handOff(2)
+    await renderEditPage(createEditTransport({}))
+    expect(await screen.findByTestId('product-edit-agent-notice')).toHaveTextContent('已失效')
+    expect(screen.queryByText('经营助手文案提案')).not.toBeInTheDocument()
+  })
+})
 
 describe('ProductEditPage workbench focus (Spec §8.1)', () => {
   async function renderFocused(search: string) {

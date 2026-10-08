@@ -1,5 +1,6 @@
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react'
+import AgentPanel from '../../components/merchant/agent/AgentPanel'
 import WorkbenchCard, { formatShanghai } from '../../components/merchant/workbench/WorkbenchCard'
 import { useMerchantWorkbench } from '../../components/merchant/workbench/useMerchantWorkbench'
 import {
@@ -122,6 +123,8 @@ export default function WorkbenchPage() {
           </button>
         ))}
       </div>
+
+      <AgentPanel />
 
       {hasUncheckedGroups(state) && (
         <p className="mb-4 rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-3 py-2 text-sm text-[var(--color-warning-text)]" role="status" data-testid="workbench-partial">

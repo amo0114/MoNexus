@@ -60,6 +60,8 @@ export const systemConfigKeys = [
   // SPEC-AI-001 §11.2：AI 商品说明整理每角色每日次数（0 = 该角色不可调用）。
   'aiProductCopilotDailyQuotaAdmin',
   'aiProductCopilotDailyQuotaMerchant',
+  // SPEC-MERCHANT-AGENT-001：商家经营助手每日任务次数（只支持商家角色）。
+  'aiMerchantAgentDailyQuotaMerchant',
 ] as const
 
 export type SystemConfigKey = typeof systemConfigKeys[number]
@@ -132,6 +134,7 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   // 保守默认：试点数值按模型单价与调用频率测算后由运营配置。
   aiProductCopilotDailyQuotaAdmin: 0,
   aiProductCopilotDailyQuotaMerchant: 0,
+  aiMerchantAgentDailyQuotaMerchant: 0,
 }
 
 
@@ -181,6 +184,7 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   partnerEntitlementDays: '合作伙伴权益授予天数',
   aiProductCopilotDailyQuotaAdmin: '管理员每日 AI 整理次数',
   aiProductCopilotDailyQuotaMerchant: '商家每日 AI 整理次数',
+  aiMerchantAgentDailyQuotaMerchant: '商家每日经营助手次数',
 }
 
 
@@ -231,6 +235,7 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   partnerEntitlementDays: '商品运营',
   aiProductCopilotDailyQuotaAdmin: 'AI 辅助',
   aiProductCopilotDailyQuotaMerchant: 'AI 辅助',
+  aiMerchantAgentDailyQuotaMerchant: 'AI 辅助',
 }
 
 
@@ -280,6 +285,7 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   partnerEntitlementDays: '天',
   aiProductCopilotDailyQuotaAdmin: '次/日',
   aiProductCopilotDailyQuotaMerchant: '次/日',
+  aiMerchantAgentDailyQuotaMerchant: '次/日',
 }
 
 
@@ -329,6 +335,7 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   partnerEntitlementDays: '合作伙伴权益授予 1–365 天',
   aiProductCopilotDailyQuotaAdmin: '每位管理员每个北京自然日的调用次数；0 = 管理员不可使用；上限 1000',
   aiProductCopilotDailyQuotaMerchant: '每位商家账号每个北京自然日的调用次数；0 = 商家不可使用；上限 1000',
+  aiMerchantAgentDailyQuotaMerchant: '每位商家账号每个北京自然日可发起的经营助手任务次数，与 AI 整理额度分开计算；0 = 不可使用；上限 1000',
 }
 
 
@@ -458,6 +465,7 @@ const RANGE_CONFIG_KEYS = {
   // 1000 只是防误配置的安全边界，不是业务默认值（SPEC-AI-001 §11.2）。
   aiProductCopilotDailyQuotaAdmin: { max: 1000, message: '管理员每日 AI 整理次数必须在 0..1000 之间（0 = 不可使用）' },
   aiProductCopilotDailyQuotaMerchant: { max: 1000, message: '商家每日 AI 整理次数必须在 0..1000 之间（0 = 不可使用）' },
+  aiMerchantAgentDailyQuotaMerchant: { max: 1000, message: '商家每日经营助手次数必须在 0..1000 之间（0 = 不可使用）' },
 } as const satisfies Partial<Record<SystemConfigKey, RangeConfigEntry>>
 
 type RangedConfigKey = keyof typeof RANGE_CONFIG_KEYS

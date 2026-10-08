@@ -59,6 +59,12 @@ export async function suspendMerchant(id: number): Promise<Merchant> {
   return data
 }
 
+/** Adds or removes a merchant from the operations agent pilot list. */
+export async function setMerchantAgentPilot(id: number, enabled: boolean): Promise<Merchant> {
+  const { data } = await api.put<Merchant>(`/admin/merchants/${id}/agent-pilot`, { enabled })
+  return data
+}
+
 export async function updateMerchantCommission(id: number, payload: UpdateCommissionRequest): Promise<Merchant> {
   const { data } = await api.put<Merchant>(`/admin/merchants/${id}/commission`, payload)
   return data
