@@ -114,8 +114,16 @@ export function findDurations(text: string): Array<Mention & { expr: DurationExp
   return out
 }
 
+// ISO codes written around an amount (「50 USD」「RMB 50」).
+const CURRENCY_CODES = ['USD', 'EUR', 'GBP', 'JPY', 'HKD', 'CNY', 'RMB', 'TWD', 'NTD', 'KRW', 'SGD', 'AUD', 'RUB', 'INR']
+
 // Non-time quantities. Latin units must not be followed by a Latin letter.
+// Currency words come first: alternation is leftmost-first, so 「50台币」 or
+// 「50人民币」 would otherwise read as a device or person count.
 const QUANTITY_UNITS: Array<[string, string]> = [
+  ...['人民币', '美元', '美金', '欧元', '英镑', '日元', '日币', '港元', '港币', '台币', '澳元', '加元', '韩元', '卢布', '卢比']
+    .map((unit): [string, string] => [unit, 'money']),
+  ...CURRENCY_CODES.map((unit): [string, string] => [unit, 'money']),
   ['Gbps', 'Gbps'], ['Mbps', 'Mbps'], ['Kbps', 'Kbps'],
   ['TB', 'TB'], ['GB', 'GB'], ['MB', 'MB'], ['KB', 'KB'],
   ['T', 'TB'], ['G', 'GB'], ['M', 'MB'], ['B', 'B'], ['兆', 'MB'],
@@ -143,7 +151,10 @@ const QUANTITY_RE = new RegExp(
   ).join('|')})`,
   'gi',
 )
-const MONEY_PREFIX_RE = new RegExp(`[¥￥$]\\s*(${NUMBER}|${VAGUE_NUMBER})`, 'g')
+const MONEY_PREFIX_RE = new RegExp(
+  `(?:[¥￥$＄€£￡₩￦₹₽₱฿₫₺₴₦₪]|(?<![A-Za-z])(?:${CURRENCY_CODES.join('|')})(?![A-Za-z]))\\s*(${NUMBER}|${VAGUE_NUMBER})`,
+  'gi',
+)
 
 export type QuantityTuple = { value: number; unit: string }
 

@@ -1,5 +1,5 @@
 import { createAiFetch, normalizeAiBaseUrl } from './endpoint.js'
-import { LlmError, type LlmProvider, type LlmStructuredRequest } from './provider.js'
+import { LlmError, parseStructuredText, type LlmProvider, type LlmStructuredRequest } from './provider.js'
 import { structuredSystem, type AiWireSettings } from './protocol.js'
 
 type Protocol = 'openai_chat' | 'anthropic_messages'
@@ -24,7 +24,7 @@ async function fetchJson(fetcher: typeof fetch, url: string, init: RequestInit):
     }
     // Bound even an uncooperative gateway's response before parsing it.
     const reader = response.body?.getReader()
-    if (!reader) throw new LlmError('output_unparseable')
+    if (!reader) throw new LlmError('output_unparseable', undefined, 'body_missing')
     const chunks: Uint8Array[] = []
     let size = 0
     try {
@@ -34,13 +34,13 @@ async function fetchJson(fetcher: typeof fetch, url: string, init: RequestInit):
         size += value.byteLength
         if (size > 2 * 1024 * 1024) {
           await reader.cancel()
-          throw new LlmError('output_unparseable')
+          throw new LlmError('output_unparseable', undefined, 'body_too_large')
         }
         chunks.push(value)
       }
     } finally { reader.releaseLock() }
     try { return object(JSON.parse(Buffer.concat(chunks).toString('utf8'))) }
-    catch { throw new LlmError('output_unparseable') }
+    catch { throw new LlmError('output_unparseable', undefined, 'body_not_json') }
   } catch (err) {
     if (init.signal?.aborted) throw new LlmError('timeout')
     throw err instanceof LlmError ? err : new LlmError('unavailable')
@@ -73,25 +73,29 @@ export function createCompatibleProvider(protocol: Protocol, apiKey: string, bas
       let text: string
       if (anthropic) {
         if (response.stop_reason === 'refusal') throw new LlmError('refused')
-        if (response.stop_reason !== 'end_turn' || !Array.isArray(response.content)) throw new LlmError('output_unparseable')
+        if (response.stop_reason === 'max_tokens') throw new LlmError('output_unparseable', undefined, 'finish_length')
+        if (response.stop_reason !== 'end_turn') throw new LlmError('output_unparseable', undefined, 'finish_other')
+        if (!Array.isArray(response.content)) throw new LlmError('output_unparseable', undefined, 'content_blocks')
         const blocks = response.content.map(object)
-        if (blocks.some(block => !['text', 'thinking', 'redacted_thinking'].includes(String(block.type)))) throw new LlmError('output_unparseable')
+        if (blocks.some(block => !['text', 'thinking', 'redacted_thinking'].includes(String(block.type)))) throw new LlmError('output_unparseable', undefined, 'content_blocks')
         const parts = blocks.filter(block => block.type === 'text')
-        if (!parts.length || parts.some(part => typeof part.text !== 'string')) throw new LlmError('output_unparseable')
+        if (!parts.length || parts.some(part => typeof part.text !== 'string')) throw new LlmError('output_unparseable', undefined, 'empty_text')
         text = parts.map(part => part.text).join('')
       } else {
-        if (!Array.isArray(response.choices) || response.choices.length !== 1) throw new LlmError('output_unparseable')
+        if (!Array.isArray(response.choices) || response.choices.length !== 1) throw new LlmError('output_unparseable', undefined, 'choices_count')
         const choice = object(response.choices[0])
         const message = object(choice.message)
         if (message.refusal || choice.finish_reason === 'content_filter') throw new LlmError('refused')
-        if (choice.finish_reason !== 'stop' || message.tool_calls || message.function_call || typeof message.content !== 'string') throw new LlmError('output_unparseable')
+        if (message.tool_calls || message.function_call) throw new LlmError('output_unparseable', undefined, 'tool_call')
+        if (choice.finish_reason === 'length') throw new LlmError('output_unparseable', undefined, 'finish_length')
+        if (choice.finish_reason !== 'stop') throw new LlmError('output_unparseable', undefined, 'finish_other')
+        if (typeof message.content !== 'string') throw new LlmError('output_unparseable', undefined, 'content_not_text')
         text = message.content
       }
-      let output: unknown
-      try { output = JSON.parse(text) } catch { throw new LlmError('output_unparseable') }
+      const { output, compat } = parseStructuredText(text)
       const usage = object(response.usage)
-      if (typeof response.model !== 'string' || !response.model || response.model.length > 200) throw new LlmError('output_unparseable')
-      return { output, model: response.model, usage: {
+      if (typeof response.model !== 'string' || !response.model || response.model.length > 200) throw new LlmError('output_unparseable', undefined, 'model_missing')
+      return { output, model: response.model, ...(compat ? { outputCompat: compat } : {}), usage: {
         inputTokens: tokens(anthropic ? usage.input_tokens : usage.prompt_tokens),
         outputTokens: tokens(anthropic ? usage.output_tokens : usage.completion_tokens),
       } }

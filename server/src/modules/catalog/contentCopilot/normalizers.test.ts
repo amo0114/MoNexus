@@ -4,6 +4,7 @@ import {
   extractTuples,
   findDurations,
   hasForbiddenMarkup,
+  isPriceTuple,
   normalizeSpace,
   parseNumberToken,
   regionPlatformIds,
@@ -106,6 +107,19 @@ describe('content copilot normalizers (SPEC-AI-PRODUCT-001 §7.5)', () => {
         expect(detectHardFacts(text).map(item => item.cls), text).toEqual(['H7'])
         expect(extractTuples(text), text).toEqual([{ value: Number.NaN, unit: 'money' }])
       }
+    })
+
+    it('detects other currency symbols, ISO codes and currency words as H7', () => {
+      for (const [text, price] of [
+        ['售价 €50，欢迎了解。', '€50'], ['售价 £50', '£50'], ['₩5000', '₩5000'], ['USD 50', 'USD 50'], ['rmb50', 'rmb50'],
+        ['50 USD', '50 USD'], ['50EUR', '50EUR'], ['50美元', '50美元'], ['十欧元', '十欧元'], ['50台币', '50台币'], ['50人民币', '50人民币'],
+      ]) {
+        const mentions = detectHardFacts(text).filter(item => item.cls === 'H7')
+        expect(mentions.map(item => item.text), text).toEqual([price])
+        expect(extractTuples(text).filter(isPriceTuple), text).toHaveLength(1)
+      }
+      // A code glued to a word is not a price; capacity units keep their meaning.
+      expect(detectHardFacts('AutoCAD2024 与 50GB').map(item => item.cls)).toEqual(['H1'])
     })
 
     it('still requires a word boundary after Latin capacity and speed units', () => {

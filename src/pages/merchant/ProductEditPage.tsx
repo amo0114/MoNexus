@@ -61,6 +61,7 @@ import type { AgentProposal } from '../../api/merchant/agent'
 import { useAgentSessionKey } from '../../components/merchant/agent/useMerchantAgent'
 import { useMerchantAgentStore } from '../../stores/merchantAgent'
 import { parseEditorFocus, parsePositiveId } from '../../components/merchant/workbench/navigation'
+import { createLatestRequestGuard } from '../../utils/latestRequest'
 
 const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
@@ -113,6 +114,11 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [offerFileLabelById, setOfferFileLabelById] = useState<Record<number, string>>({})
 
   const [contentVersion, setContentVersion] = useState(1)
+  // Product the editor state belongs to; other state lags one load behind a route change.
+  const [editorProductId, setEditorProductId] = useState<number | null>(null)
+  // Only the latest editor load may publish: a slow response for a product the
+  // route already left must not replace the current form.
+  const editorLoadGuard = useRef(createLatestRequestGuard()).current
   const [status, setStatus] = useState<string>(PRODUCT_STATUS.DRAFT)
   const [templateKey, setTemplateKey] = useState<TemplateKey | null>(null)
   const [savedTemplateKey, setSavedTemplateKey] = useState<TemplateKey | null>(null)
@@ -197,6 +203,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     setDescriptionImages(Array.isArray(dto.product.descriptionImages) ? dto.product.descriptionImages : [])
     setDescriptionImagesTouched(false)
     setContentVersion(dto.product.contentVersion)
+    setEditorProductId(dto.product.id)
     setStatus(dto.product.status)
     const nextTemplateKey = isTemplateKey(dto.product.templateKey) ? dto.product.templateKey : null
     setTemplateKey(nextTemplateKey)
@@ -215,6 +222,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   }
 
   async function loadEditor() {
+    const canCommit = editorLoadGuard.begin()
     if (!validId) {
       setNotFound(true)
       setLoading(false)
@@ -229,6 +237,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         adapter.listProductTemplates().catch(() => null),
         adapter.listActiveCategories().catch(() => null),
       ])
+      if (!canCommit()) return
       applyEditor(dto)
       if (registry) {
         const byKey = new Map(registry.templates.map(template => [template.key, template]))
@@ -239,6 +248,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       }
       if (cats) setCategories(cats)
     } catch (err) {
+      if (!canCommit()) return
       if (isNotFoundError(err)) {
         setNotFound(true)
       } else {
@@ -246,7 +256,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         showToast(getApiErrorMessage(err, '加载编辑器失败，请重试'), 'error')
       }
     } finally {
-      setLoading(false)
+      if (canCommit()) setLoading(false)
     }
   }
 
@@ -255,8 +265,16 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [actor, productId])
 
+  // A taken proposal belongs to one product and session (browser history keeps
+  // this page mounted across products): drop it when either changes.
   useEffect(() => {
-    if (actor !== 'merchant' || loading || notFound || loadError || agentHandoffTakenRef.current) return
+    agentHandoffTakenRef.current = false
+    setAgentProposal(null)
+    setAgentNotice(null)
+  }, [productId, agentSessionKey])
+
+  useEffect(() => {
+    if (actor !== 'merchant' || loading || notFound || loadError || editorProductId !== productId || agentHandoffTakenRef.current) return
     agentHandoffTakenRef.current = true
     const handoff = useMerchantAgentStore.getState().takeHandoff(productId, agentSessionKey)
     if (!handoff) return
@@ -268,7 +286,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     } else {
       setAgentProposal(handoff.proposal)
     }
-  }, [actor, loading, notFound, loadError, productId, agentSessionKey, capabilities, dirty, contentVersion])
+  }, [actor, loading, notFound, loadError, editorProductId, productId, agentSessionKey, capabilities, dirty, contentVersion])
 
   // Workbench deep link (Spec §8.1): ?focus=…&offerId=… positions the editor
   // once per URL after the freshly loaded editor DTO is rendered. Positioning
@@ -386,7 +404,8 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   }
 
   async function handleSave() {
-    if (!validId || savingRef.current || !canEdit) return
+    // Never write one product's form to another product's route.
+    if (!validId || savingRef.current || !canEdit || editorProductId !== productId) return
     if (!form.name.trim()) {
       showToast('请填写商品名称', 'error')
       return
@@ -818,7 +837,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           onUnavailable={() => setCapabilities(prev => (prev ? { ...prev, aiContentSuggestion: false } : prev))}
         />
 
-        {agentProposal && (
+        {agentProposal && agentProposal.productId === productId && editorProductId === productId && (
           <ProductContentSuggestionDialog
             open
             actor={actor}

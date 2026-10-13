@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCompatibleProvider, probeAnthropicConnection } from './compatibleProvider.js'
-import { getLlmProvider, LlmError, type LlmStructuredRequest } from './provider.js'
+import { getLlmProvider, LlmError, parseStructuredText, type LlmStructuredRequest } from './provider.js'
 import { markAiSafe } from './safe.js'
 
 const req: LlmStructuredRequest = {
@@ -70,16 +70,20 @@ describe('third-party protocol adapters', () => {
   })
 
   it.each([
-    ['openai_chat', { ...chat, choices: [{ finish_reason: 'length', message: { content: '{"ok":true}' } }] }, 'output_unparseable'],
-    ['openai_chat', { ...chat, choices: [{ finish_reason: 'stop', message: { content: '```json\n{}\n```' } }] }, 'output_unparseable'],
-    ['openai_chat', { ...chat, choices: [{ finish_reason: 'stop', message: { refusal: 'SECRET', content: '{}' } }] }, 'refused'],
-    ['openai_chat', { ...chat, choices: [{ finish_reason: 'stop', message: { content: '{}', tool_calls: [{}] } }] }, 'output_unparseable'],
-    ['anthropic_messages', { ...anthropic, stop_reason: 'max_tokens' }, 'output_unparseable'],
-    ['anthropic_messages', { ...anthropic, stop_reason: 'refusal' }, 'refused'],
-    ['anthropic_messages', { ...anthropic, content: [{ type: 'tool_use', input: 'SECRET' }] }, 'output_unparseable'],
-  ] as const)('rejects incomplete, refused or tool output (%s %#)', async (protocol, body, code) => {
+    ['openai_chat', { ...chat, choices: [{ finish_reason: 'length', message: { content: '{"ok":true}' } }] }, 'output_unparseable', 'finish_length'],
+    ['openai_chat', { ...chat, choices: [{ finish_reason: 'stop', message: { content: '```json\n{}\n```' } }] }, 'output_unparseable', 'text_fenced'],
+    ['openai_chat', { ...chat, choices: [{ finish_reason: 'stop', message: { content: '{"a":1}{"a":2}' } }] }, 'output_unparseable', 'text_not_json'],
+    ['openai_chat', { ...chat, choices: [chat.choices[0], chat.choices[0]] }, 'output_unparseable', 'choices_count'],
+    ['openai_chat', { ...chat, choices: [{ finish_reason: 'stop', message: { refusal: 'SECRET', content: '{}' } }] }, 'refused', undefined],
+    ['openai_chat', { ...chat, choices: [{ finish_reason: 'stop', message: { content: '{}', tool_calls: [{}] } }] }, 'output_unparseable', 'tool_call'],
+    ['anthropic_messages', { ...anthropic, stop_reason: 'max_tokens' }, 'output_unparseable', 'finish_length'],
+    ['anthropic_messages', { ...anthropic, stop_reason: 'refusal' }, 'refused', undefined],
+    ['anthropic_messages', { ...anthropic, content: [{ type: 'tool_use', input: 'SECRET' }] }, 'output_unparseable', 'content_blocks'],
+  ] as const)('rejects incomplete, refused or tool output (%s %#) with a content-free detail', async (protocol, body, code, detail) => {
     const fetcher = mockFetch(body)
-    await expect(createCompatibleProvider(protocol, key, base, settings, fetcher).generateStructured(req)).rejects.toMatchObject({ code, message: code })
+    const failure = await createCompatibleProvider(protocol, key, base, settings, fetcher).generateStructured(req).catch(err => err)
+    expect(failure).toMatchObject({ code, message: code, detail })
+    expect(JSON.stringify(failure)).not.toContain('SECRET')
     expect(fetcher).toHaveBeenCalledOnce()
   })
 
@@ -120,3 +124,48 @@ describe('third-party protocol adapters', () => {
     expect(fetcher.mock.calls[0][1]).not.toHaveProperty('body')
   })
 })
+
+describe('bounded structured-output compatibility (SPEC-AI-001 §6.4)', () => {
+  const A = '{"kind":"tool","tool":{"name":"read_workbench","group":"availability"},"answer":null}'
+  // Braces, brackets and escaped quotes inside strings must not end the object early.
+  const tricky = '{"text":"a}\\"{b] [c","list":[1,{"x":"}"}]}'
+
+  it('keeps valid JSON on the normal path', () => {
+    expect(parseStructuredText(A)).toEqual({ output: JSON.parse(A) })
+    expect(parseStructuredText(`  ${A}\n`)).toEqual({ output: JSON.parse(A) })
+  })
+
+  it.each([
+    ['leaked text between', `${A} ￼\n\`\`\`\n\nWe need must JSON only. Need output.${A}`],
+    ['marker between', `${A} HIDDEN${A}`],
+    ['adjacent repeat', `${A}${A}`],
+  ])('accepts a complete leading object repeated exactly at the end (%s)', (_name, text) => {
+    expect(parseStructuredText(text)).toEqual({ output: JSON.parse(A), compat: 'repeated_json' })
+  })
+
+  it('finds the object boundary through strings and escapes', () => {
+    expect(parseStructuredText(`${tricky} leaked ${tricky}`)).toEqual({ output: JSON.parse(tricky), compat: 'repeated_json' })
+  })
+
+  it.each([
+    ['different trailing object', `${A} leaked {"kind":"answer","answer":{"blocks":[]}}`],
+    ['no repeat', `${A} leaked text`],
+    ['leading text', `note ${A} ${A}`],
+    ['JSON elsewhere only', `leaked ${A}`],
+    ['truncated', `{"kind":"tool","tool":{"name":"read_wo`],
+    ['truncated repeat', `${A} leaked ${A.slice(0, -1)}`],
+    ['leading array', '[1,2] x [1,2]'],
+  ])('rejects everything else (%s)', (_name, text) => {
+    expect(() => parseStructuredText(text)).toThrow(expect.objectContaining({ code: 'output_unparseable', detail: 'text_not_json' }))
+  })
+
+  it('marks the provider result and never returns the text between', async () => {
+    const fetcher = mockFetch({ ...chat, choices: [{ finish_reason: 'stop', message: { content: `{"ok":true} LEAKED_SENTINEL {"ok":true}` } }] })
+    const result = await createCompatibleProvider('openai_chat', key, base, settings, fetcher).generateStructured(req)
+    expect(result).toMatchObject({ output: { ok: true }, outputCompat: 'repeated_json' })
+    expect(JSON.stringify(result)).not.toContain('LEAKED_SENTINEL')
+    const plain = await createCompatibleProvider('openai_chat', key, base, settings, mockFetch(chat)).generateStructured(req)
+    expect(plain).not.toHaveProperty('outputCompat')
+  })
+})
+

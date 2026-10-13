@@ -3,8 +3,8 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-PRODUCT-001 |
-| 版本 | 1.1.0 |
-| 日期 | 2026-10-07 |
+| 版本 | 1.1.1 |
+| 日期 | 2026-10-13 |
 | 状态 | Implementation Ready（全部决策 Frozen；依赖 SPEC-AI-001 v1.0.2） |
 | 产品 | MoNexus |
 | 上位规范 | SPEC-AI-001（`docs/specs/ai-foundation.md`）、SPEC-PRODUCT-COMMERCE-002（`docs/specs/product-commerce-v2/spec.md`） |
@@ -272,7 +272,7 @@ type Issue = {
 - `highlights` / `faq` 的 `value` 只含通过校验的条目；被拒条目数计入 `rejectedItemCount`，原因写入 `issues`。
 - 被拒单元的**原文不返回**（避免把编造内容展示给用户再被复制）；`issues.evidence` 只引用被拒片段的 `span`（≤ 80 字）。
 
-## 7. 确定性校验（`validatorVersion = product-content-validator@1`）
+## 7. 确定性校验（`validatorVersion = product-content-validator@2`）
 
 校验单元：`description`、`usageInstructions`、`purchaseNotes`、`afterSalesInstructions` 各为一个单元；`highlights` 每项、`faq` 每项（问 + 答）各为一个单元。任一规则失败 → 拒绝该单元，并产生对应 issue。
 
@@ -327,7 +327,7 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 | H3 时效 | 秒发、秒到、即时、立即到账、实时、马上、全天候 |
 | H4 承诺 | 包退、包换、包赔、退款、退货、赔付、保证、保障、担保、无条件、100%、绝对、官方、正品、不封号、永不封号、稳定不掉线 |
 | H5 地区 / 平台 | 地区与平台词表命中（§7.5） |
-| H7 价格类数值 | 积分、元 / 块、¥ / ￥ / $、百分比、几折（含模糊数量，货币前缀同样适用，如 `¥若干` / `$几`）。中文单位和符号后紧接英文也必须识别，如 `1元VIP` / `20%OFF`；仅 GB / Mbps 等拉丁单位要求后方不是拉丁字母。属于 V 级数值，**任何 claim 都不能覆盖**，即使商家声明文本中含有同样字样（如 `entitlementSummary` 写有「售价1积分」）；面值仍按此保守规则拒绝 |
+| H7 价格类数值 | 积分、元 / 块、币种词（人民币 / 美元 / 欧元 / 英镑 / 日元 / 港币 / 台币等）、货币符号（¥ / ￥ / $ / € / £ / ₩ 等）、写在数值前后的 ISO 币种代码（`USD 50` / `50 EUR` / `RMB50`，代码不得粘连在英文单词中）、百分比、几折（含模糊数量，货币前缀同样适用，如 `¥若干` / `$几`）。币种词优先于 台 / 人 等数量单位匹配（`50台币` 是价格）。中文单位和符号后紧接英文也必须识别，如 `1元VIP` / `20%OFF`；仅 GB / Mbps 等拉丁单位要求后方不是拉丁字母。属于 V 级数值，**任何 claim 都不能覆盖**，即使商家声明文本中含有同样字样（如 `entitlementSummary` 写有「售价1积分」）；面值仍按此保守规则拒绝 |
 | H6 交付方式 | 交付用语词表命中（`DELIVERY_PHRASES`：自动发货 / 下单后自动交付 / 人工处理 / 商家处理 / 自动开通 等） |
 
 说明：H3 中「即时」等词在被成立的 `delivery_timing` claim 覆盖时放行；H2、H4 在 V1 没有可成立的 claim 类型，因此出现即拒绝——包括 `perpetual_access` 的 offer（CP-09）。
@@ -434,7 +434,7 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 - Flag：管理后台「AI 辅助」中的 AI 总开关、商品说明 Copilot 开关（SPEC-AI-001 §15）。首次后台保存前使用 `AI_ENABLED`、`AI_PRODUCT_COPILOT_ENABLED` 环境初值；保存后即时读取数据库配置。
 - 配额：`aiProductCopilotDailyQuotaAdmin`、`aiProductCopilotDailyQuotaMerchant`（SPEC-AI-001 §11.2；代码默认 0，范围 0..1000；试点数值由运营配置，不在本 Spec 冻结）。
 - 「仅管理员试点」= merchant 配额保持 0。
-- `feature = 'product_content_copilot'`；`promptVersion = 'product-content@1'`；`validatorVersion = 'product-content-validator@1'`。
+- `feature = 'product_content_copilot'`；`promptVersion = 'product-content@1'`；`validatorVersion = 'product-content-validator@2'`。
 - 服务与模型（SPEC-AI-001 §6.3 / §15）：后台配置 OpenAI 兼容服务地址及 model ID，默认 OpenAI `gpt-6-luna`。`product-content@1` 保留 Responses API、`reasoning.effort = 'none'`、`store = false`、无工具契约；新服务/模型须兼容这些参数并先通过 L3。
 - `maxOutputTokens`：常量，由 §6.3 上限估算后定，随 promptVersion 版本化。
 
@@ -536,3 +536,4 @@ product-level 文本（如 `description`）引用 offer 级事实时：若各 of
 | 1.0.4 | 2026-10-07 | 三次复核修复：§7.2-3 句子规则按每个被核实提及所在句子判定；§7.4 新增 H7 价格类数值，任何 claim 不可覆盖 |
 | 1.0.5 | 2026-10-07 | 四次复核修复：§7.2 归一化保留换行 / 段落边界；§7.4 H7 识别紧接英文的价格单位及模糊货币前缀；新增反向与正向边界回归。沿用未上线分支的 `validatorVersion = product-content-validator@1`，上线前仍须 L3 eval |
 | 1.1.0 | 2026-10-07 | API 地址、模型名称、Key、双开关、连接测试及配额在后台统一管理（SPEC-AI-001 §15）；生成格式与校验器不变。 |
+| 1.1.1 | 2026-10-13 | 评审修复：§7.4 H7 补齐其他货币符号、ISO 币种代码与中文币种词（`€50` / `£50` 此前可被采纳）；与辅助新建共用同一检测器。`validatorVersion` 升为 `product-content-validator@2`，promptVersion 不变；须以 @2 重跑 L3，旧版本 L3 仅作历史记录。 |
