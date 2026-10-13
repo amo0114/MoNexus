@@ -1,6 +1,6 @@
 # Spec：AI 辅助新建商品
 
-文档 ID：SPEC-AI-PRODUCT-002；版本：1.2.2；日期：2026-10-07。
+文档 ID：SPEC-AI-PRODUCT-002；版本：1.2.3；日期：2026-10-13。
 
 ## 目标与流程
 
@@ -33,7 +33,7 @@ AI 提取结构化参数，并在原文支持的范围内扩写商品文案，�
 - 继承各自新建接口的 active user / admin + MFA / approved merchant 权限链。没有既有商品读取，不存在跨商品或跨租户查询。
 - 仅 `runAiGeneration` 调用 provider，`targetType=product_draft`，`targetId=actorUserId`，用于该用户新建操作的并发去重；不创建占位商品。迁移只扩展 `AiGeneration_targetType_check`。
 - 元数据不保存输入、输出或问题原文；生成本身不写 Product/Offer。失败计入调用额度，参数/权限/上下文超限失败不计入。
-- 固定 `product-draft@2`、`product-draft-validator@2`、功能默认 reasoning=none（是否发送按后台协议配置）、maxOutputTokens=6000。前端超时 55 秒，现有运行时超时与错误码保持一致。
+- 固定 `product-draft@3`、`product-draft-validator@3`、功能默认 reasoning=none（是否发送按后台协议配置）、maxOutputTokens=6000。前端超时 55 秒，现有运行时超时与错误码保持一致。
 
 ## Projection
 
@@ -115,3 +115,8 @@ UI 提醒只输入可公开的介绍，不填账号、密码、卡密或实际�
 - 完整迁移重放发现 1.2.1 新增协议迁移与建表迁移时间戳重复，按目录名排序时先执行 ALTER TABLE，导致空库缺少 AiRuntimeConfig。两份尚未发布的协议迁移仅调整目录顺序，SQL 保持原样：`20261007180000_ai_protocols` → `20261007210000_ai_protocols`，`20261007180500_ai_chat_token_parameter` → `20261007210500_ai_chat_token_parameter`。这修正了上轮仅在已有库增量应用和 schema diff 时未发现的问题。
 - 本地预览库和独立测试库在核对已完成记录及 SQL checksum 后，已同步上述两条迁移记录名，保留 AI 配置与业务数据；已应用旧名称的其他数据库也须先核对并同步记录名，不能重复执行同一 ALTER TABLE。数字文件草稿约束通过独立增量迁移修改，未编辑原文件交付迁移。
 - 修正顺序后，空库全量重放和历史库增量升级两项测试通过；独立测试库 Prisma schema diff 无差异，预览库迁移状态为最新。Windows 侧访问新建页及 `/api/health/ready` 均返回 200。
+
+### 1.2.3 价格检测补齐（validator@3）
+
+- 与 SPEC-AI-PRODUCT-001 1.1.1 共用 H7 检测：补齐 € / £ / ₩ 等货币符号、`USD 50` / `50 EUR` / `RMB50` 等币种代码及美元、欧元、英镑、台币等中文币种词。此前 `售价 €50` 可通过禁用检查与有原文引用的文案检查。`validatorVersion` 升为 `product-draft-validator@3`。
+- 验收：草稿助手与共享检测器单元测试覆盖新增币种；未调用真实模型。上方 `product-draft-validator@2` 的 L3 记录仅为历史，@3 须重跑 L3 后方可视为验收通过。- 提示词升为 `product-draft@3`：description 只写定性内容，套餐、版本及其份数/次数只放 introduction 的 scope 段。原因：L3（api.oai-o.com / Chat）中简历样本简介写入「基础版包含单份简历排版」的改写句，按完整原句规则被剔除后仅余 34 字，低于 40 字质量门槛；校验规则与门槛不放宽。

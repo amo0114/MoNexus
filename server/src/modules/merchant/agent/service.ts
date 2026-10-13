@@ -36,7 +36,7 @@ async function inAgentAudience(merchantId: number): Promise<boolean> {
 }
 
 /** Current user/merchant/session/switch state, not the request's original snapshot. */
-async function assertStillAllowed(user: AuthPayload) {
+async function assertStillAllowed(user: AuthPayload): Promise<number> {
   const [account, session] = await Promise.all([
     prisma.user.findUnique({ where: { id: user.userId }, select: { status: true } }),
     user.sid
@@ -47,6 +47,7 @@ async function assertStillAllowed(user: AuthPayload) {
   if (!session) throw sessionRevoked()
   const merchantId = await activeMerchantId(user.userId)
   if (!await isAiFeatureEnabled(AGENT_FEATURE) || !await inAgentAudience(merchantId)) throw notFound()
+  return merchantId
 }
 
 export async function getAgentAvailability(user: AuthPayload) {
@@ -65,20 +66,27 @@ export async function getAgentAvailability(user: AuthPayload) {
 /** Ownership check for the client's selection; foreign and missing look the same. */
 async function selectedRef(state: AgentRunState, selected: TurnRequest['selectedResource']): Promise<string | null> {
   if (!selected) return null
-  const owned = selected.type === 'product'
-    ? await prisma.product.findFirst({ where: { id: selected.id, merchantId: state.merchantId, archivedAt: null }, select: { id: true } })
-    : selected.type === 'order'
-      ? await prisma.order.findFirst({ where: { id: selected.id, merchantId: state.merchantId }, select: { id: true } })
-      : await prisma.offer.findFirst({ where: { id: selected.id, product: { merchantId: state.merchantId } }, select: { id: true } })
+  if (selected.type === 'product') {
+    const product = await prisma.product.findFirst({
+      where: { id: selected.id, merchantId: state.merchantId, archivedAt: null }, select: { id: true, name: true, status: true },
+    })
+    if (!product) throw notFound('所选对象不存在')
+    const ref = state.ref({ kind: 'product', productId: product.id })
+    // The verified selection is citable even when every tool about it is unavailable
+    // (e.g. no template for read_product_content); tools may add specific cards.
+    state.putEvidence({ ref, kind: 'product', productId: product.id, name: product.name, status: product.status })
+    return ref
+  }
+  const owned = selected.type === 'order'
+    ? await prisma.order.findFirst({ where: { id: selected.id, merchantId: state.merchantId }, select: { id: true } })
+    : await prisma.offer.findFirst({ where: { id: selected.id, product: { merchantId: state.merchantId } }, select: { id: true } })
   if (!owned) throw notFound('所选对象不存在')
-  if (selected.type === 'product') return state.ref({ kind: 'product', productId: selected.id })
   return state.ref({ kind: 'item', rule: selected.type === 'order' ? 'fulfillment_due' : 'low_availability', targetId: selected.id })
 }
 
 export async function runAgentTurnRequest(user: AuthPayload, body: TurnRequest, signal: AbortSignal): Promise<TurnResult & { generationId: number }> {
-  if (!await isAiFeatureEnabled(AGENT_FEATURE)) throw notFound()
-  const merchantId = await activeMerchantId(user.userId)
-  if (!await inAgentAudience(merchantId)) throw notFound()
+  // A revoked session must not take a quota slot (the access JWT can outlive it).
+  const merchantId = await assertStillAllowed(user)
   const state = new AgentRunState(merchantId, user.userId)
   const selected = await selectedRef(state, body.selectedResource)
   const input = {
@@ -115,7 +123,10 @@ export async function runAgentTurnRequest(user: AuthPayload, body: TurnRequest, 
     callTimeoutMs: AGENT_LIMITS.callMs,
     reserveMs: AGENT_LIMITS.reserveMs,
     signal,
-    run: task => runAgentTurn(task, state, input, () => assertStillAllowed(user)),
+    run: task => runAgentTurn(task, state, input, async () => {
+      await assertStillAllowed(user)
+      await state.assertTargetsOwned()
+    }),
   })
   return { ...value, generationId }
 }

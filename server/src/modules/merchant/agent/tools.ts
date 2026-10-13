@@ -4,7 +4,7 @@
 // bands only) and evidence cards (exact values for the merchant, never sent to
 // the provider). Models only see opaque per-run refs, never database ids.
 
-import { HttpError } from '../../../lib/httpError.js'
+import { HttpError, notFound } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
 import { CONTENT_FIELDS, type ContentField } from '../../catalog/contentCopilot/constants.js'
 import type { ProductContentAiContext } from '../../catalog/contentCopilot/projection.js'
@@ -43,13 +43,18 @@ export type StoredContent = {
   targetFields: ContentField[]
 }
 
+const cardActionRefs = (card: EvidenceCard): string[] =>
+  card.kind === 'workbench_item' ? [card.actionRef] : card.kind === 'readiness' ? card.issues.map(issue => issue.actionRef) : []
+
 /** Per-run state: refs, evidence and what the model has been allowed to see. */
 export class AgentRunState {
   private seq = { P: 0, I: 0, C: 0, A: 0 }
   private refByKey = new Map<string, string>()
   private targets = new Map<string, Target>()
-  readonly evidence = new Map<string, EvidenceCard>()
-  readonly actions = new Map<string, { action: WorkbenchAction; evidenceRef: string }>()
+  // One card per resource ref and kind: reading a product's content must not
+  // replace its readiness diagnosis or the actions bound to it.
+  private evidence = new Map<string, Map<EvidenceCard['kind'], EvidenceCard>>()
+  private actions = new Map<string, { action: WorkbenchAction; evidenceRef: string }>()
   readonly coverage: CoverageNote[] = []
   readonly contents = new Map<string, StoredContent>()
   draftBatches = 0
@@ -82,6 +87,50 @@ export class AgentRunState {
   isProductRef(ref: string): boolean {
     return this.targets.get(ref)?.kind === 'product'
   }
+
+  putEvidence(card: EvidenceCard): void {
+    const cards = this.evidence.get(card.ref) ?? new Map<EvidenceCard['kind'], EvidenceCard>()
+    // The bare search-result card only stands in until something specific is known.
+    if (card.kind !== 'product') cards.delete('product')
+    cards.set(card.kind, card)
+    this.evidence.set(card.ref, cards)
+  }
+
+  hasEvidence(ref: string): boolean {
+    return this.evidence.has(ref)
+  }
+
+  evidenceCards(): EvidenceCard[] {
+    return [...this.evidence.values()].flatMap(cards => [...cards.values()])
+  }
+
+  /** The action, only while a current card of an evidence ref still offers it. */
+  resolveAction(actionRef: string, evidenceRefs: string[]): WorkbenchAction | null {
+    const entry = this.actions.get(actionRef)
+    if (!entry || !evidenceRefs.includes(entry.evidenceRef)) return null
+    const cards = [...(this.evidence.get(entry.evidenceRef)?.values() ?? [])]
+    return cards.some(card => cardActionRefs(card).includes(actionRef)) ? entry.action : null
+  }
+
+  /**
+   * Revocation during a run (MA03): every resource mapped in this run must
+   * still belong to the merchant, or nothing read about it may be returned.
+   */
+  async assertTargetsOwned(): Promise<void> {
+    const products = new Set<number>()
+    const orders = new Set<number>()
+    const offers = new Set<number>()
+    for (const target of this.targets.values()) {
+      if (target.kind === 'product') products.add(target.productId)
+      else if (target.kind === 'item') (target.rule === 'fulfillment_due' ? orders : offers).add(target.targetId)
+    }
+    const [ownedProducts, ownedOrders, ownedOffers] = await Promise.all([
+      products.size ? prisma.product.count({ where: { id: { in: [...products] }, merchantId: this.merchantId } }) : 0,
+      orders.size ? prisma.order.count({ where: { id: { in: [...orders] }, merchantId: this.merchantId } }) : 0,
+      offers.size ? prisma.offer.count({ where: { id: { in: [...offers] }, product: { merchantId: this.merchantId } } }) : 0,
+    ])
+    if (ownedProducts !== products.size || ownedOrders !== orders.size || ownedOffers !== offers.size) throw notFound()
+  }
 }
 
 const clip = (text: string) => (text.length > AGENT_LIMITS.nameMax ? `${text.slice(0, AGENT_LIMITS.nameMax)}…` : text)
@@ -92,16 +141,17 @@ function itemBand(item: WorkbenchItem): string {
   return item.evidence.available === 0 ? 'sold_out' : 'low'
 }
 
-function recordItem(state: AgentRunState, item: WorkbenchItem): string {
+function recordItem(state: AgentRunState, item: WorkbenchItem) {
   const ref = item.rule === 'draft_incomplete'
     ? state.ref({ kind: 'product', productId: item.targetId })
     : state.ref({ kind: 'item', rule: item.rule, targetId: item.targetId })
-  state.evidence.set(ref, { ref, kind: 'workbench_item', item, actionRef: state.action(item.action, ref) })
-  return ref
+  const actionRef = state.action(item.action, ref)
+  state.putEvidence({ ref, kind: 'workbench_item', item, actionRef })
+  return { ref, actionRef }
 }
 
 function itemObservation(state: AgentRunState, item: WorkbenchItem) {
-  const ref = recordItem(state, item)
+  const { ref, actionRef } = recordItem(state, item)
   const evidence = item.evidence
   return {
     ref,
@@ -110,7 +160,7 @@ function itemObservation(state: AgentRunState, item: WorkbenchItem) {
     productName: clip(evidence.productName),
     ...(evidence.kind === 'inventory' || evidence.kind === 'capacity' ? { offerName: clip(evidence.offerName) } : {}),
     ...(evidence.kind === 'draft' ? { issueCodes: [...new Set(evidence.issues.map(issue => issue.code))] } : {}),
-    actionRef: (state.evidence.get(ref) as { actionRef: string }).actionRef,
+    actionRef,
   }
 }
 
@@ -178,7 +228,7 @@ async function findProducts(state: AgentRunState, call: Extract<ToolCall, { name
   return { tool: call.name, status: 'ok', data: {
     products: shown.map(row => {
       const ref = state.ref({ kind: 'product', productId: row.id })
-      if (!state.evidence.has(ref)) state.evidence.set(ref, { ref, kind: 'product', productId: row.id, name: row.name, status: row.status })
+      if (!state.hasEvidence(ref)) state.putEvidence({ ref, kind: 'product', productId: row.id, name: row.name, status: row.status })
       return { ref, name: clip(row.name), status: row.status }
     }),
     more: rows.length > shown.length,
@@ -204,7 +254,7 @@ async function inspectProduct(state: AgentRunState, call: Extract<ToolCall, { na
     const action = readinessAction(product.id, detail, availabilityOfferIds)
     return { code: detail.code, field: detail.field, offerId: detail.offerId, action, actionRef: state.action(action, ref) }
   })
-  state.evidence.set(ref, { ref, kind: 'readiness', productId: product.id, name: product.name, status: product.status, ready: readiness.ready, issues })
+  state.putEvidence({ ref, kind: 'readiness', productId: product.id, name: product.name, status: product.status, ready: readiness.ready, issues })
   return { tool: call.name, status: 'ok', data: {
     productRef: ref,
     productStatus: product.status,
@@ -265,7 +315,7 @@ async function readProductContent(
   const fields = contentFieldState(prepared.context)
   state.contents.set(call.productRef, { productId: target.productId, context: prepared.context, readinessCodes: prepared.readinessCodes,
     contentVersion: prepared.contentVersion, targetFields: call.targetFields })
-  state.evidence.set(call.productRef, { ref: call.productRef, kind: 'content', productId: target.productId, name: product?.name ?? '', ...fields })
+  state.putEvidence({ ref: call.productRef, kind: 'content', productId: target.productId, name: product?.name ?? '', ...fields })
   return { tool: call.name, status: 'ok', data: { productRef: call.productRef, targetFields: call.targetFields, ...fields } }
 }
 

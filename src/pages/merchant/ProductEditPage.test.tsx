@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import type { Dispatch, SetStateAction } from 'react'
 import ProductEditPage from './ProductEditPage'
 import { useMerchantAgentStore } from '../../stores/merchantAgent'
@@ -249,11 +249,11 @@ async function renderEditPage(
 }
 
 describe('ProductEditPage merchant agent proposal hand-off', () => {
-  function handOff(basedOnContentVersion: number) {
+  function handOff(basedOnContentVersion: number, expiresInMs = 60_000) {
     useMerchantAgentStore.getState().reset(null)
     useMerchantAgentStore.getState().handOff({
       proposalId: 'p1', productId: 42, basedOnContentVersion, promptVersion: 'product-content@1', validatorVersion: 'v',
-      createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + expiresInMs).toISOString(),
       fields: { description: { status: 'suggested', value: '经营助手的新简介', rejectedItemCount: 0 } }, issues: [],
     })
   }
@@ -276,6 +276,105 @@ describe('ProductEditPage merchant agent proposal hand-off', () => {
     await renderEditPage(createEditTransport({}))
     expect(await screen.findByTestId('product-edit-agent-notice')).toHaveTextContent('已失效')
     expect(screen.queryByText('经营助手文案提案')).not.toBeInTheDocument()
+  })
+
+  it('drops a taken proposal when browser history moves the editor to another product', async () => {
+    handOff(3)
+    useAppStore.setState({ toasts: [] })
+    const patches: unknown[] = []
+    const transport: CatalogTransport = {
+      async get(url) {
+        if (url === '/product-templates') return templateRegistry
+        if (url === '/config/registry') return { productCategories: catalogFixtureCategories }
+        const other = url.includes('/43/')
+        // Same content version on both products: only the product binding can tell them apart.
+        return editorDto({ id: other ? 43 : 42, name: other ? '商品B' : '商品A' })
+      },
+      async post() { throw new Error('catalog fixture: unexpected POST') },
+      async patch(_url, body) { patches.push(body); return { contentVersion: 4 } },
+    }
+    let navigate!: ReturnType<typeof useNavigate>
+    function Probe() { navigate = useNavigate(); return null }
+    render(
+      <MemoryRouter initialEntries={['/merchant/products/43/edit', '/merchant/products/42/edit']} initialIndex={1}>
+        <Probe />
+        <Routes>
+          <Route path="/merchant/products/:id/edit" element={<ProductEditPage actor="merchant" adapter={createCatalogAdapter(transport)} />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('经营助手文案提案')).toBeInTheDocument()
+    await act(async () => { navigate(-1) })
+    await waitFor(() => expect(screen.getByTestId('product-edit-name')).toHaveValue('商品B'))
+    expect(screen.queryByText('经营助手文案提案')).not.toBeInTheDocument()
+    expect(screen.getByTestId('product-edit-description')).not.toHaveValue('经营助手的新简介')
+    expect(patches).toEqual([])
+  })
+
+  it('ignores a late editor response for a product the route already left', async () => {
+    handOff(3)
+    useAppStore.setState({ toasts: [] })
+    let resolveB!: (dto: ProductEditorDto) => void
+    const pendingB = new Promise<ProductEditorDto>(resolve => { resolveB = resolve })
+    const patches: Array<{ url: string; body: unknown }> = []
+    const transport: CatalogTransport = {
+      async get(url) {
+        if (url === '/product-templates') return templateRegistry
+        if (url === '/config/registry') return { productCategories: catalogFixtureCategories }
+        if (url.includes('/43/')) return pendingB
+        return editorDto({ id: 42, name: '商品A' })
+      },
+      async post() { throw new Error('catalog fixture: unexpected POST') },
+      async patch(url, body) { patches.push({ url, body }); return { contentVersion: 4 } },
+    }
+    let navigate!: ReturnType<typeof useNavigate>
+    function Probe() { navigate = useNavigate(); return null }
+    render(
+      <MemoryRouter initialEntries={['/merchant/products/43/edit']}>
+        <Probe />
+        <Routes>
+          <Route path="/merchant/products/:id/edit" element={<ProductEditPage actor="merchant" adapter={createCatalogAdapter(transport)} />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    await act(async () => { navigate('/merchant/products/42/edit') })
+    expect(await screen.findByText('经营助手文案提案')).toBeInTheDocument()
+    await act(async () => { resolveB(editorDto({ id: 43, name: '商品B' })) })
+    expect(screen.getByTestId('product-edit-name')).toHaveValue('商品A')
+
+    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    fireEvent.click(screen.getByTestId('content-suggestion-apply'))
+    fireEvent.click(screen.getByTestId('product-edit-save'))
+    await waitFor(() => expect(patches).toHaveLength(1))
+    expect(patches[0]).toMatchObject({ url: '/merchant/products/42/content', body: { name: '商品A', description: '经营助手的新简介' } })
+  })
+
+  it('checks the expiry again when the proposal is adopted', async () => {
+    handOff(3)
+    await renderEditPage(createEditTransport({}))
+    await screen.findByText('经营助手文案提案')
+    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    // The expiry timer can lag behind the clock (e.g. a sleeping tab).
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 120_000)
+    try {
+      fireEvent.click(screen.getByTestId('content-suggestion-apply'))
+    } finally {
+      clock.mockRestore()
+    }
+    expect(screen.getByTestId('content-suggestion-stale')).toHaveTextContent('已过期')
+    expect(screen.getByTestId('product-edit-description')).not.toHaveValue('经营助手的新简介')
+  })
+
+  it('disables adoption when the proposal expires while the dialog is open', async () => {
+    handOff(3, 1_500)
+    await renderEditPage(createEditTransport({}))
+    await screen.findByText('经营助手文案提案')
+    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    expect(screen.getByTestId('content-suggestion-apply')).not.toBeDisabled()
+    await waitFor(() => expect(screen.getByTestId('content-suggestion-apply')).toBeDisabled(), { timeout: 3_000 })
+    expect(screen.getByTestId('content-suggestion-select-description')).toBeDisabled()
+    expect(screen.getByTestId('content-suggestion-stale')).toHaveTextContent('已过期')
   })
 })
 

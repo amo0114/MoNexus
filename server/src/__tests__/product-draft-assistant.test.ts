@@ -46,7 +46,7 @@ describe('AI draft assistant routes', () => {
     expect(await prisma.offer.count()).toBe(0)
     const row = await prisma.aiGeneration.findUniqueOrThrow({ where: { id: res.body.generationId } })
     expect(row).toMatchObject({ feature: 'product_content_copilot', targetType: 'product_draft', status: 'succeeded', actorRole: role,
-      promptVersion: 'product-draft@2', validatorVersion: 'product-draft-validator@2' })
+      promptVersion: 'product-draft@3', validatorVersion: 'product-draft-validator@3' })
     expect(row.targetId).toBe(row.actorUserId)
     expect(JSON.stringify(row)).not.toContain('网络入门')
     expect(JSON.stringify(calls[0].input)).not.toContain('draft.test.local')

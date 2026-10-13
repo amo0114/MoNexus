@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { app } from '../app.js'
 import { config } from '../config/index.js'
 import { encryptAiApiKey } from '../lib/ai/credentialsCrypto.js'
-import { setLlmProviderForTests, type LlmProvider, type LlmStructuredRequest } from '../lib/ai/provider.js'
+import { aiOutputCompatTotal } from '../lib/ai/metrics.js'
+import { parseStructuredText, setLlmProviderForTests, type LlmProvider, type LlmStructuredRequest } from '../lib/ai/provider.js'
+import { runAiTask } from '../lib/ai/task.js'
 import { prisma } from '../lib/prisma.js'
 import { EMPTY_PRODUCT_DETAILS } from '../modules/catalog/templates/types.js'
 import { api, authHeader, createTestMerchant, createTestProduct, createTestUser, getDefaultOfferId, loginAs } from './helpers.js'
@@ -214,5 +216,135 @@ describe('merchant agent turns', () => {
     } finally {
       server.close()
     }
+  })
+})
+
+async function templatedProduct(token: string) {
+  const categoryId = await getActiveCategoryIdByLabel('充值卡密')
+  const created = await api.post('/api/merchant/products').set(authHeader(token)).send({
+    editorVersion: 2, templateKey: 'fixed_content', templateVersion: 1, name: '学习指引', categoryId,
+    description: '旧简介', richDescription: null, descriptionImages: [], images: [], visibility: 'members_only',
+    attributes: { contentCategory: '学习指引', applicableScope: '入门学习' }, details: EMPTY_PRODUCT_DETAILS, purchaseForm: [],
+    offers: [{ name: '完整版', price: 100, originalPrice: null, attributes: { contentScope: '完整文字指引' }, deliveryMode: 'instant_fixed',
+      stockMode: 'unlimited', validityDays: null, fixedContentType: 'text', fixedContent: 'FIXED_CONTENT', fixedFileId: null,
+      fixedStructuredContent: null, deliveryFields: null, autoProvision: false }],
+  }).expect(201)
+  return created.body.id as number
+}
+
+const selectedRefOf = (req: LlmStructuredRequest) => (req.input as unknown as { request?: { selectedRef: string } }).request?.selectedRef
+
+describe('merchant agent run boundaries', () => {
+  it('refuses a revoked session before taking a quota slot', async () => {
+    const { merchantId, token } = await merchant('agent-revoked@test.local')
+    const { userId } = await prisma.merchant.findUniqueOrThrow({ where: { id: merchantId } })
+    await prisma.refreshToken.updateMany({ where: { userId }, data: { revoked: true } })
+    expect((await turn(token, { message: '看看今天的待办' }).expect(401)).body.error.code).toBe('SESSION_REVOKED')
+    expect(calls).toHaveLength(0)
+    expect(await prisma.aiGeneration.count()).toBe(0)
+  })
+
+  it('fails a run whose final async work crosses the deadline instead of delivering it', async () => {
+    const { merchantId } = await merchant('agent-deadline@test.local')
+    const { userId } = await prisma.merchant.findUniqueOrThrow({ where: { id: merchantId } })
+    const run = runAiTask({
+      feature: 'merchant_operations_agent', actor: { userId, role: 'merchant' }, target: { type: 'merchant_agent', id: userId },
+      promptVersion: 'p', validatorVersion: 'v', inputHash: 'a'.repeat(64), deadlineMs: 10,
+      run: async () => { await new Promise(resolve => setTimeout(resolve, 35)); return { value: 'late', stopReason: 'answer' } },
+    })
+    await expect(run).rejects.toMatchObject({ status: 504, code: 'AI_TIMEOUT' })
+    expect(await prisma.aiGeneration.findFirstOrThrow({ where: { actorUserId: userId } }))
+      .toMatchObject({ status: 'failed', errorCode: 'AI_TIMEOUT', stopReason: 'timeout' })
+  })
+
+  it('fails a run whose success write crosses the deadline, recording only the failure', async () => {
+    const { merchantId } = await merchant('agent-late-write@test.local')
+    const { userId } = await prisma.merchant.findUniqueOrThrow({ where: { id: merchantId } })
+    const update = prisma.aiGeneration.update.bind(prisma.aiGeneration)
+    vi.spyOn(prisma.aiGeneration, 'update').mockImplementation((async (args: Parameters<typeof update>[0]) => {
+      if (args.data.status === 'succeeded') await new Promise(resolve => setTimeout(resolve, 120))
+      return update(args)
+    }) as unknown as typeof update)
+    const run = runAiTask({
+      feature: 'merchant_operations_agent', actor: { userId, role: 'merchant' }, target: { type: 'merchant_agent', id: userId },
+      promptVersion: 'p', validatorVersion: 'v', inputHash: 'b'.repeat(64), deadlineMs: 60,
+      run: async () => ({ value: 'late-finish', stopReason: 'answer' }),
+    })
+    await expect(run).rejects.toMatchObject({ status: 504, code: 'AI_TIMEOUT' })
+    expect(await prisma.aiGeneration.findFirstOrThrow({ where: { actorUserId: userId } }))
+      .toMatchObject({ status: 'failed', errorCode: 'AI_TIMEOUT', stopReason: 'timeout' })
+  })
+
+  it('still validates output taken through the repeated-JSON compatibility and counts the hit', async () => {
+    const { token } = await merchant('agent-compat@test.local')
+    const replies: string[] = []
+    setLlmProviderForTests({
+      name: 'compat-double',
+      async generateStructured() {
+        const { output, compat } = parseStructuredText(replies.shift()!)
+        return { output, usage: { inputTokens: 100, outputTokens: 20 }, model: 'test-model', ...(compat ? { outputCompat: compat } : {}) }
+      },
+    })
+    const repeated = (decision: unknown) => `${JSON.stringify(decision)} HIDDEN${JSON.stringify(decision)}`
+    const hits = async () => (await aiOutputCompatTotal.get()).values.find(value => value.labels.feature === 'merchant_operations_agent')?.value ?? 0
+    const before = await hits()
+
+    replies.push(repeated(answer([{ text: '去补货。', evidenceRefs: ['P99'], actionRef: null }])))
+    await turn(token, { message: '怎么办' }).expect(502)
+
+    await prisma.aiGeneration.deleteMany()
+    replies.push(repeated(answer([{ text: '可以先查看待办列表。', evidenceRefs: [], actionRef: null }])))
+    const res = await turn(token, { message: '今天先做什么' }).expect(200)
+    expect(JSON.stringify(res.body)).not.toContain('HIDDEN')
+    expect(await hits()).toBe(before + 2)
+  })
+
+  it('keeps the readiness diagnosis and its actions after reading the same product content', async () => {
+    const { token } = await merchant('agent-evidence@test.local')
+    const productId = await templatedProduct(token)
+    script = (req, step) => {
+      const ref = selectedRefOf(req)
+      if (step === 0) return tool({ name: 'inspect_product', productRef: ref })
+      if (step === 1) return tool({ name: 'read_product_content', productRef: ref, targetFields: ['description'] })
+      const diagnosis = observations(req)[0].data
+      return answer([{ text: '需要补齐发布条件。', evidenceRefs: [diagnosis.productRef], actionRef: diagnosis.issues[0].actionRef }])
+    }
+    const res = await turn(token, { message: '检查商品缺项并读一下简介', selectedResource: { type: 'product', id: productId } }).expect(200)
+
+    const ref = res.body.blocks[0].evidenceRefs[0]
+    const cards = res.body.evidence.filter((card: any) => card.ref === ref)
+    expect(cards.map((card: any) => card.kind).sort()).toEqual(['content', 'readiness'])
+    const readiness = cards.find((card: any) => card.kind === 'readiness')
+    expect(res.body.blocks[0].action).toEqual(readiness.issues[0].action)
+  })
+
+  it('lets an answer cite the verified selection when the content tool is unavailable for it', async () => {
+    const { merchantId, token } = await merchant('agent-no-template@test.local')
+    const legacy = await createTestProduct('旧版商品', 100, 0, [], merchantId)
+    script = (req, step) => {
+      const ref = selectedRefOf(req)
+      if (step === 0) return tool({ name: 'read_product_content', productRef: ref, targetFields: ['description'] })
+      expect(observations(req)[0]).toMatchObject({ tool: 'read_product_content', status: 'template_required' })
+      return answer([{ text: '请先在商品编辑页补齐商品形态，再完善说明。', evidenceRefs: [ref!], actionRef: null }])
+    }
+    const res = await turn(token, { message: '帮我完善这个商品的说明。', selectedResource: { type: 'product', id: legacy.id } }).expect(200)
+    expect(res.body.outcome).toBe('answered')
+    expect(res.body.evidence).toEqual([{ ref: res.body.blocks[0].evidenceRefs[0], kind: 'product', productId: legacy.id, name: '旧版商品', status: expect.any(String) }])
+  })
+
+  it('ends the run without a proposal when a read product changes owner mid-run', async () => {
+    const { token } = await merchant('agent-transfer@test.local')
+    const other = await createTestMerchant('agent-transfer-other@test.local', 'pass123', { status: 'active' })
+    const productId = await templatedProduct(token)
+    script = async (req, step) => {
+      const ref = selectedRefOf(req)
+      if (step === 0) return tool({ name: 'read_product_content', productRef: ref, targetFields: ['description'] })
+      await prisma.product.update({ where: { id: productId }, data: { merchantId: other.merchant.id } })
+      return { ...empty, kind: 'prepare_content', prepareContent: { productRef: ref, fields: ['description'] } }
+    }
+    await turn(token, { message: '完善简介', selectedResource: { type: 'product', id: productId } }).expect(404)
+    // The cached content context never reaches the copy call.
+    expect(calls).toHaveLength(2)
+    expect(await prisma.aiGeneration.findFirstOrThrow()).toMatchObject({ status: 'failed', stopReason: 'access_revoked' })
   })
 })

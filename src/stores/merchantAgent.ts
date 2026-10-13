@@ -56,13 +56,14 @@ function recentUserMessages(messages: AgentMessage[]): string[] {
   return texts
 }
 
-function errorText(error: unknown): { text: string; availability?: Availability } {
+function errorText(error: unknown, hasSelection: boolean): { text: string; availability?: Availability; recheck?: boolean } {
   const status = (error as { response?: { status?: number } } | undefined)?.response?.status
   const code = getApiErrorCode(error)
-  if (status === 404 && !code?.startsWith('AI_')) return { text: '经营助手当前不可用。', availability: 'disabled' }
+  // A 404 is a missing/foreign object or a disabled agent; only the
+  // availability endpoint can tell them apart.
+  if (status === 404) return { text: hasSelection ? '所选对象不存在或已不可用，请重新选择。' : '经营助手当前不可用。', recheck: true }
   if (code === 'AI_QUOTA_EXCEEDED') return { text: '今日经营助手次数已用完，可以继续使用待办列表手动处理。', availability: 'quota' }
   if (code === 'AI_GENERATION_IN_PROGRESS') return { text: '上一个问题仍在处理中，请稍候或取消后再试。' }
-  if (status === 404) return { text: '所选对象不存在或已不可用，请重新选择。' }
   return { text: '这次没有完成调查，可以稍后手动重试（会再次消耗次数）。已展示的待办数据仍以待办列表为准。' }
 }
 
@@ -115,12 +116,15 @@ export const useMerchantAgentStore = create<State & Actions>()((set, get) => ({
         set(state => ({ pendingRequestId: null, messages: [...state.messages, { id: nextId(), role: 'error', text: '已取消。已开始的调查仍计入当日次数。' }] }))
         return
       }
-      const failure = errorText(error)
+      const failure = errorText(error, selection != null)
       set(state => ({
         pendingRequestId: null,
         ...(failure.availability ? { availability: failure.availability } : {}),
+        // Drop the failed selection unless the merchant already picked another one.
+        ...(failure.recheck && state.selection === selection ? { selection: null } : {}),
         messages: [...state.messages, { id: nextId(), role: 'error', text: failure.text }],
       }))
+      if (failure.recheck) await get().loadAvailability()
     }
   },
 

@@ -55,9 +55,24 @@ describe('merchant agent store', () => {
     api.postAgentTurn.mockRejectedValueOnce({ response: { status: 429, data: { error: { code: 'AI_QUOTA_EXCEEDED' } } } })
     await store().send('问')
     expect(store().availability).toBe('quota')
+    // A 404 alone does not prove the agent is off; the availability endpoint decides.
     api.postAgentTurn.mockRejectedValueOnce({ response: { status: 404, data: { error: { code: 'NOT_FOUND' } } } })
+    api.getAgentAvailability.mockResolvedValueOnce({ available: false, reason: 'disabled', limits: {} })
     await store().send('问')
+    expect(api.getAgentAvailability).toHaveBeenCalledTimes(1)
     expect(store().availability).toBe('disabled')
+  })
+
+  it('clears a missing selection but keeps the agent and conversation when it is still available', async () => {
+    useMerchantAgentStore.setState({ availability: 'ready' })
+    store().select({ type: 'product', id: 7, label: '已归档商品' })
+    api.postAgentTurn.mockRejectedValueOnce({ response: { status: 404, data: { error: { code: 'NOT_FOUND' } } } })
+    api.getAgentAvailability.mockResolvedValueOnce({ available: true, reason: 'ready', limits: {} })
+    await store().send('检查这个商品')
+    expect(store().availability).toBe('ready')
+    expect(store().selection).toBeNull()
+    expect(store().messages.map(message => message.role)).toEqual(['user', 'error'])
+    expect(store().messages.at(-1)).toMatchObject({ text: expect.stringContaining('所选对象不存在') })
   })
 
   it('hands a proposal over once, only to the same product, session and before expiry', () => {

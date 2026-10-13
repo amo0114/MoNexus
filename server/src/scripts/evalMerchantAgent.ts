@@ -1,13 +1,9 @@
 // Manual L3 for SPEC-MERCHANT-AGENT-001 §11.1. Runs the production agent code
 // path (service → runAiTask → runner → tools) against synthetic data in a
 // disposable database, with a real provider configured only through AI_EVAL_*
-// environment variables. The key never enters the database, logs or report.
+// environment variables (see evalRuntime.ts). The key never enters the
+// database, logs or report.
 //
-//   AI_EVAL_BASE_URL, AI_EVAL_MODEL, AI_EVAL_API_KEY            required
-//   AI_EVAL_PROTOCOL       openai_chat | anthropic_messages | openai_responses (default openai_chat)
-//   AI_EVAL_OUTPUT_MODE    json_schema | json_object (default json_schema)
-//   AI_EVAL_REASONING      default | none (default default)
-//   AI_EVAL_MAX_CALLS      hard cap on provider calls for the whole run (default 150)
 //   --probe                one minimal structured call, then exit
 
 import { randomBytes } from 'node:crypto'
@@ -16,7 +12,6 @@ import { join } from 'node:path'
 import { config } from '../config/index.js'
 import { encryptAiApiKey } from '../lib/ai/credentialsCrypto.js'
 import { LlmError, setLlmProviderForTests, type LlmProvider } from '../lib/ai/provider.js'
-import { AI_OUTPUT_MODES, AI_PROTOCOLS, AI_REASONING_MODES, type AiOutputMode, type AiProtocol, type AiReasoningMode } from '../lib/ai/protocol.js'
 import { markAiSafe } from '../lib/ai/safe.js'
 import { prisma } from '../lib/prisma.js'
 import { EMPTY_PRODUCT_DETAILS } from '../modules/catalog/templates/types.js'
@@ -24,44 +19,15 @@ import { AGENT_PROMPT_VERSION, AGENT_VALIDATOR_VERSION, TOOL_CATALOG_VERSION } f
 import type { TurnResult } from '../modules/merchant/agent/runner.js'
 import { runAgentTurnRequest } from '../modules/merchant/agent/service.js'
 import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from '../__tests__/catalogFixture.js'
+import { createEvalProvider, env, evalSettingsFromEnv } from './evalRuntime.js'
 
-function env(name: string, fallback?: string): string {
-  const value = process.env[name] ?? fallback
-  if (!value) throw new Error(`${name} is required`)
-  return value
-}
-
-function oneOf<T extends string>(name: string, values: readonly T[], fallback: T): T {
-  const value = (process.env[name] ?? fallback) as T
-  if (!values.includes(value)) throw new Error(`${name} must be one of ${values.join(', ')}`)
-  return value
-}
-
-const settings = {
-  baseUrl: env('AI_EVAL_BASE_URL'),
-  model: env('AI_EVAL_MODEL'),
-  protocol: oneOf<AiProtocol>('AI_EVAL_PROTOCOL', AI_PROTOCOLS, 'openai_chat'),
-  outputMode: oneOf<AiOutputMode>('AI_EVAL_OUTPUT_MODE', AI_OUTPUT_MODES, 'json_schema'),
-  reasoningMode: oneOf<AiReasoningMode>('AI_EVAL_REASONING', AI_REASONING_MODES, 'default'),
-  maxCalls: Number(env('AI_EVAL_MAX_CALLS', '150')),
-}
+const settings = evalSettingsFromEnv()
 
 // Only ever against a disposable database.
 const databaseName = new URL(env('DATABASE_URL')).pathname.slice(1)
 if (!/test/.test(databaseName)) throw new Error(`Refusing to run against non-test database "${databaseName}"`)
 
-async function realProvider(): Promise<LlmProvider> {
-  const apiKey = env('AI_EVAL_API_KEY')
-  const wire = { outputMode: settings.outputMode, reasoningMode: settings.reasoningMode }
-  if (settings.protocol === 'openai_responses') {
-    const { createOpenAiProvider } = await import('../lib/ai/openaiProvider.js')
-    return createOpenAiProvider(undefined, apiKey, settings.baseUrl, wire)
-  }
-  const { createCompatibleProvider } = await import('../lib/ai/compatibleProvider.js')
-  return createCompatibleProvider(settings.protocol, apiKey, settings.baseUrl, wire)
-}
-
-type CallRecord = { latencyMs: number; ok: boolean; error?: string; inputTokens: number | null; outputTokens: number | null }
+type CallRecord = { latencyMs: number; ok: boolean; error?: string; compat?: string; inputTokens: number | null; outputTokens: number | null }
 const callLog: CallRecord[] = []
 let taskInputs: string[] = []
 let taskOutputs: unknown[] = []
@@ -75,11 +41,11 @@ function countingProvider(inner: LlmProvider): LlmProvider {
       const started = Date.now()
       try {
         const result = await inner.generateStructured(req)
-        callLog.push({ latencyMs: Date.now() - started, ok: true, ...result.usage })
+        callLog.push({ latencyMs: Date.now() - started, ok: true, ...result.usage, ...(result.outputCompat ? { compat: result.outputCompat } : {}) })
         taskOutputs.push(result.output)
         return result
       } catch (error) {
-        callLog.push({ latencyMs: Date.now() - started, ok: false, error: error instanceof LlmError ? error.code : 'error', inputTokens: null, outputTokens: null })
+        callLog.push({ latencyMs: Date.now() - started, ok: false, error: error instanceof LlmError ? [error.code, error.detail].filter(Boolean).join(':') : 'error', inputTokens: null, outputTokens: null })
         throw error
       }
     },
@@ -317,7 +283,7 @@ function resultText(result: TurnResult): string {
 
 async function probe() {
   setLlmProviderForTests(null)
-  const provider = countingProvider(await realProvider())
+  const provider = countingProvider(await createEvalProvider(settings))
   const started = Date.now()
   try {
     const result = await provider.generateStructured({
@@ -346,7 +312,7 @@ async function main() {
   }
   await prisma.aiRuntimeConfig.upsert({ where: { id: 1 }, create: { id: 1, version: 1, ...runtimeRow }, update: { ...runtimeRow, version: { increment: 1 } } })
   await prisma.systemConfig.upsert({ where: { key: 'aiMerchantAgentDailyQuotaMerchant' }, create: { key: 'aiMerchantAgentDailyQuotaMerchant', value: 1000 }, update: { value: 1000 } })
-  const provider = countingProvider(await realProvider())
+  const provider = countingProvider(await createEvalProvider(settings))
   setLlmProviderForTests(provider)
 
   const only = process.argv.find(arg => arg.startsWith('--only='))?.slice('--only='.length).split(',')
@@ -357,6 +323,7 @@ async function main() {
     taskInputs = []
     taskOutputs = []
     const prepared = await task.prepare()
+    const firstCall = callLog.length
     const before = await snapshot(prepared.userId)
     const started = Date.now()
     const issues: string[] = []
@@ -397,6 +364,7 @@ async function main() {
     const entry = {
       id: task.id, group: task.group, ok: issues.length === 0 && safety.length === 0, issues, safety, quality, latencyMs,
       outcome: result?.outcome ?? null, stopReason: result?.stopReason ?? row?.stopReason ?? null, error,
+      providerErrors: callLog.slice(firstCall).flatMap(call => (call.ok ? [] : [call.error])),
       tools: steps, stepCount: row?.stepCount ?? null, inputTokens: row?.inputTokens ?? null, outputTokens: row?.outputTokens ?? null,
       message: prepared.message,
       // Synthetic task output, kept only in the ignored report for failed tasks.
@@ -426,6 +394,8 @@ async function main() {
     p50LatencyMs: pct(0.5), p95LatencyMs: pct(0.95), p95GateMs: Math.floor(runTimeoutMs * 0.8),
     readabilityNotes: results.filter(item => (item.quality as string[]).length > 0).length,
     providerCalls: callLog.length, providerFailures: callLog.filter(call => !call.ok).length,
+    // Bounded transport compatibility is always on; results are not strict structured output.
+    outputCompatRule: 'repeated_json', outputCompatHits: callLog.filter(call => call.compat).length,
     inputTokens: callLog.reduce((sum, call) => sum + (call.inputTokens ?? 0), 0),
     outputTokens: callLog.reduce((sum, call) => sum + (call.outputTokens ?? 0), 0),
     unknownUsageCalls: callLog.filter(call => call.ok && (call.inputTokens == null || call.outputTokens == null)).length,
