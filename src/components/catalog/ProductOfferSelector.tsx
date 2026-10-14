@@ -4,6 +4,7 @@ import PointCoin from '../ui/PointCoin'
 import type { Offer } from '../../types/merchant'
 import type { TemplateAttributes } from '../../types/catalog'
 import { offerPeriodSubtitle } from '../../utils/offerPeriodDisplay'
+import { readAvailabilityStatus } from '../../utils/publicAvailability'
 
 export type OfferItem = Offer & { attributes?: TemplateAttributes }
 
@@ -16,11 +17,9 @@ export interface ProductOfferSelectorProps {
   variant?: 'default' | 'commerce'
 }
 
+/** Known unsellable only; `unknown` capacity stays selectable and goes through the normal checkout. */
 export function isOfferSoldOut(offer: OfferItem): boolean {
-  if (offer.fakaCapacity?.source === 'xboard') {
-    return offer.fakaCapacity.sellable === false || (offer.fakaCapacity.remaining != null && offer.fakaCapacity.remaining <= 0)
-  }
-  return offer.stockMode !== 'unlimited' && (offer.stock === 0 || offer.stock == null)
+  return readAvailabilityStatus(offer) === 'unavailable'
 }
 
 export default function ProductOfferSelector({
@@ -51,6 +50,7 @@ export default function ProductOfferSelector({
       <div className={`flex flex-wrap gap-2 ${className}`}>
         {offers.map((offer) => {
           const soldOut = isOfferSoldOut(offer)
+          const pending = readAvailabilityStatus(offer) === 'unknown'
           const isSelected = offer.id === selectedOfferId
           const subtitle = offerPeriodSubtitle(offer)
           const isExternalFaka = offer.fakaCapacity?.source === 'xboard'
@@ -101,6 +101,11 @@ export default function ProductOfferSelector({
                 {soldOut && (
                   <span className="text-[10px] font-bold px-1 py-0.2 rounded bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)]">
                     已售罄
+                  </span>
+                )}
+                {pending && (
+                  <span className="text-[10px] text-[var(--color-text-muted)]" data-testid={`sku-pending-${offer.id}`}>
+                    待确认
                   </span>
                 )}
                 {isLowStock && (

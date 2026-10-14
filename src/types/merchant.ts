@@ -1,3 +1,5 @@
+import type { PublicAvailability } from './productAvailability'
+
 export type UserRole = 'user' | 'admin' | 'merchant'
 export type MerchantStatus = 'pending' | 'active' | 'suspended' | 'rejected'
 export type SettlementStatus = 'pending' | 'settled' | 'holding' | 'voided'
@@ -54,6 +56,8 @@ export interface Offer {
     source: 'xboard' | 'unavailable'
     reason?: string
   } | null
+  /** Public storefront responses only; admin/merchant responses omit it. */
+  availability?: PublicAvailability
 }
 
 /** P4b：交付字段模板项。模板公开(买家购前可见字段名),字段"值"是敏感数据。 */

@@ -224,7 +224,8 @@
     border-radius: 50%;
     background: #33be81;
   }
-  .pm-quantity i[data-soldout='true'] {
+  .pm-quantity i[data-soldout='true'],
+  .pm-quantity i[data-pending='true'] {
     background: #9ca3af;
   }
   .pm-benefits {

@@ -290,9 +290,88 @@ describe('ProductDetailPage createOrder term fields', () => {
     // Verify header and page load safely without crashing
     expect(await screen.findByRole('heading', { level: 1, name: '无套餐商品' })).toBeInTheDocument()
     // Verify disabled CTA button
-    const buttons = screen.getAllByRole('button', { name: /已被抢光|暂无可售套餐/ })
+    const buttons = screen.getAllByRole('button', { name: /该套餐暂不可售|暂无可售套餐/ })
     expect(buttons.length).toBeGreaterThan(0)
     expect(buttons[0]).toBeDisabled()
+  })
+
+  it('gates purchase on the selected offer, not the product summary, and never borrows the representative Faka quota', async () => {
+    const faka = (remaining: number | null, source: 'xboard' | 'unavailable') => ({
+      remaining, capacityLimit: 10, sellable: source === 'xboard', source,
+    })
+    const AVAILABILITY_PRODUCT = {
+      ...PRODUCT,
+      id: 45,
+      name: '多套餐可售状态',
+      availability: { status: 'available' },
+      fakaCapacity: faka(7, 'xboard'), // representative snapshot of another plan
+      offers: [
+        { id: 51, name: '外部满额', price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'unlimited', stock: 0, sales: 0, fakaCapacity: faka(4, 'xboard'), availability: { status: 'unavailable' } },
+        { id: 52, name: '外部待确认', price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'unlimited', stock: 0, sales: 0, fakaCapacity: faka(null, 'unavailable'), availability: { status: 'unknown' } },
+        { id: 53, name: '本地套餐', price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'limited', stock: 2, sales: 0, availability: { status: 'available' } },
+      ],
+    }
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/45') return Promise.resolve({ data: AVAILABILITY_PRODUCT })
+      if (typeof url === 'string' && url.startsWith('/products/45/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    render(
+      <MemoryRouter initialEntries={['/product/45?offerId=51']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    // Explicitly selected unavailable offer: blocked although the product is available.
+    const cta = await screen.findByTestId('inflow-buy-cta')
+    expect(cta).toHaveTextContent('该套餐暂不可售')
+    expect(cta).toBeDisabled()
+
+    // Unknown offer: selectable, original purchase entry, no number/"不限" from any snapshot.
+    fireEvent.click(screen.getByTestId('sku-option-52'))
+    expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('立即兑换')
+    expect(screen.getByTestId('inflow-buy-cta')).not.toBeDisabled()
+    expect(screen.getByText('待确认', { selector: 'strong' })).toBeInTheDocument()
+
+    // Local offer: its own stock, not the product's representative Xboard quota (7).
+    fireEvent.click(screen.getByTestId('sku-option-53'))
+    expect(screen.getByText('库存:', { exact: false }).querySelector('strong')).toHaveTextContent('2')
+  })
+
+  it('preselects the first available offer, then the first unknown one', async () => {
+    const offer = (id: number, status: string) => ({
+      id, name: `套餐${id}`, price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service',
+      stockMode: 'unlimited', stock: 0, sales: 0, availability: { status },
+    })
+    const respond = (offers: unknown[]) => apiGet.mockImplementation((url: string) => {
+      if (url === '/products/46') return Promise.resolve({ data: { ...PRODUCT, id: 46, name: '初始套餐', offers } })
+      if (typeof url === 'string' && url.startsWith('/products/46/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    const renderAt = () => render(
+      <MemoryRouter initialEntries={['/product/46']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    respond([offer(61, 'unavailable'), offer(62, 'unknown'), offer(63, 'available')])
+    const first = renderAt()
+    expect(await screen.findByTestId('sku-option-63')).toHaveAttribute('aria-pressed', 'true')
+    first.unmount()
+
+    respond([offer(61, 'unavailable'), offer(62, 'unknown')])
+    renderAt()
+    expect(await screen.findByTestId('sku-option-62')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('renders rating-summary with score and count when ratingCount > 0', async () => {

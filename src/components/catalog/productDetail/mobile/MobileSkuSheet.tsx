@@ -3,6 +3,7 @@ import type { Product } from '../../../../pages/ProductDetailPage'
 import { offerPeriodSubtitle } from '../../../../utils/offerPeriodDisplay'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../ui/Dialog'
 import { isOfferSoldOut } from '../../ProductOfferSelector'
+import { readAvailabilityStatus } from '../../../../utils/publicAvailability'
 
 type Offer = NonNullable<Product['offers']>[number]
 
@@ -95,7 +96,15 @@ export default function MobileSkuSheet({
                 </div>
                 <div className="pm-sku-sheet-item-price-col">
                   <b>{money(offer.price)}</b>
-                  <small>{unavailable ? '已售罄' : selected ? '已选中' : '选择'}</small>
+                  <small>
+                    {unavailable
+                      ? '已售罄'
+                      : selected
+                        ? '已选中'
+                        : readAvailabilityStatus(offer) === 'unknown'
+                          ? '待确认'
+                          : '选择'}
+                  </small>
                 </div>
               </button>
             )

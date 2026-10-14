@@ -29,6 +29,7 @@ import ProductSpecSections, {
   titlesFromTemplate,
 } from '../components/catalog/ProductSpecSections'
 import { isOfferSoldOut } from '../components/catalog/ProductOfferSelector'
+import { readAvailabilityStatus } from '../utils/publicAvailability'
 import type { Offer } from '../types/merchant'
 import type { MerchandisingProjection } from '../types/merchandising'
 import type { ProductDetails, ProductTemplateDefinition, TemplateAttributes } from '../types/catalog'
@@ -88,6 +89,7 @@ export interface Product {
     validUntil: string
   }
   fakaCapacity?: Offer['fakaCapacity']
+  availability?: Offer['availability']
   offers?: PublicOffer[]
 }
 
@@ -269,8 +271,10 @@ export default function ProductDetailPage() {
             if (Number.isInteger(requestedOfferId) && requestedOfferId > 0) {
               showToast('套餐已失效，请重新选择', 'info')
             }
-            const firstAvailable = offers.find((o) => !isOfferSoldOut(o))
-            setSelectedOfferId((firstAvailable ?? offers[0]).id)
+            const firstSelectable =
+              offers.find((o) => readAvailabilityStatus(o) === 'available') ??
+              offers.find((o) => readAvailabilityStatus(o) === 'unknown')
+            setSelectedOfferId((firstSelectable ?? offers[0]).id)
           }
         } else {
           setSelectedOfferId(null)
@@ -474,20 +478,27 @@ export default function ProductDetailPage() {
     ? (selectedOffer.originalPrice ?? undefined)
     : product.originalPrice
   const activeOffer = selectedOffer ?? offers[0]
-  const fakaCapacity = activeOffer?.fakaCapacity ?? product.fakaCapacity ?? null
+  // A selected local offer must not inherit the product's representative Faka snapshot.
+  const fakaCapacity = activeOffer ? (activeOffer.fakaCapacity ?? null) : (product.fakaCapacity ?? null)
   const displayStockMode = activeOffer?.stockMode ?? product.stockMode
   const displayStock = activeOffer?.stock ?? product.stock
+  const activeAvailability = activeOffer ? readAvailabilityStatus(activeOffer) : 'unavailable'
 
   const stockLabel =
-    fakaCapacity?.source === 'xboard'
-      ? fakaCapacity.remaining == null
-        ? '不限'
-        : String(fakaCapacity.remaining)
-      : displayStockMode === 'unlimited'
-        ? '不限'
-        : String(displayStock)
+    activeAvailability === 'unknown'
+      ? '待确认'
+      : activeAvailability === 'unavailable'
+        ? '暂不可售'
+        : fakaCapacity?.source === 'xboard'
+          ? fakaCapacity.remaining == null
+            ? '不限'
+            : String(fakaCapacity.remaining)
+          : displayStockMode === 'unlimited'
+            ? '不限'
+            : String(displayStock)
 
-  const stockTitle = fakaCapacity?.source === 'xboard' ? '剩余名额' : '库存'
+  const stockTitle =
+    activeAvailability !== 'available' ? '可售状态' : fakaCapacity?.source === 'xboard' ? '剩余名额' : '库存'
 
   const isInsufficient = userPoints < displayPrice
   const shortfall = !isReferencePreview && isLoggedIn ? Math.max(0, displayPrice - userPoints) : 0
@@ -522,7 +533,7 @@ export default function ProductDetailPage() {
     : hasNoOffers
       ? '暂无可售套餐'
       : isSoldOut
-        ? '已被抢光'
+        ? '该套餐暂不可售'
         : isInsufficient
           ? '余额不足，去充值'
           : '立即兑换'

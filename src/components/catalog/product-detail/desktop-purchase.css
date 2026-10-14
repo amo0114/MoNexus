@@ -381,7 +381,8 @@
     border-radius: 50%;
     background: #38c587;
   }
-  .pd-stock-empty i {
+  .pd-stock-empty i,
+  .pd-stock-pending i {
     background: #9ca3af;
   }
   .pd-actions {
