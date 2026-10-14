@@ -798,13 +798,12 @@ async function getProductDetailFromDb(id: number, audience: ProductAudience = 'g
   const facts = await loadAvailabilityBatchFacts([product])
 
   // FakaBridge：详情页只读缓存并后台刷新，绝不在请求内串行外呼 Xboard。
+  // Same batch read as the list, so period SKUs of one plan share one snapshot/probe.
+  const fakaBySku = loadFakaCapacityBySku(product.offers)
   const fakaByOfferId = new Map<number, FakaCapacitySnapshot>()
   for (const offer of product.offers) {
-    const integration = (offer as { externalIntegration?: string | null }).externalIntegration
-    const sku = (offer as { externalSku?: string | null }).externalSku
-    if (integration === 'faka_bridge' && sku) {
-      fakaByOfferId.set(offer.id, getFakaCapacityForPublicRead(sku))
-    }
+    const snapshot = fakaSnapshotForSku(offer, fakaBySku)
+    if (snapshot) fakaByOfferId.set(offer.id, snapshot)
   }
 
   const offerStatusById = new Map(
