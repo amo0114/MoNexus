@@ -135,6 +135,43 @@ describe('ProductDetailPage createOrder term fields', () => {
     expect(Object.prototype.hasOwnProperty.call(options, 'expectedAssuranceGrantId')).toBe(true)
   })
 
+  it('refreshes server availability after buying the last unit instead of keeping the stale purchasable state', async () => {
+    const lastUnit = {
+      ...PRODUCT,
+      offers: [{ ...PRODUCT.offers[0], stock: 1, availability: { status: 'available' } }],
+      availability: { status: 'available' },
+    }
+    const afterPurchase = {
+      ...PRODUCT,
+      offers: [{ ...PRODUCT.offers[0], stock: 0, availability: { status: 'unavailable' } }],
+      availability: { status: 'unavailable' },
+    }
+    let detailCalls = 0
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/42') {
+        detailCalls += 1
+        return Promise.resolve({ data: detailCalls === 1 ? lastUnit : afterPurchase })
+      }
+      if (typeof url === 'string' && url.startsWith('/products/42/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    renderPage()
+    expect(await screen.findByTestId('inflow-buy-cta')).toHaveTextContent('立即兑换')
+
+    fireEvent.click(screen.getAllByRole('button', { name: '立即兑换' })[0])
+    await screen.findByTestId('purchase-modal')
+    await screen.findByTestId('preview-price')
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(1))
+
+    await waitFor(() => expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('该套餐暂不可售'))
+    expect(screen.getByTestId('inflow-buy-cta')).toBeDisabled()
+    expect(detailCalls).toBe(2)
+  })
+
   it('renders Header-First SPU hierarchy and pure component 4:3 gallery with pagination', async () => {
     const MULTI_OFFER_PRODUCT = {
       id: 43,

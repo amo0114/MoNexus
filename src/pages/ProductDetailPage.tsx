@@ -127,6 +127,9 @@ export default function ProductDetailPage() {
   usePageView(`/product/${id}`, !loading && !loginRequired && product?.id === Number(id))
 
   const routeProductId = id && /^[1-9]\d*$/.test(id) ? Number(id) : null
+  // Lets async work started for one product (post-purchase refresh) skip writes after navigation.
+  const routeProductIdRef = useRef(routeProductId)
+  routeProductIdRef.current = routeProductId
   const recommendations = useProductRecommendations(routeProductId, !isReferencePreview)
 
   const [showPurchase, setShowPurchase] = useState(false)
@@ -359,13 +362,17 @@ export default function ProductDetailPage() {
       } else {
         setShowSuccess(true)
       }
-      setProduct((prev) => {
-        if (!prev) return prev
-        const nextOffers = prev.offers?.map((o) =>
-          o.id === selectedOfferId ? { ...o, stock: Math.max(0, o.stock - 1), sales: (o.sales ?? 0) + 1 } : o
-        )
-        return { ...prev, stock: Math.max(0, prev.stock - 1), sales: prev.sales + 1, offers: nextOffers }
-      })
+      // Availability is server-derived (inventory, local quota, Faka capacity), so reload the
+      // public detail instead of guessing it from stock - 1. Order creation already invalidated
+      // the detail cache. Non-blocking: a failed refresh keeps the old view and checkout still
+      // re-validates on the next attempt.
+      const purchasedProductId = product.id
+      void api
+        .get(`/products/${purchasedProductId}`)
+        .then(({ data }) => {
+          if (routeProductIdRef.current === purchasedProductId) setProduct(data)
+        })
+        .catch(() => {})
       return 'success'
     } catch (err: any) {
       if (useAppStore.getState().islandNotice?.kind === 'order_processing') {
