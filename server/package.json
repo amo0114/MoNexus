@@ -25,6 +25,7 @@
     "auth:revoke-legacy-admin-sessions": "tsx src/scripts/revokeLegacyAdminRefreshSessions.ts",
     "auth:break-glass-reset": "tsx src/scripts/resetAdminMfaForBreakGlass.ts",
     "value-policy:audit": "tsx src/scripts/auditValuePolicy.ts",
+    "recommendation:audit": "tsx src/scripts/auditRecommendationData.ts",
     "value-policy:staging-governance": "tsx src/scripts/runValuePolicyStagingGovernance.ts",
     "db:studio": "prisma studio",
     "test": "vitest run",
