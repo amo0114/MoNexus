@@ -100,7 +100,7 @@ export default function ProductOfferSelector({
 
                 {soldOut && (
                   <span className="text-[10px] font-bold px-1 py-0.2 rounded bg-[var(--color-danger-bg)] text-[var(--color-danger-text)] border border-[var(--color-danger-border)]">
-                    已售罄
+                    暂不可售
                   </span>
                 )}
                 {pending && (

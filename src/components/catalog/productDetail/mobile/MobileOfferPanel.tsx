@@ -98,7 +98,7 @@ export default function MobileOfferPanel({
                   <b>{money(offer.price)}</b>
                   <small>
                     {unavailable
-                      ? '已售罄'
+                      ? '暂不可售'
                       : readAvailabilityStatus(offer) === 'unknown'
                         ? '可售状态待确认'
                         : offerPeriodSubtitle(offer) || '按套餐说明交付'}
@@ -138,7 +138,7 @@ export default function MobileOfferPanel({
             data-soldout={soldOut}
             data-pending={!!activeOffer && readAvailabilityStatus(activeOffer) === 'unknown'}
           />
-          {soldOut ? '暂时售罄' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
+          {soldOut ? '暂不可售' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
         </span>
       </div>
       {!!product.details?.highlights?.length && (

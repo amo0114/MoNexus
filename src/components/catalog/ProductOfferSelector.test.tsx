@@ -99,7 +99,7 @@ describe('ProductOfferSelector', () => {
 
     const soldOutOption = screen.getByTestId('sku-option-103')
     expect(soldOutOption.hasAttribute('disabled')).toBe(true)
-    expect(screen.getByText('已售罄')).toBeDefined()
+    expect(screen.getByText('暂不可售')).toBeDefined()
 
     fireEvent.click(soldOutOption)
     expect(handleSelect).not.toHaveBeenCalled()

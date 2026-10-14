@@ -502,7 +502,7 @@ export default function ProductDetailDesktop({
                     <td>{offerPeriodSubtitle(offer) || '以套餐说明为准'}</td>
                     <td>
                       {isOfferSoldOut(offer)
-                        ? '已售罄'
+                        ? '暂不可售'
                         : readAvailabilityStatus(offer) === 'unknown'
                           ? '待确认'
                           : '可选'}
