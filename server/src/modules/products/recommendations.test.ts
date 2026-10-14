@@ -289,10 +289,12 @@ describe('GET /api/products/:id/recommendations', () => {
       expect(item).not.toHaveProperty('merchantId')
       expect(item).toHaveProperty('merchandising')
       expect(item).toHaveProperty('assurance')
+      expect(item.availability).toEqual({ status: 'available' })
     }
+    expect(raw).not.toContain('hasUnknownFakaCapacity')
   })
 
-  it('uses the projected Faka capacity without awaiting Xboard', async () => {
+  it('admits by public availability: known-unsellable Faka drops out, unknown capacity stays', async () => {
     const originalConfig = { ...config.fakaBridge }
     Object.assign(config.fakaBridge, {
       enabled: true,
@@ -313,20 +315,32 @@ describe('GET /api/products/:id/recommendations', () => {
           sellable: true, source: 'unavailable', reason: '暂时无法确认',
         },
       }
+      // SKUs are unique per offer, so the two-plan products get their own SKUs with the same states.
+      for (const [sku, copy] of [['rec-full', 'rec-full-2'], ['rec-full', 'rec-full-3'], ['rec-open', 'rec-open-2'], ['rec-unknown', 'rec-unknown-2']]) {
+        snapshots[copy] = { ...snapshots[sku], sku: copy }
+      }
       __setFakaCapacityProbeForTests(async sku => snapshots[sku])
       await prewarmFakaCapacityForSkus(Object.keys(snapshots))
 
       const categoryId = await getActiveCategoryIdByLabel('邀请码')
       const base = await makeProduct({ name: 'Faka基准', categoryId, ...redemption('steam') })
-      const faka = (sku: string) => [{ externalIntegration: 'faka_bridge', externalSku: sku }]
+      const faka = (...skus: string[]) => skus.map(sku => ({ externalIntegration: 'faka_bridge', externalSku: sku }))
       await makeProduct({ name: '名额已满', categoryId, ...redemption('steam'), offers: faka('rec-full') })
       const open = await makeProduct({ name: '有名额', categoryId, ...redemption('steam'), offers: faka('rec-open') })
-      const flagged = await makeProduct({ name: '正库存不可售标记', categoryId, ...redemption('steam'), offers: faka('rec-flag') })
+      // Positive remaining with sellable=false is unsellable (PLAN-PRODUCT-AVAILABILITY-001 replaces the V1 rule).
+      await makeProduct({ name: '正库存不可售标记', categoryId, ...redemption('steam'), offers: faka('rec-flag') })
       const unknown = await makeProduct({ name: '容量未知', categoryId, ...redemption('steam'), offers: faka('rec-unknown') })
+      const fullPlusOpen = await makeProduct({ name: '两个Plan一满一可售', categoryId, ...redemption('steam'), offers: faka('rec-full-2', 'rec-open-2') })
+      const fullPlusUnknown = await makeProduct({ name: '两个Plan一满一未知', categoryId, ...redemption('steam'), offers: faka('rec-full-3', 'rec-unknown-2') })
 
       const body = await recommend(base.id)
-      expect(body.items.map(item => item.id)).toEqual([unknown.id, flagged.id, open.id])
-      expect(body.items[0].fakaCapacity).toMatchObject({ source: 'unavailable' })
+      expect(body.items.map(item => [item.id, (item.availability as { status: string }).status])).toEqual([
+        [fullPlusUnknown.id, 'unknown'],
+        [fullPlusOpen.id, 'available'],
+        [unknown.id, 'unknown'],
+        [open.id, 'available'],
+      ])
+      expect(body.items[2].fakaCapacity).toMatchObject({ source: 'unavailable' })
     } finally {
       Object.assign(config.fakaBridge, originalConfig)
     }

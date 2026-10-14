@@ -92,19 +92,23 @@ function normalizeProductListParams(params: ProductListCacheParams) {
   return normalized
 }
 
+// Bumped when the cached public product/card shape changes, so entries written by
+// the previous deploy are never served with missing fields; old keys just expire.
+const PUBLIC_PROJECTION_VERSION = 'public-availability-v1'
+
 export async function buildProductListCacheKey(params: ProductListCacheParams) {
   const normalized = normalizeProductListParams(params)
   if (!normalized) return null
 
   const version = await getCacheVersion({ name: 'product-list' })
   if (version == null) return null
-  return makeCacheKey('product-list', version, hashParams(normalized))
+  return makeCacheKey('product-list', PUBLIC_PROJECTION_VERSION, version, hashParams(normalized))
 }
 
 export async function buildProductDetailCacheKey(productId: number, audience: 'guest' | 'member' = 'guest') {
   const version = await getCacheVersion({ name: 'product-detail', productId })
   if (version == null) return null
-  return makeCacheKey('product-detail', productId, version, audience)
+  return makeCacheKey('product-detail', PUBLIC_PROJECTION_VERSION, productId, version, audience)
 }
 
 export async function buildProductReviewsCacheKey(

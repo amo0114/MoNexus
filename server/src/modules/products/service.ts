@@ -9,6 +9,7 @@ import { TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../catalog
 import {
   getFakaCapacityForPublicRead,
   getCachedFakaCapacityByPlanId,
+  isFakaBridgeConfigured,
   type FakaCapacitySnapshot,
 } from '../../lib/fakaBridge/index.js'
 import {
@@ -35,6 +36,11 @@ import {
 } from '../merchandising/publicProjection.js'
 import { loadPublicAssuranceByProductIds } from '../catalog/assurance/service.js'
 import { queryRecommendationCandidateIds } from './recommendations.js'
+import {
+  aggregateOfferAvailability,
+  evaluatePublicOfferAvailability,
+  type AvailabilityStatus,
+} from './publicAvailability.js'
 
 interface ProductListParams {
   query?: string
@@ -81,6 +87,12 @@ const productListSelect = {
       stock: true,
       externalIntegration: true,
       externalSku: true,
+      // Inputs of the public availability evaluation only; never serialized.
+      fixedContentType: true,
+      fixedContent: true,
+      fixedFileId: true,
+      fixedFile: { select: { status: true } },
+      autoProvision: true,
     },
   },
 } satisfies Prisma.ProductSelect
@@ -117,7 +129,7 @@ const productDetailSelect = {
   offers: {
     where: { status: 'active' },
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-    include: { fixedFile: { select: { size: true } } },
+    include: { fixedFile: { select: { size: true, status: true } } },
   },
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
@@ -178,6 +190,66 @@ async function countAvailableByOffer(offers: AvailabilityOffer[]): Promise<Map<n
   return counts
 }
 
+type AvailabilityBatchFacts = {
+  offerAvailableCounts: Map<number, number>
+  webhookMerchantIds: Set<number>
+  providerConfigured: boolean
+}
+
+type AvailabilityOfferInput = Parameters<typeof evaluatePublicOfferAvailability>[0] & { id: number }
+
+/** One batch of local facts (inventory counts, webhook presence, provider config) per request. */
+async function loadAvailabilityBatchFacts(
+  products: Array<{
+    merchant: { id: number } | null
+    offers: Array<AvailabilityOffer & { autoProvision: boolean }>
+  }>,
+): Promise<AvailabilityBatchFacts> {
+  const autoProvisionMerchantIds = [
+    ...new Set(
+      products
+        .filter(product => product.merchant && product.offers.some(offer => offer.autoProvision))
+        .map(product => product.merchant!.id),
+    ),
+  ]
+  const [offerAvailableCounts, webhooks] = await Promise.all([
+    countAvailableByOffer(products.flatMap(product => product.offers)),
+    autoProvisionMerchantIds.length === 0
+      ? Promise.resolve([])
+      : prisma.merchantWebhookConfig.findMany({
+          where: { merchantId: { in: autoProvisionMerchantIds }, status: 'active' },
+          select: { merchantId: true },
+        }),
+  ])
+  return {
+    offerAvailableCounts,
+    webhookMerchantIds: new Set(webhooks.map(webhook => webhook.merchantId)),
+    providerConfigured: isFakaBridgeConfigured(),
+  }
+}
+
+function publicOfferStatus(
+  offer: AvailabilityOfferInput,
+  merchantId: number | null,
+  facts: AvailabilityBatchFacts,
+  fakaCapacity: FakaCapacitySnapshot | null,
+): AvailabilityStatus {
+  return evaluatePublicOfferAvailability(offer, {
+    availableInventory: facts.offerAvailableCounts.get(offer.id) ?? 0,
+    hasActiveWebhook: merchantId != null && facts.webhookMerchantIds.has(merchantId),
+    providerConfigured: facts.providerConfigured,
+    fakaCapacity,
+  })
+}
+
+function fakaSnapshotForSku(
+  offer: { externalIntegration?: string | null; externalSku?: string | null },
+  fakaBySku: Map<string, FakaCapacitySnapshot>,
+): FakaCapacitySnapshot | null {
+  if (offer.externalIntegration !== 'faka_bridge' || !offer.externalSku) return null
+  return fakaBySku.get(offer.externalSku.trim().toLowerCase()) ?? null
+}
+
 function publicMerchant(merchant: { id: number; name: string; status?: string } | null | undefined) {
   if (!merchant) return null
   return { id: merchant.id, name: merchant.name }
@@ -218,19 +290,16 @@ function toPublicProductDetails(value: Prisma.JsonValue | null | undefined): Pro
 function serializePublicProductListItem(
   product: ProductListItem,
   offerAvailableCounts: Map<number, number>,
-  fakaBySku: Map<string, FakaCapacitySnapshot> = new Map()
+  fakaBySku: Map<string, FakaCapacitySnapshot>,
+  availability: AvailabilityStatus,
 ) {
   const { _count, offers, merchant, ...publicProduct } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
 
   const fakaCaps: FakaCapacitySnapshot[] = []
   for (const offer of offers) {
-    const integration = (offer as { externalIntegration?: string | null }).externalIntegration
-    const sku = (offer as { externalSku?: string | null }).externalSku
-    if (integration === 'faka_bridge' && sku) {
-      const cap = fakaBySku.get(sku.trim().toLowerCase())
-      if (cap) fakaCaps.push(cap)
-    }
+    const cap = fakaSnapshotForSku(offer, fakaBySku)
+    if (cap) fakaCaps.push(cap)
   }
   const fakaAvailability = projectFakaAvailability(fakaCaps)
   // 商品级容量摘要：多周期共用同一 plan 名额，取代表快照（非 null 以便卡片显示「剩余名额」）。
@@ -243,6 +312,7 @@ function serializePublicProductListItem(
     // 可售状态：Faka 用 Xboard 名额，否则本地规格推导。列表不携带 offers 数组。
     ...(fakaAvailability ?? localAvailability),
     fakaCapacity,
+    availability: { status: availability },
     ratingAvg: Number(product.ratingAvg),
   }
 }
@@ -361,15 +431,6 @@ function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
   }
 }
 
-function isUnavailableFakaCapacity(value: unknown): boolean {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'source' in value &&
-    (value as { source?: unknown }).source === 'unavailable'
-  )
-}
-
 /** 列表/详情商品级 fakaCapacity：单 SKU 直接用；多周期同 plan 取首个 xboard 快照。 */
 function pickProductFakaCapacity(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot | null {
   if (caps.length === 0) return null
@@ -389,7 +450,8 @@ function pickProductFakaCapacity(caps: FakaCapacitySnapshot[]): FakaCapacitySnap
 function serializePublicProductDetail(
   product: ProductDetail,
   offerAvailableCounts: Map<number, number>,
-  fakaByOfferId: Map<number, FakaCapacitySnapshot> = new Map()
+  fakaByOfferId: Map<number, FakaCapacitySnapshot>,
+  offerStatusById: Map<number, AvailabilityStatus>,
 ) {
   const {
     _count,
@@ -417,10 +479,15 @@ function serializePublicProductDetail(
     ...(fakaAvailability ?? localAvailability),
     // 商品级容量摘要；多周期共用 plan 时取代表快照，规格切换后由 offer.fakaCapacity 覆盖。
     fakaCapacity: (() => { const c = pickProductFakaCapacity(fakaCaps); return c ? toPublicFakaCapacity(c) : null })(),
+    // Product status summarizes offers; each offer keeps its own status below.
+    availability: { status: aggregateOfferAvailability([...offerStatusById.values()]) },
     ratingAvg: Number(product.ratingAvg),
     // 公开 Offer 剥离 fixedContent；即时库存规格的 stock 用实际可用条目数。
     offers: offers.map(offer => {
-      const serialized = serializePublicOffer(offer, { attributeKeys: offerAttributeKeys })
+      const serialized = {
+        ...serializePublicOffer(offer, { attributeKeys: offerAttributeKeys }),
+        availability: { status: offerStatusById.get(offer.id)! },
+      }
       const fakaCapacity = fakaByOfferId.get(offer.id) ?? null
       const withFaka = fakaCapacity
         ? {
@@ -574,12 +641,12 @@ export async function listProducts(params: ProductListParams = {}) {
   })
 
   const load = () => listProductsFromDb(params, context)
-  const baseResult = cacheKey
+  const { data: baseResult } = cacheKey
     ? await wrapCache('product-list', cacheKey, params.query ? 10 : params.cursor ? 20 : 30, load, {
-        // A cold public read intentionally returns an unavailable projection while
-        // its Xboard probe runs in the background. Do not cache that transient state.
-        cachePredicate: result =>
-          result.items.every(item => !isUnavailableFakaCapacity(item.fakaCapacity)),
+        // A cold public read returns unknown capacity while its Xboard probe runs in
+        // the background. Judge by every evaluated offer, not the product summary or
+        // representative snapshot, so a partly unknown page is never cached.
+        cachePredicate: result => !result.hasUnknownFakaCapacity,
       })
     : await load()
 
@@ -620,7 +687,7 @@ export async function listProducts(params: ProductListParams = {}) {
  */
 async function hydratePublicListItems(orderedIds: number[], audience: ProductAudience) {
   const ids = [...new Set(orderedIds)]
-  if (ids.length === 0) return []
+  if (ids.length === 0) return { items: [], hasUnknownFakaCapacity: false }
   const products = await prisma.product.findMany({
     where: { id: { in: ids }, ...publicVisibilityWhere(audience) },
     select: productListSelect,
@@ -631,19 +698,30 @@ async function hydratePublicListItems(orderedIds: number[], audience: ProductAud
     return product ? [product] : []
   })
 
-  const allOffers = items.flatMap(item => item.offers)
-  const offerAvailableCounts = await countAvailableByOffer(allOffers)
-  const fakaBySku = loadFakaCapacityBySku(
-    allOffers as Array<{ externalIntegration?: string | null; externalSku?: string | null }>,
-  )
-  return items.map(item => serializePublicProductListItem(item, offerAvailableCounts, fakaBySku))
+  const facts = await loadAvailabilityBatchFacts(items)
+  const fakaBySku = loadFakaCapacityBySku(items.flatMap(item => item.offers))
+  let hasUnknownFakaCapacity = false
+  const cards = items.map(item => {
+    const statuses = item.offers.map(offer =>
+      publicOfferStatus(offer, item.merchant?.id ?? null, facts, fakaSnapshotForSku(offer, fakaBySku)),
+    )
+    if (statuses.includes('unknown')) hasUnknownFakaCapacity = true
+    return serializePublicProductListItem(
+      item,
+      facts.offerAvailableCounts,
+      fakaBySku,
+      aggregateOfferAvailability(statuses),
+    )
+  })
+  // The flag is an internal cache hint only; callers must not expose it.
+  return { items: cards, hasUnknownFakaCapacity }
 }
 
 async function listProductsFromDb(params: ProductListParams, context: ProductListContext) {
   const { pageSize = 20 } = params
   const ranked = await listRankedProductRows(params, context)
   const pageRows = ranked.slice(0, pageSize)
-  const items = await hydratePublicListItems(
+  const { items, hasUnknownFakaCapacity } = await hydratePublicListItems(
     pageRows.map(row => row.id),
     params.audience === 'guest' ? 'guest' : 'member',
   )
@@ -652,18 +730,21 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
   const filterHash = computeFilterHash(productFilterHashInput(context.filters, params.audience ?? 'guest'))
 
   return {
-    items,
-    nextCursor: hasMore && lastRow
-      ? encodeOrganicCursor({
-          v: 1,
-          runId: context.run?.id ?? null,
-          isHot: lastRow.isHot,
-          effectiveOrderCount: lastRow.effectiveOrderCount,
-          productId: lastRow.id,
-          filterHash,
-        })
-      : null,
-    hasMore,
+    data: {
+      items,
+      nextCursor: hasMore && lastRow
+        ? encodeOrganicCursor({
+            v: 1,
+            runId: context.run?.id ?? null,
+            isHot: lastRow.isHot,
+            effectiveOrderCount: lastRow.effectiveOrderCount,
+            productId: lastRow.id,
+            filterHash,
+          })
+        : null,
+      hasMore,
+    },
+    hasUnknownFakaCapacity,
   }
 }
 
@@ -674,12 +755,8 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
         negativeTtlSec: 20,
         negativeErrorPredicate: err => err instanceof HttpError && err.status === 404,
         // Same rule as the list: Redis may cache a known capacity/stale snapshot,
-        // but never the cold-cache unavailable fallback returned by SWR.
-        cachePredicate: result =>
-          !isUnavailableFakaCapacity(result.fakaCapacity) &&
-          result.offers.every(
-            offer => !('fakaCapacity' in offer) || !isUnavailableFakaCapacity(offer.fakaCapacity)
-          ),
+        // but never an offer whose capacity is still unknown (cold-cache SWR fallback).
+        cachePredicate: result => result.offers.every(offer => offer.availability.status !== 'unknown'),
       })
     : await getProductDetailFromDb(id, audience)
 
@@ -718,7 +795,7 @@ async function getProductDetailFromDb(id: number, audience: ProductAudience = 'g
   if (!product) throw notFound('商品暂不可用')
   assertPublicProductAccess(product, audience)
 
-  const offerAvailableCounts = await countAvailableByOffer(product.offers)
+  const facts = await loadAvailabilityBatchFacts([product])
 
   // FakaBridge：详情页只读缓存并后台刷新，绝不在请求内串行外呼 Xboard。
   const fakaByOfferId = new Map<number, FakaCapacitySnapshot>()
@@ -730,7 +807,13 @@ async function getProductDetailFromDb(id: number, audience: ProductAudience = 'g
     }
   }
 
-  return serializePublicProductDetail(product, offerAvailableCounts, fakaByOfferId)
+  const offerStatusById = new Map(
+    product.offers.map(offer => [
+      offer.id,
+      publicOfferStatus(offer, product.merchant?.id ?? null, facts, fakaByOfferId.get(offer.id) ?? null),
+    ]),
+  )
+  return serializePublicProductDetail(product, facts.offerAvailableCounts, fakaByOfferId, offerStatusById)
 }
 
 const RECOMMENDATION_LIMIT = 6
@@ -763,9 +846,10 @@ export async function getProductRecommendations(id: number, audience: ProductAud
     queryRecommendationCandidateIds(base, audience, false),
   ])
   const sameSeller = new Set(sameSellerIds)
-  const cards = await hydratePublicListItems([...sameSellerIds, ...otherSellerIds], audience)
+  const { items: cards } = await hydratePublicListItems([...sameSellerIds, ...otherSellerIds], audience)
+  // Unknown capacity stays in its ranked position; only known-unsellable products drop out.
   const items = cards
-    .filter(item => !(item.stockMode !== 'unlimited' && item.stock <= 0))
+    .filter(item => item.availability.status !== 'unavailable')
     .slice(0, RECOMMENDATION_LIMIT)
 
   const pinned = await resolveCursorForRequest(null)
