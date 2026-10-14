@@ -460,9 +460,13 @@ git restore --source="${PDP_PLAN_DOC_COMMIT:?请先设置文档提交SHA}" -- do
 
 ## 12. 实施记录（由实施 agent 完成后填写）
 
-- 实际基线 / 功能 HEAD：待实施。
-- 功能分支 / PR：待实施。
-- 后端集成 / 前端组件 / 构建：未执行，本轮仅文档。
-- 浏览器与查询计划检查：未执行，本轮仅文档。
-- 方案偏差与残余限制：待实施确认；已知规则与候选池限制见 §3、§5。
+- 实际基线：`origin/develop@7dc79aaf8c7417e5ec244cbdbe35950fecfde266`（与方案审查基线一致，锚点无漂移）；功能 HEAD 见分支最新提交。
+- 功能分支 / PR：`feat/product-detail-recommendations`，worktree `/root/projects/worktrees/monexus-product-detail-recommendations`；仅本地提交，未推送、未建 PR。
+- 后端集成：独占可丢弃库 `monexus_test_pdp_rec` 上 `recommendations.test.ts` 8/8 通过（覆盖 B01–B13、B15、B16；B10 用 Faka 探针替身预热快照）；回归 `src/modules/products/`、`src/modules/merchandising/`、`faka-capacity-public-read`、`admin/product-lifecycle`、`offers`、`reviews` 共 20 个文件 219 个用例通过。变异检查：跨店谓词去掉 `IS NULL` 分支后 2 个用例失败。
+- 前端组件：`ProductDetailPage.recommendations.test.tsx` 11/11（F01–F07、F11，三布局显式 mock 视口）、`StoreProductCard.test.tsx` 新增 href 模式用例；受影响 PDP/Store 套件 9 文件 66 用例通过。变异检查：去掉主详情 catch 的过期保护后 A→B→C 用例失败。
+- 构建：`npm run build`、`npm --prefix server run build`、`git diff --check` 通过（Node 22.23.1 / npm 10）。
+- 浏览器检查（Playwright headless，可丢弃开发库 + 演示数据，已删除）：1440 桌面三列位于 details 面板末尾、768 平板两列位于参数后评价前、390 手机两列且经营者标识可见、320 单列；均无横向溢出；Enter 键打开推荐商品后回到顶部，浏览器返回正常；手机末行可滚到底部兑换栏上方。**未执行**：200% 缩放、暗色主题截图。
+- 查询计划：每分类 2500 件、共 5000 件时，单组候选查询走 `Product_categoryId_idx` 位图扫描 + top-N heapsort，执行约 4.6ms；`Offer` 存在性为 Hash Semi Join（该规模下 Offer 全表顺序扫描）。候选上限每组 64、总 128。
+- 方案偏差：无业务语义偏差。实现细节：卡片链接采用标题 Link + `::after` 覆盖整卡（避免把合作伙伴按钮嵌进链接）；`sellerLabel` 取代 `relationLabel` 命名，同时承担手机可见的经营者文本；推荐渲染时的 requestKey 归属判断已实现，但 effect 前一帧在 RTL 中不可单独观测，测试覆盖 effect 层清除。
+- 残余限制：§5.2 候选池折中；长商家名在手机卡片上按既有样式截断；分类过宽/自由文本服务无法细分（§3.2）。
 - 合并 / 部署：未执行。
