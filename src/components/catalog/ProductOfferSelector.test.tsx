@@ -170,13 +170,15 @@ describe('ProductOfferSelector', () => {
     const offers: OfferItem[] = [
       // A positive local stock does not override a server "unavailable".
       { ...mockOffers[0], availability: { status: 'unavailable' } },
-      { ...mockOffers[1], stock: 0, availability: { status: 'unknown' } },
+      // stock 3 would normally show a low-stock badge; unknown must not claim a count.
+      { ...mockOffers[1], availability: { status: 'unknown' } },
     ]
     render(<ProductOfferSelector offers={offers} selectedOfferId={null} onSelectOffer={onSelectOffer} />)
 
     expect(screen.getByTestId('sku-option-101')).toBeDisabled()
     expect(screen.getByTestId('sku-option-102')).not.toBeDisabled()
     expect(screen.getByTestId('sku-pending-102')).toHaveTextContent('待确认')
+    expect(screen.queryByText(/仅剩/)).toBeNull()
     fireEvent.click(screen.getByTestId('sku-option-102'))
     expect(onSelectOffer).toHaveBeenCalledWith(102)
   })

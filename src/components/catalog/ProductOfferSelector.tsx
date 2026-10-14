@@ -61,7 +61,7 @@ export default function ProductOfferSelector({
               : typeof offer.stock === 'number'
                 ? offer.stock
                 : null
-          const isLowStock = !soldOut && remainingCount !== null && remainingCount > 0 && remainingCount <= 5
+          const isLowStock = !soldOut && !pending && remainingCount !== null && remainingCount > 0 && remainingCount <= 5
           const lowStockLabel = isExternalFaka ? `仅剩 ${remainingCount} 名额` : `仅剩 ${remainingCount} 件`
 
           return (
