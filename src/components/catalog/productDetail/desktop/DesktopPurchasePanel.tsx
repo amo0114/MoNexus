@@ -278,7 +278,7 @@ export default function DesktopPurchasePanel({
                     </b>
                     <span>
                       {unavailable
-                        ? '已售罄'
+                        ? '暂不可售'
                         : readAvailabilityStatus(offer) === 'unknown'
                           ? '可售状态待确认'
                           : preview
@@ -393,7 +393,7 @@ export default function DesktopPurchasePanel({
             data-testid="product-stock"
           >
             <i />
-            {soldOut ? '暂时售罄' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
+            {soldOut ? '暂不可售' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
           </span>
         </div>
         <div className="pd-actions" style={!preview ? { gridTemplateColumns: '1fr auto' } : undefined}>

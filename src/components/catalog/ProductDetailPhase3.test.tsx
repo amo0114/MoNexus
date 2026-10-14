@@ -155,7 +155,7 @@ describe('ProductDetailPhase3 - Mobile SKU Drawer and Bottom Bar', () => {
     const optionC = screen.getByTestId('mobile-sku-sheet-option-1003')
     expect(optionC).toBeDisabled()
     expect(optionC).toHaveClass('pm-sku-sheet-item-disabled')
-    expect(optionC).toHaveTextContent('已售罄')
+    expect(optionC).toHaveTextContent('暂不可售')
 
     // Click offer B to switch
     const optionB = screen.getByTestId('mobile-sku-sheet-option-1002')

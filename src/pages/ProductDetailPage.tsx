@@ -127,6 +127,9 @@ export default function ProductDetailPage() {
   usePageView(`/product/${id}`, !loading && !loginRequired && product?.id === Number(id))
 
   const routeProductId = id && /^[1-9]\d*$/.test(id) ? Number(id) : null
+  // Bumped on every detail load (route change, return to the same product, reload), so async
+  // work started during one page visit (post-purchase refresh) never overwrites a later visit.
+  const detailVisitRef = useRef(0)
   const recommendations = useProductRecommendations(routeProductId, !isReferencePreview)
 
   const [showPurchase, setShowPurchase] = useState(false)
@@ -240,6 +243,7 @@ export default function ProductDetailPage() {
     // Detail-to-detail navigation (related products) can overlap requests; only
     // the latest effect run may update state, toast or redirect.
     let cancelled = false
+    detailVisitRef.current += 1
     async function load() {
       if (!id) return
       if (isReferencePreview) {
@@ -359,13 +363,17 @@ export default function ProductDetailPage() {
       } else {
         setShowSuccess(true)
       }
-      setProduct((prev) => {
-        if (!prev) return prev
-        const nextOffers = prev.offers?.map((o) =>
-          o.id === selectedOfferId ? { ...o, stock: Math.max(0, o.stock - 1), sales: (o.sales ?? 0) + 1 } : o
-        )
-        return { ...prev, stock: Math.max(0, prev.stock - 1), sales: prev.sales + 1, offers: nextOffers }
-      })
+      // Availability is server-derived (inventory, local quota, Faka capacity), so reload the
+      // public detail instead of guessing it from stock - 1. Order creation already invalidated
+      // the detail cache. Non-blocking: a failed refresh keeps the old view and checkout still
+      // re-validates on the next attempt.
+      const purchaseVisit = detailVisitRef.current
+      void api
+        .get(`/products/${product.id}`)
+        .then(({ data }) => {
+          if (detailVisitRef.current === purchaseVisit) setProduct(data)
+        })
+        .catch(() => {})
       return 'success'
     } catch (err: any) {
       if (useAppStore.getState().islandNotice?.kind === 'order_processing') {

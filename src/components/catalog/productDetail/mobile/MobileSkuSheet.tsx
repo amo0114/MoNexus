@@ -98,7 +98,7 @@ export default function MobileSkuSheet({
                   <b>{money(offer.price)}</b>
                   <small>
                     {unavailable
-                      ? '已售罄'
+                      ? '暂不可售'
                       : selected
                         ? '已选中'
                         : readAvailabilityStatus(offer) === 'unknown'

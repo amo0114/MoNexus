@@ -1,5 +1,6 @@
 import { badRequest } from '../../lib/httpError.js'
 import { listProducts, getProductDetail } from '../products/service.js'
+import type { AvailabilityStatus } from '../products/publicAvailability.js'
 
 /**
  * SPEC-CHAT-BOT-001 —— 机器人侧商品查询（只读）。
@@ -11,9 +12,9 @@ import { listProducts, getProductDetail } from '../products/service.js'
  *    「机器人说有货、网站说已抢光」是最糟的用户体验。这里只做字段**投影**。
  *
  * 2. **可售状态直接取 service 的投影结果，不重新解释原始字段。**
- *    `serializePublicProductListItem` 返回的 `stock` / `stockMode` 已经是综合了
- *    offers 与 inventory 计数的权威值（见 service.ts 的 computePublicAvailability），
- *    前端也用它。若在机器人侧重算，混合规格商品会与网站不一致。
+ *    `availability.status` 是网站卡片、推荐、详情共用的三态（见 products/publicAvailability.ts，
+ *    综合本站套餐配置、真实库存与 Faka 快照）；`stock` / `stockMode` 只用于可售时的数量文案。
+ *    若在机器人侧重算，多 Plan / 混合规格商品会与网站不一致。
  *
  * 3. **只读，不支持下单。** 机器人负责发现，成交回网站。下单涉及积分扣除与
  *    库存占用，聊天窗口内无法二次确认，风险高于收益。
@@ -23,7 +24,7 @@ export interface BotProductSummary {
   id: number
   name: string
   price: number
-  /** 展示用库存文案：'不限' | '已抢光' | 数字。口径与前端一致。 */
+  /** 展示用库存文案：'不限' | 数字 | '查看套餐' | '暂不可售' | '待确认'。口径与网站卡片一致。 */
   stockLabel: string
   soldOut: boolean
   merchantName: string | null
@@ -56,29 +57,21 @@ function normalizePage(raw: unknown): number {
 }
 
 /**
- * 由 service 投影后的可售字段生成展示文案。
- *
- * Xboard 名额（fakaCapacity.remaining）优先：FakaBridge 商品的真实可售量在
- * 外部套餐上，本地 stock 对它没有意义。
+ * 由 service 投影后的可售字段生成展示文案，与网站商品卡片同口径：
+ * 可售性只看 `availability.status`；Faka 商品的 fakaCapacity 只是某个代表 Plan 的快照，
+ * 多 Plan / 混合套餐时不能当整件商品的名额，因此可售时提示去网站查看套餐。
  */
 function toStockLabel(item: {
   stock?: number | null
   stockMode?: string | null
-  fakaCapacity?: { remaining?: number | null } | null
+  fakaCapacity?: unknown
+  availability: { status: AvailabilityStatus }
 }): { label: string; soldOut: boolean } {
-  const fakaRemaining = item.fakaCapacity?.remaining
-  if (typeof fakaRemaining === 'number') {
-    return fakaRemaining > 0
-      ? { label: String(fakaRemaining), soldOut: false }
-      : { label: '已抢光', soldOut: true }
-  }
-
+  if (item.availability.status === 'unavailable') return { label: '暂不可售', soldOut: true }
+  if (item.availability.status === 'unknown') return { label: '待确认', soldOut: false }
+  if (item.fakaCapacity) return { label: '查看套餐', soldOut: false }
   if (item.stockMode === 'unlimited') return { label: '不限', soldOut: false }
-
-  const stock = item.stock ?? 0
-  return stock > 0
-    ? { label: String(stock), soldOut: false }
-    : { label: '已抢光', soldOut: true }
+  return { label: String(item.stock ?? 0), soldOut: false }
 }
 
 /** service 投影后的条目形状（只列本文件用到的字段）。 */
@@ -89,7 +82,8 @@ interface SerializedListItem {
   stock?: number | null
   stockMode?: string | null
   ratingAvg?: number | null
-  fakaCapacity?: { remaining?: number | null } | null
+  fakaCapacity?: unknown
+  availability: { status: AvailabilityStatus }
   merchant?: { name?: string | null } | null
   category?: { label?: string | null } | null
 }
