@@ -3,7 +3,7 @@
 // background mode or content logging; store=false is always sent.
 
 import OpenAI from 'openai'
-import { LlmError, type LlmProvider, type LlmStructuredRequest, type LlmStructuredResult } from './provider.js'
+import { LlmError, parseStructuredText, type LlmProvider, type LlmStructuredRequest, type LlmStructuredResult } from './provider.js'
 import { createAiFetch, DEFAULT_AI_BASE_URL, normalizeAiBaseUrl } from './endpoint.js'
 import { DEFAULT_AI_WIRE_SETTINGS, structuredSystem, type AiWireSettings } from './protocol.js'
 
@@ -25,16 +25,15 @@ function mapSdkError(err: unknown): LlmError {
 }
 
 function readStructuredText(response: OpenAI.Responses.Response): string {
-  if (response.status === 'incomplete') throw new LlmError('output_unparseable')
+  if (response.status === 'incomplete') throw new LlmError('output_unparseable', undefined, 'incomplete')
   for (const item of response.output) {
     if (item.type !== 'message') continue
     for (const part of item.content) {
       if (part.type === 'refusal') throw new LlmError('refused')
     }
   }
-  if (response.status !== 'completed' || !response.output_text) {
-    throw new LlmError('output_unparseable')
-  }
+  if (response.status !== 'completed') throw new LlmError('output_unparseable', undefined, 'not_completed')
+  if (!response.output_text) throw new LlmError('output_unparseable', undefined, 'empty_text')
   return response.output_text
 }
 
@@ -80,12 +79,9 @@ export function createOpenAiProvider(client?: OpenAiClient, apiKey = '', baseUrl
       }
 
       const text = readStructuredText(response)
-      let output: unknown
-      try {
-        output = JSON.parse(text)
-      } catch {
-        throw new LlmError('output_unparseable')
-      }
+      // `output_text` joins every message; some gateways repeat the message.
+      const messages = response.output.filter(item => item.type === 'message').length
+      const { output, compat } = parseStructuredText(text, messages > 1 ? 'multiple_messages' : undefined)
       return {
         output,
         usage: {
@@ -93,6 +89,7 @@ export function createOpenAiProvider(client?: OpenAiClient, apiKey = '', baseUrl
           outputTokens: response.usage?.output_tokens ?? null,
         },
         model: response.model,
+        ...(compat ? { outputCompat: compat } : {}),
       }
     },
   }

@@ -1,9 +1,9 @@
-// Manual L3: synthetic public text only. Shares runtime settings, not role quota.
+// Manual L3: synthetic public text only. Provider from AI_EVAL_* or the admin
+// configuration (evalRuntime.ts); no role quota.
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { config } from '../config/index.js'
-import { getAiRuntimeConfig } from '../lib/ai/runtimeConfig.js'
-import { getLlmProvider, LlmError } from '../lib/ai/provider.js'
+import { LlmError } from '../lib/ai/provider.js'
 import { prisma } from '../lib/prisma.js'
 import { getProductTemplateRegistry } from '../modules/catalog/templates/registry.js'
 import { buildProductDraftAiContext } from '../modules/catalog/draftAssistant/projection.js'
@@ -12,12 +12,12 @@ import { DRAFT_MAX_OUTPUT_TOKENS, DRAFT_PROMPT_VERSION, DRAFT_SYSTEM_PROMPT, DRA
 import { validateDraftSuggestion } from '../modules/catalog/draftAssistant/validator.js'
 import { DRAFT_EVAL_CASES } from '../modules/catalog/draftAssistant/fixtures.js'
 import { evalGateFailures } from './evalProductCopilot.js'
+import { loadEvalRuntime } from './evalRuntime.js'
 
 async function main() {
-  const runtime = await getAiRuntimeConfig()
-  if (!runtime.apiKey || runtime.credentialError) throw new Error('AI credentials unavailable')
-  const provider = await getLlmProvider(runtime)
-  const results: Array<{ id: string; ok: boolean; latencyMs: number; leaks: string[]; qualityIssues?: string[]; rejectedFields?: number; inputTokens?: number | null; outputTokens?: number | null; result?: unknown; rawOutput?: unknown; error?: string }> = []
+  const runtime = await loadEvalRuntime()
+  const { provider } = runtime
+  const results: Array<{ id: string; ok: boolean; latencyMs: number; leaks: string[]; qualityIssues?: string[]; rejectedFields?: number; outputCompat?: string; inputTokens?: number | null; outputTokens?: number | null; result?: unknown; rawOutput?: unknown; error?: string }> = []
   for (const fixture of DRAFT_EVAL_CASES) {
     const context = buildProductDraftAiContext({
       description: fixture.description,
@@ -52,10 +52,11 @@ async function main() {
         && (!fixture.expectName || meaningfulFields > 0)
         && (fixture.expectName || (meaningfulFields === 0 && result.suggestion.description === null && result.suggestion.introduction === null))
         && leaks.length === 0 && qualityIssues.length === 0
-      results.push({ id: fixture.id, ok, latencyMs: Date.now() - started, leaks, qualityIssues, rejectedFields: result.rejectedFieldCount, ...response.usage, result, rawOutput: response.output })
+      results.push({ id: fixture.id, ok, latencyMs: Date.now() - started, leaks, qualityIssues, rejectedFields: result.rejectedFieldCount, ...response.usage,
+        ...(response.outputCompat ? { outputCompat: response.outputCompat } : {}), result, rawOutput: response.output })
     } catch (err) {
       results.push({ id: fixture.id, ok: false, latencyMs: Date.now() - started, leaks: [], rawOutput,
-        error: signal.aborted ? 'timeout' : err instanceof LlmError ? err.code : 'invalid_output' })
+        error: signal.aborted ? 'timeout' : err instanceof LlmError ? [err.code, err.detail].filter(Boolean).join(':') : 'invalid_output' })
     }
     console.log(`${fixture.id}: ${results.at(-1)!.ok ? 'passed' : 'failed'}`)
   }
@@ -63,12 +64,13 @@ async function main() {
   const p95LatencyMs = latencies[Math.max(0, Math.ceil(latencies.length * 0.95) - 1)] ?? 0
   const failures = evalGateFailures({ fixtures: results.length, okCases: results.filter(result => result.ok).length,
     adversarialLeaks: results.reduce((sum, result) => sum + result.leaks.length, 0), p95LatencyMs, p95GateMs: config.ai.timeoutMs })
-  const summary = { configVersion: runtime.version, chatTokenParameter: runtime.chatTokenParameter, protocol: runtime.protocol, outputMode: runtime.outputMode, reasoningMode: runtime.reasoningMode, baseUrl: runtime.baseUrl, promptVersion: DRAFT_PROMPT_VERSION, validatorVersion: DRAFT_VALIDATOR_VERSION,
-    model: runtime.model, samples: results.length, passed: results.filter(result => result.ok).length, p95LatencyMs,
+  const summary = { ...runtime.config, promptVersion: DRAFT_PROMPT_VERSION, validatorVersion: DRAFT_VALIDATOR_VERSION,
+    samples: results.length, passed: results.filter(result => result.ok).length, p95LatencyMs,
     p50LatencyMs: latencies[Math.max(0, Math.ceil(latencies.length * 0.5) - 1)] ?? 0,
     averageInputTokens: results.reduce((sum, result) => sum + (result.inputTokens ?? 0), 0) / (results.length || 1),
     averageOutputTokens: results.reduce((sum, result) => sum + (result.outputTokens ?? 0), 0) / (results.length || 1),
-    rejectedFields: results.reduce((sum, result) => sum + (result.rejectedFields ?? 0), 0), failures }
+    rejectedFields: results.reduce((sum, result) => sum + (result.rejectedFields ?? 0), 0),
+    outputCompatRule: 'repeated_json', outputCompatHits: results.filter(result => result.outputCompat).length, failures }
   const directory = join(process.cwd(), '.ai-eval')
   mkdirSync(directory, { recursive: true })
   const path = join(directory, `product-draft-${Date.now()}.json`)
@@ -78,6 +80,6 @@ async function main() {
   if (failures.length) process.exitCode = 1
 }
 main().catch(err => {
-  console.error(err instanceof LlmError ? err.code : 'Draft eval failed; check the saved AI configuration')
+  console.error(err instanceof LlmError ? err.code : 'Draft eval failed; check the AI configuration (admin settings or AI_EVAL_*)')
   process.exitCode = 1
 }).finally(() => prisma.$disconnect())

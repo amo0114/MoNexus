@@ -32,3 +32,10 @@ export const aiValidationRejectionsTotal = new client.Counter({
   labelNames: ['feature', 'kind'] as const,
   registers: [registry],
 })
+
+export const aiOutputCompatTotal = new client.Counter({
+  name: 'monexus_ai_output_compat_total',
+  help: 'Provider outputs accepted only through a bounded transport compatibility rule, by feature and rule',
+  labelNames: ['feature', 'kind'] as const,
+  registers: [registry],
+})

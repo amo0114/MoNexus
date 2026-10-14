@@ -5,7 +5,7 @@
 
 export const CONTENT_COPILOT_FEATURE = 'product_content_copilot' as const
 export const PROMPT_VERSION = 'product-content@1'
-export const VALIDATOR_VERSION = 'product-content-validator@1'
+export const VALIDATOR_VERSION = 'product-content-validator@2'
 
 export const MODEL_BINDING = {
   reasoningEffort: 'none',

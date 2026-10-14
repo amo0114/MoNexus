@@ -40,8 +40,9 @@ interface Props {
   /**
    * A proposal prepared elsewhere (merchant operations agent). The dialog then
    * only reviews it: no generation controls, no extra quota, no applied telemetry.
+   * It is bound to one product and stops being adoptable at `expiresAt`.
    */
-  preset?: Omit<ContentSuggestionResponse, 'generationId'> | null
+  preset?: (Omit<ContentSuggestionResponse, 'generationId'> & { productId: number; expiresAt: string }) | null
 }
 
 const FIELD_LABELS: Record<ContentSuggestionField, string> = {
@@ -161,10 +162,22 @@ export default function ProductContentSuggestionDialog({
   const [quotaExhausted, setQuotaExhausted] = useState(false)
   const [selected, setSelected] = useState<ContentSuggestionField[]>([])
   const [pane, setPane] = useState<'current' | 'suggestion'>('suggestion')
+  const [presetExpired, setPresetExpired] = useState(false)
 
   useEffect(() => {
     if (open && preset) setResult(preset)
   }, [open, preset])
+
+  useEffect(() => {
+    if (!preset) return
+    const left = Date.parse(preset.expiresAt) - Date.now()
+    // NaN (unparseable expiry) counts as expired.
+    const live = left > 0
+    setPresetExpired(!live)
+    if (!live) return
+    const timer = setTimeout(() => setPresetExpired(true), left)
+    return () => clearTimeout(timer)
+  }, [preset])
 
   useEffect(() => {
     if (open) return
@@ -177,7 +190,8 @@ export default function ProductContentSuggestionDialog({
     setPane('suggestion')
   }, [open, guard])
 
-  const stale = result != null && result.basedOnContentVersion !== contentVersion
+  const presetUnusable = preset != null && (presetExpired || preset.productId !== productId)
+  const stale = result != null && (result.basedOnContentVersion !== contentVersion || presetUnusable)
 
   function toggleTarget(field: ContentSuggestionField, checked: boolean) {
     setTargetFields(prev => checked
@@ -219,6 +233,11 @@ export default function ProductContentSuggestionDialog({
 
   function handleApply() {
     if (!result || stale || selected.length === 0) return
+    // The expiry timer may lag (sleeping tab); check the clock at the moment of adoption.
+    if (preset && !(Date.parse(preset.expiresAt) > Date.now())) {
+      setPresetExpired(true)
+      return
+    }
     const patch: ContentSuggestionPatch = {}
     const details: Partial<ProductDetails> = {}
     for (const field of selected) {
@@ -318,7 +337,7 @@ export default function ProductContentSuggestionDialog({
             <div className="space-y-4" data-testid="content-suggestion-result">
               {stale && (
                 <p className="rounded-lg border border-[var(--color-border)] p-3 text-[var(--color-text)]" data-testid="content-suggestion-stale">
-                  商品内容已变化，这些建议已失效，请重新整理。
+                  {presetUnusable ? '这份文案提案已过期或不属于当前商品，请回到经营助手重新生成。' : '商品内容已变化，这些建议已失效，请重新整理。'}
                 </p>
               )}
               {warnings.length > 0 && (

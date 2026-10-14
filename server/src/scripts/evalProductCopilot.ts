@@ -1,8 +1,9 @@
 // SPEC-AI-PRODUCT-001 §11.3 — L3 model eval. Manual only (never in CI): sends
 // every fixture to the real provider through the same projection, prompt,
-// schema and validator as production, bypassing HTTP and quota (settings are read from the admin configuration).
+// schema and validator as production, bypassing HTTP and quota. The provider
+// comes from AI_EVAL_* when set, otherwise the admin configuration (evalRuntime.ts).
 //
-//   AI_ENABLED=true OPENAI_API_KEY=… npm run ai:eval:product-copilot
+//   AI_EVAL_BASE_URL=… AI_EVAL_MODEL=… AI_EVAL_API_KEY=… npm run ai:eval:product-copilot
 //
 // Reports are written to server/.ai-eval/ (gitignored). They contain model
 // output for local review; never commit them or copy them into fixtures
@@ -11,9 +12,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { getAiRuntimeConfig } from '../lib/ai/runtimeConfig.js'
 import { prisma } from '../lib/prisma.js'
-import { getLlmProvider, LlmError } from '../lib/ai/provider.js'
+import { LlmError } from '../lib/ai/provider.js'
+import { loadEvalRuntime } from './evalRuntime.js'
 import { COPILOT_FIXTURES } from '../modules/catalog/contentCopilot/__fixtures__/fixtures.js'
 import { MODEL_BINDING, PROMPT_VERSION, VALIDATOR_VERSION } from '../modules/catalog/contentCopilot/constants.js'
 import { MODEL_OUTPUT_SCHEMA } from '../modules/catalog/contentCopilot/outputSchema.js'
@@ -26,6 +27,8 @@ type CaseResult = {
   id: string
   group: string
   outcome: 'ok' | 'structure_invalid' | `llm_${string}`
+  llmDetail?: string
+  outputCompat?: string
   latencyMs: number
   inputTokens: number | null
   outputTokens: number | null
@@ -66,11 +69,8 @@ function percentile(values: number[], p: number): number {
 }
 
 async function main() {
-  const runtime = await getAiRuntimeConfig()
-  if (!runtime.apiKey || runtime.credentialError) {
-    throw new Error('Configure an OpenAI key in admin AI settings (or OPENAI_API_KEY before the first admin save) to run the L3 eval')
-  }
-  const provider = await getLlmProvider(runtime)
+  const runtime = await loadEvalRuntime()
+  const { provider } = runtime
   const results: CaseResult[] = []
 
   for (const fixture of COPILOT_FIXTURES) {
@@ -108,14 +108,16 @@ async function main() {
           const text = JSON.stringify(suggestion.value)
           for (const forbidden of fixture.forbiddenInSuggestions) if (text.includes(forbidden)) leaks.push(forbidden)
         }
-        results.push({ ...base, outcome: 'ok', latencyMs, ...response.usage, fieldStatus, leaks, output: response.output })
+        results.push({ ...base, outcome: 'ok', latencyMs, ...response.usage, ...(response.outputCompat ? { outputCompat: response.outputCompat } : {}),
+          fieldStatus, leaks, output: response.output })
       } catch (err) {
         if (!(err instanceof ModelOutputInvalidError)) throw err
         results.push({ ...base, outcome: 'structure_invalid', latencyMs, ...response.usage, output: response.output })
       }
     } catch (err) {
       const code = controller.signal.aborted ? 'timeout' : err instanceof LlmError ? err.code : 'error'
-      results.push({ ...base, outcome: `llm_${code}`, latencyMs: Date.now() - startedAt, inputTokens: null, outputTokens: null })
+      results.push({ ...base, outcome: `llm_${code}`, ...(err instanceof LlmError && err.detail ? { llmDetail: err.detail } : {}),
+        latencyMs: Date.now() - startedAt, inputTokens: null, outputTokens: null })
     } finally {
       clearTimeout(timer)
     }
@@ -128,9 +130,7 @@ async function main() {
   const summary = {
     promptVersion: PROMPT_VERSION,
     validatorVersion: VALIDATOR_VERSION,
-    model: runtime.model,
-    baseUrl: runtime.baseUrl,
-    configVersion: runtime.version, chatTokenParameter: runtime.chatTokenParameter, protocol: runtime.protocol, outputMode: runtime.outputMode, reasoningMode: runtime.reasoningMode,
+    ...runtime.config,
     fixtures: results.length,
     structurePassRate: ok.length / Math.max(results.length, 1),
     suggestedFieldRate: fieldStatuses.filter(status => status === 'suggested').length / Math.max(fieldStatuses.length, 1),
@@ -140,6 +140,8 @@ async function main() {
     }, {}),
     // Hard gate (§12): must be 0.
     adversarialLeaks: results.reduce((sum, result) => sum + result.leaks.length, 0),
+    outputCompatRule: 'repeated_json',
+    outputCompatHits: results.filter(result => result.outputCompat).length,
     p50LatencyMs: percentile(latencies, 50),
     p95LatencyMs: percentile(latencies, 95),
     p95GateMs: Math.floor(config.ai.timeoutMs * 0.8),

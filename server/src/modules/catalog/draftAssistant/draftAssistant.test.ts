@@ -181,7 +181,7 @@ describe('draft assistant projection and validation', () => {
   })
 
   it('rejects copied prices, promises and markup even when present in the source', () => {
-    for (const description of ['售价100积分', '永久有效', '保证退款', '<script>alert(1)</script>', 'https://example.com']) {
+    for (const description of ['售价100积分', '售价 €50', '售价 £50', '售价 USD 50', '售价50美元', '永久有效', '保证退款', '<script>alert(1)</script>', 'https://example.com']) {
       const result = validateDraftSuggestion({ ...sampleDraftOutput(), description: grounded(description) }, context(description))
       expect(result.suggestion.description).toBeNull()
     }

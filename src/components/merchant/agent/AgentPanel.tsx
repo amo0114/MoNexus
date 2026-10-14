@@ -50,7 +50,7 @@ function EvidenceView({ card }: { card: AgentEvidence }) {
     return <ul><WorkbenchCard item={card.item} stale={false} /></ul>
   }
   return (
-    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm" data-testid={`agent-evidence-${card.ref}`}>
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm" data-testid={`agent-evidence-${card.ref}-${card.kind}`}>
       <p className="font-bold text-[var(--color-text)]">{card.name || '商品'}</p>
       {card.kind === 'readiness' && (
         card.ready
@@ -76,11 +76,13 @@ function EvidenceView({ card }: { card: AgentEvidence }) {
 function ResultView({ result }: { result: AgentTurnResult }) {
   const navigate = useNavigate()
   const { select, handOff } = useMerchantAgentStore()
-  const byRef = new Map(result.evidence.map(card => [card.ref, card]))
+  // One object can carry several cards (e.g. its publication check and its content).
+  const byRef = new Map<string, AgentEvidence[]>()
+  for (const card of result.evidence) byRef.set(card.ref, [...(byRef.get(card.ref) ?? []), card])
   const referenced = new Set(result.blocks.flatMap(block => block.evidenceRefs))
   const truncated = result.coverage.filter(note => note.truncated || note.hasMore || note.status !== 'complete')
   const productOf = (ref: string) => {
-    const card = byRef.get(ref)
+    const card = byRef.get(ref)?.[0]
     if (!card) return null
     if (card.kind === 'workbench_item') return card.item.productId == null ? null : { id: card.item.productId, name: card.item.evidence.productName }
     return { id: card.productId, name: card.name }
@@ -97,8 +99,8 @@ function ResultView({ result }: { result: AgentTurnResult }) {
       {result.blocks.map((block, index) => (
         <div key={index} className="space-y-2" data-testid="agent-block">
           <p className="whitespace-pre-wrap break-words text-sm text-[var(--color-text)]">{block.text}</p>
-          {block.evidenceRefs.map(ref => byRef.get(ref)).filter((card): card is AgentEvidence => Boolean(card)).map(card => (
-            <EvidenceView key={card.ref} card={card} />
+          {block.evidenceRefs.flatMap(ref => byRef.get(ref) ?? []).map(card => (
+            <EvidenceView key={`${card.ref}-${card.kind}`} card={card} />
           ))}
           {block.action && <ActionLink action={block.action} />}
         </div>
@@ -135,7 +137,7 @@ function ResultView({ result }: { result: AgentTurnResult }) {
         </div>
       )}
 
-      {result.outcome === 'limited' && result.evidence.filter(card => !referenced.has(card.ref)).map(card => <EvidenceView key={card.ref} card={card} />)}
+      {result.outcome === 'limited' && result.evidence.filter(card => !referenced.has(card.ref)).map(card => <EvidenceView key={`${card.ref}-${card.kind}`} card={card} />)}
 
       {truncated.length > 0 && (
         <ul className="space-y-1 text-xs text-[var(--color-text-muted)]" data-testid="agent-coverage">

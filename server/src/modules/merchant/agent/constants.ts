@@ -4,7 +4,7 @@
 
 export const AGENT_FEATURE = 'merchant_operations_agent' as const
 export const AGENT_PROMPT_VERSION = 'merchant-agent@4'
-export const AGENT_VALIDATOR_VERSION = 'merchant-agent-validator@3'
+export const AGENT_VALIDATOR_VERSION = 'merchant-agent-validator@4'
 export const TOOL_CATALOG_VERSION = 'merchant-agent-tools@1'
 export const BUDGET_VERSION = 'merchant-agent-budget@2'
 export const DECISION_SCHEMA_NAME = 'merchant_agent_decision'

@@ -78,12 +78,20 @@ describe('OpenAI adapter (SPEC-AI-001 §6.3 / §17-7)', () => {
   })
 
   it.each([
-    ['refusal', completed('', { output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'no' }] }] }), 'refused'],
-    ['incomplete', completed('{"a":', { status: 'incomplete' }), 'output_unparseable'],
-    ['bad json', completed('not json'), 'output_unparseable'],
-  ])('maps %s responses', async (_name, response, code) => {
+    ['refusal', completed('', { output: [{ type: 'message', content: [{ type: 'refusal', refusal: 'no' }] }] }), 'refused', undefined],
+    ['incomplete', completed('{"a":', { status: 'incomplete' }), 'output_unparseable', 'incomplete'],
+    ['bad json', completed('not json'), 'output_unparseable', 'text_not_json'],
+    // Some gateways repeat the message; output_text then joins two JSON objects.
+    ['differing repeated messages', completed('{"a":1}{"a":2}', { output: [completed('{"a":1}').output[0], completed('{"a":2}').output[0]] }), 'output_unparseable', 'multiple_messages'],
+  ])('maps %s responses', async (_name, response, code, detail) => {
     const { client } = clientReturning(async () => response)
-    await expect(createOpenAiProvider(client).generateStructured(request())).rejects.toMatchObject({ code })
+    await expect(createOpenAiProvider(client).generateStructured(request())).rejects.toMatchObject({ code, detail })
+  })
+
+  it('accepts a message repeated verbatim through the bounded compatibility', async () => {
+    const message = completed('{"a":1}').output[0]
+    const { client } = clientReturning(async () => completed('{"a":1}{"a":1}', { output: [message, message] }))
+    await expect(createOpenAiProvider(client).generateStructured(request())).resolves.toMatchObject({ output: { a: 1 }, outputCompat: 'repeated_json' })
   })
 
   it.each([

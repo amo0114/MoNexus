@@ -3,8 +3,8 @@
 | 字段 | 值 |
 | --- | --- |
 | 文档 ID | SPEC-AI-001 |
-| 版本 | 1.3.0 |
-| 日期 | 2026-10-08 |
+| 版本 | 1.3.2 |
+| 日期 | 2026-10-13 |
 | 状态 | Implementation Ready（全部决策 Frozen；D-AI-01 已裁决，见 §6.3） |
 | 产品 | MoNexus |
 | 首个消费方 | SPEC-AI-PRODUCT-001（`docs/specs/ai-product-content-copilot.md`） |
@@ -161,6 +161,7 @@ export class LlmError extends Error {
 - adapter 负责：HTTP/SDK 调用、把 `outputSchema` 映射到该 provider 的结构化输出机制、读取 token usage、把 provider 错误映射为 `LlmError`、响应 `signal` 中止。
 - **有效推理模式（1.3.0）**：`reasoningMode` 是构造 provider 时传入的线协议设置，不是请求字段。运行时按 feature 选定该次调用的有效模式：商品 Copilot 使用全局 `reasoningMode`；商家经营 Agent 使用 `merchantAgentReasoningMode`。`none` 时三种 adapter 分别发送 `reasoning.effort`/`reasoning_effort` 为 `none` 或 Anthropic `thinking: disabled`；`default` 时一律省略，不追加模型专属参数。provider `name` 含有效模式并写入 `AiGeneration.provider`，元数据记录的是实际生效模式。
 - adapter **禁止**：重试、换模型、换 provider、记录 prompt/output、把 provider 原始错误体放入 `Error.message`（错误消息只能是 `LlmErrorCode`，防止输入回显进日志 / Sentry）。
+- `output_unparseable` 附封闭集合的原因码 `LlmError.detail`（如 `choices_count`、`finish_length`、`tool_call`、`multiple_messages`、`text_fenced`、`text_not_json`），只描述响应结构，不含输出文本或服务商返回的任意字符串；写入运行时告警日志与 eval 报告（1.3.1）。
 - 新增依赖：官方 OpenAI JS SDK（`openai@7.28.0`，精确版本加入 `server/package.json`，见 §6.3）及用于可配置地址连接期 DNS 校验的 `undici@7.29.0`。只有 Responses adapter 文件（`lib/ai/openaiProvider.ts`）可以 import 该 SDK；Chat/Anthropic adapter 使用同一个安全 fetch，不新增 SDK；feature 代码、Projection、校验器只依赖 `LlmProvider` 接口。
 
 ### 6.3 D-AI-01（Frozen，2026-10-06 裁决）
@@ -199,7 +200,7 @@ export class LlmError extends Error {
 - Responses 使用原 SDK，`store:false` 始终发送；strict 使用 `text.format.json_schema`，JSON 兼容使用 `text.format.type=json_object`；仅 `reasoningMode=none` 发送 `reasoning.effort=none`。
 - Chat 使用 Bearer 鉴权、`messages[system,user]`、`max_tokens` 或 `max_completion_tokens`（显式选择，只发送一个）、`stream:false`。strict 使用 `response_format={type:json_schema,json_schema:{name,schema,strict:true}}`，兼容模式使用 `response_format={type:json_object}`。仅 none 模式发送 `reasoning_effort=none`，具体支持情况由服务商确认，不按模型名字猜测。
 - Anthropic 使用 `x-api-key` 与 `anthropic-version:2023-06-01`（协议头，不是模型版本），顶层 system、user messages、max_tokens；strict 使用 `output_config.format={type:json_schema,schema}`，兼容模式不发送 output_config，只靠静态提示约束 JSON。仅 none 模式发送 `thinking.type=disabled`。默认模式的实际推理行为由服务商决定。
-- JSON 兼容模式在固定 system 后追加静态输出 Schema 和 JSON 要求，用户数据仍只在独立 user/input 中；不做响应修复、去围栏或失败重试。所有模式继续执行原有结构及领域校验。兼容模式不承诺服务商能保证 Schema，格式错误可能增多。
+- JSON 兼容模式在固定 system 后追加静态输出 Schema 和 JSON 要求，用户数据仍只在独立 user/input 中；不做响应修复、去围栏或失败重试（唯一例外见 §6.4）。所有模式继续执行原有结构及领域校验。兼容模式不承诺服务商能保证 Schema，格式错误可能增多。
 - Chat 仅接受一个 `finish_reason=stop` 的无工具结果；拒答/content_filter 拒绝。Anthropic 仅接受 `stop_reason=end_turn`，仅读取 text，忽略 thinking/redacted_thinking；工具内容、拒答、截断或无法解析的结果拒绝。usage 只允许可入库的非负整数。
 - Chat/Anthropic 响应最多读取 2 MiB；超限拒绝。三种协议复用同一连接期 DNS/公网/重定向限制、运行时超时、配额和错误脱敏，不改变外发数据白名单。
 - 生成记录 provider 字段记录协议、输出模式、推理模式；eval 额外记录配置版本和地址。实际 model 单独记录。协议适配不增加动态路由、fallback 或自动重试。
@@ -229,6 +230,16 @@ export class LlmError extends Error {
 2. 生产 API Key 已由后台加密保存（或首次接管前作为环境 secret 注入）；独立加密主密钥由环境注入并妥善备份，不进数据库、仓库或日志。
 3. 确认所选服务商的数据共享、保留和训练规则；使用 OpenAI 官方服务时，组织 / 项目训练 opt-in 处于关闭状态。
 4. 所选服务与模型组合的 L3 eval 报告满足 feature 硬门槛。
+
+### 6.4 有限传输兼容（1.3.2，明确放宽）
+
+部分网关在 strict 结构化输出下仍会在合法对象后附加泄漏文本，并再输出一次同一对象（实测 `{…} HIDDEN{…}`、`{…}` + 代码围栏与说明 + `{…}`；Responses 网关重复整条 message）。这是对传输格式约定的明确放宽，使用该网关时**不得**称其严格执行结构化输出。
+
+- 正常 JSON 走原路径，不受影响。
+- 仅当去除首尾空白后的文本以一个完整 JSON 对象开头，且以与之**逐字相同**的文本结尾（两次出现不重叠）时，取开头对象。对象边界按字符串与转义正确识别。
+- 不在其他位置搜寻 JSON，不修补截断，不在前后不同的对象间选择，不接受数组或开头有其他文本的响应；其余一律 `output_unparseable`（附 §6.2 原因码）。
+- 中间文本直接丢弃：不进入界面、日志、指标标签、生成记录或 eval 报告。提取结果照常执行全部结构与业务校验。
+- 命中单独计数：`monexus_ai_output_compat_total{feature, kind="repeated_json"}`；eval 报告标明 `outputCompatRule` 与 `outputCompatHits`，L3 结论须注明使用了兼容模式。
 
 ## 7. Structured Output 规范
 
@@ -369,8 +380,8 @@ runAiGeneration<T>(args: {
 2. **短事务**：`pg_advisory_xact_lock(AI_GENERATION_LOCK_CLASS, actorUserId)` → 统计当日（`businessTime` 上海日界）该 actor 该 feature 的 `AiGeneration` 行数 → 与配额比较 → 检查同 target 是否有 `createdAt > now() - AI_TIMEOUT_MS - 5s` 的 `pending` 行 → 插入 `pending` 行 → 提交。锁只覆盖这个短事务，**不包含** provider 调用。
 3. 事务外调用 provider（带超时）。
 4. `parse`（结构级 + 领域级校验）。
-5. 更新行为 `succeeded` / `failed`，写 tokens、latency、counts、`completedAt`。
-6. 记指标；错误按 §9.2 映射为 `HttpError`。
+5. 更新行为 `succeeded` / `failed`，写 tokens、latency、counts、`completedAt`。结果只在未取消且未越过总时限时交付：parse/run 返回后与成功写入后各检查一次，越过即按取消或 `AI_TIMEOUT` 记失败（覆盖已写的 `succeeded`），不返回结果。
+6. 按最终结果记一次指标；错误按 §9.2 映射为 `HttpError`。
 
 崩溃遗留的 `pending` 行计入当日配额，超过「超时 + 5s」后不再阻塞同 target 的新请求。
 
@@ -501,6 +512,8 @@ L3 eval 可直接使用后台保存的 Key，允许开关关闭时运行，以�
 | 1.2.0 | 2026-10-07 | 第三方协议显式可选 Responses/Chat/Anthropic；JSON 兼容模式与可省略推理参数；保留旧配置默认行为，不绑定官方型号/地址；共用确定性校验、超时与外发安全约束。 |
 | 1.1.2 | 2026-10-07 | 辅助新建可生成有原文依据的详细纯文案；明确人确认后转义文本写入既有富文本介绍的边界，不解释模型 HTML。 |
 | 1.3.0 | 2026-10-08 | 商家经营 Agent 基础（SPEC-MERCHANT-AGENT-001 A0）：按 feature 的有效推理模式；按 feature 声明支持角色的额度映射与 Agent 商家额度；后台单例新增 Agent 开关与独立推理模式；AiGeneration 增加 Agent feature/target、run 计数列与 Agent 行约束；run 初始输入 HMAC 用途域；§16 由预冻结转为生效。商品 Copilot 行为不变。 |
+| 1.3.1 | 2026-10-13 | §11.1 交付前检查取消与总时限（含成功写入跨过时限），越过即记失败且不返回结果，指标只按最终结果记录；validator bump：`product-content-validator@2`、`product-draft-validator@3`、`merchant-agent-validator@4`（H7 币种覆盖与 Agent 证据/撤权规则），须各自重跑 L3。`output_unparseable` 附封闭集合的原因码（如 `choices_count` / `finish_length` / `multiple_messages` / `text_not_json`），只描述结构、不含输出文本，用于日志与 eval 定位兼容性问题。 |
+| 1.3.2 | 2026-10-13 | 新增 §6.4 有限传输兼容：仅接受「完整开头对象 + 逐字相同结尾对象」的重复输出，丢弃中间文本，单独计数并在 eval 报告标明；属明确放宽，不代表网关严格执行结构化输出。须以最终代码重跑三套 L3。 |
 
 ### 1.2.0 接口资料（2026-10-07 核对）
 

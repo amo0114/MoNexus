@@ -9,7 +9,7 @@ import { businessDateString, businessDayStartUtc } from '../businessTime.js'
 import { HttpError, notFound } from '../httpError.js'
 import { logger } from '../logger.js'
 import { prisma } from '../prisma.js'
-import { aiGenerationDuration, aiGenerationTotal, aiTokensTotal } from './metrics.js'
+import { aiGenerationDuration, aiGenerationTotal, aiOutputCompatTotal, aiTokensTotal } from './metrics.js'
 import { getLlmProvider, LlmError } from './provider.js'
 import type { AiSafe } from './safe.js'
 import { getAiRuntimeConfig } from './runtimeConfig.js'
@@ -199,6 +199,7 @@ export async function runAiTask<T>(args: RunAiTaskArgs<T>): Promise<{ generation
         inputTokens = inputTokens == null || result.usage.inputTokens == null ? null : inputTokens + result.usage.inputTokens
         outputTokens = outputTokens == null || result.usage.outputTokens == null ? null : outputTokens + result.usage.outputTokens
         reportedModel = result.model || runtime.model
+        if (result.outputCompat) aiOutputCompatTotal.inc({ feature: args.feature, kind: result.outputCompat })
         if (controller.signal.reason === 'client_disconnected') throw new AiTaskCancelledError()
         return result.output
       } catch (err) {
@@ -216,7 +217,8 @@ export async function runAiTask<T>(args: RunAiTaskArgs<T>): Promise<{ generation
     },
   }
 
-  const finish = async (data: { status: 'succeeded' | 'failed'; errorCode: FailureCode | null; stopReason: string | null }) => {
+  type Outcome = { status: 'succeeded' | 'failed'; errorCode: FailureCode | null; stopReason: string | null }
+  const record = async (data: Outcome) => {
     const latencyMs = Date.now() - startedAt
     const counts = contentCounts as { issueCounts: IssueCounts; suggestedFieldCount: number } | null
     await prisma.aiGeneration.update({
@@ -233,17 +235,36 @@ export async function runAiTask<T>(args: RunAiTaskArgs<T>): Promise<{ generation
         completedAt: new Date(),
       },
     })
+    return latencyMs
+  }
+  const count = (data: Outcome, latencyMs: number) => {
     aiGenerationTotal.inc({ feature: args.feature, status: data.status, error_code: data.errorCode ?? 'none' })
     aiGenerationDuration.observe({ feature: args.feature }, latencyMs / 1000)
     if (steps > 0 && inputTokens != null) aiTokensTotal.inc({ feature: args.feature, direction: 'input' }, inputTokens)
     if (steps > 0 && outputTokens != null) aiTokensTotal.inc({ feature: args.feature, direction: 'output' }, outputTokens)
+  }
+  const finish = async (data: Outcome) => {
+    const latencyMs = await record(data)
+    count(data, latencyMs)
     return latencyMs
+  }
+  // A result is only delivered while the run is live: a late tool, final
+  // permission check or success write after cancellation or the deadline
+  // fails the run, even before the abort timer fires.
+  const assertDeliverable = () => {
+    if (controller.signal.reason === 'client_disconnected') throw new AiTaskCancelledError()
+    if (controller.signal.aborted || remainingMs() <= 0) throw new LlmError('timeout')
   }
 
   try {
     const result = await args.run(task)
-    if (controller.signal.reason === 'client_disconnected') throw new AiTaskCancelledError()
-    await finish({ status: 'succeeded', errorCode: null, stopReason: result.stopReason ?? null })
+    assertDeliverable()
+    const succeeded: Outcome = { status: 'succeeded', errorCode: null, stopReason: result.stopReason ?? null }
+    const latencyMs = await record(succeeded)
+    // If the write crossed the deadline, the failure path below overwrites the
+    // row; metrics are only counted once the outcome is final.
+    assertDeliverable()
+    count(succeeded, latencyMs)
     return { generationId: row.id, value: result.value }
   } catch (err) {
     if (err instanceof AiTaskCancelledError) {
@@ -263,6 +284,7 @@ export async function runAiTask<T>(args: RunAiTaskArgs<T>): Promise<{ generation
         feature: args.feature,
         errorCode: failure.code,
         llmErrorCode: err instanceof LlmError ? err.code : 'parse',
+        llmErrorDetail: err instanceof LlmError ? err.detail : undefined,
         latencyMs,
       },
       'ai generation failed',

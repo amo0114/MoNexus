@@ -72,7 +72,7 @@ export async function runAgentTurn(
       stopReason,
       value: {
         outcome, stopReason, blocks: [], clarification: null, proposal: null,
-        evidence: [...state.evidence.values()], steps, coverage: state.coverage, ...extra,
+        evidence: state.evidenceCards(), steps, coverage: state.coverage, ...extra,
       },
     }
   }
@@ -129,12 +129,11 @@ export async function runAgentTurn(
 
     if (decision.kind === 'answer') {
       const blocks = decision.blocks.map(block => {
-        if (block.evidenceRefs.some(ref => !state.evidence.has(ref))) throw new AgentOutputInvalidError('unknown evidenceRef')
+        if (block.evidenceRefs.some(ref => !state.hasEvidence(ref))) throw new AgentOutputInvalidError('unknown evidenceRef')
         let action: WorkbenchAction | null = null
         if (block.actionRef != null) {
-          const entry = state.actions.get(block.actionRef)
-          if (!entry || !block.evidenceRefs.includes(entry.evidenceRef)) throw new AgentOutputInvalidError('unknown actionRef')
-          action = entry.action
+          action = state.resolveAction(block.actionRef, block.evidenceRefs)
+          if (!action) throw new AgentOutputInvalidError('unknown actionRef')
         }
         return { text: block.text, evidenceRefs: block.evidenceRefs, action }
       })
@@ -142,7 +141,7 @@ export async function runAgentTurn(
     }
 
     if (decision.kind === 'clarify') {
-      if (decision.candidateRefs.some(ref => !state.isProductRef(ref) || !state.evidence.has(ref))) {
+      if (decision.candidateRefs.some(ref => !state.isProductRef(ref) || !state.hasEvidence(ref))) {
         throw new AgentOutputInvalidError('unknown candidateRef')
       }
       return finish('clarification', 'clarification', { clarification: { question: decision.question, candidateRefs: decision.candidateRefs } })
@@ -153,7 +152,7 @@ export async function runAgentTurn(
       observations.push({ tool: 'prepare_content', status: 'requires_read_product_content' })
       continue
     }
-    return prepareContent(task, state, input, stored, decision.fields, finish)
+    return prepareContent(task, state, input, stored, decision.fields, assertAllowed, finish)
   }
   return finish('limited', 'budget')
 }
@@ -164,6 +163,7 @@ async function prepareContent(
   input: TurnInput,
   stored: NonNullable<ReturnType<AgentRunState['contents']['get']>>,
   fields: ContentField[],
+  assertAllowed: () => Promise<void>,
   finish: (outcome: TurnOutcome, stopReason: string, extra?: Partial<TurnResult>) => Promise<{ value: TurnResult; stopReason: string }>,
 ) {
   // Only the product's own content context and public notes reach the copy prompt;
@@ -181,6 +181,9 @@ async function prepareContent(
     return finish('limited', 'content_changed')
   }
 
+  // Access may have been revoked during the planning call; a cached context is
+  // only sent to the provider after the same checks pass again.
+  await assertAllowed()
   let raw: unknown
   try {
     raw = await task.generate({

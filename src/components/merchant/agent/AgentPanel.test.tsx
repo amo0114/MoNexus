@@ -46,6 +46,17 @@ describe('AgentPanel', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('renders every evidence card of a referenced object', async () => {
+    useMerchantAgentStore.setState({ availability: 'ready' })
+    api.postAgentTurn.mockResolvedValue({ ...answered, evidence: [...answered.evidence,
+      { ref: 'P1', kind: 'content', productId: 7, name: '学习指引', filledFields: ['description'], emptyFields: ['faq', 'purchaseNotes'] }] })
+    renderPanel()
+    fireEvent.change(screen.getByTestId('agent-input'), { target: { value: '检查缺项并看看说明' } })
+    fireEvent.click(screen.getByTestId('agent-send'))
+    expect(await screen.findByTestId('agent-evidence-P1-readiness')).toHaveTextContent('缺少商品封面')
+    expect(screen.getByTestId('agent-evidence-P1-content')).toHaveTextContent('待补充说明：2 项')
+  })
+
   it('only sends on submit and renders server evidence, actions, coverage and steps', async () => {
     useMerchantAgentStore.setState({ availability: 'ready' })
     api.postAgentTurn.mockResolvedValue(answered)
@@ -54,7 +65,7 @@ describe('AgentPanel', () => {
     expect(api.postAgentTurn).not.toHaveBeenCalled()
     fireEvent.click(screen.getByTestId('agent-send'))
     expect(await screen.findByText('先处理发布缺项。')).toBeInTheDocument()
-    expect(screen.getByTestId('agent-evidence-P1')).toHaveTextContent('缺少商品封面')
+    expect(screen.getByTestId('agent-evidence-P1-readiness')).toHaveTextContent('缺少商品封面')
     expect(screen.getByRole('link', { name: '去处理' })).toHaveAttribute('href', '/merchant/products/7/edit?focus=images')
     expect(screen.getByTestId('agent-coverage')).toHaveTextContent('只检查了部分草稿')
     expect(screen.getByTestId('agent-steps')).toHaveTextContent('发布检查')
