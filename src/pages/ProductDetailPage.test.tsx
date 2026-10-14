@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import type { CheckoutPreview } from '../api/orders'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -170,6 +170,65 @@ describe('ProductDetailPage createOrder term fields', () => {
     await waitFor(() => expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('该套餐暂不可售'))
     expect(screen.getByTestId('inflow-buy-cta')).toBeDisabled()
     expect(detailCalls).toBe(2)
+  })
+
+  it('drops a post-purchase refresh that lands after leaving and returning to the same product', async () => {
+    const withStatus = (status: string, stock: number) => ({
+      ...PRODUCT,
+      offers: [{ ...PRODUCT.offers[0], stock, availability: { status } }],
+      availability: { status },
+    })
+    let resolveStaleRefresh!: (value: unknown) => void
+    let detailCalls = 0
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/42') {
+        detailCalls += 1
+        if (detailCalls === 1) return Promise.resolve({ data: withStatus('available', 1) })
+        // 2nd call = post-purchase refresh, held until after the user came back.
+        if (detailCalls === 2) return new Promise(resolve => { resolveStaleRefresh = resolve })
+        return Promise.resolve({ data: withStatus('unavailable', 0) })
+      }
+      if (url === '/products/43') return Promise.resolve({ data: { ...PRODUCT, id: 43, name: '另一件商品' } })
+      if (typeof url === 'string' && /^\/products\/4[23]\/reviews/.test(url)) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    function Nav() {
+      const navigate = useNavigate()
+      return (
+        <>
+          <button type="button" onClick={() => navigate('/product/43')}>go B</button>
+          <button type="button" onClick={() => navigate('/product/42')}>go A</button>
+        </>
+      )
+    }
+    render(
+      <MemoryRouter initialEntries={['/product/42']}>
+        <Nav />
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByTestId('inflow-buy-cta')).toHaveTextContent('立即兑换')
+    fireEvent.click(screen.getAllByRole('button', { name: '立即兑换' })[0])
+    await screen.findByTestId('purchase-modal')
+    await screen.findByTestId('preview-price')
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(detailCalls).toBe(2))
+
+    fireEvent.click(screen.getByRole('button', { name: 'go B', hidden: true }))
+    expect(await screen.findByRole('heading', { level: 1, name: '另一件商品' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'go A', hidden: true }))
+    await waitFor(() => expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('该套餐暂不可售'))
+
+    await act(async () => {
+      resolveStaleRefresh({ data: withStatus('available', 1) })
+    })
+    expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('该套餐暂不可售')
+    expect(screen.getByTestId('inflow-buy-cta')).toBeDisabled()
   })
 
   it('renders Header-First SPU hierarchy and pure component 4:3 gallery with pagination', async () => {

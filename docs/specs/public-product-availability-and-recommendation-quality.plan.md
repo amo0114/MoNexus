@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 | --- | --- |
 | 文档 ID | `PLAN-PRODUCT-AVAILABILITY-001` |
-| 版本 | `1.0.0`（方案版本，不是应用版本） |
+| 版本 | `1.0.1`（方案版本，不是应用版本） |
 | 日期 | 2026-10-14 |
 | 状态 | PR1 已实施并合入 develop（[PR #251](https://github.com/amo0114/MoNexus/pull/251)，合并提交 `bde754e`）；合并后审查的补丁见 §12；PR2–PR5 未开始 |
 | 核验基线 | `origin/develop@163673b01a88eabfe572a90281abf878b46c910c`，相关推荐已在 PR #250 合并 |
@@ -347,10 +347,12 @@ manual_service、appointment 没有主键，不能机械要求 serviceName；未
 git status --short --branch
 git worktree list
 git fetch origin develop
-git worktree add -b fix/public-product-availability /root/projects/worktrees/monexus-public-product-availability origin/develop
+git worktree add --no-track -b fix/public-product-availability /root/projects/worktrees/monexus-public-product-availability origin/develop
 ```
 
 若本文未合并，先在功能 worktree 比较同路径，再仅引入交接文档提交中的本文；不要把功能基线切回文档分支，也不 cherry-pick 无关改动。
+
+新工作分支使用 `--no-track`，避免自动将 origin/develop 设成 upstream。获准推送后，明确指定远端同名分支，例如 `git push -u origin HEAD:refs/heads/fix/public-product-availability`；方案分支则指定 `HEAD:refs/heads/chore/public-product-availability-plan`。不依赖各机器的 push.default，也不为此修改全局 Git 配置。
 
 逐文件 `git add <精确路径>`，提交前查看 staged diff 和 `git diff --check`。不使用 git add . / -A、不提交 .env/凭据/日志/构建物、不重写 migration、不 bump 发行版本、不 force push、不直推 develop/master、不加 skip ci。PR base 为 develop，Squash merge 和 CI OK 遵循仓库规范。
 
@@ -358,7 +360,7 @@ git worktree add -b fix/public-product-availability /root/projects/worktrees/mon
 
 ## 11. 可直接交给实施 agent 的任务
 
-> 实施 `docs/specs/public-product-availability-and-recommendation-quality.plan.md` v1.0.0 的 PR1（§1–8），后续 §9 是路线而不是当前任务。阅读方案与最新 Git/测试政策，以最新 origin/develop 创建独立 fix/public-product-availability worktree。复用纯 evaluateActiveOffer 的本站套餐判断、真实 InventoryItem 数量及已有 Faka 非阻塞快照，新增纯公开 Offer 状态与商品三态汇总；list/detail/recommendations 输出 availability.status，推荐只剔除 unavailable，unknown 保留。Faka 远端正库存不能绕过本站名额，未配置根据本地事实判 unavailable，容量无法确认根据 source 判 unknown，不匹配 reason 文本、不新增错误体系。保留 Plan 去重、库存数量、相关性 SQL、64 候选和最多6件。接上共享前端 helper、Card、Selector 与所选套餐购买入口；商品汇总不覆盖套餐状态，所选本地套餐不继承代表 Faka 容量，Faka 卡片显示查看套餐，unknown 可选择并走原购买流程。局部升级 list/detail Redis key，参与计算的有效套餐有未知容量时不缓存，内部包装不公开。避免重复校验、发送前复查、同步外部探测、模板/交易重构、额外依赖或 migration。按 §7 做分层定向验证，不重复状态矩阵、不新增纯 UI E2E；本功能涉及购买入口，按测试政策为实施 PR 打 run-e2e 运行现有覆盖。精确暂存、报告实际 base/HEAD 与验证/未执行项，按授权范围交付，不自行合并或部署。
+> 实施 `docs/specs/public-product-availability-and-recommendation-quality.plan.md` v1.0.1 的 PR1（§1–8），后续 §9 是路线而不是当前任务。阅读方案与最新 Git/测试政策，以最新 origin/develop 使用 --no-track 创建独立 fix/public-product-availability worktree。复用纯 evaluateActiveOffer 的本站套餐判断、真实 InventoryItem 数量及已有 Faka 非阻塞快照，新增纯公开 Offer 状态与商品三态汇总；list/detail/recommendations 输出 availability.status，推荐只剔除 unavailable，unknown 保留。Faka 远端正库存不能绕过本站名额，未配置根据本地事实判 unavailable，容量无法确认根据 source 判 unknown，不匹配 reason 文本、不新增错误体系。保留 Plan 去重、库存数量、相关性 SQL、64 候选和最多6件。接上共享前端 helper、Card、Selector 与所选套餐购买入口；商品汇总不覆盖套餐状态，所选本地套餐不继承代表 Faka 容量，Faka 卡片显示查看套餐，unknown 可选择并走原购买流程。局部升级 list/detail Redis key，参与计算的有效套餐有未知容量时不缓存，内部包装不公开。避免重复校验、发送前复查、同步外部探测、模板/交易重构、额外依赖或 migration。按 §7 做分层定向验证，不重复状态矩阵、不新增纯 UI E2E；本功能涉及购买入口，按测试政策为实施 PR 打 run-e2e 运行现有覆盖。精确暂存、报告实际 base/HEAD 与验证/未执行项，按授权范围交付，不自行合并或部署。
 
 ## 12. 实施记录（实施后填写）
 
