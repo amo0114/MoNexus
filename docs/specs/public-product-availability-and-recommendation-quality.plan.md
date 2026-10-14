@@ -5,7 +5,7 @@
 | 文档 ID | `PLAN-PRODUCT-AVAILABILITY-001` |
 | 版本 | `1.0.0`（方案版本，不是应用版本） |
 | 日期 | 2026-10-14 |
-| 状态 | 实施交接方案；本次只提交文档，未实施功能 |
+| 状态 | PR1 已实施并合入 develop（[PR #251](https://github.com/amo0114/MoNexus/pull/251)，合并提交 `bde754e`）；合并后审查的补丁见 §12；PR2–PR5 未开始 |
 | 核验基线 | `origin/develop@163673b01a88eabfe572a90281abf878b46c910c`，相关推荐已在 PR #250 合并 |
 | 本次详细定义 | PR1：商品、套餐的公开可售状态统一 |
 | 后续路线 | PR2 数据审计、PR3 名称建议、PR4 准入调整、PR5 效果统计；按依赖分期实施 |
@@ -363,7 +363,7 @@ git worktree add -b fix/public-product-availability /root/projects/worktrees/mon
 ## 12. 实施记录（实施后填写）
 
 - 实际 base：`origin/develop@163673b01a88eabfe572a90281abf878b46c910c`（与核验基线一致，锚点无漂移）；HEAD 见分支最新提交。
-- 分支 / worktree：`fix/public-product-availability`（`--no-track` 创建，未跟踪 origin/develop），`/root/projects/worktrees/monexus-public-product-availability`；仅本地提交，未推送、未建 PR。PR 创建时按 §7.3 打 `run-e2e`。
+- 分支 / worktree：`fix/public-product-availability`（`--no-track` 创建，未跟踪 origin/develop），`/root/projects/worktrees/monexus-public-product-availability`；已推送并开 [PR #251](https://github.com/amo0114/MoNexus/pull/251)（`run-e2e`），squash 合入 develop 为 `bde754e`。
 - 主要行为：新增 `products/publicAvailability.ts`（复用 `evaluateActiveOffer` + 规范化快照 source/sellable）；list/detail/recommendations 输出 `availability.status`，详情每个 active Offer 另带状态；推荐只剔除 unavailable；list/detail Redis key 加 `public-availability-v1`；有效套餐存在未知容量时不写缓存（列表用内部 `{ data, hasUnknownFakaCapacity }` 包装，详情直接用各 Offer 公开状态判断，未另包一层）；前端唯一兼容入口 `src/utils/publicAvailability.ts`，卡片三态、套餐“待确认”提示、所选套餐决定购买入口、本地套餐不继承代表 Faka 容量。
 - 规则差异（均为展示细节，不改契约）：
   - 卡片 unknown 文案为“状态待确认”而非“可售状态待确认”：手机卡片固定高度，长文案换行后被截断或挤压价格（浏览器 320/390 实测）。详情与套餐区仍用完整“可售状态待确认 / 可售状态：待确认”。
@@ -373,6 +373,11 @@ git worktree add -b fix/public-product-availability /root/projects/worktrees/mon
 - 构建：`npm run build`、`npm --prefix server run build`、`git diff --check` 通过（Node 22.23.1）。
 - 浏览器（headless，可丢弃开发库，Faka 指向不可达本地端口以产生 unknown，已清理）：商城 320/390 卡片四态文案与灰化正确且不挤压价格；手机/桌面详情初始选中首个 available、unknown 可选且显示待确认、unavailable 禁用；暗色主题 + 720px 视口响应式检查无遮挡、无横向溢出。**真实浏览器 200% 缩放未验收**（720px 视口只是响应式近似）。访客状态购买按钮仍为“登录后兑换”（原有优先级）。
 - 审查返修（独立审查 2 项 P2）：套餐选项“待确认”时不再同时显示“仅剩 N 件/名额”；详情页改用 `loadFakaCapacityBySku` 批量读取，同 Plan 多周期冷缓存只触发一次探测、共享同一快照。各补一条回归测试，并做变异检查（撤销修复后对应用例失败）。
-- E2E / CI：本地未运行 Playwright；按测试政策依赖 PR 的 `run-e2e` 与 CI OK。
+- E2E / CI：本地未运行 Playwright；PR #251 的 `run-e2e`（主套件、通知实时、目录运营集成）与 CI OK 全部通过。
 - 快照及缓存残余限制：使用既有有界快照与 Redis TTL，不提供实时锁库存承诺；缓存中的已知状态在 TTL 内可能滞后于远端变化。
-- 推送 / 合并 / 部署：未执行。
+- 推送 / 合并：PR #251 已合入 develop（`bde754e`）；部署未执行。
+- 合并后审查补丁（分支 `fix/public-availability-followups`）：
+  - P1 购买成功后不再在前端用 `stock - 1` 推断，改为后台重新拉取权威详情（下单已使详情缓存失效），按当前路由商品 ID 丢弃过期结果；补“最后 1 件购买后按钮不再可兑换”回归。
+  - P2 聊天机器人商品文案改为消费 `availability.status`（暂不可售 / 待确认 / 查看套餐），不再读代表 Plan 名额或旧库存。
+  - P2 套餐不可售文案统一为“暂不可售”（unavailable 不仅指售罄）。
+  - P3 本文状态同步。
