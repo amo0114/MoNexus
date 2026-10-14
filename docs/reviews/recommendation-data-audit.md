@@ -55,6 +55,7 @@ REDIS_ENABLED=false npm --silent --prefix server run recommendation:audit -- --f
 - 审计代码：`chore/recommendation-data-audit@2b4f8c3`，执行一次 JSON 审计。
 - 线上版本：实际核对前后端镜像均为 `sha-7dc79aa`。以下推荐位指标是使用新推荐规则对现有生产目录的模拟，不是线上推荐功能已经部署的证据，也不是实际曝光或点击数据。
 - 范围商品数 / 有启用套餐：2 / 2；均属于网络节点（`network-node`）。范围包含 public 与 members_only，不含草稿、下架、归档或经营者无效的商品。
+- 范围核验：本次确认应用实际使用的生产库（`monexus` / `public`，与 monexus-db-prod 一致）共有 5 件商品：active 且未归档 2 件、inactive 未归档 2 件、inactive 已归档 1 件；2 件 active 商品分属 1 个 active 商家和平台自营，没有 active 商品因归档或商家停用被排除。2026-09-29 提交（`1ec52f9`，#228）中提到的 830 件 active 商品来自本机库实测，不能与本次生产统计直接比较。
 - 原始 JSON、运行时间记录及离线生成的 Markdown 保存在本地仓库外的受限目录；报告只保留汇总，不提交原始数据、连接地址或凭据。
 
 ### 4.1 分类 × 模板完整度
