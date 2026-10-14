@@ -13,6 +13,7 @@ import BadgeMark from '../merchandising/BadgeMark'
 import MerchantPartnerMark from '../merchandising/MerchantPartnerMark'
 import { badgeSpecsFromProjection } from '../merchandising/badges'
 import { truncateEditorialReason } from '../merchandising/storeFeed'
+import { readAvailabilityStatus } from '../../utils/publicAvailability'
 import type { FeedDisclosure, Product } from './types'
 
 export interface StoreProductCardProps {
@@ -31,22 +32,18 @@ export interface StoreProductCardProps {
 }
 
 export default function StoreProductCard({ product, onOpen, href, sellerLabel, disclosure }: StoreProductCardProps) {
-  const faka = product.fakaCapacity
-  const isSoldOut =
-    faka?.source === 'xboard'
-      ? faka.sellable === false || (faka.remaining != null && faka.remaining <= 0)
-      : product.stockMode !== 'unlimited' && product.stock === 0
-  const stockTitle = faka?.source === 'xboard' ? '剩余名额' : '库存'
-  const stockLabel =
-    faka?.source === 'xboard'
-      ? faka.remaining == null
-        ? '不限'
-        : faka.capacityLimit != null
-          ? `${faka.remaining}/${faka.capacityLimit}`
-          : String(faka.remaining)
-      : product.stockMode === 'unlimited'
-        ? '不限'
-        : String(product.stock)
+  const availability = readAvailabilityStatus(product)
+  const isSoldOut = availability === 'unavailable'
+  // One representative plan's x/y misleads for multi-plan/mixed products, so Faka cards
+  // defer exact quota to the selected offer on the detail page.
+  const stockText =
+    availability === 'unavailable'
+      ? '暂不可售'
+      : availability === 'unknown'
+        ? '状态待确认' // short enough for the fixed-height phone card
+        : product.fakaCapacity
+          ? '查看套餐'
+          : `库存 ${product.stockMode === 'unlimited' ? '不限' : product.stock}`
 
   return (
     <div
@@ -173,9 +170,7 @@ export default function StoreProductCard({ product, onOpen, href, sellerLabel, d
               <span>暂无评分</span>
             )}
             <span>已售 {product.sales}</span>
-            <span data-testid={`store-stock-${product.id}`}>
-              {stockTitle} {stockLabel}
-            </span>
+            <span data-testid={`store-stock-${product.id}`}>{stockText}</span>
           </div>
         </div>
       </div>

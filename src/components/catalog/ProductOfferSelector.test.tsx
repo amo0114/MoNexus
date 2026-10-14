@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
-import ProductOfferSelector, { type OfferItem } from './ProductOfferSelector'
+import ProductOfferSelector, { isOfferSoldOut, type OfferItem } from './ProductOfferSelector'
 
 const mockOffers: OfferItem[] = [
   {
@@ -163,6 +163,30 @@ describe('ProductOfferSelector', () => {
 
     // 202 has remaining 2 -> should show '仅剩 2 名额'
     expect(screen.getByText('仅剩 2 名额')).toBeDefined()
+  })
+
+  it('follows the server availability: unavailable is disabled, unknown stays selectable with a pending hint', () => {
+    const onSelectOffer = vi.fn()
+    const offers: OfferItem[] = [
+      // A positive local stock does not override a server "unavailable".
+      { ...mockOffers[0], availability: { status: 'unavailable' } },
+      // stock 3 would normally show a low-stock badge; unknown must not claim a count.
+      { ...mockOffers[1], availability: { status: 'unknown' } },
+    ]
+    render(<ProductOfferSelector offers={offers} selectedOfferId={null} onSelectOffer={onSelectOffer} />)
+
+    expect(screen.getByTestId('sku-option-101')).toBeDisabled()
+    expect(screen.getByTestId('sku-option-102')).not.toBeDisabled()
+    expect(screen.getByTestId('sku-pending-102')).toHaveTextContent('待确认')
+    expect(screen.queryByText(/仅剩/)).toBeNull()
+    fireEvent.click(screen.getByTestId('sku-option-102'))
+    expect(onSelectOffer).toHaveBeenCalledWith(102)
+  })
+
+  it('falls back to legacy stock/Faka fields only when availability is absent', () => {
+    expect(isOfferSoldOut(mockOffers[2])).toBe(true)
+    expect(isOfferSoldOut({ ...mockOffers[0], fakaCapacity: { remaining: 4, capacityLimit: 9, sellable: false, source: 'xboard' } })).toBe(true)
+    expect(isOfferSoldOut({ ...mockOffers[2], availability: { status: 'unknown' } })).toBe(false)
   })
 
   it('strictly contains no quantity stepper elements', () => {

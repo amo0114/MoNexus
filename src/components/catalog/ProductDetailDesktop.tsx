@@ -25,6 +25,7 @@ import RichTextHtml from './RichTextHtml'
 import ProductSpecSections, { titlesFromTemplate } from './ProductSpecSections'
 import MerchantSupportModal from './MerchantSupportModal'
 import { isOfferSoldOut } from './ProductOfferSelector'
+import { readAvailabilityStatus } from '../../utils/publicAvailability'
 import { offerPeriodSubtitle } from '../../utils/offerPeriodDisplay'
 import { PRODUCT_MOCK_ASSETS, referenceRelated } from './productDetailMock'
 import { useProductFavorite } from '../../hooks/useProductFavorite'
@@ -499,7 +500,13 @@ export default function ProductDetailDesktop({
                       {!preview && ' 积分'}
                     </td>
                     <td>{offerPeriodSubtitle(offer) || '以套餐说明为准'}</td>
-                    <td>{isOfferSoldOut(offer) ? '已售罄' : '可选'}</td>
+                    <td>
+                      {isOfferSoldOut(offer)
+                        ? '已售罄'
+                        : readAvailabilityStatus(offer) === 'unknown'
+                          ? '待确认'
+                          : '可选'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

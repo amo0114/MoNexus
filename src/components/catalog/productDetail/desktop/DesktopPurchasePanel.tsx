@@ -24,6 +24,7 @@ import MerchantHoverCard from '../../MerchantHoverCard'
 import ProductExchangeSummary from '../../ProductExchangeSummary'
 import FavoriteHeartButton from '../../FavoriteHeartButton'
 import { isOfferSoldOut } from '../../ProductOfferSelector'
+import { readAvailabilityStatus } from '../../../../utils/publicAvailability'
 
 type Offer = NonNullable<Product['offers']>[number]
 
@@ -278,7 +279,9 @@ export default function DesktopPurchasePanel({
                     <span>
                       {unavailable
                         ? '已售罄'
-                        : preview
+                        : readAvailabilityStatus(offer) === 'unknown'
+                          ? '可售状态待确认'
+                          : preview
                           ? ['灵活体验，按月订阅', '约 ¥ 26.3 / 月', '约 ¥ 24.9 / 月'][index]
                           : offerPeriodSubtitle(offer) || '按套餐说明交付'}
                     </span>
@@ -383,7 +386,12 @@ export default function DesktopPurchasePanel({
               </button>
             </div>
           )}
-          <span className={`pd-stock ${soldOut ? 'pd-stock-empty' : ''}`} data-testid="product-stock">
+          <span
+            className={`pd-stock ${soldOut ? 'pd-stock-empty' : ''} ${
+              activeOffer && readAvailabilityStatus(activeOffer) === 'unknown' ? 'pd-stock-pending' : ''
+            }`}
+            data-testid="product-stock"
+          >
             <i />
             {soldOut ? '暂时售罄' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
           </span>

@@ -20,8 +20,15 @@ export default function ProductExchangeSummary({
         : offer?.deliveryMode === 'instant_inventory'
           ? '自动发货'
           : '以套餐交付说明为准'
+  // '可售状态' = selected offer is unknown/unavailable; never infer "库存不限" from its local stockMode.
   const stock =
-    stockTitle === '剩余名额' ? '外部剩余名额' : offer?.stockMode === 'unlimited' ? '库存不限' : '现货库存'
+    stockTitle === '可售状态'
+      ? stockTitle
+      : stockTitle === '剩余名额'
+        ? '外部剩余名额'
+        : offer?.stockMode === 'unlimited'
+          ? '库存不限'
+          : '现货库存'
   const period = offer?.validityDays != null ? `有效期 ${offer.validityDays} 天` : null
   return (
     <div className="my-4 space-y-2 text-xs" data-testid="product-exchange-summary">

@@ -180,6 +180,48 @@ describe('Faka capacity public-read cache', () => {
     expect(probe).toHaveBeenCalledTimes(3)
   })
 
+  it('reads period SKUs of one plan through a single cold probe on the detail page', async () => {
+    const originalConfig = { ...config.fakaBridge }
+    Object.assign(config.fakaBridge, {
+      enabled: true,
+      url: 'https://v.uuwu.de/plugin/faka-bridge/order-paid',
+      statusUrl: 'https://v.uuwu.de/plugin/faka-bridge/order-status',
+      secret: 'unit-test-faka-secret-at-least-32-characters!!',
+      timeoutMs: 5_000,
+      maxAttempts: 3,
+      allowInsecureTargets: false,
+    })
+    const pending = deferred<FakaCapacitySnapshot>()
+    const probe = vi.fn(() => pending.promise)
+    __setFakaCapacityProbeForTests(probe)
+    try {
+      const product = await prisma.product.create({
+        data: {
+          name: '同Plan多周期详情', type: '网络节点', categoryId: await getActiveNetworkNodeCategoryId(),
+          price: 100, stock: 0, status: 'active', visibility: 'public',
+          deliveryMode: 'manual_service', stockMode: 'unlimited',
+        },
+      })
+      for (const [name, externalSku] of [['月付', 'plan-77-month'], ['年付', 'plan-77-year']]) {
+        await prisma.offer.create({
+          data: {
+            productId: product.id, name, price: 100, stock: 0, deliveryMode: 'manual_service',
+            stockMode: 'unlimited', externalIntegration: 'faka_bridge', externalSku,
+          },
+        })
+      }
+
+      const detail = await finishesWithin(api.get(`/api/products/${product.id}`))
+      expect(detail.status).toBe(200)
+      expect(detail.body.offers.map((offer: { availability: unknown }) => offer.availability))
+        .toEqual([{ status: 'unknown' }, { status: 'unknown' }])
+      expect(probe).toHaveBeenCalledTimes(1)
+    } finally {
+      pending.resolve(snapshot('plan-77-month', 4))
+      Object.assign(config.fakaBridge, originalConfig)
+    }
+  })
+
   it('keeps storefront list/detail and checkout preview off a slow Xboard request path', async () => {
     const originalConfig = { ...config.fakaBridge }
     Object.assign(config.fakaBridge, {

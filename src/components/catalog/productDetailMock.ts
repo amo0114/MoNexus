@@ -17,6 +17,7 @@ export const referenceProduct: Product = {
   price: 29,
   stock: 999,
   stockMode: 'unlimited',
+  availability: { status: 'available' },
   sales: 6721,
   ratingAvg: 4.9,
   ratingCount: 1283,
@@ -52,6 +53,7 @@ export const referenceProduct: Product = {
     deliveryMode: 'instant_inventory',
     stockMode: 'unlimited',
     stock: 999,
+    availability: { status: 'available' as const },
   })),
 }
 

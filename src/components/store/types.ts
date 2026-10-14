@@ -6,6 +6,7 @@
 // has to import from the other's module.
 
 import type { MerchandisingProjection } from '../../types/merchandising'
+import type { PublicAvailability } from '../../types/productAvailability'
 
 export interface Product {
   id: number
@@ -32,6 +33,8 @@ export interface Product {
     sellable: boolean
     source: 'xboard' | 'unavailable'
   } | null
+  /** Optional only for previews/fixtures and pre-availability backends; read via readAvailabilityStatus. */
+  availability?: PublicAvailability
 }
 
 /** Disclosure rendered on a blended sponsored/editorial card (SPEC-CMI-UX-001 §4.3). */
