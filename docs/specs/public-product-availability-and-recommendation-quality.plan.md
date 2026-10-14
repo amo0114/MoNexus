@@ -371,7 +371,8 @@ git worktree add -b fix/public-product-availability /root/projects/worktrees/mon
   - 额外修复 `ProductExchangeSummary` 按 `offer.stockMode` 推断“库存不限”的问题（unknown 外部套餐会被显示为库存不限），以及 unknown 状态圆点显示为“有货”绿色的问题（改中性灰）。
 - 定向测试（独占可丢弃测试库）：后端 `publicAvailability.test.ts`（表驱动 17 例）、`public-fields`、`recommendations`（改写 `rec-flag` 旧断言，新增两 Plan 可售/未知组合）、`cache.test.ts`（部分未知不缓存→全已知缓存→过期变未知→恢复，含同 Plan 两周期名额不翻倍）；扩大回归 products/merchandising/faka-capacity/cache/product-lifecycle/offers/reviews/publicationReadiness/chatbot 共 23 文件 265 例通过。变异检查：列表缓存条件改为只看商品汇总状态后缓存用例失败。前端 catalog/store/pages 60 文件 497 例、全量 components/pages/utils/hooks 160 文件通过；变异检查：恢复代表容量回退后 PDP 用例失败。
 - 构建：`npm run build`、`npm --prefix server run build`、`git diff --check` 通过（Node 22.23.1）。
-- 浏览器（headless，可丢弃开发库，Faka 指向不可达本地端口以产生 unknown，已清理）：商城 320/390 卡片四态文案与灰化正确且不挤压价格；手机/桌面详情初始选中首个 available、unknown 可选且显示待确认、unavailable 禁用；暗色主题 + 720px（≈1440 的 200% 缩放）无遮挡、无横向溢出。访客状态购买按钮仍为“登录后兑换”（原有优先级）。
+- 浏览器（headless，可丢弃开发库，Faka 指向不可达本地端口以产生 unknown，已清理）：商城 320/390 卡片四态文案与灰化正确且不挤压价格；手机/桌面详情初始选中首个 available、unknown 可选且显示待确认、unavailable 禁用；暗色主题 + 720px 视口响应式检查无遮挡、无横向溢出。**真实浏览器 200% 缩放未验收**（720px 视口只是响应式近似）。访客状态购买按钮仍为“登录后兑换”（原有优先级）。
+- 审查返修（独立审查 2 项 P2）：套餐选项“待确认”时不再同时显示“仅剩 N 件/名额”；详情页改用 `loadFakaCapacityBySku` 批量读取，同 Plan 多周期冷缓存只触发一次探测、共享同一快照。各补一条回归测试，并做变异检查（撤销修复后对应用例失败）。
 - E2E / CI：本地未运行 Playwright；按测试政策依赖 PR 的 `run-e2e` 与 CI OK。
 - 快照及缓存残余限制：使用既有有界快照与 Redis TTL，不提供实时锁库存承诺；缓存中的已知状态在 TTL 内可能滞后于远端变化。
 - 推送 / 合并 / 部署：未执行。
