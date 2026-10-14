@@ -63,6 +63,7 @@ export default function ProductDetailMobile({
   gallery,
   share,
   reviews,
+  related,
   template,
   activeOffer,
   selectedOfferId,
@@ -431,6 +432,7 @@ export default function ProductDetailMobile({
               preview={preview}
               product={product}
               reviews={reviews}
+              related={related}
               template={template}
               activeOffer={activeOffer}
               previewFeatures={previewFeatures}

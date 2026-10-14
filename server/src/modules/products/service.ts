@@ -20,6 +20,7 @@ import {
   guestVisibilitySql,
   isCurrentlyPubliclyVisible,
   merchantVisibleSql,
+  publicVisibilityWhere,
   type ProductAudience,
 } from './visibility.js'
 import {
@@ -33,6 +34,7 @@ import {
   type ProjectionRun,
 } from '../merchandising/publicProjection.js'
 import { loadPublicAssuranceByProductIds } from '../catalog/assurance/service.js'
+import { queryRecommendationCandidateIds } from './recommendations.js'
 
 interface ProductListParams {
   query?: string
@@ -612,23 +614,20 @@ export async function listProducts(params: ProductListParams = {}) {
   }
 }
 
-async function listProductsFromDb(params: ProductListParams, context: ProductListContext) {
-  const { pageSize = 20 } = params
-  const ranked = await listRankedProductRows(params, context)
-  const pageRows = ranked.slice(0, pageSize)
+/**
+ * Batch-loads public list cards for already-ordered IDs (list page and recommendations).
+ * Order follows `orderedIds`; missing or currently invisible products are dropped.
+ */
+async function hydratePublicListItems(orderedIds: number[], audience: ProductAudience) {
+  const ids = [...new Set(orderedIds)]
+  if (ids.length === 0) return []
   const products = await prisma.product.findMany({
-    where: {
-      id: { in: pageRows.map(row => row.id) },
-      status: 'active',
-      archivedAt: null,
-      OR: [{ merchantId: null }, { merchant: { status: 'active' } }],
-      ...(params.audience === 'guest' ? { visibility: 'public' } : {}),
-    },
+    where: { id: { in: ids }, ...publicVisibilityWhere(audience) },
     select: productListSelect,
   })
   const productById = new Map(products.map(product => [product.id, product]))
-  const items = pageRows.flatMap(row => {
-    const product = productById.get(row.id)
+  const items = ids.flatMap(id => {
+    const product = productById.get(id)
     return product ? [product] : []
   })
 
@@ -637,12 +636,23 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
   const fakaBySku = loadFakaCapacityBySku(
     allOffers as Array<{ externalIntegration?: string | null; externalSku?: string | null }>,
   )
+  return items.map(item => serializePublicProductListItem(item, offerAvailableCounts, fakaBySku))
+}
+
+async function listProductsFromDb(params: ProductListParams, context: ProductListContext) {
+  const { pageSize = 20 } = params
+  const ranked = await listRankedProductRows(params, context)
+  const pageRows = ranked.slice(0, pageSize)
+  const items = await hydratePublicListItems(
+    pageRows.map(row => row.id),
+    params.audience === 'guest' ? 'guest' : 'member',
+  )
   const lastRow = pageRows.at(-1)
   const hasMore = ranked.length > pageSize
   const filterHash = computeFilterHash(productFilterHashInput(context.filters, params.audience ?? 'guest'))
 
   return {
-    items: items.map(item => serializePublicProductListItem(item, offerAvailableCounts, fakaBySku)),
+    items,
     nextCursor: hasMore && lastRow
       ? encodeOrganicCursor({
           v: 1,
@@ -721,4 +731,52 @@ async function getProductDetailFromDb(id: number, audience: ProductAudience = 'g
   }
 
   return serializePublicProductDetail(product, offerAvailableCounts, fakaByOfferId)
+}
+
+const RECOMMENDATION_LIMIT = 6
+
+/**
+ * Same-seller-first related products (PLAN-PDP-REC-001). Relevance is decided once in SQL;
+ * cards reuse the list hydration and the live merch/assurance projection. No result cache,
+ * so the hydration query's visibility predicate is the only (and current) access check.
+ */
+export async function getProductRecommendations(id: number, audience: ProductAudience = 'guest') {
+  const base = await prisma.product.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      categoryId: true,
+      merchantId: true,
+      templateKey: true,
+      templateVersion: true,
+      status: true,
+      archivedAt: true,
+      visibility: true,
+      merchant: { select: { status: true } },
+    },
+  })
+  if (!base) throw notFound('商品暂不可用')
+  assertPublicProductAccess(base, audience)
+
+  const [sameSellerIds, otherSellerIds] = await Promise.all([
+    queryRecommendationCandidateIds(base, audience, true),
+    queryRecommendationCandidateIds(base, audience, false),
+  ])
+  const sameSeller = new Set(sameSellerIds)
+  const cards = await hydratePublicListItems([...sameSellerIds, ...otherSellerIds], audience)
+  const items = cards
+    .filter(item => !(item.stockMode !== 'unlimited' && item.stock <= 0))
+    .slice(0, RECOMMENDATION_LIMIT)
+
+  const pinned = await resolveCursorForRequest(null)
+  const decorated = await attachListMerchandising({ items }, pinned.mode === 'run' ? pinned.run : null)
+  const assuranceById = await loadPublicAssuranceByProductIds(decorated.items.map(item => item.id))
+  return {
+    productId: id,
+    items: decorated.items.map(item => ({
+      ...item,
+      assurance: assuranceById.get(item.id) ?? null,
+      recommendation: { sameSeller: sameSeller.has(item.id) },
+    })),
+  }
 }

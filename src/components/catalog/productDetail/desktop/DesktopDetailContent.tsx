@@ -22,6 +22,7 @@ interface DesktopDetailContentProps {
   preview: boolean
   product: Product
   reviews: ReactNode
+  related?: ReactNode
   template: ProductTemplateDefinition | null
   activeOffer?: NonNullable<Product['offers']>[number]
   networkFeatures: DesktopNetworkFeature[]
@@ -40,6 +41,7 @@ export default function DesktopDetailContent({
   preview,
   product,
   reviews,
+  related,
   template,
   activeOffer,
   networkFeatures,
@@ -133,6 +135,7 @@ export default function DesktopDetailContent({
                 enumLabels={template?.ui.enumLabels}
               />
             </div>
+            {related}
           </>
         </section>
       )}

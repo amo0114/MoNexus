@@ -5,6 +5,7 @@
 // the open intent through `onOpen`. Listing, category/URL sync, feed blending,
 // audience caching, pagination and scroll restore stay in the page.
 
+import { Link } from 'react-router-dom'
 import { Star, Store } from 'lucide-react'
 import PointCoin from '../ui/PointCoin'
 import ProductMediaFrame from '../ui/ProductMediaFrame'
@@ -16,12 +17,20 @@ import type { FeedDisclosure, Product } from './types'
 
 export interface StoreProductCardProps {
   product: Product
-  onOpen: (product: Product) => void
+  /** Storefront click handler; ignored when `href` renders a real link instead. */
+  onOpen?: (product: Product) => void
+  /**
+   * Renders the title as a router link stretched over the card, so the card is
+   * keyboard/new-tab navigable without nesting the partner-mark button in a link.
+   */
+  href?: string
+  /** Replaces the seller chip text and keeps it visible on phones. */
+  sellerLabel?: string
   /** Optional sponsored/editorial disclosure (SPEC-CMI-UX-001 §4.3). */
   disclosure?: FeedDisclosure
 }
 
-export default function StoreProductCard({ product, onOpen, disclosure }: StoreProductCardProps) {
+export default function StoreProductCard({ product, onOpen, href, sellerLabel, disclosure }: StoreProductCardProps) {
   const faka = product.fakaCapacity
   const isSoldOut =
     faka?.source === 'xboard'
@@ -42,7 +51,7 @@ export default function StoreProductCard({ product, onOpen, disclosure }: StoreP
   return (
     <div
       key={product.id}
-      onClick={() => onOpen(product)}
+      onClick={href ? undefined : () => onOpen?.(product)}
       data-testid={`store-product-card-${product.id}`}
       aria-label={disclosure ? `${disclosure.label}，${product.name}` : product.name}
       className={`relative overflow-hidden group cursor-pointer flex flex-col min-w-0 h-[256px] md:h-[372px]
@@ -89,7 +98,7 @@ export default function StoreProductCard({ product, onOpen, disclosure }: StoreP
 
         <div className="absolute bottom-2 left-2 right-2 md:bottom-2.5 md:left-2.5 md:right-2.5 z-10 flex gap-1.5 md:gap-2 min-w-0">
           <span
-            className="text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 max-w-[85%] sm:max-w-[48%] truncate"
+            className={`text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 ${sellerLabel ? 'max-w-[48%]' : 'max-w-[85%] sm:max-w-[48%]'} truncate`}
             style={{
               background: 'var(--color-glass-bg)',
               border: '1px solid var(--color-glass-border)',
@@ -99,7 +108,7 @@ export default function StoreProductCard({ product, onOpen, disclosure }: StoreP
             {product.category?.label ?? product.type}
           </span>
           <span
-            className="hidden sm:flex text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-primary)] shadow-sm items-center gap-1.5 max-w-[48%] truncate"
+            className={`${sellerLabel ? 'flex' : 'hidden sm:flex'} text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-primary)] shadow-sm items-center gap-1.5 max-w-[48%] truncate`}
             style={{
               background: 'var(--color-glass-bg)',
               border: '1px solid var(--color-glass-border)',
@@ -107,14 +116,24 @@ export default function StoreProductCard({ product, onOpen, disclosure }: StoreP
             }}
           >
             <Store className="w-3 h-3 shrink-0" />
-            <span className="truncate">{product.merchant?.name || '平台自营'}</span>
+            <span className="truncate">{sellerLabel ?? (product.merchant?.name || '平台自营')}</span>
           </span>
         </div>
       </ProductMediaFrame>
 
       <div className="p-3 md:p-5 flex flex-col flex-grow min-h-0 bg-[var(--color-surface)]">
         <h3 className="product-text-readable text-sm md:text-base font-semibold leading-snug group-hover:text-[var(--color-primary)] transition-colors text-[var(--color-text)] mb-1 md:mb-1.5 line-clamp-2 min-h-[2.375rem] md:min-h-[2.5rem]">
-          {product.name}
+          {href ? (
+            <Link
+              to={href}
+              data-testid={`store-product-link-${product.id}`}
+              className="after:absolute after:inset-0 after:z-20 after:rounded-xl max-md:after:rounded-2xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-[var(--color-primary)]"
+            >
+              {product.name}
+            </Link>
+          ) : (
+            product.name
+          )}
         </h3>
         {disclosure?.kind === 'editorial' && disclosure.publicReason && (
           <p className="product-text-readable text-xs text-[var(--color-text-muted)] mb-1 line-clamp-1">
@@ -122,7 +141,7 @@ export default function StoreProductCard({ product, onOpen, disclosure }: StoreP
           </p>
         )}
         {product.merchandising?.merchantPartner && (
-          <div className="mb-1.5">
+          <div className={`mb-1.5 ${href ? 'relative z-30' : ''}`}>
             <MerchantPartnerMark merchantPartner={product.merchandising.merchantPartner} />
           </div>
         )}

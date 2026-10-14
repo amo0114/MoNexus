@@ -25,6 +25,7 @@ interface ProductDetailTabletProps {
   preview: boolean
   gallery: ReactNode
   reviews: ReactNode
+  related?: ReactNode
   shareRef: Ref<HTMLButtonElement>
 
   template: ProductTemplateDefinition | null
@@ -78,6 +79,7 @@ const ProductDetailTablet = forwardRef<HTMLDivElement, ProductDetailTabletProps>
       preview,
       gallery,
       reviews,
+      related,
       shareRef,
       template,
       activeOffer,
@@ -420,6 +422,8 @@ const ProductDetailTablet = forwardRef<HTMLDivElement, ProductDetailTabletProps>
               titles={titlesFromTemplate(template)}
               enumLabels={template?.ui.enumLabels}
             />
+
+            {related}
 
             {/* Customer Reviews Section */}
             {reviews}

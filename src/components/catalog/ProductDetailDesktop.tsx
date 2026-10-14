@@ -40,6 +40,8 @@ interface Props {
   gallery: ReactNode
   share: ReactNode
   reviews: ReactNode
+  /** Real related products; rendered at the end of the details panel. */
+  related?: ReactNode
   template: ProductTemplateDefinition | null
   activeOffer?: NonNullable<Product['offers']>[number]
   selectedOfferId: number | null
@@ -133,6 +135,7 @@ export default function ProductDetailDesktop({
   gallery,
   share,
   reviews,
+  related,
   template,
   activeOffer,
   selectedOfferId,
@@ -417,6 +420,7 @@ export default function ProductDetailDesktop({
               preview={preview}
               product={product}
               reviews={reviews}
+              related={related}
               template={template}
               activeOffer={activeOffer}
               networkFeatures={networkFeatures}
