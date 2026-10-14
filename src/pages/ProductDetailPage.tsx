@@ -12,6 +12,7 @@ import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
 import { usePageView } from '../hooks/usePageView'
 import { useProductFavorite } from '../hooks/useProductFavorite'
+import { useProductRecommendations } from '../hooks/useProductRecommendations'
 import MerchantSupportModal from '../components/catalog/MerchantSupportModal'
 import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
@@ -34,6 +35,7 @@ import type { ProductDetails, ProductTemplateDefinition, TemplateAttributes } fr
 import ProductDetailDesktop from '../components/catalog/ProductDetailDesktop'
 import ProductDetailMobile from '../components/catalog/ProductDetailMobile'
 import ProductDetailTablet from '../components/catalog/productDetail/ProductDetailTablet'
+import RelatedProductsSection from '../components/catalog/productDetail/RelatedProductsSection'
 import { referenceProduct, referenceReviews } from '../components/catalog/productDetailMock'
 
 type PublicOffer = Offer & { attributes?: TemplateAttributes }
@@ -121,6 +123,9 @@ export default function ProductDetailPage() {
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
 
   usePageView(`/product/${id}`, !loading && !loginRequired && product?.id === Number(id))
+
+  const routeProductId = id && /^[1-9]\d*$/.test(id) ? Number(id) : null
+  const recommendations = useProductRecommendations(routeProductId, !isReferencePreview)
 
   const [showPurchase, setShowPurchase] = useState(false)
   const [purchasing, setPurchasing] = useState(false)
@@ -230,6 +235,9 @@ export default function ProductDetailPage() {
   }, [])
 
   useEffect(() => {
+    // Detail-to-detail navigation (related products) can overlap requests; only
+    // the latest effect run may update state, toast or redirect.
+    let cancelled = false
     async function load() {
       if (!id) return
       if (isReferencePreview) {
@@ -245,6 +253,7 @@ export default function ProductDetailPage() {
       setLoading(true)
       try {
         const { data } = await api.get(`/products/${id}`)
+        if (cancelled) return
         setProduct(data)
         setActiveImage(0)
         const offers: Offer[] = data.offers ?? []
@@ -267,6 +276,7 @@ export default function ProductDetailPage() {
           setSelectedOfferId(null)
         }
       } catch (err) {
+        if (cancelled) return
         if (getApiErrorCode(err) === 'PRODUCT_LOGIN_REQUIRED') {
           setLoginRequired(true)
           return
@@ -274,10 +284,13 @@ export default function ProductDetailPage() {
         showToast('获取商品详情失败', 'error')
         navigate('/')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     load()
+    return () => {
+      cancelled = true
+    }
   }, [id, navigate, showToast, searchParams, isLoggedIn, isReferencePreview])
 
   async function handlePurchase(
@@ -557,6 +570,9 @@ export default function ProductDetailPage() {
     />
   )
 
+  const relatedContent =
+    !isReferencePreview && product.id === routeProductId ? <RelatedProductsSection state={recommendations} /> : null
+
   const reviewsContent = (
     <div
       id="product-section-reviews"
@@ -595,6 +611,7 @@ export default function ProductDetailPage() {
             <ProductShareButton ref={desktopShareRef} variant="page" onClick={() => setShareOpen(true)} />
           }
           reviews={reviewsContent}
+          related={relatedContent}
           template={template}
           activeOffer={activeOffer}
           selectedOfferId={selectedOfferId}
@@ -624,6 +641,7 @@ export default function ProductDetailPage() {
             />
           }
           reviews={reviewsContent}
+          related={relatedContent}
           template={template}
           activeOffer={activeOffer}
           selectedOfferId={selectedOfferId}
@@ -642,6 +660,7 @@ export default function ProductDetailPage() {
           preview={isReferencePreview}
           gallery={gallery}
           reviews={reviewsContent}
+          related={relatedContent}
           shareRef={isMobileViewport ? mobileShareRef : desktopShareRef}
           template={template}
           activeOffer={activeOffer}

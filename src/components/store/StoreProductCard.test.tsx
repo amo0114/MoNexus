@@ -9,6 +9,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
 import type { Product } from './types'
 import StoreProductCard from './StoreProductCard'
 
@@ -96,5 +97,36 @@ describe('StoreProductCard', () => {
       <StoreProductCard product={makeProduct({ id: 9, stock: 0, stockMode: 'limited' })} onOpen={vi.fn()} />,
     )
     expect(screen.getByTestId('store-stock-9').textContent).toBe('库存 0')
+  })
+
+  it('renders a real link without nesting the partner button when href is given', () => {
+    render(
+      <MemoryRouter>
+        <StoreProductCard
+          product={makeProduct({
+            id: 12,
+            name: '推荐商品',
+            merchandising: {
+              rankingRunId: null,
+              hot: null,
+              platformOwned: false,
+              platformPick: null,
+              merchantPartner: { label: '平台合作伙伴', validUntil: '2999-01-01T00:00:00.000Z' },
+            },
+          })}
+          href="/product/12"
+          sellerLabel="同店"
+        />
+      </MemoryRouter>,
+    )
+
+    const link = screen.getByRole('link', { name: '推荐商品' })
+    expect(link).toHaveAttribute('href', '/product/12')
+    const partner = screen.getByRole('button', { name: /平台合作伙伴/ })
+    expect(link.contains(partner)).toBe(false)
+    expect(partner.closest('a')).toBeNull()
+    const sellerChip = screen.getByText('同店').parentElement
+    expect(sellerChip).toHaveClass('flex')
+    expect(sellerChip).not.toHaveClass('hidden')
   })
 })
