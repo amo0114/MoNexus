@@ -6,6 +6,12 @@ function noStore(res: Response) {
   res.set('Cache-Control', 'private, no-store')
 }
 
+/** Route-level so auth/validation error responses are not cacheable either. */
+export function noStoreHeaders(_req: Request, res: Response, next: NextFunction) {
+  noStore(res)
+  next()
+}
+
 export async function list(req: Request, res: Response, next: NextFunction) {
   try {
     const { q, categoryCode, category, cursor, page, pageSize } = req.query as unknown as {
@@ -38,6 +44,15 @@ export async function detail(req: Request, res: Response, next: NextFunction) {
     const product = await productService.getProductDetail(id, resolveProductAudience(req.user))
     noStore(res)
     res.json(product)
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function recommendations(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id as unknown as number
+    res.json(await productService.getProductRecommendations(id, resolveProductAudience(req.user)))
   } catch (err) {
     next(err)
   }
