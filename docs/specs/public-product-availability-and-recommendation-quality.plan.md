@@ -362,9 +362,16 @@ git worktree add -b fix/public-product-availability /root/projects/worktrees/mon
 
 ## 12. 实施记录（实施后填写）
 
-- 实际 base / HEAD：未实施。
-- 分支 / worktree / PR：未实施。
-- 规则差异：未实施；若有，在此记录事实与理由。
-- 定向测试 / 构建 / 浏览器检查 / CI：未执行；本次只做文档审查。
-- 快照及缓存残余限制：使用既有有界快照与 Redis TTL，不提供实时锁库存承诺。
-- 推送 / 合并 / 部署：本次未执行。
+- 实际 base：`origin/develop@163673b01a88eabfe572a90281abf878b46c910c`（与核验基线一致，锚点无漂移）；HEAD 见分支最新提交。
+- 分支 / worktree：`fix/public-product-availability`（`--no-track` 创建，未跟踪 origin/develop），`/root/projects/worktrees/monexus-public-product-availability`；仅本地提交，未推送、未建 PR。PR 创建时按 §7.3 打 `run-e2e`。
+- 主要行为：新增 `products/publicAvailability.ts`（复用 `evaluateActiveOffer` + 规范化快照 source/sellable）；list/detail/recommendations 输出 `availability.status`，详情每个 active Offer 另带状态；推荐只剔除 unavailable；list/detail Redis key 加 `public-availability-v1`；有效套餐存在未知容量时不写缓存（列表用内部 `{ data, hasUnknownFakaCapacity }` 包装，详情直接用各 Offer 公开状态判断，未另包一层）；前端唯一兼容入口 `src/utils/publicAvailability.ts`，卡片三态、套餐“待确认”提示、所选套餐决定购买入口、本地套餐不继承代表 Faka 容量。
+- 规则差异（均为展示细节，不改契约）：
+  - 卡片 unknown 文案为“状态待确认”而非“可售状态待确认”：手机卡片固定高度，长文案换行后被截断或挤压价格（浏览器 320/390 实测）。详情与套餐区仍用完整“可售状态待确认 / 可售状态：待确认”。
+  - 所选套餐 unavailable 时购买按钮文案由“已被抢光”改为“该套餐暂不可售”；套餐选项内的“已售罄”标签保持原样。
+  - 额外修复 `ProductExchangeSummary` 按 `offer.stockMode` 推断“库存不限”的问题（unknown 外部套餐会被显示为库存不限），以及 unknown 状态圆点显示为“有货”绿色的问题（改中性灰）。
+- 定向测试（独占可丢弃测试库）：后端 `publicAvailability.test.ts`（表驱动 17 例）、`public-fields`、`recommendations`（改写 `rec-flag` 旧断言，新增两 Plan 可售/未知组合）、`cache.test.ts`（部分未知不缓存→全已知缓存→过期变未知→恢复，含同 Plan 两周期名额不翻倍）；扩大回归 products/merchandising/faka-capacity/cache/product-lifecycle/offers/reviews/publicationReadiness/chatbot 共 23 文件 265 例通过。变异检查：列表缓存条件改为只看商品汇总状态后缓存用例失败。前端 catalog/store/pages 60 文件 497 例、全量 components/pages/utils/hooks 160 文件通过；变异检查：恢复代表容量回退后 PDP 用例失败。
+- 构建：`npm run build`、`npm --prefix server run build`、`git diff --check` 通过（Node 22.23.1）。
+- 浏览器（headless，可丢弃开发库，Faka 指向不可达本地端口以产生 unknown，已清理）：商城 320/390 卡片四态文案与灰化正确且不挤压价格；手机/桌面详情初始选中首个 available、unknown 可选且显示待确认、unavailable 禁用；暗色主题 + 720px（≈1440 的 200% 缩放）无遮挡、无横向溢出。访客状态购买按钮仍为“登录后兑换”（原有优先级）。
+- E2E / CI：本地未运行 Playwright；按测试政策依赖 PR 的 `run-e2e` 与 CI OK。
+- 快照及缓存残余限制：使用既有有界快照与 Redis TTL，不提供实时锁库存承诺；缓存中的已知状态在 TTL 内可能滞后于远端变化。
+- 推送 / 合并 / 部署：未执行。
