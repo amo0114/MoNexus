@@ -5,7 +5,7 @@
 | 文档 ID | `PLAN-REC-EVENTS-001` |
 | 版本 | `1.1.0`（方案版本） |
 | 日期 | 2026-10-14 |
-| 状态 | 方案；§9 决定已确认；**未批准实施埋点** |
+| 状态 | 代码已实施并完成本地验证；待 PR 审查与部署；生产统计默认关闭 |
 | 基线 | `origin/develop@be76d5f`（#250 相关推荐、#251/#252 公开可售状态已合并） |
 | 前置依赖 | PR #253（推荐数据审计）合并：提供 `queryRecommendationCandidates`（候选 SQL 同时返回匹配等级）及审计报告；实施前确认已合入 |
 | 关联 | [相关推荐 V1](product-detail-recommendations.plan.md)、[可售状态与推荐质量路线 §9 PR5](public-product-availability-and-recommendation-quality.plan.md)、[推荐数据审计](../reviews/recommendation-data-audit.md) |
@@ -64,7 +64,7 @@
   | `sv` | 推荐策略版本，首版 `pdp-rec-v1`；推荐规则改变时递增 |
   | `aud` | `guest` / `member`（服务端身份推导） |
   | `iat` | 签发时间（秒） |
-  | `items` | 按展示顺序的 `[{ id, pos, tier, same }]`，`pos` 为 1..6，`tier` 为 1..3，`same` 为是否同店（含平台自营同桶） |
+  | `items` | 按展示顺序的 `[{ id, pos, tier, same, platform }]`，`pos` 为 1..6，`tier` 为 1..3，`same` 为是否同店（含平台自营同桶），`platform` 为目标是否平台自营，用于报表单列 |
 
 - `tier` 和 `same` 取自候选 SQL 已算出的结果（PR #253 新增的 `queryRecommendationCandidates` 返回的分数），不重新计算。
 - 签名密钥使用新增环境变量 `RECOMMENDATION_EVENT_HMAC_KEY`：规范 base64、恰好 32 字节，必须独立于 `JWT_SECRET`、`MFA_ENCRYPTION_KEY`、`ABUSE_HASH_KEY`、`ALTCHA_HMAC_KEY`（与 `ALTCHA_HMAC_KEY` 的校验方式一致）。未配置时不签发凭证，整个统计功能关闭。
@@ -186,7 +186,7 @@ type RecommendationEventBatch = {
 
 | 表 | 关键字段 | 约束 |
 | --- | --- | --- |
-| `RecommendationImpression` | `listId`、`productId`、`sourceProductId`、`position`、`tier`、`sameSeller`、`strategyVersion`、`audience`、`visitorId`、`userId?`、`implied`、`receivedAt` | 唯一键 `(listId, productId)`；索引 `(receivedAt)`、`(sourceProductId, receivedAt)` |
+| `RecommendationImpression` | `listId`、`productId`、`sourceProductId`、`position`、`tier`、`sameSeller`、`platformSeller`、`strategyVersion`、`audience`、`visitorId`、`userId?`、`implied`、`receivedAt` | 唯一键 `(listId, productId)`；索引 `(receivedAt)`、`(sourceProductId, receivedAt)` |
 | `RecommendationClick` | 同上（无 `implied`） | 唯一键 `(listId, productId)`；索引 `(userId, productId, receivedAt)` 供归因关联 |
 
 - 时间以服务端 `receivedAt` 为准，不信任客户端时钟。
@@ -202,7 +202,7 @@ type RecommendationEventBatch = {
 - **报表**：首版提供管理员接口 `GET /api/admin/reports/recommendations?range=7d|30d|90d&groupBy=tier|seller|position`，返回 §5 的指标与样本不足标记。后台页面另行排期，本方案不包含前端报表页。
 - **失败影响**：统计请求失败、凭证缺失或密钥未配置时，推荐展示、导航和购买都不受影响。
 
-## 8. 实施任务（待批准后执行）
+## 8. 实施任务（本轮已实施，见 §12）
 
 | 任务 | 内容 | 完成条件 |
 | --- | --- | --- |
@@ -238,3 +238,44 @@ type RecommendationEventBatch = {
 | --- | --- |
 | 1.0.0 | 初始方案 |
 | 1.1.0 | §9 五项决定确认。点击率改为“已被点击的曝光 ÷ 曝光”并按曝光日归组；兑换转化率改为“转化点击 ÷ 可归因点击”并按点击日归组；增加未成熟标记；区分原始与净归因（订单数与积分）；明确“最近一次已记录的有效点击”；真实曝光可把 implied 更正为 false；删除汇总状态表 |
+
+
+## 12. PR5 实施记录（2026-10-15）
+
+### 12.1 分支与范围
+
+- 基线：`origin/develop@5ef0f701a2ab29eae176a3485f3fa8d4d38f7453`；#253、#254 已合并，合并后 CI `38668443524` 为 success。
+- 分支：`feat/recommendation-events`，独立 worktree，通过 `--no-track` 创建；未设置 upstream。
+- 代码提交：后端 `ac3ff27`，前端 `56293d6`；含本节的最终文档提交 HEAD 由交接消息记录。
+- 本轮仅完成代码、本地验证及本地提交。未推送、未建 PR、未部署、未配置生产密钥，也未访问生产库。
+- PR3 / PR4 继续暂不调整；排序、推荐准入、64 候选上限和下单事务保持现有规则。
+
+### 12.2 实际落地
+
+- 后端 `recommendationEvents` 模块完成凭证签发/验签、事件接收、归因报表与保留期清理。推荐 GET 在最终可见清单形成后签名，不写事件表。
+- 迁移只新增 `RecommendationImpression`、`RecommendationClick` 两张表。事件由 `(listId, productId)` 去重；真实曝光只更正 `implied`，保留首次时间和身份。
+- 为兑现“平台自营单列”，凭证条目和事件快照分别增加 `platform` / `platformSeller`。不在上报时重新读取商品归属，避免商品后续变更改写历史分组。
+- 前端 controller 按清单存活，布局替换共享去重集合；生产构建且有凭证才启用。曝光按 50% / 连续 1 秒 / 前台检测，曝光攒批；链接点击在导航前立即 flush，主键、键盘生成的 click、Ctrl/⌘ 和中键均走原生链接事件。
+- `usePageView` 仅导出原有访客 UUID 获取函数供复用。上报保留所属清单的认证 token，失败最多重试一次，不触发刷新会话或购买提示。
+- 管理员报表挂在现有认证、管理员与 MFA guards 之后，查询结果 Redis 缓存 30 秒；清理 cron 沿用租约，按上海业务日保留 90 天。
+- `.env.example`、生产 Compose、启动配置校验与 `check-prod-env.sh` 同步支持可选独立密钥。空值不签发凭证、不接收统计；保留期清理仍可删除已存在的历史事件。
+
+### 12.3 报表接口交接
+
+`GET /api/admin/reports/recommendations?range=7d|30d|90d&groupBy=tier|seller|position`，默认 `30d` / `tier`。
+
+- `rows` 固定按 `date / strategyVersion / audience / position / dimension` 分层；`seller` 的 dimension 为 `platform / same_seller / other_seller`。
+- 曝光日指标：`impressions`、`uniqueImpressions`、`impliedImpressions`、`clickedImpressions`、`ctr`、`loginImpressions`、`exposureNetOrders`、`ordersPerThousandImpressions`。
+- 点击日指标：`clicks`、`guestClicks`、`eligibleClicks`、`convertedClicks`、`conversionRate`，以及 `rawOrders / netOrders / rawPoints / netPoints`；7 天参考字段使用 `7d` 后缀。
+- 分母为零的比率返回 `null`；`insufficientSample` 和 `immature` 显式说明样本与窗口限制。积分仍为整数积分，不换算货币。
+- `coverage` 给出有曝光清单数、详情 PV、覆盖趋势和每个有曝光清单的平均可见件数；按分层行给出的去重值或平均值不能直接相加当作全局值。
+- `attributionIsIncrementalLift=false`：归因不代表增量。业务日按 Asia/Shanghai；订单的 UTC 无时区时间显式转为 UTC 时刻后再与事件时间比较。
+
+### 12.4 验证与限制
+
+- 后端定向回归：推荐事件、现有推荐、只读审计和配置校验共 4 文件、69 用例通过；流量/缓存及新增密钥预检的定向选择另有 15 用例通过（54 个不匹配用例跳过）。最后补充详情 PV 分母断言后，事件 5 用例再次通过。
+- 事件测试覆盖：验签、过期、清单外 ID、客户端维度拒绝、并发重试幂等、隐含曝光更正、GET 不写库、跨日 CTR、末次点击、24 小时边界、7 天参考、closed/pending/refunded、访客不归因、覆盖率分母、管理员权限和 90 天清理边界。使用可控时间，无 sleep。
+- 前端定向验证共 6 文件、38 用例通过，包括曝光连续时间/前台门槛、布局去重、点击先到、原请求重试、生产开关、链接主键/键盘生成的 click/中键接线，以及既有详情与卡片回归。
+- Node 22 下两端构建通过；隔离测试库迁移及迁移与 Prisma Schema 差异检查通过；部署契约检查、shell 语法与 `git diff --check` 通过。
+- 未新增或运行 Playwright E2E，未做真实浏览器统计验收、生产负载评估或线上采集验证。键盘点击的组件测试使用浏览器产生的 `detail=0` click 事件，不冒充真实浏览器验收。
+- 当前生产目录样本很少，首版只验收采集和口径；右键菜单打开仍漏计，访客先点击后登录购买仍不归因。上线及密钥配置另行安排。
