@@ -26,6 +26,8 @@ beforeEach(async ({ task }) => {
   await timeTestOperation('reset.truncate', () => prisma.$executeRawUnsafe(`TRUNCATE TABLE
     "AiGeneration",
     "AiRuntimeConfig",
+    "RecommendationImpression",
+    "RecommendationClick",
     "TrafficEvent",
     "TrafficDailyVisitor",
     "TrafficAggregationState",

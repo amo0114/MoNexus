@@ -35,7 +35,8 @@ import {
   type ProjectionRun,
 } from '../merchandising/publicProjection.js'
 import { loadPublicAssuranceByProductIds } from '../catalog/assurance/service.js'
-import { queryRecommendationCandidateIds } from './recommendations.js'
+import { queryRecommendationCandidates } from './recommendations.js'
+import { signRecommendationList } from '../recommendationEvents/token.js'
 import {
   aggregateOfferAvailability,
   evaluatePublicOfferAvailability,
@@ -840,10 +841,13 @@ export async function getProductRecommendations(id: number, audience: ProductAud
   if (!base) throw notFound('商品暂不可用')
   assertPublicProductAccess(base, audience)
 
-  const [sameSellerIds, otherSellerIds] = await Promise.all([
-    queryRecommendationCandidateIds(base, audience, true),
-    queryRecommendationCandidateIds(base, audience, false),
+  const [sameCandidates, otherCandidates] = await Promise.all([
+    queryRecommendationCandidates(base, audience, true),
+    queryRecommendationCandidates(base, audience, false),
   ])
+  const sameSellerIds = sameCandidates.map(row => row.id)
+  const otherSellerIds = otherCandidates.map(row => row.id)
+  const tiers = new Map([...sameCandidates, ...otherCandidates].map(row => [row.id, row.tier]))
   const sameSeller = new Set(sameSellerIds)
   const { items: cards } = await hydratePublicListItems([...sameSellerIds, ...otherSellerIds], audience)
   // Unknown capacity stays in its ranked position; only known-unsellable products drop out.
@@ -854,8 +858,13 @@ export async function getProductRecommendations(id: number, audience: ProductAud
   const pinned = await resolveCursorForRequest(null)
   const decorated = await attachListMerchandising({ items }, pinned.mode === 'run' ? pinned.run : null)
   const assuranceById = await loadPublicAssuranceByProductIds(decorated.items.map(item => item.id))
+  const listToken = signRecommendationList(id, audience, decorated.items.map((item, index) => ({
+    id: item.id, pos: index + 1, tier: tiers.get(item.id)!, same: sameSeller.has(item.id),
+    platform: item.merchant == null,
+  })))
   return {
     productId: id,
+    ...(listToken ? { tracking: { listToken } } : {}),
     items: decorated.items.map(item => ({
       ...item,
       assurance: assuranceById.get(item.id) ?? null,

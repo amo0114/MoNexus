@@ -57,6 +57,19 @@ function loadConfigWith(overrides: Record<string, string | undefined>) {
   )
 }
 
+describe('recommendation analytics configuration', () => {
+  it('accepts an independent recommendation key and rejects malformed or reused key material', () => {
+    expect(loadConfigWith({ RECOMMENDATION_EVENT_HMAC_KEY: Buffer.alloc(32, 19).toString('base64') }).status).toBe(0)
+    for (const key of ['malformed-key-sentinel', VALID_ALTCHA_HMAC_KEY]) {
+      const result = loadConfigWith({ RECOMMENDATION_EVENT_HMAC_KEY: key })
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('RECOMMENDATION_EVENT_HMAC_KEY')
+      expect(result.stderr).not.toContain(key)
+    }
+  })
+
+})
+
 describe('recharge isProductionDeploy isolation matrix', () => {
   it('boots production+production when RECHARGE_MODE is disabled by default', () => {
     const result = loadConfigWith({})
@@ -622,6 +635,24 @@ describe('check-prod-env.sh POINT_VALUE_POLICY_MODE', () => {
       timeout: 30_000,
     })
   }
+
+  it('checks an optional recommendation key before deploy', () => {
+    for (const [key, expected] of [
+      [Buffer.alloc(32, 19).toString('base64'), 0],
+      ['bad-key-sentinel', 1],
+      [VALID_ALTCHA_HMAC_KEY, 1],
+    ] as const) {
+      const fixture = writeEnv('off', { RECOMMENDATION_EVENT_HMAC_KEY: key })
+      try {
+        const result = runPreflight(fixture.file, 'production')
+        expect(result.status, result.stderr + result.stdout).toBe(expected)
+        if (expected) {
+          expect(result.stderr).toContain('RECOMMENDATION_EVENT_HMAC_KEY')
+          expect(result.stderr).not.toContain(key)
+        }
+      } finally { rmSync(fixture.dir, { recursive: true, force: true }) }
+    }
+  })
 
   it('accepts off in production and rejects shadow/enforce', () => {
     const off = writeEnv('off')

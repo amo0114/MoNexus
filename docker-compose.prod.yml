@@ -42,6 +42,7 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (>=32 chars)}
+      RECOMMENDATION_EVENT_HMAC_KEY: ${RECOMMENDATION_EVENT_HMAC_KEY:-}
       # M3: the same persistent 32-byte base64 key must reach every server
       # instance, otherwise enrolled administrator MFA factors cannot decrypt.
       MFA_ENCRYPTION_KEY: ${MFA_ENCRYPTION_KEY:?MFA_ENCRYPTION_KEY is required (32-byte base64)}
