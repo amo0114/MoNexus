@@ -1,3 +1,4 @@
+import { useRecommendationTracking } from '../hooks/useRecommendationTracking'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
@@ -131,6 +132,7 @@ export default function ProductDetailPage() {
   // work started during one page visit (post-purchase refresh) never overwrites a later visit.
   const detailVisitRef = useRef(0)
   const recommendations = useProductRecommendations(routeProductId, !isReferencePreview)
+  const recommendationTracker = useRecommendationTracking(recommendations.status === 'ready' ? recommendations.tracking?.listToken : undefined)
 
   const [showPurchase, setShowPurchase] = useState(false)
   const [purchasing, setPurchasing] = useState(false)
@@ -590,7 +592,7 @@ export default function ProductDetailPage() {
   )
 
   const relatedContent =
-    !isReferencePreview && product.id === routeProductId ? <RelatedProductsSection state={recommendations} /> : null
+    !isReferencePreview && product.id === routeProductId ? <RelatedProductsSection state={recommendations} tracker={recommendationTracker} /> : null
 
   const reviewsContent = (
     <div

@@ -7,7 +7,7 @@ import { useAuthStore } from '../stores/authStore'
 
 export type ProductRecommendationsState =
   | { status: 'idle' | 'loading' | 'error'; items: [] }
-  | { status: 'ready'; items: RecommendedProduct[] }
+  | { status: 'ready'; items: RecommendedProduct[]; tracking?: { listToken: string } }
 
 const IDLE: ProductRecommendationsState = { status: 'idle', items: [] }
 const LOADING: ProductRecommendationsState = { status: 'loading', items: [] }
@@ -53,7 +53,7 @@ export function useProductRecommendations(productId: number | null, enabled: boo
           setState({ key, value: { status: 'error', items: [] } })
           return
         }
-        setState({ key, value: { status: 'ready', items: data.items } })
+        setState({ key, value: { status: 'ready', items: data.items, tracking: data.tracking } })
       })
       .catch((err: unknown) => {
         if (!current) return
