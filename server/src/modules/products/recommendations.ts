@@ -7,7 +7,7 @@ import { guestVisibilitySql, merchantVisibleSql, type ProductAudience } from './
 /** Fixed per-group candidate cap; bounds hydration cost, not the category scan. */
 export const RECOMMENDATION_CANDIDATE_LIMIT = 64
 
-type RecommendationPolicy = {
+export type RecommendationPolicy = {
   key: TemplateKey
   version: number
   primary: string | null
@@ -56,6 +56,9 @@ function buildPolicies(): RecommendationPolicy[] {
 
 const POLICIES = buildPolicies()
 
+/** Read-only view of the strategy table, for the recommendation data audit. */
+export const RECOMMENDATION_POLICIES: readonly RecommendationPolicy[] = POLICIES
+
 export function findRecommendationPolicy(
   templateKey: string | null,
   templateVersion: number | null,
@@ -71,7 +74,7 @@ function normalizedText(value: Prisma.Sql): Prisma.Sql {
   return Prisma.sql`NULLIF(translate(btrim(${value}, ' '), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '')`
 }
 
-function normalizedStringAttribute(alias: 'p' | 'b', key: string): Prisma.Sql {
+export function normalizedStringAttribute(alias: 'p' | 'b', key: string): Prisma.Sql {
   const attrs = alias === 'p' ? Prisma.sql`p."attributes"` : Prisma.sql`b."attributes"`
   return normalizedText(Prisma.sql`CASE WHEN jsonb_typeof(${attrs} -> ${key}::text) = 'string'
     THEN ${attrs} ->> ${key}::text END`)
@@ -141,6 +144,8 @@ export type RecommendationBase = {
   templateVersion: number | null
 }
 
+export type RecommendationCandidate = { id: number; tier: number; secondary: number }
+
 /**
  * Ranks eligible candidates of one seller group entirely in SQL so a stale strong match
  * is never pushed out of the LIMIT by newer unrelated rows. Returns ordered product IDs.
@@ -150,6 +155,15 @@ export async function queryRecommendationCandidateIds(
   audience: ProductAudience,
   sameSeller: boolean,
 ): Promise<number[]> {
+  return (await queryRecommendationCandidates(base, audience, sameSeller)).map(row => row.id)
+}
+
+/** Same ranking with its scores, so the data audit measures exactly what the endpoint ranks. */
+export async function queryRecommendationCandidates(
+  base: RecommendationBase,
+  audience: ProductAudience,
+  sameSeller: boolean,
+): Promise<RecommendationCandidate[]> {
   const { tier, secondary } = scoringSql(findRecommendationPolicy(base.templateKey, base.templateVersion))
   const where: Prisma.Sql[] = [
     Prisma.sql`p."id" <> ${base.id}`,
@@ -168,8 +182,8 @@ export async function queryRecommendationCandidateIds(
       : Prisma.sql`(p."merchantId" IS NULL OR p."merchantId" <> ${base.merchantId})`)
   }
 
-  const rows = await prisma.$queryRaw<Array<{ id: number }>>`
-    SELECT scored."id"
+  return prisma.$queryRaw<RecommendationCandidate[]>`
+    SELECT scored."id", scored."tier"::int AS "tier", scored."secondary"::int AS "secondary"
     FROM (
       SELECT p."id" AS "id", ${tier} AS "tier", ${secondary} AS "secondary"
       FROM "Product" p
@@ -180,5 +194,4 @@ export async function queryRecommendationCandidateIds(
     ORDER BY scored."tier" DESC, scored."secondary" DESC, scored."id" DESC
     LIMIT ${RECOMMENDATION_CANDIDATE_LIMIT}
   `
-  return rows.map(row => row.id)
 }
