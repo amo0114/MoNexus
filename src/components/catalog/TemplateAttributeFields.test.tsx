@@ -281,4 +281,39 @@ describe('TemplateAttributeFields', () => {
     expect(screen.getByTestId('template-attr-redemptionMethod-required-hint')).toHaveTextContent('发布前必填')
     expect(screen.queryByTestId('template-attr-region-required-hint')).not.toBeInTheDocument()
   })
+
+  it('explains only the product primary field of known template versions without touching values', () => {
+    const onChange = vi.fn()
+    const view = render(<Harness initial={{ serviceName: '已有原值' }} onChange={onChange} />)
+    const control = screen.getByTestId('template-attr-serviceName-control')
+    expect(control).toHaveAccessibleDescription(/适用的产品或平台名称/)
+    expect(screen.getAllByTestId(/-guidance$/)).toHaveLength(1)
+    expect(control).toHaveValue('已有原值')
+    expect(onChange).not.toHaveBeenCalled()
+    // Free text stays free: any custom value is emitted as typed.
+    fireEvent.change(control, { target: { value: '列表外的写法 Plus' } })
+    expect(onChange).toHaveBeenLastCalledWith({ serviceName: '列表外的写法 Plus' })
+    view.unmount()
+
+    // An offer field with the same key and an unreviewed template version get no guidance.
+    const offerWithSameKey: ProductTemplateDefinition = {
+      ...REDEMPTION_FIXTURE,
+      offerSchema: { type: 'object', properties: { serviceName: { type: 'string', title: '适用产品' } } },
+      ui: { ...REDEMPTION_FIXTURE.ui, offerOrder: ['serviceName'] },
+    }
+    const offer = render(<TemplateAttributeFields template={offerWithSameKey} target="offer" value={{}} onChange={vi.fn()} />)
+    expect(screen.queryByTestId('template-attr-serviceName-guidance')).toBeNull()
+    offer.unmount()
+    render(<TemplateAttributeFields template={{ ...REDEMPTION_FIXTURE, version: 2 }} target="product" value={{}} onChange={vi.fn()} />)
+    expect(screen.queryByTestId('template-attr-serviceName-guidance')).toBeNull()
+  })
+
+  it('keeps a disabled guided field read-only', () => {
+    const onChange = vi.fn()
+    render(<TemplateAttributeFields template={REDEMPTION_FIXTURE} target="product" value={{ serviceName: 'AI 原值' }} onChange={onChange} disabled />)
+    expect(screen.getByTestId('template-attr-serviceName-control')).toBeDisabled()
+    expect(screen.getByTestId('template-attr-serviceName-control')).toHaveValue('AI 原值')
+    expect(screen.getByTestId('template-attr-serviceName-guidance')).toBeInTheDocument()
+    expect(onChange).not.toHaveBeenCalled()
+  })
 })

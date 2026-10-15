@@ -342,6 +342,25 @@ if [[ "$human_provider" == "turnstile" ]]; then
   require_value TURNSTILE_SECRET_KEY
   require_turnstile_allowed_hostnames
 fi
+
+# Recommendation analytics stays off when this optional key is empty.
+recommendation_key="$(get RECOMMENDATION_EVENT_HMAC_KEY)"
+if [[ -n "$recommendation_key" ]]; then
+  require_canonical_base64_32 RECOMMENDATION_EVENT_HMAC_KEY
+  for other_key in JWT_SECRET MFA_ENCRYPTION_KEY ABUSE_HASH_KEY ALTCHA_HMAC_KEY; do
+    other_value="$(get "$other_key")"
+    if [[ "$ALLOW_PLACEHOLDERS" == "true" ]] && { is_placeholder_literal "$recommendation_key" || is_placeholder_literal "$other_value"; }; then
+      continue
+    fi
+    if [[ "$recommendation_key" == "$other_value" ]]; then
+      fail "RECOMMENDATION_EVENT_HMAC_KEY must be independent of $other_key"
+    fi
+  done
+  jwt_utf8_base64="$(printf '%s' "$jwt_secret" | node -e 'process.stdout.write(require("node:fs").readFileSync(0).toString("base64"))')"
+  if [[ "$recommendation_key" == "$jwt_utf8_base64" ]]; then
+    fail "RECOMMENDATION_EVENT_HMAC_KEY must be independent of JWT_SECRET"
+  fi
+fi
 require_bool_true REDIS_ENABLED
 require_bool_true REDIS_REQUIRED
 require_redis_url REDIS_URL

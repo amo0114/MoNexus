@@ -208,4 +208,53 @@ describe('public product endpoints with instant_fixed', () => {
     expect(payload).not.toContain('LEAK-UNKNOWN')
     expect(payload).not.toContain('SECRET-UNKNOWN-TEMPLATE')
   })
+
+  it('projects one availability status per product and per offer, list and detail agreeing, without new secrets', async () => {
+    const categoryId = await getActiveCategoryIdByLabel('充值卡密')
+    const make = (name: string) => prisma.product.create({
+      data: {
+        name, type: '充值卡密', price: 100, stock: 99, status: 'active', visibility: 'public', categoryId,
+        deliveryMode: 'instant_inventory', stockMode: 'limited',
+      },
+    })
+    // Mixed local offers: real inventory sold out + a valid fixed-content offer.
+    const mixed = await make('混合本地套餐')
+    const soldOut = await prisma.offer.create({
+      data: {
+        productId: mixed.id, name: '卡密', isDefault: true, price: 100, stock: 50,
+        deliveryMode: 'instant_inventory', stockMode: 'limited',
+      },
+    })
+    const fixed = await prisma.offer.create({
+      data: {
+        productId: mixed.id, name: '固定内容', price: 120, stock: 0, deliveryMode: 'instant_fixed',
+        stockMode: 'unlimited', fixedContent: 'SECRET-OFFER-FIXED', fixedContentType: 'text',
+        externalSku: 'SECRET-SKU-NOT-FAKA',
+      },
+    })
+    // Product.stock > 0 but no active offer: browsable, yet never sellable.
+    const noOffer = await make('无启用套餐')
+    await prisma.offer.create({
+      data: { productId: noOffer.id, name: '停用', isDefault: true, price: 100, stock: 5, status: 'inactive', deliveryMode: 'manual_service', stockMode: 'unlimited' },
+    })
+
+    const list = await api.get('/api/products').expect(200)
+    const listed = (id: number) => list.body.items.find((item: { id: number }) => item.id === id)
+    expect(listed(mixed.id).availability).toEqual({ status: 'available' })
+    expect(listed(noOffer.id).availability).toEqual({ status: 'unavailable' })
+
+    const detail = await api.get(`/api/products/${mixed.id}`).expect(200)
+    expect(detail.body.availability).toEqual({ status: 'available' })
+    expect(Object.fromEntries(detail.body.offers.map((offer: { id: number; availability: unknown }) => [offer.id, offer.availability])))
+      .toEqual({ [soldOut.id]: { status: 'unavailable' }, [fixed.id]: { status: 'available' } })
+    expect((await api.get(`/api/products/${noOffer.id}`).expect(200)).body.availability).toEqual({ status: 'unavailable' })
+
+    for (const payload of [JSON.stringify(list.body), JSON.stringify(detail.body)]) {
+      expect(payload).not.toContain('SECRET-OFFER-FIXED')
+      expect(payload).not.toContain('SECRET-SKU-NOT-FAKA')
+      expect(payload).not.toContain('hasUnknownFakaCapacity')
+      expect(payload).not.toContain('fixedFileId')
+    }
+    expect(listed(mixed.id)).not.toHaveProperty('merchantId')
+  })
 })

@@ -6,6 +6,7 @@ import {
   type TemplateAttributes,
   type TemplateWidget,
 } from '../../types/catalog'
+import { productAttributeGuidance } from './attributeGuidance'
 
 export type TemplateAttributeTarget = 'product' | 'offer'
 export type TemplateAttributeMode = 'draft' | 'publish'
@@ -235,6 +236,8 @@ export default function TemplateAttributeFields({
         const current = Object.prototype.hasOwnProperty.call(value, key) ? value[key] : undefined
         const showPublishHint = mode === 'publish' && isRequired && (current === undefined || current === '' || (Array.isArray(current) && current.length === 0))
         const knownWidget = typeof widget === 'string' && WIDGET_SET.has(widget) ? (widget as TemplateWidget) : null
+        const guidance = target === 'product' ? productAttributeGuidance(template.key, template.version, key) : null
+        const guidanceId = guidance ? `${fieldId}-guidance` : undefined
 
         return (
           <div key={key} className="min-w-0" data-testid={`template-attr-${key}`}>
@@ -329,6 +332,7 @@ export default function TemplateAttributeFields({
                 value={typeof current === 'string' ? current : ''}
                 maxLength={property?.maxLength}
                 disabled={disabled}
+                aria-describedby={guidanceId}
                 data-testid={`template-attr-${key}-control`}
                 onChange={(event) => {
                   const next = event.target.value
@@ -339,6 +343,11 @@ export default function TemplateAttributeFields({
 
             {description ? (
               <p className="text-xs text-[var(--color-text-muted)] mt-1">{description}</p>
+            ) : null}
+            {guidance ? (
+              <p id={guidanceId} className="text-xs text-[var(--color-text-muted)] mt-1" data-testid={`template-attr-${key}-guidance`}>
+                {guidance}
+              </p>
             ) : null}
             {showPublishHint ? (
               <p className="text-xs text-[var(--color-danger)] mt-1" data-testid={`template-attr-${key}-required-hint`}>

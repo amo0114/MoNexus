@@ -4,7 +4,7 @@ import { useAuthStore } from '../stores/authStore'
 const VISITOR_KEY = 'monexus:traffic-visitor'
 let memoryVisitor: string | undefined
 
-function visitorId() {
+export function getTrafficVisitorId() {
   if (memoryVisitor) return memoryVisitor
   try {
     const stored = localStorage.getItem(VISITOR_KEY)
@@ -22,7 +22,7 @@ function visitorId() {
 }
 
 async function sendPageView(page: string, eventId: string) {
-  const body = JSON.stringify({ page, eventId, visitorId: visitorId() })
+  const body = JSON.stringify({ page, eventId, visitorId: getTrafficVisitorId() })
   // One bounded retry, retaining the event ID even if the first response was lost.
   for (let attempt = 0; attempt < 2; attempt++) {
     const controller = new AbortController()

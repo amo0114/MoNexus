@@ -78,6 +78,7 @@ interface MobileDetailContentProps {
   preview: boolean
   product: Product
   reviews: ReactNode
+  related?: ReactNode
   template: ProductTemplateDefinition | null
   activeOffer?: NonNullable<Product['offers']>[number]
   previewFeatures: MobilePreviewFeature[]
@@ -96,6 +97,7 @@ export default function MobileDetailContent({
   preview,
   product,
   reviews,
+  related,
   template,
   activeOffer,
   previewFeatures,
@@ -187,6 +189,7 @@ export default function MobileDetailContent({
           titles={titlesFromTemplate(template)}
           enumLabels={template?.ui.enumLabels}
         />
+        {related}
       </section>
     )
   }

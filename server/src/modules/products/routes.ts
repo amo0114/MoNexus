@@ -10,6 +10,7 @@ const router = Router()
 
 router.get('/', authenticateIfPresent, requireActiveUserIfPresent, validate({ query: listProductsQuerySchema }), controller.list)
 router.get('/:id/reviews', authenticateIfPresent, requireActiveUserIfPresent, validate({ params: idParamSchema, query: productReviewsQuerySchema }), reviewsController.listForProduct)
+router.get('/:id/recommendations', controller.noStoreHeaders, authenticateIfPresent, requireActiveUserIfPresent, validate({ params: idParamSchema }), controller.recommendations)
 router.get('/:id', authenticateIfPresent, requireActiveUserIfPresent, validate({ params: idParamSchema }), controller.detail)
 
 export { router as productRoutes }

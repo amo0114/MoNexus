@@ -1,4 +1,5 @@
 import type { ReactNode, Ref } from 'react'
+import { Link } from 'react-router-dom'
 import {
   BadgeCheck,
   BadgeHelp,
@@ -24,6 +25,7 @@ import MerchantHoverCard from '../../MerchantHoverCard'
 import ProductExchangeSummary from '../../ProductExchangeSummary'
 import FavoriteHeartButton from '../../FavoriteHeartButton'
 import { isOfferSoldOut } from '../../ProductOfferSelector'
+import { readAvailabilityStatus } from '../../../../utils/publicAvailability'
 
 type Offer = NonNullable<Product['offers']>[number]
 
@@ -111,6 +113,8 @@ export default function DesktopPurchasePanel({
   sectionRef,
 }: DesktopPurchasePanelProps) {
   const period = activeOffer ? offerPeriodDetailNote(activeOffer) : null
+  // Platform products have no shop; preview keeps its mock dialog.
+  const shopHref = !preview && product.merchant ? `/shops/${product.merchant.id}` : undefined
 
   return (
     <section className="pd-purchase" aria-label="商品与购买" ref={sectionRef}>
@@ -145,6 +149,7 @@ export default function DesktopPurchasePanel({
             preview={preview}
             onContactSupport={onOpenSupport}
             onEnterShop={preview ? onOpenShop : undefined}
+            shopHref={shopHref}
           />
           <div className="pd-byline-actions">
             <button
@@ -166,6 +171,12 @@ export default function DesktopPurchasePanel({
                 <ShoppingBag size={13} />
                 <span>进店</span>
               </button>
+            )}
+            {shopHref && (
+              <Link to={shopHref} className="pd-byline-shop-btn" aria-label="进入店铺" data-testid="desktop-shop-link">
+                <ShoppingBag size={13} />
+                <span>进店</span>
+              </Link>
             )}
           </div>
         </div>
@@ -277,8 +288,10 @@ export default function DesktopPurchasePanel({
                     </b>
                     <span>
                       {unavailable
-                        ? '已售罄'
-                        : preview
+                        ? '暂不可售'
+                        : readAvailabilityStatus(offer) === 'unknown'
+                          ? '可售状态待确认'
+                          : preview
                           ? ['灵活体验，按月订阅', '约 ¥ 26.3 / 月', '约 ¥ 24.9 / 月'][index]
                           : offerPeriodSubtitle(offer) || '按套餐说明交付'}
                     </span>
@@ -383,9 +396,14 @@ export default function DesktopPurchasePanel({
               </button>
             </div>
           )}
-          <span className={`pd-stock ${soldOut ? 'pd-stock-empty' : ''}`} data-testid="product-stock">
+          <span
+            className={`pd-stock ${soldOut ? 'pd-stock-empty' : ''} ${
+              activeOffer && readAvailabilityStatus(activeOffer) === 'unknown' ? 'pd-stock-pending' : ''
+            }`}
+            data-testid="product-stock"
+          >
             <i />
-            {soldOut ? '暂时售罄' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
+            {soldOut ? '暂不可售' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
           </span>
         </div>
         <div className="pd-actions" style={!preview ? { gridTemplateColumns: '1fr auto' } : undefined}>

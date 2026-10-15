@@ -25,6 +25,7 @@ import RichTextHtml from './RichTextHtml'
 import ProductSpecSections, { titlesFromTemplate } from './ProductSpecSections'
 import MerchantSupportModal from './MerchantSupportModal'
 import { isOfferSoldOut } from './ProductOfferSelector'
+import { readAvailabilityStatus } from '../../utils/publicAvailability'
 import { offerPeriodSubtitle } from '../../utils/offerPeriodDisplay'
 import { PRODUCT_MOCK_ASSETS, referenceRelated } from './productDetailMock'
 import { useProductFavorite } from '../../hooks/useProductFavorite'
@@ -40,6 +41,8 @@ interface Props {
   gallery: ReactNode
   share: ReactNode
   reviews: ReactNode
+  /** Real related products; rendered at the end of the details panel. */
+  related?: ReactNode
   template: ProductTemplateDefinition | null
   activeOffer?: NonNullable<Product['offers']>[number]
   selectedOfferId: number | null
@@ -133,6 +136,7 @@ export default function ProductDetailDesktop({
   gallery,
   share,
   reviews,
+  related,
   template,
   activeOffer,
   selectedOfferId,
@@ -417,6 +421,7 @@ export default function ProductDetailDesktop({
               preview={preview}
               product={product}
               reviews={reviews}
+              related={related}
               template={template}
               activeOffer={activeOffer}
               networkFeatures={networkFeatures}
@@ -495,7 +500,13 @@ export default function ProductDetailDesktop({
                       {!preview && ' 积分'}
                     </td>
                     <td>{offerPeriodSubtitle(offer) || '以套餐说明为准'}</td>
-                    <td>{isOfferSoldOut(offer) ? '已售罄' : '可选'}</td>
+                    <td>
+                      {isOfferSoldOut(offer)
+                        ? '暂不可售'
+                        : readAvailabilityStatus(offer) === 'unknown'
+                          ? '待确认'
+                          : '可选'}
+                    </td>
                   </tr>
                 ))}
               </tbody>

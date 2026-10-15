@@ -9,6 +9,15 @@ import {
 import { badRequest, notFound } from '../lib/httpError.js'
 import { __resetRedisForTests, __setRedisForTests } from '../lib/redis.js'
 import { config } from '../config/index.js'
+import {
+  __clearFakaCapacityCacheForTests,
+  __setFakaCapacityProbeForTests,
+  prewarmFakaCapacityForSkus,
+  type FakaCapacitySnapshot,
+} from '../lib/fakaBridge/capacity.js'
+import { prisma } from '../lib/prisma.js'
+import { api } from './helpers.js'
+import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 class FakeRedis {
   readonly store = new Map<string, string>()
@@ -186,5 +195,107 @@ describe('cache wrapper', () => {
     await bumpProductListVersionCoalesced()
 
     await expect(getCacheVersion({ name: 'product-list' })).resolves.toBe(1)
+  })
+})
+
+describe('product list/detail cache with public availability', () => {
+  const originalFaka = { ...config.fakaBridge }
+
+  beforeEach(async () => {
+    mutableConfig.redisEnabled = true
+    mutableConfig.cacheProductList = true
+    mutableConfig.cacheProductDetail = true
+    mutableConfig.redisCommandTimeoutMs = 50
+    __setRedisForTests(new FakeRedis())
+    await __resetCacheForTests()
+    __clearFakaCapacityCacheForTests()
+    Object.assign(config.fakaBridge, {
+      enabled: true,
+      url: 'https://v.uuwu.de/plugin/faka-bridge/order-paid',
+      statusUrl: 'https://v.uuwu.de/plugin/faka-bridge/order-status',
+      secret: 'unit-test-faka-secret-at-least-32-characters!!',
+      timeoutMs: 5_000,
+      maxAttempts: 3,
+      allowInsecureTargets: false,
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    __setFakaCapacityProbeForTests(undefined)
+    __clearFakaCapacityCacheForTests()
+    Object.assign(config.fakaBridge, originalFaka)
+    __resetRedisForTests()
+    mutableConfig.redisEnabled = false
+  })
+
+  it('never caches a partly unknown projection, caches it once known, and degrades/recovers with snapshot age', async () => {
+    const plan = (sku: string, planId: number, remaining: number): FakaCapacitySnapshot => ({
+      sku, planId, capacityLimit: 10, activeUsers: 10 - remaining, remaining, sellable: remaining > 0, source: 'xboard',
+    })
+    // Probes are released explicitly: a pending refresh coalesces with later prewarms.
+    const pending: Array<() => void> = []
+    const heldProbe = (resolveWith: (sku: string) => FakaCapacitySnapshot) => async (sku: string) =>
+      new Promise<FakaCapacitySnapshot>(resolve => pending.push(() => resolve(resolveWith(sku))))
+    const releaseAll = () => pending.splice(0).forEach(release => release())
+    __setFakaCapacityProbeForTests(async sku =>
+      sku.startsWith('plan-5-') ? plan(sku, 5, 3) : heldProbe(s => plan(s, 6, 2))(sku))
+    await prewarmFakaCapacityForSkus(['plan-5-month'])
+
+    const product = await prisma.product.create({
+      data: {
+        name: '缓存v1', type: '网络节点', categoryId: await getActiveNetworkNodeCategoryId(), price: 100, stock: 0,
+        status: 'active', visibility: 'public', deliveryMode: 'manual_service', stockMode: 'unlimited',
+      },
+    })
+    const offer = (name: string, externalSku: string) => prisma.offer.create({
+      data: {
+        productId: product.id, name, price: 100, stock: 0, deliveryMode: 'manual_service', stockMode: 'unlimited',
+        externalIntegration: 'faka_bridge', externalSku,
+      },
+    })
+    const month = await offer('月付', 'plan-5-month')
+    await offer('年付', 'plan-5-year')
+    const named = await offer('独立套餐', 'named-b')
+
+    const read = async () => {
+      const list = await api.get('/api/products').expect(200)
+      const detail = await api.get(`/api/products/${product.id}`).expect(200)
+      return { listed: list.body.items.find((item: { id: number }) => item.id === product.id), detail: detail.body }
+    }
+
+    // Product is available via plan 5, but the named offer is still unknown → nothing cached.
+    let { listed, detail } = await read()
+    expect(listed.availability).toEqual({ status: 'available' })
+    expect(listed.stock).toBe(3) // two period SKUs of one plan share capacity, not 6
+    expect(detail.offers.find((o: { id: number }) => o.id === named.id).availability).toEqual({ status: 'unknown' })
+    await prisma.product.update({ where: { id: product.id }, data: { name: '缓存v2' } })
+    ;({ listed, detail } = await read())
+    expect([listed.name, detail.name]).toEqual(['缓存v2', '缓存v2'])
+
+    // Once every evaluated offer is known, the projection is cacheable.
+    const warmed = prewarmFakaCapacityForSkus(['named-b'])
+    releaseAll()
+    await warmed
+    ;({ listed, detail } = await read())
+    expect(detail.offers.every((o: { availability: { status: string } }) => o.availability.status === 'available')).toBe(true)
+    await prisma.product.update({ where: { id: product.id }, data: { name: '缓存v3' } })
+    ;({ listed, detail } = await read())
+    expect([listed.name, detail.name]).toEqual(['缓存v2', '缓存v2'])
+
+    // Beyond the bounded stale window the snapshots are unknown again; after a refresh they recover.
+    await __resetCacheForTests()
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(Date.now() + 10 * 60_000)
+    __setFakaCapacityProbeForTests(heldProbe(sku => plan(sku, sku.startsWith('plan-5-') ? 5 : 6, 1)))
+    ;({ detail } = await read())
+    expect(detail.availability).toEqual({ status: 'unknown' })
+    expect(detail.offers.find((o: { id: number }) => o.id === month.id).availability).toEqual({ status: 'unknown' })
+
+    const refreshed = prewarmFakaCapacityForSkus(['plan-5-month', 'named-b'])
+    releaseAll()
+    await refreshed
+    ;({ detail } = await read())
+    expect(detail.availability).toEqual({ status: 'available' })
   })
 })

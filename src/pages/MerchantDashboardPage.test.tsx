@@ -633,6 +633,24 @@ it('opens category application history directly from the island destination', as
   expect(merchantApi.getMerchantProducts).not.toHaveBeenCalled()
 })
 
+describe('merchant profile public shop entry', () => {
+  const profile = (status: Merchant['status']): Merchant => ({
+    id: 9, userId: 1, name: '我的店', description: '简介', status, commissionRate: '0.1',
+    contactEmail: null, contactPhone: null, createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-01T00:00:00.000Z', approvedAt: null, approvedBy: null,
+  } as Merchant)
+
+  it.each([['active', true], ['suspended', false]] as const)('%s merchant shop link: %s', async (status, visible) => {
+    merchantApi.getMerchantMe.mockResolvedValue(profile(status))
+    renderPage()
+    fireEvent.click(screen.getByRole('button', { name: '商家资料' }))
+    expect(await screen.findByDisplayValue('我的店')).toBeInTheDocument()
+    expect(screen.getByLabelText('简介')).toHaveAccessibleDescription('将展示在公开店铺页，最多展示前 500 字')
+    if (visible) expect(screen.getByTestId('merchant-view-shop')).toHaveAttribute('href', '/shops/9')
+    else expect(screen.queryByTestId('merchant-view-shop')).toBeNull()
+  })
+})
+
 describe('merchant order action completions', () => {
   const pendingOrder = (): MerchantOrder => ({ ...fulfillmentOrder(), status: 'pending', availableActions: ['start_fulfillment', 'reject'] })
   const disputedOrder = (): MerchantOrder => ({ ...fulfillmentOrder(), status: 'disputed', availableActions: ['respond_dispute'] })

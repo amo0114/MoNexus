@@ -1,3 +1,4 @@
+import { useRecommendationTracking } from '../hooks/useRecommendationTracking'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
@@ -12,6 +13,7 @@ import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
 import { usePageView } from '../hooks/usePageView'
 import { useProductFavorite } from '../hooks/useProductFavorite'
+import { useProductRecommendations } from '../hooks/useProductRecommendations'
 import MerchantSupportModal from '../components/catalog/MerchantSupportModal'
 import PurchaseModal, { type ConfirmOutcome } from '../components/PurchaseModal'
 import SuccessModal from '../components/SuccessModal'
@@ -28,12 +30,14 @@ import ProductSpecSections, {
   titlesFromTemplate,
 } from '../components/catalog/ProductSpecSections'
 import { isOfferSoldOut } from '../components/catalog/ProductOfferSelector'
+import { readAvailabilityStatus } from '../utils/publicAvailability'
 import type { Offer } from '../types/merchant'
 import type { MerchandisingProjection } from '../types/merchandising'
 import type { ProductDetails, ProductTemplateDefinition, TemplateAttributes } from '../types/catalog'
 import ProductDetailDesktop from '../components/catalog/ProductDetailDesktop'
 import ProductDetailMobile from '../components/catalog/ProductDetailMobile'
 import ProductDetailTablet from '../components/catalog/productDetail/ProductDetailTablet'
+import RelatedProductsSection from '../components/catalog/productDetail/RelatedProductsSection'
 import { referenceProduct, referenceReviews } from '../components/catalog/productDetailMock'
 
 type PublicOffer = Offer & { attributes?: TemplateAttributes }
@@ -86,6 +90,7 @@ export interface Product {
     validUntil: string
   }
   fakaCapacity?: Offer['fakaCapacity']
+  availability?: Offer['availability']
   offers?: PublicOffer[]
 }
 
@@ -121,6 +126,13 @@ export default function ProductDetailPage() {
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
 
   usePageView(`/product/${id}`, !loading && !loginRequired && product?.id === Number(id))
+
+  const routeProductId = id && /^[1-9]\d*$/.test(id) ? Number(id) : null
+  // Bumped on every detail load (route change, return to the same product, reload), so async
+  // work started during one page visit (post-purchase refresh) never overwrites a later visit.
+  const detailVisitRef = useRef(0)
+  const recommendations = useProductRecommendations(routeProductId, !isReferencePreview)
+  const recommendationTracker = useRecommendationTracking(recommendations.status === 'ready' ? recommendations.tracking?.listToken : undefined)
 
   const [showPurchase, setShowPurchase] = useState(false)
   const [purchasing, setPurchasing] = useState(false)
@@ -230,6 +242,10 @@ export default function ProductDetailPage() {
   }, [])
 
   useEffect(() => {
+    // Detail-to-detail navigation (related products) can overlap requests; only
+    // the latest effect run may update state, toast or redirect.
+    let cancelled = false
+    detailVisitRef.current += 1
     async function load() {
       if (!id) return
       if (isReferencePreview) {
@@ -245,6 +261,7 @@ export default function ProductDetailPage() {
       setLoading(true)
       try {
         const { data } = await api.get(`/products/${id}`)
+        if (cancelled) return
         setProduct(data)
         setActiveImage(0)
         const offers: Offer[] = data.offers ?? []
@@ -260,13 +277,16 @@ export default function ProductDetailPage() {
             if (Number.isInteger(requestedOfferId) && requestedOfferId > 0) {
               showToast('套餐已失效，请重新选择', 'info')
             }
-            const firstAvailable = offers.find((o) => !isOfferSoldOut(o))
-            setSelectedOfferId((firstAvailable ?? offers[0]).id)
+            const firstSelectable =
+              offers.find((o) => readAvailabilityStatus(o) === 'available') ??
+              offers.find((o) => readAvailabilityStatus(o) === 'unknown')
+            setSelectedOfferId((firstSelectable ?? offers[0]).id)
           }
         } else {
           setSelectedOfferId(null)
         }
       } catch (err) {
+        if (cancelled) return
         if (getApiErrorCode(err) === 'PRODUCT_LOGIN_REQUIRED') {
           setLoginRequired(true)
           return
@@ -274,10 +294,13 @@ export default function ProductDetailPage() {
         showToast('获取商品详情失败', 'error')
         navigate('/')
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }
     load()
+    return () => {
+      cancelled = true
+    }
   }, [id, navigate, showToast, searchParams, isLoggedIn, isReferencePreview])
 
   async function handlePurchase(
@@ -342,13 +365,17 @@ export default function ProductDetailPage() {
       } else {
         setShowSuccess(true)
       }
-      setProduct((prev) => {
-        if (!prev) return prev
-        const nextOffers = prev.offers?.map((o) =>
-          o.id === selectedOfferId ? { ...o, stock: Math.max(0, o.stock - 1), sales: (o.sales ?? 0) + 1 } : o
-        )
-        return { ...prev, stock: Math.max(0, prev.stock - 1), sales: prev.sales + 1, offers: nextOffers }
-      })
+      // Availability is server-derived (inventory, local quota, Faka capacity), so reload the
+      // public detail instead of guessing it from stock - 1. Order creation already invalidated
+      // the detail cache. Non-blocking: a failed refresh keeps the old view and checkout still
+      // re-validates on the next attempt.
+      const purchaseVisit = detailVisitRef.current
+      void api
+        .get(`/products/${product.id}`)
+        .then(({ data }) => {
+          if (detailVisitRef.current === purchaseVisit) setProduct(data)
+        })
+        .catch(() => {})
       return 'success'
     } catch (err: any) {
       if (useAppStore.getState().islandNotice?.kind === 'order_processing') {
@@ -461,20 +488,27 @@ export default function ProductDetailPage() {
     ? (selectedOffer.originalPrice ?? undefined)
     : product.originalPrice
   const activeOffer = selectedOffer ?? offers[0]
-  const fakaCapacity = activeOffer?.fakaCapacity ?? product.fakaCapacity ?? null
+  // A selected local offer must not inherit the product's representative Faka snapshot.
+  const fakaCapacity = activeOffer ? (activeOffer.fakaCapacity ?? null) : (product.fakaCapacity ?? null)
   const displayStockMode = activeOffer?.stockMode ?? product.stockMode
   const displayStock = activeOffer?.stock ?? product.stock
+  const activeAvailability = activeOffer ? readAvailabilityStatus(activeOffer) : 'unavailable'
 
   const stockLabel =
-    fakaCapacity?.source === 'xboard'
-      ? fakaCapacity.remaining == null
-        ? '不限'
-        : String(fakaCapacity.remaining)
-      : displayStockMode === 'unlimited'
-        ? '不限'
-        : String(displayStock)
+    activeAvailability === 'unknown'
+      ? '待确认'
+      : activeAvailability === 'unavailable'
+        ? '暂不可售'
+        : fakaCapacity?.source === 'xboard'
+          ? fakaCapacity.remaining == null
+            ? '不限'
+            : String(fakaCapacity.remaining)
+          : displayStockMode === 'unlimited'
+            ? '不限'
+            : String(displayStock)
 
-  const stockTitle = fakaCapacity?.source === 'xboard' ? '剩余名额' : '库存'
+  const stockTitle =
+    activeAvailability !== 'available' ? '可售状态' : fakaCapacity?.source === 'xboard' ? '剩余名额' : '库存'
 
   const isInsufficient = userPoints < displayPrice
   const shortfall = !isReferencePreview && isLoggedIn ? Math.max(0, displayPrice - userPoints) : 0
@@ -509,7 +543,7 @@ export default function ProductDetailPage() {
     : hasNoOffers
       ? '暂无可售套餐'
       : isSoldOut
-        ? '已被抢光'
+        ? '该套餐暂不可售'
         : isInsufficient
           ? '余额不足，去充值'
           : '立即兑换'
@@ -557,6 +591,9 @@ export default function ProductDetailPage() {
     />
   )
 
+  const relatedContent =
+    !isReferencePreview && product.id === routeProductId ? <RelatedProductsSection state={recommendations} tracker={recommendationTracker} /> : null
+
   const reviewsContent = (
     <div
       id="product-section-reviews"
@@ -595,6 +632,7 @@ export default function ProductDetailPage() {
             <ProductShareButton ref={desktopShareRef} variant="page" onClick={() => setShareOpen(true)} />
           }
           reviews={reviewsContent}
+          related={relatedContent}
           template={template}
           activeOffer={activeOffer}
           selectedOfferId={selectedOfferId}
@@ -624,6 +662,7 @@ export default function ProductDetailPage() {
             />
           }
           reviews={reviewsContent}
+          related={relatedContent}
           template={template}
           activeOffer={activeOffer}
           selectedOfferId={selectedOfferId}
@@ -642,6 +681,7 @@ export default function ProductDetailPage() {
           preview={isReferencePreview}
           gallery={gallery}
           reviews={reviewsContent}
+          related={relatedContent}
           shareRef={isMobileViewport ? mobileShareRef : desktopShareRef}
           template={template}
           activeOffer={activeOffer}

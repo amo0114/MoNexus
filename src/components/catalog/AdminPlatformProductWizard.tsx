@@ -338,6 +338,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 </option>
               ))}
             </select>
+            <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">保存后商品形态不可更改。</p>
           </div>
           <div>
             <label htmlFor="admin-platform-name" className="block text-sm font-bold mb-1.5">商品名称 *</label>

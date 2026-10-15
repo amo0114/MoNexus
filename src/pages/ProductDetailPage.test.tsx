@@ -1,6 +1,6 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import type { CheckoutPreview } from '../api/orders'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -133,6 +133,102 @@ describe('ProductDetailPage createOrder term fields', () => {
     }))
     const options = createOrder.mock.calls[0][1]
     expect(Object.prototype.hasOwnProperty.call(options, 'expectedAssuranceGrantId')).toBe(true)
+  })
+
+  it('refreshes server availability after buying the last unit instead of keeping the stale purchasable state', async () => {
+    const lastUnit = {
+      ...PRODUCT,
+      offers: [{ ...PRODUCT.offers[0], stock: 1, availability: { status: 'available' } }],
+      availability: { status: 'available' },
+    }
+    const afterPurchase = {
+      ...PRODUCT,
+      offers: [{ ...PRODUCT.offers[0], stock: 0, availability: { status: 'unavailable' } }],
+      availability: { status: 'unavailable' },
+    }
+    let detailCalls = 0
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/42') {
+        detailCalls += 1
+        return Promise.resolve({ data: detailCalls === 1 ? lastUnit : afterPurchase })
+      }
+      if (typeof url === 'string' && url.startsWith('/products/42/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    renderPage()
+    expect(await screen.findByTestId('inflow-buy-cta')).toHaveTextContent('立即兑换')
+
+    fireEvent.click(screen.getAllByRole('button', { name: '立即兑换' })[0])
+    await screen.findByTestId('purchase-modal')
+    await screen.findByTestId('preview-price')
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(1))
+
+    await waitFor(() => expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('该套餐暂不可售'))
+    expect(screen.getByTestId('inflow-buy-cta')).toBeDisabled()
+    expect(detailCalls).toBe(2)
+  })
+
+  it('drops a post-purchase refresh that lands after leaving and returning to the same product', async () => {
+    const withStatus = (status: string, stock: number) => ({
+      ...PRODUCT,
+      offers: [{ ...PRODUCT.offers[0], stock, availability: { status } }],
+      availability: { status },
+    })
+    let resolveStaleRefresh!: (value: unknown) => void
+    let detailCalls = 0
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/42') {
+        detailCalls += 1
+        if (detailCalls === 1) return Promise.resolve({ data: withStatus('available', 1) })
+        // 2nd call = post-purchase refresh, held until after the user came back.
+        if (detailCalls === 2) return new Promise(resolve => { resolveStaleRefresh = resolve })
+        return Promise.resolve({ data: withStatus('unavailable', 0) })
+      }
+      if (url === '/products/43') return Promise.resolve({ data: { ...PRODUCT, id: 43, name: '另一件商品' } })
+      if (typeof url === 'string' && /^\/products\/4[23]\/reviews/.test(url)) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    function Nav() {
+      const navigate = useNavigate()
+      return (
+        <>
+          <button type="button" onClick={() => navigate('/product/43')}>go B</button>
+          <button type="button" onClick={() => navigate('/product/42')}>go A</button>
+        </>
+      )
+    }
+    render(
+      <MemoryRouter initialEntries={['/product/42']}>
+        <Nav />
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    expect(await screen.findByTestId('inflow-buy-cta')).toHaveTextContent('立即兑换')
+    fireEvent.click(screen.getAllByRole('button', { name: '立即兑换' })[0])
+    await screen.findByTestId('purchase-modal')
+    await screen.findByTestId('preview-price')
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(detailCalls).toBe(2))
+
+    fireEvent.click(screen.getByRole('button', { name: 'go B', hidden: true }))
+    expect(await screen.findByRole('heading', { level: 1, name: '另一件商品' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'go A', hidden: true }))
+    await waitFor(() => expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('该套餐暂不可售'))
+
+    await act(async () => {
+      resolveStaleRefresh({ data: withStatus('available', 1) })
+    })
+    expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('该套餐暂不可售')
+    expect(screen.getByTestId('inflow-buy-cta')).toBeDisabled()
   })
 
   it('renders Header-First SPU hierarchy and pure component 4:3 gallery with pagination', async () => {
@@ -290,9 +386,88 @@ describe('ProductDetailPage createOrder term fields', () => {
     // Verify header and page load safely without crashing
     expect(await screen.findByRole('heading', { level: 1, name: '无套餐商品' })).toBeInTheDocument()
     // Verify disabled CTA button
-    const buttons = screen.getAllByRole('button', { name: /已被抢光|暂无可售套餐/ })
+    const buttons = screen.getAllByRole('button', { name: /该套餐暂不可售|暂无可售套餐/ })
     expect(buttons.length).toBeGreaterThan(0)
     expect(buttons[0]).toBeDisabled()
+  })
+
+  it('gates purchase on the selected offer, not the product summary, and never borrows the representative Faka quota', async () => {
+    const faka = (remaining: number | null, source: 'xboard' | 'unavailable') => ({
+      remaining, capacityLimit: 10, sellable: source === 'xboard', source,
+    })
+    const AVAILABILITY_PRODUCT = {
+      ...PRODUCT,
+      id: 45,
+      name: '多套餐可售状态',
+      availability: { status: 'available' },
+      fakaCapacity: faka(7, 'xboard'), // representative snapshot of another plan
+      offers: [
+        { id: 51, name: '外部满额', price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'unlimited', stock: 0, sales: 0, fakaCapacity: faka(4, 'xboard'), availability: { status: 'unavailable' } },
+        { id: 52, name: '外部待确认', price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'unlimited', stock: 0, sales: 0, fakaCapacity: faka(null, 'unavailable'), availability: { status: 'unknown' } },
+        { id: 53, name: '本地套餐', price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service', stockMode: 'limited', stock: 2, sales: 0, availability: { status: 'available' } },
+      ],
+    }
+    apiGet.mockImplementation((url: string) => {
+      if (url === '/products/45') return Promise.resolve({ data: AVAILABILITY_PRODUCT })
+      if (typeof url === 'string' && url.startsWith('/products/45/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    render(
+      <MemoryRouter initialEntries={['/product/45?offerId=51']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    // Explicitly selected unavailable offer: blocked although the product is available.
+    const cta = await screen.findByTestId('inflow-buy-cta')
+    expect(cta).toHaveTextContent('该套餐暂不可售')
+    expect(cta).toBeDisabled()
+
+    // Unknown offer: selectable, original purchase entry, no number/"不限" from any snapshot.
+    fireEvent.click(screen.getByTestId('sku-option-52'))
+    expect(screen.getByTestId('inflow-buy-cta')).toHaveTextContent('立即兑换')
+    expect(screen.getByTestId('inflow-buy-cta')).not.toBeDisabled()
+    expect(screen.getByText('待确认', { selector: 'strong' })).toBeInTheDocument()
+
+    // Local offer: its own stock, not the product's representative Xboard quota (7).
+    fireEvent.click(screen.getByTestId('sku-option-53'))
+    expect(screen.getByText('库存:', { exact: false }).querySelector('strong')).toHaveTextContent('2')
+  })
+
+  it('preselects the first available offer, then the first unknown one', async () => {
+    const offer = (id: number, status: string) => ({
+      id, name: `套餐${id}`, price: 100, originalPrice: null, status: 'active', deliveryMode: 'manual_service',
+      stockMode: 'unlimited', stock: 0, sales: 0, availability: { status },
+    })
+    const respond = (offers: unknown[]) => apiGet.mockImplementation((url: string) => {
+      if (url === '/products/46') return Promise.resolve({ data: { ...PRODUCT, id: 46, name: '初始套餐', offers } })
+      if (typeof url === 'string' && url.startsWith('/products/46/reviews')) {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, pageSize: 20 } })
+      }
+      if (url === '/product-templates') return Promise.resolve({ data: { templates: [] } })
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    const renderAt = () => render(
+      <MemoryRouter initialEntries={['/product/46']}>
+        <Routes>
+          <Route path="/product/:id" element={<ProductDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    respond([offer(61, 'unavailable'), offer(62, 'unknown'), offer(63, 'available')])
+    const first = renderAt()
+    expect(await screen.findByTestId('sku-option-63')).toHaveAttribute('aria-pressed', 'true')
+    first.unmount()
+
+    respond([offer(61, 'unavailable'), offer(62, 'unknown')])
+    renderAt()
+    expect(await screen.findByTestId('sku-option-62')).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('renders rating-summary with score and count when ratingCount > 0', async () => {

@@ -3,6 +3,7 @@ import type { Product } from '../../../../pages/ProductDetailPage'
 import { offerPeriodSubtitle, offerPeriodDetailNote } from '../../../../utils/offerPeriodDisplay'
 import { formatFileSize } from '../../../../utils/formatFileSize'
 import { isOfferSoldOut } from '../../ProductOfferSelector'
+import { readAvailabilityStatus } from '../../../../utils/publicAvailability'
 
 type Offer = NonNullable<Product['offers']>[number]
 
@@ -95,7 +96,13 @@ export default function MobileOfferPanel({
                   <strong>{offer.name}</strong>
                   {selected && <Check className="pm-offer-check" size={14} />}
                   <b>{money(offer.price)}</b>
-                  <small>{unavailable ? '已售罄' : offerPeriodSubtitle(offer) || '按套餐说明交付'}</small>
+                  <small>
+                    {unavailable
+                      ? '暂不可售'
+                      : readAvailabilityStatus(offer) === 'unknown'
+                        ? '可售状态待确认'
+                        : offerPeriodSubtitle(offer) || '按套餐说明交付'}
+                  </small>
                 </button>
               )
             })}
@@ -127,8 +134,11 @@ export default function MobileOfferPanel({
           </div>
         )}
         <span data-testid="product-stock">
-          <i data-soldout={soldOut} />
-          {soldOut ? '暂时售罄' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
+          <i
+            data-soldout={soldOut}
+            data-pending={!!activeOffer && readAvailabilityStatus(activeOffer) === 'unknown'}
+          />
+          {soldOut ? '暂不可售' : preview ? '库存充足' : `${stockTitle}：${stockLabel}`}
         </span>
       </div>
       {!!product.details?.highlights?.length && (
