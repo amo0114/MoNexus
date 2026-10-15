@@ -337,7 +337,7 @@ gh pr create --base develop --head chore/recommendation-local-audit --title 'cho
 
 - 分支 `chore/recommendation-local-audit`，`--no-track` 创建，基线 `origin/develop@297ee6554141a842bff6c4cae479a2ce15cf6449`；实现提交 `b1e00f1`。未推送、未建 PR。
 - 快照：`pg_dump` → 独立库 `monexus_audit_snapshot_20261015`（导出开始于 2026-10-15T07:07:09Z），审计后删除快照库与导出文件；应用库未写入。
-- 结果：范围 844 件，835 件可由仓库 E2E 名称字面量核实为测试生成、1 件为种子、8 件用途未确认。C1 只改变 5 个登录基准和 1 个游客基准，全部为 E2E 夹具或用途未确认的商品；C2 使 822 个 legacy 基准无候选。20 条有方向配对的人工复核全部为“信息不足”。
+- 结果：范围 844 件，835 件匹配 E2E 测试命名特征、1 件匹配种子示例特征（均为高置信推断，未证明由对应脚本创建）、8 件用途未确认。C1 只改变 5 个登录基准和 1 个游客基准，全部是带 E2E 命名特征或用途未确认的商品；C2 使 822 个 legacy 基准无候选。20 条有方向配对的人工复核全部为“信息不足”。
 - 决策：保留 C0，单元 C 不创建功能 PR；B 只提供填写说明，没有可核实的建议词条。详见报告。
 - 验证：`recommendations.test.ts` 与 `recommendationAudit.test.ts` 共 11 个用例通过（可丢弃库），后端构建通过，`git diff --check` 通过；未运行 E2E。
 
