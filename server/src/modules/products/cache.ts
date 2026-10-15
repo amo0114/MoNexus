@@ -15,6 +15,7 @@ type ProductListCacheParams = {
   pageSize?: number
   rankingRunId?: string | null
   audience?: 'guest' | 'member'
+  merchantId?: number
 }
 
 type ProductPublicInvalidationScope = {
@@ -74,6 +75,7 @@ function normalizeProductListParams(params: ProductListCacheParams) {
   }
 
   if (query) normalized.q = query
+  if (params.merchantId != null) normalized.merchantId = params.merchantId
 
   const categoryCode = normalizeCategoryCode(params.categoryCode)
   if (categoryCode) {

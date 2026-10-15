@@ -596,6 +596,7 @@ model Product {
 
   @@index([status, isHot, sales, id])
   @@index([categoryId])
+  @@index([merchantId])
   @@index([archivedAt])
   @@index([createdAt, id])
   @@index([visibility, status])
