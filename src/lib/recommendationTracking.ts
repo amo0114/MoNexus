@@ -1,18 +1,41 @@
 import { getTrafficVisitorId } from '../hooks/usePageView'
+import { useAuthStore } from '../stores/authStore'
+import { refreshAccessToken } from '../api/authRefresh'
+import {
+  AuthSessionChangedError, getAuthSessionContext, hasUnexpiredAccessToken,
+  matchesAuthSessionContext, type AuthSessionContext,
+} from '../auth/sessionContext'
 
 type Event = { type: 'impression' | 'click'; productId: number }
-export async function sendRecommendationEvents(listToken: string, events: Event[], accessToken: string | null) {
+export async function sendRecommendationEvents(listToken: string, events: Event[], context: AuthSessionContext | null) {
   const body = JSON.stringify({ listToken, visitorId: getTrafficVisitorId(), events })
   for (let attempt = 0; attempt < 2; attempt++) {
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), 5000)
+    let timer: number | undefined
     try {
+      const state = useAuthStore.getState()
+      const currentContext = getAuthSessionContext(state)
+      let accessToken: string | null = null
+      if (context) {
+        if (!matchesAuthSessionContext(context, currentContext)) throw new AuthSessionChangedError()
+        accessToken = state.accessToken!
+        if (!hasUnexpiredAccessToken(accessToken)) {
+          accessToken = await refreshAccessToken(accessToken, context)
+          if (!matchesAuthSessionContext(context, getAuthSessionContext(useAuthStore.getState()))) {
+            throw new AuthSessionChangedError()
+          }
+        }
+      } else if (currentContext) throw new AuthSessionChangedError()
+      const controller = new AbortController()
+      timer = window.setTimeout(() => controller.abort(), 5000)
       const response = await fetch('/api/recommendations/events', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) },
         body, keepalive: true, signal: controller.signal,
       })
       if (response.ok || response.status < 500) return
-    } catch { /* Analytics never affects browsing, authentication or checkout. */ }
+    } catch (error) {
+      if (error instanceof AuthSessionChangedError) return
+      // Other failures retain the same batch for one bounded retry, without UI errors.
+    }
     finally { window.clearTimeout(timer) }
     if (attempt === 0) await new Promise(resolve => window.setTimeout(resolve, 1000))
   }

@@ -245,9 +245,9 @@ type RecommendationEventBatch = {
 ### 12.1 分支与范围
 
 - 基线：`origin/develop@5ef0f701a2ab29eae176a3485f3fa8d4d38f7453`；#253、#254 已合并，合并后 CI `38668443524` 为 success。
-- 分支：`feat/recommendation-events`，独立 worktree，通过 `--no-track` 创建；未设置 upstream。
+- 分支：`feat/recommendation-events`，独立 worktree，通过 `--no-track` 创建；创建时未设置 upstream。推送时显式指定同名远端分支。
 - 代码提交：后端 `ac3ff27`，前端 `56293d6`；含本节的最终文档提交 HEAD 由交接消息记录。
-- 本轮仅完成代码、本地验证及本地提交。未推送、未建 PR、未部署、未配置生产密钥，也未访问生产库。
+- 首轮交付仅完成代码、本地验证及本地提交。Owner 随后批准：修复审查 P1 后推送并建 PR，base 为 develop；不部署、不配置生产密钥，也不访问生产库。
 - PR3 / PR4 继续暂不调整；排序、推荐准入、64 候选上限和下单事务保持现有规则。
 
 ### 12.2 实际落地
@@ -256,7 +256,7 @@ type RecommendationEventBatch = {
 - 迁移只新增 `RecommendationImpression`、`RecommendationClick` 两张表。事件由 `(listId, productId)` 去重；真实曝光只更正 `implied`，保留首次时间和身份。
 - 为兑现“平台自营单列”，凭证条目和事件快照分别增加 `platform` / `platformSeller`。不在上报时重新读取商品归属，避免商品后续变更改写历史分组。
 - 前端 controller 按清单存活，布局替换共享去重集合；生产构建且有凭证才启用。曝光按 50% / 连续 1 秒 / 前台检测，曝光攒批；链接点击在导航前立即 flush，主键、键盘生成的 click、Ctrl/⌘ 和中键均走原生链接事件。
-- `usePageView` 仅导出原有访客 UUID 获取函数供复用。上报保留所属清单的认证 token，失败最多重试一次，不触发刷新会话或购买提示。
+- `usePageView` 仅导出原有访客 UUID 获取函数供复用。上报固定所属清单的会话上下文，每次发送/重试读取同会话当前凭证，过期时复用现有单飞刷新；会话变化则丢弃批次，不降级访客，不借用其他账号凭证。失败最多重试一次，不显示统计错误或购买提示。
 - 管理员报表挂在现有认证、管理员与 MFA guards 之后，查询结果 Redis 缓存 30 秒；清理 cron 沿用租约，按上海业务日保留 90 天。
 - `.env.example`、生产 Compose、启动配置校验与 `check-prod-env.sh` 同步支持可选独立密钥。空值不签发凭证、不接收统计；保留期清理仍可删除已存在的历史事件。
 
@@ -279,3 +279,11 @@ type RecommendationEventBatch = {
 - Node 22 下两端构建通过；隔离测试库迁移及迁移与 Prisma Schema 差异检查通过；部署契约检查、shell 语法与 `git diff --check` 通过。
 - 未新增或运行 Playwright E2E，未做真实浏览器统计验收、生产负载评估或线上采集验证。键盘点击的组件测试使用浏览器产生的 `detail=0` click 事件，不冒充真实浏览器验收。
 - 当前生产目录样本很少，首版只验收采集和口径；右键菜单打开仍漏计，访客先点击后登录购买仍不归因。上线及密钥配置另行安排。
+
+
+### 12.5 审查 P1 修复与推送交接
+
+- 原实现捕获创建清单时的 accessToken，清单有效期 2 小时而 accessToken 15 分钟过期，导致较长停留的登录用户上报收到 401 后丢失。已改为捕获 `getAuthSessionContext`，每次发送及重试确认当前上下文相同，使用当前未过期凭证；过期时调用现有 `refreshAccessToken(stale, context)`，刷新后再次确认会话。`AuthSessionChangedError` 直接丢弃该批次。
+- 新增 4 条定向用例：同一会话已换新凭证、过期后刷新再发送、发送前切换账号不发送，以及刷新期间切换账号不发送。刷新用例调用真实刷新 helper，仅桩住网络返回。
+- 本次前端定向回归（事件采集、hook 接线、原有刷新、详情推荐）共 4 文件、29 用例通过，Node 22 前端构建及 `git diff --check` 通过。后端代码与配置无变更，沿用 §12.4 的后端结果。
+- 未新增或本地运行 E2E。此次统计路径接入现有会话刷新，按测试政策 §5 给 PR 打 `run-e2e` 标签，在 CI 执行现有旅程；CI 状态以 PR 检查为准。仍未做真实浏览器统计验收、生产部署或采集验证。
