@@ -6,6 +6,7 @@ export type RecommendedProduct = Product & { recommendation: { sameSeller: boole
 
 export interface ProductRecommendations {
   productId: number
+  tracking?: { listToken: string }
   items: RecommendedProduct[]
 }
 

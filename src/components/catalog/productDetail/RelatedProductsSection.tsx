@@ -1,3 +1,5 @@
+import { useEffect, useRef, type MouseEvent } from 'react'
+import type { RecommendationTracker } from '../../../lib/recommendationTracking'
 import StoreProductCard from '../../store/StoreProductCard'
 import type { RecommendedProduct } from '../../../api/productRecommendations'
 import type { ProductRecommendationsState } from '../../../hooks/useProductRecommendations'
@@ -14,7 +16,15 @@ function sellerLabel(item: RecommendedProduct): string {
  * layouts. Empty results and failures render nothing so the main detail and
  * redemption flow never depend on recommendations.
  */
-export default function RelatedProductsSection({ state }: { state: ProductRecommendationsState }) {
+export default function RelatedProductsSection({ state, tracker }: { state: ProductRecommendationsState; tracker?: RecommendationTracker }) {
+  const root = useRef<HTMLElement>(null)
+  useEffect(() => root.current ? tracker?.observe(root.current) : undefined, [tracker])
+  const activate = (event: MouseEvent, id: number) => {
+    if (event.type === 'auxclick' && event.button !== 1) return
+    const link = (event.target as Element).closest('a')
+    if (link?.getAttribute('href') === `/product/${id}`) tracker?.click(id)
+  }
+
   if (state.status === 'loading') {
     return (
       <section
@@ -36,6 +46,7 @@ export default function RelatedProductsSection({ state }: { state: ProductRecomm
 
   return (
     <section
+      ref={root}
       aria-labelledby="related-products-title"
       data-testid="related-products"
       className="mt-6 pt-6 border-t border-[var(--color-border)]"
@@ -48,12 +59,14 @@ export default function RelatedProductsSection({ state }: { state: ProductRecomm
       </h2>
       <div className="mt-4 grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 gap-3">
         {state.items.slice(0, MAX_ITEMS).map((item) => (
+          <div key={item.id} data-recommendation-id={item.id}
+            onClick={event => activate(event, item.id)} onAuxClick={event => activate(event, item.id)}>
           <StoreProductCard
-            key={item.id}
             product={item}
             href={`/product/${item.id}`}
             sellerLabel={sellerLabel(item)}
           />
+          </div>
         ))}
       </div>
     </section>

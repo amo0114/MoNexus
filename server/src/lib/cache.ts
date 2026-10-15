@@ -17,7 +17,7 @@ import {
 } from './metrics.js'
 import { getRedis, runRedisCommandWithTimeout } from './redis.js'
 
-export type CacheName = 'product-list' | 'product-detail' | 'product-reviews' | 'category-registry' | 'traffic-report'
+export type CacheName = 'product-list' | 'product-detail' | 'product-reviews' | 'category-registry' | 'traffic-report' | 'recommendation-report'
 
 export type CacheNegativeError = {
   status: number
@@ -52,7 +52,7 @@ let lastProductListBumpAt = 0
 
 function isCacheEnabled(name: CacheName) {
   if (!config.redisEnabled) return false
-  if (name === 'traffic-report') return true
+  if (name === 'traffic-report' || name === 'recommendation-report') return true
   if (name === 'product-list') return config.cacheProductList
   if (name === 'product-detail') return config.cacheProductDetail
   if (name === 'category-registry') return config.cacheCategoryRegistry
@@ -336,7 +336,7 @@ export function clearCacheProcessState() {
   inflight.clear()
   inflightCounts.clear()
   lastProductListBumpAt = 0
-  for (const name of ['product-list', 'product-detail', 'product-reviews', 'category-registry', 'traffic-report'] as const) {
+  for (const name of ['product-list', 'product-detail', 'product-reviews', 'category-registry', 'traffic-report', 'recommendation-report'] as const) {
     cacheInflightRequests.set({ name }, 0)
   }
 }

@@ -2365,3 +2365,43 @@ model AiRuntimeConfig {
   updatedBy             Int?
   updatedAt             DateTime @updatedAt @db.Timestamptz(3)
 }
+
+// Immutable recommendation context; no FKs so catalog deletion does not rewrite history.
+model RecommendationImpression {
+  listId          String   @db.Uuid
+  productId       Int
+  sourceProductId Int
+  position        Int
+  tier            Int
+  sameSeller      Boolean
+  platformSeller  Boolean
+  strategyVersion String
+  audience        String
+  visitorId       String   @db.Uuid
+  userId          Int?
+  receivedAt      DateTime @default(now()) @db.Timestamptz(3)
+  implied         Boolean  @default(false)
+
+  @@id([listId, productId])
+  @@index([receivedAt])
+  @@index([sourceProductId, receivedAt])
+}
+
+model RecommendationClick {
+  listId          String   @db.Uuid
+  productId       Int
+  sourceProductId Int
+  position        Int
+  tier            Int
+  sameSeller      Boolean
+  platformSeller  Boolean
+  strategyVersion String
+  audience        String
+  visitorId       String   @db.Uuid
+  userId          Int?
+  receivedAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([listId, productId])
+  @@index([receivedAt])
+  @@index([userId, productId, receivedAt])
+}

@@ -52,6 +52,8 @@ import { aiSettingsRoutes } from './aiSettings.js'
 import { createDraftAssistantRouter } from '../catalog/draftAssistant/routes.js'
 import { z } from 'zod'
 import { platformReport } from '../traffic/controller.js'
+import { recommendationReport } from '../recommendationEvents/routes.js'
+import { reportQuerySchema } from '../recommendationEvents/schema.js'
 import { trafficQuerySchema } from '../traffic/schema.js'
 
 const router = Router()
@@ -77,6 +79,7 @@ router.use(adminSourceDescriptionRouter)
 router.use(rechargeAdminRoutes)
 
 router.get('/stats', controller.stats)
+router.get('/reports/recommendations', validate({ query: reportQuerySchema }), recommendationReport)
 router.get('/reports/traffic', validate({ query: trafficQuerySchema }), platformReport)
 router.get('/config', controller.listConfig)
 router.get('/system/build-info', getBuildInfo)

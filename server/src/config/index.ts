@@ -179,6 +179,7 @@ const envSchema = z.object({
   FRONTEND_ORIGIN: z.string().url(),
   COOKIE_SECURE: booleanEnvSchema.default(false),
   MFA_ENCRYPTION_KEY: optionalStringEnvSchema,
+  RECOMMENDATION_EVENT_HMAC_KEY: optionalStringEnvSchema,
   USER_STATUS_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
   // --- Global /api rate limit (requests per 15 min window per IP).
@@ -445,6 +446,14 @@ const turnstileAllowedHostnames = parseTurnstileAllowedHostnames(env.TURNSTILE_A
 const turnstileSiteKey = env.TURNSTILE_SITE_KEY?.trim() || undefined
 const turnstileSecretKey = env.TURNSTILE_SECRET_KEY?.trim() || undefined
 const humanVerificationProvider = env.HUMAN_VERIFICATION_PROVIDER
+const recommendationEventHmacKey = parseCanonicalBase64Key(env.RECOMMENDATION_EVENT_HMAC_KEY)
+if (env.RECOMMENDATION_EVENT_HMAC_KEY && (!recommendationEventHmacKey ||
+  hmacKeyReusesOtherSecret(recommendationEventHmacKey, env.JWT_SECRET, mfaEncryptionKey, abuseHashKey) ||
+  Boolean(altchaHmacKey && recommendationEventHmacKey.equals(altchaHmacKey)))) {
+  console.error('[Config] RECOMMENDATION_EVENT_HMAC_KEY must be independent canonical base64 for exactly 32 bytes')
+  process.exit(1)
+}
+
 
 if (env.MFA_ENCRYPTION_KEY && !mfaEncryptionKey) {
   console.error('[Config] MFA_ENCRYPTION_KEY must be canonical base64 for exactly 32 bytes')
@@ -891,6 +900,7 @@ export const config = {
   frontendOrigin: env.FRONTEND_ORIGIN,
   cookieSecure: env.COOKIE_SECURE,
   mfaEncryptionKey,
+  recommendationEventHmacKey,
   userStatusCacheTtlSec: env.USER_STATUS_CACHE_TTL_SEC,
   apiRateLimitMax: env.API_RATE_LIMIT_MAX,
   trustProxy: env.TRUST_PROXY,
