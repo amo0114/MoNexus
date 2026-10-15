@@ -126,6 +126,27 @@ describe('ShopPage', () => {
     expect(cardIds()).toEqual([9])
   })
 
+  it('returns to the top on every back step, including consecutive ones', async () => {
+    apiGet.mockImplementation(() => Promise.resolve(page(5, [9])))
+    renderShop()
+    await screen.findByRole('heading', { name: '全部商品' })
+    for (const q of ['alpha', 'beta']) {
+      fireEvent.change(screen.getByRole('searchbox', { name: '搜索本店商品' }), { target: { value: q } })
+      fireEvent.submit(screen.getByRole('search', { name: '店内搜索' }))
+    }
+    expect(screen.getByTestId('location').textContent).toBe('/shops/5?q=beta')
+    const scrollTo = vi.mocked(window.scrollTo)
+    scrollTo.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: '后退' }))
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/shops/5?q=alpha'))
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: '后退' }))
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('/shops/5'))
+    expect(scrollTo).toHaveBeenCalledTimes(2)
+    expect(scrollTo).toHaveBeenLastCalledWith(0, 0)
+  })
+
   it('rejects an over-long URL search and an invalid shop id without requesting', async () => {
     const view = renderShop(`/shops/5?q=${'x'.repeat(51)}`)
     expect(screen.getByText('搜索词过长')).toBeInTheDocument()

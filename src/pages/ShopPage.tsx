@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigationType, useParams, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, PackageOpen, Search, SearchX, Store, X } from 'lucide-react'
 import StoreProductCard from '../components/store/StoreProductCard'
 import EmptyState from '../components/ui/EmptyState'
@@ -132,12 +132,14 @@ export default function ShopPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const query = searchParams.get('q') ?? ''
   const navigationType = useNavigationType()
+  const { key: locationKey } = useLocation()
 
   // The page reloads from page one; after browser back, start at the shop header
   // instead of the scroll offset left over from the previous page.
   useEffect(() => {
+    // Keyed by history entry: consecutive back/forward steps are all POP.
     if (navigationType === 'POP') window.scrollTo(0, 0)
-  }, [navigationType])
+  }, [navigationType, locationKey])
 
   if (merchantId == null) return <Unavailable />
   // Over-long URL searches are rejected visibly rather than silently truncated.

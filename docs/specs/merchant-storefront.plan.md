@@ -372,7 +372,7 @@ gh pr create --base develop --head feat/merchant-storefront --title 'feat: add p
 - 数据库：新 migration `20261015120000_product_merchant_index` 只建 `Product_merchantId_idx`，不改数据。
 - 列表管线：`ProductListParams.merchantId` 仅供内部使用，同时进入 SQL 条件（排序与 `LIMIT` 前）、游标 filter hash 和 `product-list` 缓存参数；无范围时 hash 和缓存参数与原来一致。缓存命中后的实时可见性检查在有店铺范围时同时要求当前归属仍是该商家。
 - 公开接口：`server/src/modules/shops`，`GET /api/shops/:merchantId/products?q=&cursor=`，中间件顺序为 `no-store → authenticateIfPresent → requireActiveUserIfPresent → 校验`；controller 显式传 `resolveProductAudience(req.user)`。每次请求读取 active 商家，非 active 或不存在统一 404 `店铺暂不可用`。页大小固定 24；`limit/page/pageSize/category/sort` 等未知参数被忽略，不报错。商家 ID 上限为 PostgreSQL int4，避免超大数字触发 500。简介 trim、空白为 null、按 Unicode 字符截前 500 加省略号。
-- 店铺页：`src/pages/ShopPage.tsx` + `src/hooks/useShopProducts.ts` + `src/api/shops.ts`。状态以 `merchantId + 已提交 q + 会话键 + 重新加载次数` 为键，只渲染当前键的数据；分页请求绑定当前键，追加时按 ID 去重。搜索为表单提交（push 历史，前后退还原），输入框最大 50 字，URL 中超长 q 显示“搜索词过长”而不截断；非法商家 ID 不发请求直接显示店铺不可用。浏览器返回（POP）时回到页面顶部重新读取第一页。
+- 店铺页：`src/pages/ShopPage.tsx` + `src/hooks/useShopProducts.ts` + `src/api/shops.ts`。状态以 `merchantId + 已提交 q + 会话键 + 重新加载次数` 为键，只渲染当前键的数据；分页请求绑定当前键，追加时按 ID 去重。搜索为表单提交（push 历史，前后退还原），输入框最大 50 字，URL 中超长 q 显示“搜索词过长”而不截断；非法商家 ID 不发请求直接显示店铺不可用。浏览器返回（POP）时回到页面顶部重新读取第一页；滚动重置按历史条目（`location.key`）触发，连续后退每一步都会执行（review P2 修复）。
 - 卡片：`StoreProductCard` 新增 `compact` 展示参数（高度随内容、较小图片、去掉商家角标/简介/评分，底栏可换行防止长积分价重叠），默认行为不变。店铺网格为 `<360px 单列 / 双列 / md 三列 / xl 四列`。
 - 详情入口：桌面署名栏“进店”与名片“进入店铺”、平板头部商家名链接（“· 进店”）、手机商家卡“进入店铺”均为 `/shops/{id}` 原生链接；平台商品和 preview 不渲染真实链接，preview 仍用 mock 弹窗。名片与手机商家卡的在线点、认证图标/说明、默认荣誉、4.9 / 1280 / 响应时长只在 preview 显示；手机真实模式显示“商品评分 / 商品销量”，无评价为“暂无评分”。手机真实商家默认身份为“商家服务”，平台为“平台自营”。
 - 商家后台：申请页与资料页的简介输入增加“将展示在公开店铺页，最多展示前 500 字”；资料页仅 active 商家显示“查看店铺”。
@@ -388,6 +388,7 @@ gh pr create --base develop --head feat/merchant-storefront --title 'feat: add p
 
 - 后端（Node 22，可丢弃库 `monexus_test_storefront`，已 `migrate deploy`）：`shops.test.ts` 4 用例通过，覆盖 S01–S04（两商家 + 平台商品、guest/member、无效 token 401、pending/suspended/rejected/不存在 404、空店、简介裁剪、27 件按 run 排序翻页、跨店/搜索/身份/全站游标 409、坏游标 400、热缓存下改名仍命中缓存但会员化/转店商品被剔除、商家停用后 404、三态共存且 unknown 不写缓存）。另做了两次反向验证：去掉 hash 中的商家维度、去掉缓存后的归属复核，相应用例均失败。
 - 后端回归：`cache.test.ts`、`visibility.test.ts`、`catalog-merch-integration.test.ts`、`recommendations.test.ts`、`ranking-compute-projection.test.ts` 共 5 文件 56 用例通过；`npm --prefix server run build` 通过；`prisma validate` 通过；用临时 shadow 库执行 `migrate diff --from-migrations --to-schema-datamodel` 无差异（shadow 库已删除）。
+- review P2 修复后：`ShopPage.test.tsx` 6 用例通过，新增的连续后退用例在去掉修复时失败（第二次后退未滚动）；前端类型检查通过。
 - 前端：ShopPage、StoreProductCard、详情页（含新增三端入口用例）、商城页、商家申请/后台、相关推荐采集与 `components/catalog` 共 40 文件 339 用例通过；`npm run build` 通过。
 - E2E：新增 `e2e/merchant-shop.spec.ts` 一条（详情 → 进店 → 店内搜索 → 另一商品 → 浏览器返回同一搜索），本地对 `monexus_test_storefront` seed 后 Chromium 通过。
 - 浏览器检查（Playwright Chromium 截图，长店名、带换行与超长无空格词的简介、120 字商品名、1999999999 积分、售罄商品）：320 / 360 / 390 / 768 / 1280 宽度及 1280 暗色均无横向溢出；首轮在 360 宽双列发现长积分价与右侧状态重叠，已修复并复查。键盘 Tab 可从搜索按钮进入商品链接。详情页 1280 / 820 / 390 三种布局各有一个可见的进店链接。
