@@ -5,7 +5,7 @@
 | 文档 ID | `PLAN-RECOMMENDATION-LOCAL-QUALITY-001` |
 | 版本 | `1.1.0` |
 | 日期 | 2026-10-15 |
-| 状态 | v1.1.0；单元 A 已在 `chore/recommendation-local-audit` 本地完成，结论为保留 C0（见 [本地审计报告](../reviews/recommendation-local-quality.md)）；B 待 A 合入后开始，C 需 Owner 单独批准 |
+| 状态 | v1.1.0；单元 A 已合入（#257），结论为保留 C0（见 [本地审计报告](../reviews/recommendation-local-quality.md)）；单元 B 已在 `feat/product-attribute-guidance` 本地实施，待 review；C 不建 PR |
 | 核验基线 | `origin/develop@297ee6554141a842bff6c4cae479a2ce15cf6449`，`feat: add public merchant storefronts (#256)`；本轮重新 fetch 确认 |
 | 方案分支 | `chore/recommendation-quality-local-plan`，独立 worktree，未设置 upstream |
 | 实施责任 | 另一个实施 agent 负责审计扩展、后端、前端设计、测试与报告；完成后交回方案编写 agent review |
@@ -340,6 +340,22 @@ gh pr create --base develop --head chore/recommendation-local-audit --title 'cho
 - 结果：范围 844 件，835 件匹配 E2E 测试命名特征、1 件匹配种子示例特征（均为高置信推断，未证明由对应脚本创建）、8 件用途未确认。C1 只改变 5 个登录基准和 1 个游客基准，全部是带 E2E 命名特征或用途未确认的商品；C2 使 822 个 legacy 基准无候选。20 条有方向配对的人工复核全部为“信息不足”。
 - 决策：保留 C0，单元 C 不创建功能 PR；B 只提供填写说明，没有可核实的建议词条。详见报告。
 - 验证：`recommendations.test.ts` 与 `recommendationAudit.test.ts` 共 11 个用例通过（可丢弃库），后端构建通过，`git diff --check` 通过；未运行 E2E。
+
+### 11.2 单元 B 实施记录（2026-10-15）
+
+- 分支 `feat/product-attribute-guidance`，`--no-track` 创建，基线 `origin/develop@68bff827eb95fff59a2489c2ea5dfb1420de3014`（已含 #257）。未推送、未建 PR。
+- 填写说明：新增静态配置 `src/components/catalog/attributeGuidance.ts`（说明集 `2026-10-15.v1`），按 `templateKey@version:fieldKey` 只覆盖商品级主字段，`TemplateAttributeFields` 在对应字段下显示说明并通过 `aria-describedby` 关联。套餐同名字段、未在配置中的模板版本不显示。
+
+  | 模板 | 字段 | 纳入 |
+  | --- | --- | --- |
+  | redemption_code@1、account@1、subscription@1 | serviceName | 仅填写说明 |
+  | digital_file@1、fixed_content@1 | contentCategory | 仅填写说明 |
+  | manual_service@1、appointment@1 | — | 不新增主字段说明 |
+
+- 建议词条：**未纳入任何词条**。本地审计只有 1 个用途未确认的 serviceName 值和 1 个测试默认 contentCategory 值（报告 §6），没有可核实的写法。因此本轮不实现候选值控件；以后有经核实的词条时，再在同一配置中加入。
+- 不改变的部分：自由输入、原值和既有保存流程不变；说明不校验、不改写、不阻断发布，不修改模板 Schema、registry DTO、AI prompt/校验器或导入同步。商家人工向导、平台人工向导、双方商品编辑与 AI 草稿助手都复用同一控件，自动获得说明。
+- 形态锁定提示：编辑页已有“选定并保存后不可更改”，原样复用。创建入口缺少该提示，在商家向导确认页、平台向导形态字段下，以及 AI 草稿助手最终确认页的保存说明中补一句“保存后商品形态不可更改。”（AI 助手默认可能不展开“商品信息”，因此放在保存按钮附近），不新增弹窗或确认步骤。
+- 验证：`TemplateAttributeFields.test.tsx` 12 个用例通过，新增覆盖：说明只出现在商品主字段；套餐同名字段与其他模板版本不显示；已有值不变；自定义值按输入写出；disabled 时不可修改。`ProductDraftAssistant.test.tsx` 20 个用例通过，新增覆盖：AI 原值旁显示说明且保存时保持原值；人工改值按输入原样提交。`src/components/catalog` 与 `src/pages/merchant` 共 35 个文件 353 个用例通过；前端构建通过。浏览器检查用可丢弃库，在 1280 与 390 宽度下打开商家商品编辑页并选择“卡密与兑换码”：说明可读，键盘聚焦后可输入，无横向溢出。未新增或运行 E2E。
 
 ## 12. 修订记录
 
