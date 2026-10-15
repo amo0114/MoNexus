@@ -346,3 +346,32 @@ describe('GET /api/products/:id/recommendations', () => {
     }
   })
 })
+
+describe('offline admission rules (audit only)', () => {
+  it('C0 keeps the live rule; C1 drops legacy only under known-template bases; C2 also drops missing primaries and legacy bases', async () => {
+    const { queryRecommendationCandidates } = await import('./recommendations.js')
+    const categoryId = await getActiveCategoryIdByLabel('邀请码')
+    const base = await makeProduct({ name: '已知基准', categoryId, ...redemption('steam') })
+    const strong = await makeProduct({ name: '同主值', categoryId, ...redemption('Steam') })
+    const missing = await makeProduct({ name: '主值缺失', categoryId, ...redemption('') })
+    const legacy = await makeProduct({ name: '旧数据', categoryId })
+    await makeProduct({ name: '冲突主值', categoryId, ...redemption('netflix') })
+    const manual = { templateKey: 'manual_service', templateVersion: 1 }
+    const manualBase = await makeProduct({ name: '人工基准', categoryId, ...manual })
+    const manualPeer = await makeProduct({ name: '人工同模板', categoryId, ...manual })
+
+    const ids = async (product: typeof base, rule: 'C0' | 'C1' | 'C2') =>
+      (await queryRecommendationCandidates(product, 'member', true, rule)).map(row => [row.id, row.tier])
+    expect(await ids(base, 'C0')).toEqual([[strong.id, 3], [missing.id, 2], [legacy.id, 1]])
+    expect(await ids(base, 'C1')).toEqual([[strong.id, 3], [missing.id, 2]])
+    expect(await ids(base, 'C2')).toEqual([[strong.id, 3]])
+    // Direction: a legacy base still reaches known-template products under C1.
+    expect(await ids(legacy, 'C1')).toEqual(await ids(legacy, 'C0'))
+    expect((await ids(legacy, 'C0')).map(([id]) => id)).toContain(base.id)
+    expect(await ids(legacy, 'C2')).toEqual([])
+    // A template without a primary field keeps same-template peers even under C2.
+    expect(await ids(manualBase, 'C2')).toEqual([[manualPeer.id, 2]])
+    // The endpoint is unchanged (C0): the legacy product still fills a slot.
+    expect((await recommend(base.id)).items.map(item => item.id)).toContain(legacy.id)
+  })
+})

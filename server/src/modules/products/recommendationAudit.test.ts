@@ -86,4 +86,40 @@ describe('auditRecommendationData', () => {
     expect(markdown).toContain('## 5. 推荐位占用与不足')
     expect(markdown).toContain('AI 创建来源：无法区分')
   })
+
+  it('compares C0/C1/C2 over the full scope with member and guest denominators and untruncated details', async () => {
+    const categoryId = await getActiveCategoryIdByLabel('邀请码')
+    const known = await makeProduct({ name: '已知', categoryId, serviceName: 'Steam' })
+    const peer = await makeProduct({ name: '同主值', categoryId, serviceName: 'steam' })
+    const legacy = await makeProduct({ name: '旧数据', categoryId, legacy: true })
+    await prisma.product.update({ where: { id: legacy.id }, data: { visibility: 'public' } })
+    await prisma.product.update({ where: { id: known.id }, data: { visibility: 'public' } })
+
+    const report = await auditRecommendationData({ sampleLimit: 1, compare: true })
+    const cmp = report.comparison!
+    expect(cmp.audiences.member.bases).toBe(3)
+    // Guests only open public products: the members_only peer is never a guest base.
+    expect(cmp.audiences.guest.bases).toBe(2)
+    expect(cmp.details).toHaveLength(5)
+
+    const memberKnown = cmp.details.find(detail => detail.audience === 'member' && detail.sourceId === known.id)!
+    expect(memberKnown.rules.C0.map(slot => slot.id)).toEqual([peer.id, legacy.id])
+    expect(memberKnown.changes.C1).toEqual({ removed: [legacy.id], added: [], moved: [] })
+    const memberLegacy = cmp.details.find(detail => detail.audience === 'member' && detail.sourceId === legacy.id)!
+    expect(memberLegacy.changes.C1.removed).toEqual([])
+    expect(memberLegacy.rules.C2).toEqual([])
+    expect(cmp.audiences.member.changes.C2.basesLosingAllCandidates).toBe(1)
+    // Guest candidates exclude members_only products too.
+    const guestKnown = cmp.details.find(detail => detail.audience === 'guest' && detail.sourceId === known.id)!
+    expect(guestKnown.rules.C0.map(slot => slot.id)).toEqual([legacy.id])
+
+    // Samples are capped; totals and details are not.
+    expect(cmp.changedSamples.C1).toMatchObject({ shown: 1, truncated: true })
+    expect(cmp.changedSamples.C1.total).toBeGreaterThan(1)
+    const markdown = renderRecommendationAuditMarkdown(report)
+    expect(markdown).toContain('## 7. 离线准入比较')
+    expect(markdown).toContain('本指标是可售过滤前的前六候选')
+    expect(markdown).not.toContain('可售过滤只会进一步减少')
+    expect((await auditRecommendationData({ sampleLimit: 1 })).comparison).toBeUndefined()
+  })
 })

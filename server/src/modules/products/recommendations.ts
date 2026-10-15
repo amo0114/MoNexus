@@ -103,12 +103,24 @@ function secondaryMatchSql(secondary: RecommendationPolicy['secondary'][number])
 }
 
 /**
+ * Admission rules compared offline (PLAN-RECOMMENDATION-LOCAL-QUALITY-001 §7.1). C0 is the
+ * live rule; C1/C2 are audit-only labels, never selectable from a request.
+ * - C1: a known-template base excludes legacy/unknown candidates; legacy bases keep C0.
+ * - C2: additionally drops same-template candidates with a missing primary value, and
+ *   legacy/unknown bases get no candidates.
+ */
+export type RecommendationAdmission = 'C0' | 'C1' | 'C2'
+
+/**
  * relevanceTier: 3 = same known template + equal primary value, 2 = same known template
  * without a comparable primary value, 1 = at least one side legacy/unknown, NULL = excluded
  * (different known templates, or both primary values present but different).
  */
-function scoringSql(policy: RecommendationPolicy | null): { tier: Prisma.Sql; secondary: Prisma.Sql } {
-  if (!policy) return { tier: Prisma.sql`1`, secondary: Prisma.sql`0` }
+function scoringSql(
+  policy: RecommendationPolicy | null,
+  admission: RecommendationAdmission,
+): { tier: Prisma.Sql; secondary: Prisma.Sql } {
+  if (!policy) return { tier: admission === 'C2' ? Prisma.sql`NULL` : Prisma.sql`1`, secondary: Prisma.sql`0` }
 
   const knownTemplates = Prisma.join(
     POLICIES.map(known => Prisma.sql`(${known.key}::text, ${known.version}::int)`),
@@ -119,7 +131,7 @@ function scoringSql(policy: RecommendationPolicy | null): { tier: Prisma.Sql; se
     const candidatePrimary = normalizedStringAttribute('p', policy.primary)
     const basePrimary = normalizedStringAttribute('b', policy.primary)
     sameTemplateTier = Prisma.sql`CASE
-      WHEN ${candidatePrimary} IS NULL OR ${basePrimary} IS NULL THEN 2
+      WHEN ${candidatePrimary} IS NULL OR ${basePrimary} IS NULL THEN ${admission === 'C2' ? Prisma.sql`NULL` : Prisma.sql`2`}
       WHEN ${candidatePrimary} = ${basePrimary} THEN 3
     END`
   }
@@ -130,7 +142,7 @@ function scoringSql(policy: RecommendationPolicy | null): { tier: Prisma.Sql; se
     tier: Prisma.sql`CASE
       WHEN ${sameTemplate} THEN ${sameTemplateTier}
       WHEN (p."templateKey", p."templateVersion") IN (${knownTemplates}) THEN NULL
-      ELSE 1
+      ELSE ${admission === 'C0' ? Prisma.sql`1` : Prisma.sql`NULL`}
     END`,
     secondary,
   }
@@ -158,13 +170,17 @@ export async function queryRecommendationCandidateIds(
   return (await queryRecommendationCandidates(base, audience, sameSeller)).map(row => row.id)
 }
 
-/** Same ranking with its scores, so the data audit measures exactly what the endpoint ranks. */
+/**
+ * Same ranking with its scores, so the data audit measures exactly what the endpoint ranks.
+ * Admission is applied before ORDER BY/LIMIT; the endpoint always uses C0.
+ */
 export async function queryRecommendationCandidates(
   base: RecommendationBase,
   audience: ProductAudience,
   sameSeller: boolean,
+  admission: RecommendationAdmission = 'C0',
 ): Promise<RecommendationCandidate[]> {
-  const { tier, secondary } = scoringSql(findRecommendationPolicy(base.templateKey, base.templateVersion))
+  const { tier, secondary } = scoringSql(findRecommendationPolicy(base.templateKey, base.templateVersion), admission)
   const where: Prisma.Sql[] = [
     Prisma.sql`p."id" <> ${base.id}`,
     Prisma.sql`p."categoryId" = ${base.categoryId}`,
