@@ -12,7 +12,7 @@ export type ProductRecommendationsState =
 const IDLE: ProductRecommendationsState = { status: 'idle', items: [] }
 const LOADING: ProductRecommendationsState = { status: 'loading', items: [] }
 
-function useAuthSessionKey(): string {
+export function useAuthSessionKey(): string {
   return useAuthStore((state) => {
     const context = getAuthSessionContext(state)
     return context ? `${context.userId}:${context.sessionId}:${context.authEpoch}` : 'guest'

@@ -51,6 +51,8 @@ interface ProductListParams {
   page?: number
   pageSize?: number
   audience?: import('./visibility.js').ProductAudience
+  /** Internal shop scope; never accepted from the public `/api/products` query. */
+  merchantId?: number
 }
 
 const productListSelect = {
@@ -513,6 +515,7 @@ interface NormalizedProductFilters {
   query: string | null
   categoryCode: string | null
   legacyCategory: string | null
+  merchantId: number | null
 }
 
 interface RankedProductRow {
@@ -535,6 +538,7 @@ function normalizeProductFilters(params: ProductListParams): NormalizedProductFi
     query,
     categoryCode,
     legacyCategory: categoryCode || !legacy || legacy === '全部' ? null : legacy,
+    merchantId: params.merchantId ?? null,
   }
 }
 
@@ -547,6 +551,8 @@ function productFilterHashInput(
     categoryCode: filters.categoryCode,
     legacyCategory: filters.legacyCategory,
     audience,
+    // Unscoped lists keep their original hash so existing site-wide cursors stay valid.
+    ...(filters.merchantId != null ? { merchantId: filters.merchantId } : {}),
   }
 }
 
@@ -561,6 +567,7 @@ async function listRankedProductRows(
     merchantVisibleSql(),
   ]
   if (params.audience === 'guest') where.push(guestVisibilitySql())
+  if (filters.merchantId != null) where.push(Prisma.sql`p."merchantId" = ${filters.merchantId}`)
 
   if (filters.categoryCode) {
     where.push(Prisma.sql`c."code" = ${filters.categoryCode} AND c."status" = 'active'`)
@@ -664,8 +671,12 @@ export async function listProducts(params: ProductListParams = {}) {
       merchant: { select: { status: true } },
     },
   })
+  // A cached shop page must not keep showing a product that moved to another owner.
   const visible = new Set(
-    live.filter(row => isCurrentlyPubliclyVisible(row, audience)).map(row => row.id),
+    live
+      .filter(row => isCurrentlyPubliclyVisible(row, audience)
+        && (params.merchantId == null || row.merchantId === params.merchantId))
+      .map(row => row.id),
   )
   const visibleItems = baseResult.items.filter(item => visible.has(item.id))
   const decorated = await attachListMerchandising({

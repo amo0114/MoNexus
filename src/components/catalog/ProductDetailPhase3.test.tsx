@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { MemoryRouter } from 'react-router-dom'
@@ -747,7 +747,7 @@ describe('ProductDetail - Merchant Byline and FAQ Pipeline Hub', () => {
     expect(screen.getByRole('button', { name: '联系在线客服' })).toBeInTheDocument()
   })
 
-  it('renders custom avatar and opens MerchantHoverCard with titles and badge wall on click', () => {
+  it('renders custom avatar and opens a real MerchantHoverCard with a shop link but no demo honours or metrics', () => {
     const product = createProductWithOffers(2)
     product.merchant = {
       id: 99,
@@ -793,14 +793,11 @@ describe('ProductDetail - Merchant Byline and FAQ Pipeline Hub', () => {
     const dialog = screen.getByRole('dialog', { name: '星际网络旗舰店商家名片' })
     expect(dialog).toBeInTheDocument()
 
-    // Badge wall
-    expect(dialog).toHaveTextContent('5年老店')
-    expect(dialog).toHaveTextContent('秒级履约')
-    expect(dialog).toHaveTextContent('平台金牌')
-
-    // Metrics
-    expect(dialog).toHaveTextContent('8,848+')
-    expect(dialog).toHaveTextContent('< 2分钟')
+    // Honours and metrics are preview-only; real cards link to the public shop.
+    expect(dialog).not.toHaveTextContent('5年老店')
+    expect(dialog).not.toHaveTextContent('8,848+')
+    expect(dialog).not.toHaveTextContent('< 2分钟')
+    expect(within(dialog).getByRole('link', { name: /进入店铺/ })).toHaveAttribute('href', '/shops/99')
   })
 
   it('renders smart back button and breadcrumb navigation in desktop view', () => {

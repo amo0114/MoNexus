@@ -184,13 +184,24 @@
     place-items: center;
     flex-shrink: 0;
   }
+  /* Long shop names truncate inside the byline instead of pushing the shop actions out. */
+  .pd-merchant-byline .pd-merchant-hovercard-wrap,
+  .pd-merchant-byline .pd-byline-store-trigger {
+    min-width: 0;
+  }
   .pd-byline-name {
     font-size: 13.5px;
     font-weight: 600;
     color: var(--pd-text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .pd-byline-tag {
     display: inline-flex;
+    flex-shrink: 0;
+    white-space: nowrap;
     align-items: center;
     gap: 3px;
     font-size: 10.5px;

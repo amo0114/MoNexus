@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { blockReasonToUserMessage, PROCESSING_TIMEOUT_LABEL, SETTLEMENT_TERM } from '../utils/settlementCopy'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { captureFeedbackOwner, showCompletionActivity } from '../lib/completionFeedback'
 import { showProductPublished, showProductUnpublished } from '../lib/productPublicationFeedback'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
@@ -755,7 +755,15 @@ export default function MerchantDashboardPage() {
 
           {activeTab === 'profile' && (
             <div className="fade-in max-w-lg">
-              <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">商家资料</h2>
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <h2 className="font-heading text-xl font-bold text-[var(--color-text)]">商家资料</h2>
+                {merchant?.status === 'active' && (
+                  <Link to={`/shops/${merchant.id}`} className="btn-secondary btn-sm shrink-0" data-testid="merchant-view-shop">
+                    <Store className="w-3.5 h-3.5" />
+                    查看店铺
+                  </Link>
+                )}
+              </div>
               <form onSubmit={handleProfileSubmit} className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">商家名称</label>
@@ -768,12 +776,15 @@ export default function MerchantDashboardPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">简介</label>
+                  <label htmlFor="merchant-profile-description" className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">简介</label>
                   <textarea
+                    id="merchant-profile-description"
                     className="input min-h-[100px] resize-y"
                     value={profileForm.description}
                     onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
+                    aria-describedby="merchant-profile-description-hint"
                   />
+                  <p id="merchant-profile-description-hint" className="mt-1 text-xs text-[var(--color-text-muted)]">将展示在公开店铺页，最多展示前 500 字</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1.5 text-[var(--color-text)]">联系邮箱</label>
