@@ -337,7 +337,8 @@ export default function ProductDraftAssistant({ actor, templates, categories: in
                     <div><label htmlFor={`${id}-template`} className="mb-1 block text-sm font-semibold">商品形态（AI 建议，请核对）*</label>
                       <select id={`${id}-template`} className="input" value={proposal.templateKey ?? ''} disabled={blocked} onChange={event => {
                         patch({ templateKey: event.target.value as TemplateKey || null, attributes: {}, offerAttributes: {} }); setDelivery('')
-                      }}><option value="">请选择商品形态</option>{templates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
+                      }}><option value="">请选择商品形态</option>{templates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
+                      <p className="mt-1 text-xs text-[var(--color-text-muted)]">保存后商品形态不可更改。</p></div>
                     <div><label htmlFor={`${id}-category`} className="mb-1 block text-sm font-semibold">商品分类（AI 建议，请核对）*</label>
                       <select id={`${id}-category`} className="input" value={proposal.categoryId ?? ''} disabled={blocked} onChange={event => patch({ categoryId: event.target.value ? Number(event.target.value) : null })}>
                         <option value="">请选择商品分类</option>{categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>

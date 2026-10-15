@@ -268,6 +268,8 @@ describe('AI assisted draft creation', () => {
     await generate()
     expect(screen.getByLabelText('商品名称 *')).toHaveValue('学习指南')
     expect(screen.getByLabelText('内容类型')).toHaveValue('学习指引')
+    // Fill-in guidance is shown next to the AI value but never rewrites it.
+    expect(screen.getByLabelText('内容类型')).toHaveAccessibleDescription(/实际类型/)
     expect(createDraft).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: '确认并创建草稿' })).not.toBeInTheDocument()
     editInfo()
@@ -279,10 +281,24 @@ describe('AI assisted draft creation', () => {
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(7))
     expect(createDraft).toHaveBeenCalledTimes(1)
     expect(createDraft.mock.calls[0][0]).toMatchObject({ editorVersion: 2, name: '修改后的学习指南', templateKey: 'fixed_content',
+      attributes: { contentCategory: '学习指引' },
       richDescription: '<p>商品介绍<br>帮助入门学习者理解连接基础与常见问题排查。</p>',
       visibility: 'members_only', purchaseForm: [], images: [],
       offers: [{ name: '默认规格', price: 100, validityDays: null, deliveryMode: 'instant_fixed', stockMode: 'limited', fixedContent: null, autoProvision: false }] })
     expect(api.requestProductDraftSuggestion).toHaveBeenCalledWith('admin', '学习指南，适合入门学习，内容类型为学习指引', expect.any(AbortSignal))
+  })
+
+  it('saves a manually edited guided parameter exactly as typed after confirmation', async () => {
+    mount()
+    await generate()
+    editInfo()
+    fireEvent.change(screen.getByLabelText('内容类型'), { target: { value: '  自定义类型 v2 ' } })
+    fillCommerce()
+    review()
+    confirm()
+    fireEvent.click(screen.getByRole('button', { name: '确认并创建草稿' }))
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(7))
+    expect(createDraft.mock.calls[0][0].attributes).toEqual({ contentCategory: '  自定义类型 v2 ' })
   })
 
   it('shows and edits detailed copy separately, then saves the same reviewed text', async () => {

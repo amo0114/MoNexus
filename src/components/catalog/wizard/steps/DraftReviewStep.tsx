@@ -53,6 +53,7 @@ export default function DraftReviewStep({
           <div>
             <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">商品形态</dt>
             <dd className="mt-0.5 text-[var(--color-text)]">{templateName ?? '（未选择）'}</dd>
+            <dd className="mt-0.5 text-xs text-[var(--color-text-muted)]" data-testid="wizard-confirm-template-lock">保存后商品形态不可更改。</dd>
           </div>
           <div>
             <dt className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider">浏览可见性</dt>
