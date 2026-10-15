@@ -45,7 +45,7 @@ REDIS_ENABLED=false npm --silent --prefix server run recommendation:audit -- --f
 | 完整度 | 按分类 × 模板（`key@version`，无策略即 legacy/unknown）分组；主匹配字段用推荐 SQL 的同一归一化规则判断已填/缺失；manual_service、appointment 没有主键，记为“—” |
 | 名称分布 | serviceName、contentCategory 分别统计；按规则归一化值分组并列出原始写法。疑似同义使用更宽松的键（NFKC、大小写、空白、标点）和包含关系，仅作线索 |
 | 旧模板占比 | templateKey/version 为空或不在策略表中的商品占比，按分类拆分 |
-| 推荐位 | 每件商品作为基准，以登录用户视角调用与接口相同的候选 SQL，统计前 6 个位置，**在可售过滤之前**（可售过滤只会进一步减少）；“同店弱匹配占位”指前 6 中有同店 tier<3、而跨店 tier3 落在第 6 位之后 |
+| 推荐位 | 每件商品作为基准，以登录用户视角调用与接口相同的候选 SQL，统计前 6 个位置，**在可售过滤之前**（实际接口对完整的最多 128 个候选补全、过滤后再取六件，后续候选可能补位，最终商品与位置需单独核验）；“同店弱匹配占位”指前 6 中有同店 tier<3、而跨店 tier3 落在第 6 位之后 |
 | 来源 | 外部导入以 `ExternalCatalogLink` 为准；另列“有 Faka 套餐但无导入记录”；导入名称中的周期/套餐/版本词只做标记。AI 创建来源**无法区分**：`AiGeneration` 只记录调用，不记录内容是否被采用 |
 
 ## 4. 线上审计结果
