@@ -4,7 +4,9 @@ import {
   RECOMMENDATION_POLICIES,
   findRecommendationPolicy,
   normalizedStringAttribute,
+  RECOMMENDATION_CANDIDATE_LIMIT,
   queryRecommendationCandidates,
+  type RecommendationAdmission,
   type RecommendationCandidate,
 } from './recommendations.js'
 import { merchantVisibleSql } from './visibility.js'
@@ -29,6 +31,8 @@ export interface RecommendationAuditOptions {
   /** Max samples per list; keeps the report reviewable. */
   sampleLimit?: number
   now?: Date
+  /** Adds the offline C0/C1/C2 admission comparison (PLAN-RECOMMENDATION-LOCAL-QUALITY-001 §5.3). */
+  compare?: boolean
 }
 
 type ScopeRow = {
@@ -39,6 +43,7 @@ type ScopeRow = {
   categoryLabel: string
   merchantId: number | null
   merchantName: string | null
+  visibility: string
   templateKey: string | null
   templateVersion: number | null
   hasActiveOffer: boolean
@@ -56,7 +61,7 @@ async function loadScope(): Promise<ScopeRow[]> {
   return prisma.$queryRaw<ScopeRow[]>`
     SELECT
       p."id", p."name", p."categoryId", c."code" AS "categoryCode", c."label" AS "categoryLabel",
-      p."merchantId", m."name" AS "merchantName", p."templateKey", p."templateVersion",
+      p."merchantId", m."name" AS "merchantName", p."visibility", p."templateKey", p."templateVersion",
       EXISTS (SELECT 1 FROM "Offer" o WHERE o."productId" = p."id" AND o."status" = 'active') AS "hasActiveOffer",
       EXISTS (
         SELECT 1 FROM "Offer" o WHERE o."productId" = p."id" AND o."externalIntegration" = 'faka_bridge'
@@ -275,6 +280,178 @@ async function recommendationSlots(rows: ScopeRow[], sampleLimit: number) {
   }
 }
 
+const ADMISSIONS: RecommendationAdmission[] = ['C0', 'C1', 'C2']
+const AUDIENCES = ['member', 'guest'] as const
+type Audience = (typeof AUDIENCES)[number]
+type Position = { id: number; tier: number; sameSeller: boolean }
+type SlotChange = { removed: number[]; added: number[]; moved: Array<{ id: number; from: number; to: number }> }
+
+/** Distinguishes "primary value missing" from "template has no primary field" (§5.4). */
+function baseClass(row: ScopeRow): string {
+  const policy = findRecommendationPolicy(row.templateKey, row.templateVersion)
+  if (!policy) return 'legacy/unknown'
+  if (!policy.primary) return `${policy.key}@${policy.version}:无主字段`
+  const value = policy.primary === 'serviceName' ? row.serviceNameNormalized : row.contentCategoryNormalized
+  return `${policy.key}@${policy.version}:${value == null ? '主值缺失' : '有主值'}`
+}
+
+function slotChange(before: Position[], after: Position[]): SlotChange {
+  const beforeIndex = new Map(before.map((slot, index) => [slot.id, index + 1]))
+  const afterIndex = new Map(after.map((slot, index) => [slot.id, index + 1]))
+  return {
+    removed: before.filter(slot => !afterIndex.has(slot.id)).map(slot => slot.id),
+    added: after.filter(slot => !beforeIndex.has(slot.id)).map(slot => slot.id),
+    moved: after.flatMap(slot => {
+      const from = beforeIndex.get(slot.id)
+      const to = afterIndex.get(slot.id)!
+      return from != null && from !== to ? [{ id: slot.id, from, to }] : []
+    }),
+  }
+}
+
+function emptyRuleStats() {
+  return {
+    bases: 0,
+    histogram: Object.fromEntries(Array.from({ length: DISPLAY_SLOTS + 1 }, (_, slots) => [slots, 0])) as Record<number, number>,
+    emptyBases: 0,
+    filledSlots: 0,
+    slotTiers: { sameSeller: { 3: 0, 2: 0, 1: 0 }, otherSeller: { 3: 0, 2: 0, 1: 0 } },
+    weakSameSellerPlaceholderBases: 0,
+    // A bucket returning exactly the SQL cap may hide further eligible candidates.
+    basesWithTruncatedBucket: 0,
+  }
+}
+
+/**
+ * Offline admission comparison over the full scope. Candidates are the pre-availability
+ * top six of the same SQL the endpoint uses; nothing is hydrated, signed or written.
+ */
+async function compareAdmissions(rows: ScopeRow[], sampleLimit: number) {
+  const rowById = new Map(rows.map(row => [row.id, row]))
+  const details: Array<{
+    audience: Audience
+    sourceId: number
+    categoryCode: string
+    baseClass: string
+    seller: 'platform' | 'merchant'
+    rules: Record<RecommendationAdmission, Position[]>
+    changes: Record<'C1' | 'C2', SlotChange>
+  }> = []
+  const summary = Object.fromEntries(AUDIENCES.map(audience => [audience, {
+    bases: 0,
+    rules: Object.fromEntries(ADMISSIONS.map(rule => [rule, emptyRuleStats()])) as Record<RecommendationAdmission, ReturnType<typeof emptyRuleStats>>,
+    changes: Object.fromEntries((['C1', 'C2'] as const).map(rule => [rule, {
+      changedBases: 0, basesLosingAllCandidates: 0, removedSlots: 0, addedSlots: 0, movedSlots: 0,
+    }])) as Record<'C1' | 'C2', { changedBases: number; basesLosingAllCandidates: number; removedSlots: number; addedSlots: number; movedSlots: number }>,
+  }])) as Record<Audience, {
+    bases: number
+    rules: Record<RecommendationAdmission, ReturnType<typeof emptyRuleStats>>
+    changes: Record<'C1' | 'C2', { changedBases: number; basesLosingAllCandidates: number; removedSlots: number; addedSlots: number; movedSlots: number }>
+  }>
+  const groups = new Map<string, {
+    audience: Audience; categoryCode: string; baseClass: string; seller: 'platform' | 'merchant'; bases: number
+    rules: Record<RecommendationAdmission, { emptyBases: number; filledSlots: number }>
+  }>()
+
+  for (const audience of AUDIENCES) {
+    // Guests can only open public products; members_only bases are never requested as guests.
+    const bases = audience === 'guest' ? rows.filter(row => row.visibility === 'public') : rows
+    for (const base of bases) {
+      const rules = {} as Record<RecommendationAdmission, Position[]>
+      const seller = base.merchantId == null ? 'platform' : 'merchant'
+      const groupKey = `${audience}|${base.categoryCode}|${baseClass(base)}|${seller}`
+      const group = groups.get(groupKey) ?? {
+        audience, categoryCode: base.categoryCode, baseClass: baseClass(base), seller, bases: 0,
+        rules: Object.fromEntries(ADMISSIONS.map(rule => [rule, { emptyBases: 0, filledSlots: 0 }])) as Record<RecommendationAdmission, { emptyBases: number; filledSlots: number }>,
+      }
+      group.bases += 1
+      groups.set(groupKey, group)
+      summary[audience].bases += 1
+
+      for (const rule of ADMISSIONS) {
+        const [same, other] = await Promise.all([
+          queryRecommendationCandidates(base, audience, true, rule),
+          queryRecommendationCandidates(base, audience, false, rule),
+        ])
+        const ranked: Position[] = [
+          ...same.map(row => ({ id: row.id, tier: row.tier, sameSeller: true })),
+          ...other.map(row => ({ id: row.id, tier: row.tier, sameSeller: false })),
+        ]
+        const shown = ranked.slice(0, DISPLAY_SLOTS)
+        rules[rule] = shown
+        const stats = summary[audience].rules[rule]
+        stats.bases += 1
+        stats.histogram[shown.length] += 1
+        stats.filledSlots += shown.length
+        if (shown.length === 0) stats.emptyBases += 1
+        for (const slot of shown) {
+          stats.slotTiers[slot.sameSeller ? 'sameSeller' : 'otherSeller'][slot.tier as 1 | 2 | 3] += 1
+        }
+        if (shown.some(slot => slot.sameSeller && slot.tier < 3)
+          && ranked.slice(DISPLAY_SLOTS).some(slot => !slot.sameSeller && slot.tier === 3)) {
+          stats.weakSameSellerPlaceholderBases += 1
+        }
+        if (same.length === RECOMMENDATION_CANDIDATE_LIMIT || other.length === RECOMMENDATION_CANDIDATE_LIMIT) {
+          stats.basesWithTruncatedBucket += 1
+        }
+        group.rules[rule].filledSlots += shown.length
+        if (shown.length === 0) group.rules[rule].emptyBases += 1
+      }
+
+      const changes = {
+        C1: slotChange(rules.C0, rules.C1),
+        C2: slotChange(rules.C0, rules.C2),
+      }
+      for (const rule of ['C1', 'C2'] as const) {
+        const change = changes[rule]
+        const totals = summary[audience].changes[rule]
+        if (change.removed.length || change.added.length || change.moved.length) totals.changedBases += 1
+        if (rules.C0.length > 0 && rules[rule].length === 0) totals.basesLosingAllCandidates += 1
+        totals.removedSlots += change.removed.length
+        totals.addedSlots += change.added.length
+        totals.movedSlots += change.moved.length
+      }
+      details.push({ audience, sourceId: base.id, categoryCode: base.categoryCode, baseClass: baseClass(base), seller, rules, changes })
+    }
+  }
+
+  const describe = (slot: Position) => ({ id: slot.id, name: rowById.get(slot.id)?.name ?? null, tier: slot.tier, sameSeller: slot.sameSeller })
+  const changedSamples = (rule: 'C1' | 'C2') => {
+    const changed = details.filter(detail => {
+      const change = detail.changes[rule]
+      return change.removed.length || change.added.length || change.moved.length
+    })
+    return {
+      total: changed.length,
+      shown: Math.min(changed.length, sampleLimit),
+      truncated: changed.length > sampleLimit,
+      samples: changed.slice(0, sampleLimit).map(detail => ({
+        audience: detail.audience,
+        source: { id: detail.sourceId, name: rowById.get(detail.sourceId)?.name ?? null, baseClass: detail.baseClass },
+        C0: detail.rules.C0.map(describe),
+        [rule]: detail.rules[rule].map(describe),
+        status: '待复核',
+      })),
+    }
+  }
+
+  return {
+    measuredBeforeAvailabilityFilter: true,
+    rules: {
+      C0: '当前规则',
+      C1: '已知模板锚定：已知模板基准排除 legacy/unknown 候选；legacy/unknown 基准保持 C0（有方向性）',
+      C2: '严格参照（诊断上限）：C1 + 排除主值缺失的同模板候选；legacy/unknown 基准无候选',
+    },
+    audiences: summary,
+    groups: [...groups.values()].sort((a, b) =>
+      a.audience.localeCompare(b.audience) || a.categoryCode.localeCompare(b.categoryCode)
+      || a.baseClass.localeCompare(b.baseClass) || a.seller.localeCompare(b.seller)),
+    changedSamples: { C1: changedSamples('C1'), C2: changedSamples('C2') },
+    // Full per-base positions for local manual review; not truncated by sampleLimit.
+    details,
+  }
+}
+
 function sources(rows: ScopeRow[], sampleLimit: number) {
   const imported = rows.filter(row => row.importProvider != null)
   const byProvider: Record<string, number> = {}
@@ -315,6 +492,7 @@ export async function auditRecommendationData(options: RecommendationAuditOption
     names: Object.fromEntries(NAME_KEYS.map(key => [key, nameDistribution(rows, key, sampleLimit)])),
     recommendations: await recommendationSlots(rows, sampleLimit),
     sources: sources(rows, sampleLimit),
+    ...(options.compare ? { comparison: await compareAdmissions(rows, sampleLimit) } : {}),
   }
 }
 
@@ -388,7 +566,8 @@ export function renderRecommendationAuditMarkdown(report: RecommendationAuditRep
   out.push(
     '## 5. 推荐位占用与不足（登录用户视角，可售过滤之前）',
     `基准商品 ${rec.bases} 件；推荐不足 6 件的 ${rec.underfilledBases} 件，其中完全没有推荐的 ${rec.emptyBases} 件。` +
-      '可售过滤只会进一步减少展示数。',
+      '本指标是可售过滤前的前六候选。实际接口对完整的最多 128 个候选补全、过滤后再取六件，' +
+      '后续候选可能补位，因此最终商品与位置需要单独核验。',
     '',
     table(['填充位数', '基准商品'], Object.entries(rec.slotsFilledHistogram).map(([slots, count]) => [slots, count])),
     '',
@@ -411,5 +590,57 @@ export function renderRecommendationAuditMarkdown(report: RecommendationAuditRep
     `AI 创建来源：${report.sources.aiCreation.status}。${report.sources.aiCreation.reason}`,
     '',
   )
+  if (report.comparison) {
+    const cmp = report.comparison
+    out.push(
+      '## 7. 离线准入比较（可售过滤前的前六候选）',
+      ...Object.entries(cmp.rules).map(([rule, text]) => `- ${rule}：${text}`),
+      '',
+    )
+    for (const audience of AUDIENCES) {
+      const entry = cmp.audiences[audience]
+      out.push(
+        `### ${audience === 'member' ? '登录用户（全范围基准）' : '游客（仅 public 基准）'}：基准 ${entry.bases} 件`,
+        '',
+        table(
+          ['规则', '0 位', '1–5 位', '6 位', '空结果', '同店 t3/t2/t1', '跨店 t3/t2/t1', '同店弱占位', '桶达 64 上限'],
+          ADMISSIONS.map(rule => {
+            const stats = entry.rules[rule]
+            const partial = Object.entries(stats.histogram)
+              .filter(([slots]) => Number(slots) > 0 && Number(slots) < DISPLAY_SLOTS)
+              .reduce((sum, [, count]) => sum + count, 0)
+            const tiers = (bucket: { 3: number; 2: number; 1: number }) => `${bucket[3]}/${bucket[2]}/${bucket[1]}`
+            return [rule, stats.histogram[0], partial, stats.histogram[DISPLAY_SLOTS], stats.emptyBases,
+              tiers(stats.slotTiers.sameSeller), tiers(stats.slotTiers.otherSeller),
+              stats.weakSameSellerPlaceholderBases, stats.basesWithTruncatedBucket]
+          }),
+        ),
+        '',
+        table(
+          ['相对 C0', '有变化基准', '由有候选变为空', '移除位', '新增位', '位置变化'],
+          (['C1', 'C2'] as const).map(rule => {
+            const change = entry.changes[rule]
+            return [rule, change.changedBases, change.basesLosingAllCandidates, change.removedSlots, change.addedSlots, change.movedSlots]
+          }),
+        ),
+        '',
+      )
+    }
+    out.push(
+      '### 分组（分类 × 基准模板状态 × 经营者）',
+      '',
+      table(
+        ['视角', '分类', '基准模板', '经营者', '基准', 'C0 空/位', 'C1 空/位', 'C2 空/位'],
+        cmp.groups.map(group => [
+          group.audience, group.categoryCode, group.baseClass, group.seller === 'platform' ? '平台' : '商家', group.bases,
+          ...ADMISSIONS.map(rule => `${group.rules[rule].emptyBases}/${group.rules[rule].filledSlots}`),
+        ]),
+      ),
+      '',
+      `变化案例：C1 ${cmp.changedSamples.C1.total} 个（展示 ${cmp.changedSamples.C1.shown}），` +
+        `C2 ${cmp.changedSamples.C2.total} 个（展示 ${cmp.changedSamples.C2.shown}）；完整逐基准明细见 JSON 的 comparison.details。`,
+      '',
+    )
+  }
   return out.join('\n')
 }
