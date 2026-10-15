@@ -15,6 +15,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage'
 import InviteRedirectPage from './pages/InviteRedirectPage'
 import StorePage from './pages/StorePage'
 import ProductDetailPage from './pages/ProductDetailPage'
+import ShopPage from './pages/ShopPage'
 import ProfilePage from './pages/ProfilePage'
 import LeaderboardPage from './pages/LeaderboardPage'
 import AdminPage from './pages/AdminPage'
@@ -111,6 +112,14 @@ export default function App() {
           element={(
             <SessionLayout>
               <ProductDetailPage />
+            </SessionLayout>
+          )}
+        />
+        <Route
+          path="/shops/:merchantId"
+          element={(
+            <SessionLayout>
+              <ShopPage />
             </SessionLayout>
           )}
         />

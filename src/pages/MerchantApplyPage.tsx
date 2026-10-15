@@ -203,7 +203,9 @@ function MerchantApplyContent() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="介绍一下您的商店"
+            aria-describedby="merchant-apply-description-hint"
           />
+          <p id="merchant-apply-description-hint" className="mt-1 text-xs text-[var(--color-text-muted)]">将展示在公开店铺页，最多展示前 500 字</p>
         </div>
 
         <div>

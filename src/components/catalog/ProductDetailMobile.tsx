@@ -117,7 +117,7 @@ export default function ProductDetailMobile({
   const merchantName = merchantObj?.name || 'MoNexus 自营'
   const avatarUrl = merchantObj?.logoUrl || merchantObj?.avatarUrl
   const initial = merchantName.trim().charAt(0) || '商'
-  const primaryTitle = merchantObj?.title || (preview ? '企业认证 · 金牌商家' : '官方认证 · 商家服务')
+  const primaryTitle = merchantObj?.title || (preview ? '企业认证 · 金牌商家' : merchantObj ? '商家服务' : '平台自营')
   const badgesList =
     merchantObj?.badges && merchantObj.badges.length > 0
       ? merchantObj.badges

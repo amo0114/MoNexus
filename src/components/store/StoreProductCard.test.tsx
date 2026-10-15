@@ -98,4 +98,23 @@ describe('StoreProductCard', () => {
     expect(sellerChip).toHaveClass('flex')
     expect(sellerChip).not.toHaveClass('hidden')
   })
+
+  it('compact cards keep the real link and availability text but drop the seller chip and rating', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <StoreProductCard
+          product={makeProduct({ id: 30, name: '店内商品', merchant: { id: 5, name: '某店' }, availability: { status: 'unknown' } })}
+          href="/product/30"
+          compact
+        />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('link', { name: '店内商品' })).toHaveAttribute('href', '/product/30')
+    expect(screen.getByTestId('store-stock-30').textContent).toBe('状态待确认')
+    expect(screen.queryByText('某店')).toBeNull()
+    expect(screen.queryByText('暂无评分')).toBeNull()
+    expect(screen.queryByText('节点描述')).toBeNull()
+    expect(container.firstChild).toHaveClass('h-full')
+    expect(container.firstChild).not.toHaveClass('h-[256px]')
+  })
 })

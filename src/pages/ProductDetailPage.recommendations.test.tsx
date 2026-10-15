@@ -273,3 +273,56 @@ describe('ProductDetailPage related recommendations', () => {
     }
   })
 })
+
+describe('ProductDetailPage merchant shop entry', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAppStore.setState({ toasts: [], islandNotice: null, modalDepth: 0 })
+    useAuthStore.setState({ user: null, accessToken: null, isLoggedIn: false })
+  })
+
+  const shopLinks = () => [...document.querySelectorAll('a[href^="/shops/"]')].map(a => a.getAttribute('href'))
+  const noRecommendations = (url: string) =>
+    url.endsWith('/recommendations') ? Promise.resolve({ data: { productId: 42, items: [] } }) : undefined
+
+  it.each(['mobile', 'tablet', 'desktop'] as const)('links a real merchant to its shop without demo honours on %s', async (layout) => {
+    viewport.current = layout
+    mockApi(noRecommendations)
+    renderPage()
+    expect(await screen.findByTestId('product-gallery')).toBeInTheDocument()
+
+    const testId = { mobile: 'mobile-shop-link', tablet: 'tablet-shop-link', desktop: 'desktop-shop-link' }[layout]
+    expect(screen.getByTestId(testId)).toHaveAttribute('href', '/shops/5')
+    if (layout === 'desktop') {
+      fireEvent.click(screen.getByRole('button', { name: /当前店/ }))
+      const card = screen.getByRole('dialog', { name: '当前店商家名片' })
+      expect(within(card).getByRole('link', { name: /进入店铺/ })).toHaveAttribute('href', '/shops/5')
+      expect(card.textContent).not.toMatch(/4\.9|1,?280|实名认证|平均响应/)
+    }
+    if (layout === 'mobile') {
+      const section = screen.getByRole('region', { name: '商家信息' })
+      expect(section.textContent).toContain('商家服务')
+      expect(section.textContent).toContain('商品评分')
+      expect(section.textContent).toContain('暂无评分')
+      expect(section.textContent).not.toMatch(/4\.9|1,?280|平台认证|官方认证/)
+      expect(section.querySelector('[title="在线"]')).toBeNull()
+    }
+    expect(new Set(shopLinks())).toEqual(new Set(['/shops/5']))
+  })
+
+  it.each(['mobile', 'tablet', 'desktop'] as const)('offers no shop link for platform products or the preview on %s', async (layout) => {
+    viewport.current = layout
+    mockApi((url) => noRecommendations(url)
+      ?? (url === '/products/42' ? Promise.resolve({ data: { ...product(42), merchant: null } }) : undefined))
+    const platform = renderPage()
+    expect(await screen.findByTestId('product-gallery')).toBeInTheDocument()
+    expect(shopLinks()).toEqual([])
+    if (layout === 'mobile') expect(screen.getByRole('region', { name: '商家信息' }).textContent).toContain('平台自营')
+    platform.unmount()
+
+    mockApi(() => undefined)
+    renderPage('/product/42?preview=aster-link')
+    expect(await screen.findByTestId('product-gallery')).toBeInTheDocument()
+    expect(shopLinks()).toEqual([])
+  })
+})

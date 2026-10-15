@@ -1,5 +1,6 @@
 import { forwardRef, type ReactNode, type Ref } from 'react'
-import { ArrowLeft, Check, FileText, Headphones, Star, Store, Zap } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft, Check, ChevronRight, FileText, Headphones, Star, Store, Zap } from 'lucide-react'
 import PointCoin from '../../ui/PointCoin'
 import type { Product } from '../../../pages/ProductDetailPage'
 import type { ProductTemplateDefinition } from '../../../types/catalog'
@@ -150,10 +151,24 @@ const ProductDetailTablet = forwardRef<HTMLDivElement, ProductDetailTabletProps>
             <span className="font-bold px-2.5 py-0.5 rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
               {product.type}
             </span>
-            <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1">
-              <Store className="w-3.5 h-3.5" />
-              {product.merchant?.name || '平台自营'}
-            </span>
+            {!preview && product.merchant ? (
+              <Link
+                to={`/shops/${product.merchant.id}`}
+                data-testid="tablet-shop-link"
+                aria-label={`进入店铺：${product.merchant.name}`}
+                className="inline-flex items-center gap-1 min-w-0 max-w-full px-2.5 py-0.5 rounded-full border border-[var(--color-border)] hover:border-[var(--color-primary)] text-[var(--color-text-muted)] hover:text-[var(--color-primary)] font-medium transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+              >
+                <Store className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{product.merchant.name}</span>
+                <span className="shrink-0">· 进店</span>
+                <ChevronRight className="w-3 h-3 shrink-0" />
+              </Link>
+            ) : (
+              <span className="text-[var(--color-text-muted)] font-medium flex items-center gap-1">
+                <Store className="w-3.5 h-3.5" />
+                {product.merchant?.name || '平台自营'}
+              </span>
+            )}
             <button
               type="button"
               onClick={onOpenSupport}

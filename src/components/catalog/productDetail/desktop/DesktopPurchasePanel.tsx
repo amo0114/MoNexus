@@ -1,4 +1,5 @@
 import type { ReactNode, Ref } from 'react'
+import { Link } from 'react-router-dom'
 import {
   BadgeCheck,
   BadgeHelp,
@@ -112,6 +113,8 @@ export default function DesktopPurchasePanel({
   sectionRef,
 }: DesktopPurchasePanelProps) {
   const period = activeOffer ? offerPeriodDetailNote(activeOffer) : null
+  // Platform products have no shop; preview keeps its mock dialog.
+  const shopHref = !preview && product.merchant ? `/shops/${product.merchant.id}` : undefined
 
   return (
     <section className="pd-purchase" aria-label="商品与购买" ref={sectionRef}>
@@ -146,6 +149,7 @@ export default function DesktopPurchasePanel({
             preview={preview}
             onContactSupport={onOpenSupport}
             onEnterShop={preview ? onOpenShop : undefined}
+            shopHref={shopHref}
           />
           <div className="pd-byline-actions">
             <button
@@ -167,6 +171,12 @@ export default function DesktopPurchasePanel({
                 <ShoppingBag size={13} />
                 <span>进店</span>
               </button>
+            )}
+            {shopHref && (
+              <Link to={shopHref} className="pd-byline-shop-btn" aria-label="进入店铺" data-testid="desktop-shop-link">
+                <ShoppingBag size={13} />
+                <span>进店</span>
+              </Link>
             )}
           </div>
         </div>

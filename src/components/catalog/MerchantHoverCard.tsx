@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { Link } from 'react-router-dom'
 import { Crown, Headphones, ShieldCheck, ShoppingBag, Star, ChevronRight, BadgeCheck } from 'lucide-react'
 import type { ProductMerchant } from '../../pages/ProductDetailPage'
 import MerchantHonorBadge from './MerchantHonorBadge'
@@ -9,6 +10,8 @@ interface MerchantHoverCardProps {
   preview?: boolean
   onContactSupport: () => void
   onEnterShop?: () => void
+  /** Real public shop URL; preview cards keep the mock `onEnterShop` dialog instead. */
+  shopHref?: string
   children?: ReactNode
 }
 
@@ -17,6 +20,7 @@ export default function MerchantHoverCard({
   preview = false,
   onContactSupport,
   onEnterShop,
+  shopHref,
 }: MerchantHoverCardProps) {
   const [isOpen, setIsOpen] = useState(false)
   const timerRef = useRef<number | null>(null)
@@ -119,18 +123,20 @@ export default function MerchantHoverCard({
                   <span>{initial}</span>
                 </div>
               )}
-              <span className="pd-hovercard-online-dot" title="在线" />
+              {preview && <span className="pd-hovercard-online-dot" title="在线" />}
             </div>
 
             <div className="pd-hovercard-meta">
               <div className="pd-hovercard-name-row">
                 <h3>{merchant.name}</h3>
-                <BadgeCheck size={16} className="pd-hovercard-verified-icon" />
+                {preview && <BadgeCheck size={16} className="pd-hovercard-verified-icon" />}
               </div>
-              <p className="pd-hovercard-sub">官方实名认证 · 履约资金存管保障</p>
+              {/* Demo honours and metrics are not backed by real shop data. */}
+              {preview && <p className="pd-hovercard-sub">官方实名认证 · 履约资金存管保障</p>}
             </div>
           </div>
 
+          {preview && <>
           {/* Badges Wall */}
           <div className="pd-hovercard-badges-wall">
             {badgesList.map((badge: string, idx: number) => (
@@ -155,6 +161,7 @@ export default function MerchantHoverCard({
               <span>平均响应</span>
             </div>
           </div>
+          </>}
 
           {/* Card Actions */}
           <div className="pd-hovercard-actions">
@@ -169,7 +176,18 @@ export default function MerchantHoverCard({
               <Headphones size={14} />
               在线咨询
             </button>
-            {onEnterShop && (
+            {shopHref && (
+              <Link
+                to={shopHref}
+                className="pd-hovercard-btn-shop"
+                onClick={() => setIsOpen(false)}
+              >
+                <ShoppingBag size={14} />
+                进入店铺
+                <ChevronRight size={13} />
+              </Link>
+            )}
+            {!shopHref && onEnterShop && (
               <button
                 type="button"
                 className="pd-hovercard-btn-shop"

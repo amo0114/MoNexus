@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { BadgeCheck, Headphones, PackageCheck, ShieldCheck, Store } from 'lucide-react'
 import type { Product } from '../../../../pages/ProductDetailPage'
 import MerchantHonorBadge from '../../MerchantHonorBadge'
@@ -37,6 +38,8 @@ export default function MobileMerchantSection({
   onOpenSupport,
 }: MobileMerchantSectionProps) {
   const manualService = activeOffer?.deliveryMode === 'manual_service'
+  // Platform products have no shop; preview keeps its mock dialog.
+  const shopHref = !preview && product.merchant ? `/shops/${product.merchant.id}` : undefined
 
   return (
     <>
@@ -50,12 +53,12 @@ export default function MobileMerchantSection({
                 <span>{initial}</span>
               </div>
             )}
-            <span className="pm-merchant-online-dot" title="在线" />
+            {preview && <span className="pm-merchant-online-dot" title="在线" />}
           </div>
           <div className="pm-merchant-meta">
             <div className="pm-merchant-title-row">
               <h2>{merchantName}</h2>
-              <BadgeCheck size={16} className="pm-merchant-verified-icon" />
+              {preview && <BadgeCheck size={16} className="pm-merchant-verified-icon" />}
             </div>
             <p className="pm-merchant-sub">{primaryTitle}</p>
           </div>
@@ -64,34 +67,49 @@ export default function MobileMerchantSection({
               进入店铺
             </button>
           )}
+          {shopHref && (
+            <Link to={shopHref} className="pm-merchant-shop-link" data-testid="mobile-shop-link">
+              进入店铺
+            </Link>
+          )}
         </div>
 
-        {/* Badges Wall with vector icons */}
-        <div className="pm-merchant-badges-wall">
-          {badgesList.map((badge: string, idx: number) => (
-            <MerchantHonorBadge key={idx} badge={badge} />
-          ))}
-        </div>
+        {/* Demo honours are not backed by real shop data. */}
+        {preview && (
+          <div className="pm-merchant-badges-wall">
+            {badgesList.map((badge: string, idx: number) => (
+              <MerchantHonorBadge key={idx} badge={badge} />
+            ))}
+          </div>
+        )}
 
-        <div
-          className="pm-merchant-stats"
-          style={{ gridTemplateColumns: preview ? undefined : 'repeat(2, 1fr)' }}
-        >
-          <div>
-            <strong>{product.ratingCount ? (product.ratingAvg ?? 0).toFixed(1) : '4.9'}</strong>
-            <span>{preview ? '店铺评分' : '综合评分'}</span>
-          </div>
-          <div>
-            <strong>{(product.sales ?? 1280).toLocaleString()}+</strong>
-            <span>累计销量</span>
-          </div>
-          {preview && (
+        {preview ? (
+          <div className="pm-merchant-stats">
+            <div>
+              <strong>{product.ratingCount ? (product.ratingAvg ?? 0).toFixed(1) : '4.9'}</strong>
+              <span>店铺评分</span>
+            </div>
+            <div>
+              <strong>{(product.sales ?? 1280).toLocaleString()}+</strong>
+              <span>累计销量</span>
+            </div>
             <div>
               <strong>{offersCount || 12}</strong>
               <span>在售商品</span>
             </div>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="pm-merchant-stats" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+            <div>
+              <strong>{product.ratingCount ? (product.ratingAvg ?? 0).toFixed(1) : '暂无评分'}</strong>
+              <span>商品评分</span>
+            </div>
+            <div>
+              <strong>{(product.sales ?? 0).toLocaleString()}</strong>
+              <span>商品销量</span>
+            </div>
+          </div>
+        )}
 
         <div className="pm-merchant-actions">
           <button onClick={onOpenSupport}>
