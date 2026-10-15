@@ -337,8 +337,7 @@ export default function ProductDraftAssistant({ actor, templates, categories: in
                     <div><label htmlFor={`${id}-template`} className="mb-1 block text-sm font-semibold">商品形态（AI 建议，请核对）*</label>
                       <select id={`${id}-template`} className="input" value={proposal.templateKey ?? ''} disabled={blocked} onChange={event => {
                         patch({ templateKey: event.target.value as TemplateKey || null, attributes: {}, offerAttributes: {} }); setDelivery('')
-                      }}><option value="">请选择商品形态</option>{templates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select>
-                      <p className="mt-1 text-xs text-[var(--color-text-muted)]">保存后商品形态不可更改。</p></div>
+                      }}><option value="">请选择商品形态</option>{templates.map(item => <option key={item.key} value={item.key}>{item.label}</option>)}</select></div>
                     <div><label htmlFor={`${id}-category`} className="mb-1 block text-sm font-semibold">商品分类（AI 建议，请核对）*</label>
                       <select id={`${id}-category`} className="input" value={proposal.categoryId ?? ''} disabled={blocked} onChange={event => patch({ categoryId: event.target.value ? Number(event.target.value) : null })}>
                         <option value="">请选择商品分类</option>{categories.map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</select>
@@ -394,7 +393,7 @@ export default function ProductDraftAssistant({ actor, templates, categories: in
               <div className="flex flex-col gap-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5">
                 <h4 className="flex items-center gap-2 font-semibold"><Package className="size-4" aria-hidden="true" />保存后继续完善</h4>
                 <ul className="list-inside list-disc space-y-2 text-sm leading-relaxed text-[var(--color-text-muted)]"><li>上传商品封面，按需添加更多规格</li><li>配置实际交付内容或导入库存</li><li>补齐购买须知、售后与必填参数</li><li>通过发布检查后上架</li></ul>
-                <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">本次创建一个主规格，默认仅登录可浏览、可售量为 0。保存草稿不会自动上架。</p>
+                <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">本次创建一个主规格，默认仅登录可浏览、可售量为 0。保存草稿不会自动上架。保存后商品形态不可更改。</p>
                 <label className="flex items-start gap-2 text-sm leading-relaxed"><input type="checkbox" className="mt-1" checked={confirmed} disabled={busy !== null || stale || pending !== null} onChange={event => setConfirmed(event.target.checked)} />我已核对商品形态、分类、参数和交易设置，确认保存为草稿</label>
                 <button type="button" className="btn-primary min-h-11" disabled={busy !== null || stale || pending !== null || !confirmed} onClick={() => void saveDraft()}>{busy === 'create' ? '正在创建草稿…' : '确认并创建草稿'}</button>
                 <button type="button" className="btn-secondary min-h-11" disabled={busy !== null} onClick={() => { setStage('edit'); setConfirmed(false); setFailure(''); requestAnimationFrame(() => heading.current?.focus()) }}>返回调整</button>

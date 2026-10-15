@@ -276,6 +276,8 @@ describe('AI assisted draft creation', () => {
     fireEvent.change(screen.getByLabelText('商品名称 *'), { target: { value: '修改后的学习指南' } })
     fillCommerce()
     review()
+    // The final step itself states the template lock, whichever edit groups were opened.
+    expect(screen.getByText(/保存后商品形态不可更改/)).toBeVisible()
     confirm()
     fireEvent.click(screen.getByRole('button', { name: '确认并创建草稿' }))
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(7))
