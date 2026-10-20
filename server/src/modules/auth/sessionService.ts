@@ -315,3 +315,36 @@ export async function revokeRefreshSessionByTokenHash(input: {
     return { revokedCount: revokedRows > 0 ? 1 : 0 }
   })
 }
+
+export async function revokeAllUserRefreshTokens(
+  userId: number,
+  tx?: Prisma.TransactionClient,
+  revokeReason: SessionRevocationReason = 'revoke_all',
+  metadata: SessionRequestMetadata = {},
+) {
+  const revokeInTransaction = async (transaction: Prisma.TransactionClient) => {
+    await lockUserRefreshSessionMutations(transaction, userId)
+    const activeFamilies = await transaction.refreshToken.findMany({
+      where: { userId, revoked: false },
+      distinct: ['sessionId'],
+      select: { sessionId: true },
+    })
+    const result = await transaction.refreshToken.updateMany({
+      where: { userId, revoked: false },
+      data: { revoked: true, revokedAt: new Date(), revokeReason },
+    })
+    if (result.count > 0) {
+      await recordSecurityEvent({
+        type: 'session_revoked',
+        userId,
+        ip: metadata.ip,
+        userAgent: metadata.userAgent,
+        detail: { reason: revokeReason, revokedCount: activeFamilies.length },
+      }, transaction)
+    }
+    return result.count
+  }
+
+  if (tx) return revokeInTransaction(tx)
+  return prisma.$transaction(revokeInTransaction)
+}

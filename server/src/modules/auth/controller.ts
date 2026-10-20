@@ -3,6 +3,11 @@ import { refreshTokenCookieName, setRefreshTokenCookie, clearRefreshTokenCookie 
 import { HttpError, sessionChanged, unauthenticated } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import * as authService from './service.js'
+import * as registrationService from './registrationService.js'
+import { issueHumanChallenge } from './authProtection.js'
+import * as passwordService from './passwordService.js'
+import * as emailVerificationService from './emailVerificationService.js'
+import * as mfaService from './mfaService.js'
 import * as sessionService from './sessionService.js'
 import type { HumanVerificationAction } from './humanVerification.js'
 
@@ -25,7 +30,7 @@ function isPasswordResetProtectionError(error: unknown): error is HttpError {
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
     const { email, password, inviteCode, turnstileToken, humanVerification, agreements, nickname } = req.body
-    const result = await authService.registerUser(
+    const result = await registrationService.registerUser(
       email, password, inviteCode,
       req.ip, req.headers['user-agent'], { humanVerification, turnstileToken }, agreements,
       nickname,
@@ -39,7 +44,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 
 export async function registrationStatus(_req: Request, res: Response, next: NextFunction) {
   try {
-    const status = await authService.getPublicRegistrationStatus()
+    const status = await registrationService.getPublicRegistrationStatus()
     // 开关是运营实时状态：任何中间缓存都会让访客看到已经作废的注册入口。
     res.set('Cache-Control', 'no-store')
     res.json(status)
@@ -51,7 +56,7 @@ export async function registrationStatus(_req: Request, res: Response, next: Nex
 export async function humanChallenge(req: Request, res: Response, next: NextFunction) {
   res.set('Cache-Control', 'no-store')
   try {
-    const challenge = await authService.issueHumanChallenge(
+    const challenge = await issueHumanChallenge(
       req.query.action as HumanVerificationAction,
       req.ip,
     )
@@ -87,7 +92,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
 export async function startMfaEnrollment(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await authService.startAdminMfaEnrollment(req.body.challengeId)
+    const result = await mfaService.startAdminMfaEnrollment(req.body.challengeId)
     res.json({
       provisioningUri: result.provisioningUri,
       manualKey: result.manualKey,
@@ -100,7 +105,7 @@ export async function startMfaEnrollment(req: Request, res: Response, next: Next
 
 export async function confirmMfaEnrollment(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await authService.confirmAdminMfaEnrollment({
+    const result = await mfaService.confirmAdminMfaEnrollment({
       challengeId: req.body.challengeId,
       code: req.body.code,
       ip: req.ip,
@@ -119,7 +124,7 @@ export async function confirmMfaEnrollment(req: Request, res: Response, next: Ne
 
 export async function verifyMfa(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await authService.verifyAdminMfaLogin({
+    const result = await mfaService.verifyAdminMfaLogin({
       challengeId: req.body.challengeId,
       method: req.body.method,
       code: req.body.code,
@@ -236,7 +241,7 @@ export async function revokeOtherSessions(req: Request, res: Response, next: Nex
 // endpoint while still letting real users get a reset link.
 export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.requestPasswordReset(req.body.email, req.ip, {
+    await passwordService.requestPasswordReset(req.body.email, req.ip, {
       humanVerification: req.body.humanVerification,
       turnstileToken: req.body.turnstileToken,
     })
@@ -258,7 +263,7 @@ export async function forgotPassword(req: Request, res: Response, next: NextFunc
 
 export async function resetPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.resetPasswordWithToken(req.body.token, req.body.password)
+    await passwordService.resetPasswordWithToken(req.body.token, req.body.password)
     res.json({ ok: true })
   } catch (err) {
     next(err)
@@ -267,7 +272,7 @@ export async function resetPassword(req: Request, res: Response, next: NextFunct
 
 export async function changePassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.changePassword(
+    await passwordService.changePassword(
       req.user!.userId,
       req.body.currentPassword,
       req.body.newPassword
@@ -280,7 +285,7 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
 
 export async function sendVerification(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.sendEmailVerification(req.user!.userId, req.ip)
+    await emailVerificationService.sendEmailVerification(req.user!.userId, req.ip)
     res.json({ ok: true })
   } catch (err) {
     next(err)
@@ -289,7 +294,7 @@ export async function sendVerification(req: Request, res: Response, next: NextFu
 
 export async function verifyEmail(req: Request, res: Response, next: NextFunction) {
   try {
-    await authService.verifyEmailWithToken(req.user!.userId, req.body.token)
+    await emailVerificationService.verifyEmailWithToken(req.user!.userId, req.body.token)
     res.json({ ok: true })
   } catch (err) {
     next(err)

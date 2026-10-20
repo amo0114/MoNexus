@@ -1,3 +1,5 @@
+import { countOpenFakaTasksForOffer } from '../fakaBridge/taskQueries.js'
+import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma, type Offer } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
@@ -11,11 +13,10 @@ import {
   canonicalFixedStructuredText,
   normalizeFixedStructuredContent,
 } from '../catalog/structuredFixedContent.js'
-import { lockProductRow } from './productLifecycle.js'
+import { lockProductRow } from '../catalog/productLock.js'
+import { assertOwnedActiveDeliveryFile } from '../catalog/deliveryFileOwnership.js'
 
 type Tx = Prisma.TransactionClient
-
-const OPEN_FAKA_TASK_STATUS = ['pending', 'needs_reconcile'] as const
 
 type DeliveryMode = 'instant_inventory' | 'instant_fixed' | 'manual_service'
 type StockMode = 'limited' | 'unlimited'
@@ -49,15 +50,6 @@ function deliveryFieldsTouched(input: AdminOfferPatchInput) {
   )
 }
 
-async function assertPlatformDeliveryFile(tx: Tx, fileId: number) {
-  const file = await tx.deliveryFile.findFirst({
-    where: { id: fileId, merchantId: null },
-    select: { status: true },
-  })
-  if (!file) throw notFound('交付文件不存在')
-  if (file.status !== 'active') throw badRequest('交付文件已不可用，请重新上传')
-}
-
 function resolveStructuredFixedContent(
   structuredInput: unknown,
   fixedContent: string | null,
@@ -82,35 +74,9 @@ async function countOfferHistory(tx: Tx, offerId: number) {
   const [orderCount, inventoryCount, fakaTaskCount] = await Promise.all([
     tx.order.count({ where: { offerId } }),
     tx.inventoryItem.count({ where: { offerId } }),
-    tx.fakaBridgeTask.count({
-      where: {
-        order: { offerId },
-        OR: [
-          { status: { in: [...OPEN_FAKA_TASK_STATUS] } },
-          { revokeStatus: 'pending' },
-        ],
-      },
-    }),
+    countOpenFakaTasksForOffer(tx, offerId),
   ])
   return { orderCount, inventoryCount, fakaTaskCount }
-}
-
-export async function countOpenFakaTasksForOffer(tx: Tx | typeof prisma, offerId: number) {
-  return tx.fakaBridgeTask.count({
-    where: {
-      order: { offerId },
-      OR: [
-        { status: { in: [...OPEN_FAKA_TASK_STATUS] } },
-        { revokeStatus: 'pending' },
-      ],
-    },
-  })
-}
-
-export function assertOriginalPrice(price: number, originalPrice: number | null | undefined) {
-  if (originalPrice != null && originalPrice < price) {
-    throw badRequest('原价不能低于售价')
-  }
 }
 
 export async function patchAdminOffer(
@@ -178,7 +144,7 @@ export async function patchAdminOffer(
         allowIncompleteFixedContent: product.status === 'draft' && product.templateKey != null,
       })
       if (nextFixedFileId != null && nextFixedFileId !== offer.fixedFileId) {
-        await assertPlatformDeliveryFile(tx, nextFixedFileId)
+        await assertOwnedActiveDeliveryFile(tx, { kind: 'admin' }, nextFixedFileId)
       }
     }
 
@@ -270,7 +236,7 @@ export async function createPlatformOffer(
       allowIncompleteFixedContent: product.status === 'draft' && product.templateKey != null,
     })
     if (input.fixedFileId != null) {
-      await assertPlatformDeliveryFile(tx, input.fixedFileId)
+      await assertOwnedActiveDeliveryFile(tx, { kind: 'admin' }, input.fixedFileId)
     }
     const maxSort = await tx.offer.aggregate({ where: { productId }, _max: { sortOrder: true } })
     const offer = await tx.offer.create({

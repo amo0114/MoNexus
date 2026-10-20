@@ -20,7 +20,7 @@ import {
   type AiActorRole,
   type AiFeature,
   type IssueCounts,
-} from './generation.js'
+} from './featurePolicy.js'
 
 const AI_GENERATION_LOCK_CLASS = 20261007
 const IN_FLIGHT_GRACE_MS = 5_000

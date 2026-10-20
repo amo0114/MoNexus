@@ -4,7 +4,7 @@ import {
   getProvisionEmailStatus,
   listBoundProvisionEmails,
   sendProvisionEmailCode,
-} from '../../lib/fakaBridge/provisionEmailProof.js'
+} from './provisionEmailProof.js'
 
 export async function sendProvisionCode(req: Request, res: Response, next: NextFunction) {
   try {

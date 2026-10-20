@@ -48,7 +48,9 @@ Privileged surface for the platform operator: user / merchant / product / settle
 ### Audit
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/api/admin/logs` | Recent 100 `PointLog` entries (user balance movements). **Note:** despite the name, this returns `PointLog`, not `AdminLog`. See "Known gaps" below. |
+| GET | `/api/admin/point-logs` | Paginated, filtered `PointLog` entries (user balance movements). |
+| GET | `/api/admin/audit` | Paginated, filtered `AdminLog` projection. |
+| GET | `/api/admin/logs` | Deprecated recent 100 `PointLog` entries; use `/point-logs`. |
 
 ### Registration abuse operations (SPEC-RAP-001)
 | Method | Path | Notes |
@@ -126,12 +128,33 @@ Every mutation to `PointAccount.balance` writes one `PointLog` row in the same t
 
 ### Self-protection
 
-`banUser` refuses to ban the caller themselves or any user whose `role = admin`. These rules live in `server/src/modules/admin/service.ts` (not Zod) because they're invariants, not validation.
+`banUser` refuses to ban the caller themselves or any user whose `role = admin`. These rules live in `server/src/modules/admin/userAdmin.ts` (not Zod) because they're invariants, not validation.
 
 ## Known gaps
 
-- `GET /api/admin/logs` currently returns `PointLog`, not `AdminLog`. `AdminLog` is written reliably but is not exposed via a dedicated read endpoint. Inspect directly via Prisma until a follow-up adds e.g. `GET /api/admin/audit`.
 - `unbanUser` does not verify the user is currently banned; it idempotently sets `status = 正常`. Logged in `AdminLog` either way.
+
+## Service responsibilities
+
+`userAdmin.ts` owns user queries, point adjustments and ban/unban operations.
+`orderAdmin.ts` owns order queries and arbitration, retaining the order-first lock
+sequence and the complete refund/settlement transaction. `auditQueries.ts` owns
+point logs, administrator audit queries and the platform offer sales report.
+The controller calls these modules directly; `service.ts` retains dashboard
+counters, system configuration and the legacy public exports.
+
+`controller.ts` calls `merchantAdmin.ts` for merchant review, `settlementAdmin.ts` for
+settlement processing, `deliveryFileAdmin.ts` for file governance, and
+`fakaTaskAdmin.ts` for provisioning recovery operations. Catalog operations are split
+between `productAdmin.ts` (product writes, listing and publication),
+`inventoryAdmin.ts` (inventory preview/import), and `fakaCatalogAdmin.ts` (external
+catalog preview/import, period offers and remote capacity). These modules depend
+directly on shared catalog/lib rules and do not call each other through `service.ts`.
+Their legacy exports remain
+available through `service.ts`. Settlement eligibility belongs to
+`orders/settlementPolicy.ts`, shared with merchant queries; admin services must not
+depend on merchant self-service implementations. Transaction and row-lock boundaries
+stay inside each use case.
 
 ## Related
 

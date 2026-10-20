@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url'
 import { prisma } from '../lib/prisma.js'
-import { resetAdminMfaForBreakGlass } from '../modules/auth/service.js'
+import { resetAdminMfaForBreakGlass } from '../modules/auth/mfaService.js'
 
 const CASE_REF_PATTERN = /^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$/
 

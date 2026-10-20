@@ -1,14 +1,14 @@
 import type { Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
 
-type DeliveryFileDb = Prisma.TransactionClient
+type DeliveryFileDb = Pick<Prisma.TransactionClient, 'deliveryFile'>
 
 export type DeliveryFileActor =
   | { kind: 'merchant'; merchantId: number }
   | { kind: 'admin' }
 
 /**
- * Bind-time ownership for Offer.fixedFileId.
+ * Ownership and availability for offer binding and order delivery attachments.
  * Merchant files must match actor.merchantId; admin files must be platform-owned
  * (merchantId null). Other-merchant / missing → 404 (no enumeration);
  * revoked/deleted → 400.

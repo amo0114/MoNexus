@@ -6,7 +6,7 @@ import {
   confirmProvisionEmailCode,
   isProvisionEmailTrusted,
   assertProvisionEmailTrusted,
-} from '../lib/fakaBridge/provisionEmailProof.js'
+} from '../modules/fakaBridge/provisionEmailProof.js'
 import { __setMailerForTesting } from '../lib/mailer/index.js'
 import type { Mailer } from '../lib/mailer/types.js'
 import { createTestUser } from './helpers.js'

@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import { prisma } from '../lib/prisma.js'
-import { backfillFakaOrderPayment, listFakaPaymentBackfillCandidates } from '../lib/fakaBridge/paymentBackfill.js'
+import { backfillFakaOrderPayment, listFakaPaymentBackfillCandidates } from '../modules/fakaBridge/paymentBackfill.js'
 
 const USAGE = 'tsx src/scripts/backfillFakaPayments.ts [--order-ids=123,456] [--limit=100] [--apply --operator=change-ticket]'
 

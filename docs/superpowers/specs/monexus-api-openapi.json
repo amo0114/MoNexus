@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus API",
-    "version": "1.9.0",
-    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。1.7.0 同步 SPEC-RAP-001：公开注册使用 fail-closed Turnstile + Redis 防护；邮箱验证改为已登录用户的 fragment-token POST claim；注册与邀请奖励进入延迟发放账本；新增 MFA 保护的管理员反滥用运营 API。1.8.0 同步 SPEC-LEADERBOARD-001 积分排行榜：新增 `GET /api/leaderboard`（总榜 / 本月榜 / 本周榜，每日快照刷新一次，读侧 Top 100 + 请求者自己的名次）；榜单口径与会员等级 lifetime earned 一致（只计 `type=in`），响应只暴露 rank / displayName / points，绝不下发他人 userId 或 email。 1.9.0 同步 SPEC-RECHARGE-PAYMENT-V1.2：新增积分充值用户 API、渠道 webhook 与管理修复面。金额字段为十进制字符串。生产默认关闭 live 充值，Simulator 禁止出现在 production deploy。本版本不部署真实告警接收人。"
+    "version": "1.9.1",
+    "description": "MoNexus 内部积分制数字商品市场 API。三种角色：user / merchant / admin。无任何法币 / 充值 / 提现。1.1.0 同步 M2 GA：health 含 db 字段、登录密码修改、用户封禁 / 解封、平台系统配置。1.2.0 同步 M3：新增 `GET /api/admin/audit`（操作员可读的 AdminLog 列表，支持分页与过滤），并标注 `refreshTokenMaxAgeDays` 现已对新签发的 refresh token 实际生效。1.3.0 同步 M4：拆分 `/api/health` 为 `/api/health/live`（liveness）和 `/api/health/ready`（readiness），保留老 `/api/health` 作为 `/live` 的兼容别名并标记为 deprecated；新增 `GET /api/metrics`（Prometheus 文本格式，可选 `METRICS_TOKEN` bearer 保护）。1.4.0 同步 M6 履约域重构 + 商家经营闭环：拆分订单 DTO 为按角色（user / merchant / admin）的边界，商家与平台列表不再返回 `delivery.content`；商品引入 `deliveryMode` 履约模式（`instant_inventory` / `manual_service`）；订单状态机扩展为 `pending → processing → delivered → disputed → closed`，旧值 `completed` 在响应中规范化为 `delivered`；新增 `POST /api/orders/{id}/dispute`、`/close`，新增商家履约动作 `start/deliver/respond-dispute`；商家商品列表、订单列表统一为 `{items,total,page,pageSize}` envelope，并支持搜索 / 筛选 / 低库存等参数；商家库存导入拆分 `preview` 与 `import`，请求体接受 `text` 或 `items`，响应携带空行 / 重复行 / 既存重复行统计；商家结算列表新增 `payable` 与 `blockReason`，与履约状态绑定（`disputed` 或未履约不可结算）；新增 `GET /api/config/registry` 暴露前端可消费的产品类型 / 履约模式 / 订单状态 / 结算状态 / 分页 / 低库存阈值的标签 + tone 注册表。1.5.0 同步 M3 identity security hardening：管理员登录为 200/202 MFA pre-auth union，新增 TOTP enrollment/verify 与设备会话管理端点；管理员已吊销 session 对 admin API 立即失效，普通业务 access token 仍受既有 15 分钟 TTL 约束。1.6.0 同步 SPEC-OPS-REGMAIL-001 注册开关与邮件投递运营面：新增公开只读 `GET /api/auth/registration-status`、管理员 `GET /api/admin/mail/status` 与 `POST /api/admin/mail/test`；`POST /api/auth/register` 新增 403 `REGISTRATION_DISABLED`；`SystemConfigKey` 枚举补齐为注册表全量 24 个 key（此前只列了 4 个），并新增布尔语义开关 `registrationEnabled`（值域 0/1）。SMTP 连接参数仍只在部署环境配置，后台不可编辑。1.7.0 同步 SPEC-RAP-001：公开注册使用 fail-closed Turnstile + Redis 防护；邮箱验证改为已登录用户的 fragment-token POST claim；注册与邀请奖励进入延迟发放账本；新增 MFA 保护的管理员反滥用运营 API。1.8.0 同步 SPEC-LEADERBOARD-001 积分排行榜：新增 `GET /api/leaderboard`（总榜 / 本月榜 / 本周榜，每日快照刷新一次，读侧 Top 100 + 请求者自己的名次）；榜单口径与会员等级 lifetime earned 一致（只计 `type=in`），响应只暴露 rank / displayName / points，绝不下发他人 userId 或 email。 1.9.0 同步 SPEC-RECHARGE-PAYMENT-V1.2：新增积分充值用户 API、渠道 webhook 与管理修复面。金额字段为十进制字符串。生产默认关闭 live 充值，Simulator 禁止出现在 production deploy。本版本不部署真实告警接收人。 1.9.1 补齐公开商品模板注册表及其响应契约。"
   },
   "servers": [
     {
@@ -3673,6 +3673,180 @@
             "format": "date-time"
           }
         }
+      },
+      "ProductTemplateUi": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "productOrder",
+          "offerOrder",
+          "widgets"
+        ],
+        "properties": {
+          "productOrder": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "offerOrder": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "widgets": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": [
+                "text",
+                "textarea",
+                "select",
+                "stringList",
+                "integer"
+              ]
+            }
+          },
+          "enumLabels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ProductTemplateFulfillmentRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "whenProductAttributes",
+          "configurations",
+          "requireStructuredDelivery",
+          "requireRequiredDateField"
+        ],
+        "properties": {
+          "whenProductAttributes": {
+            "type": "object",
+            "additionalProperties": {
+              "oneOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                }
+              ]
+            }
+          },
+          "configurations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "inventory",
+                "fixed_text",
+                "fixed_url",
+                "fixed_file",
+                "manual",
+                "merchant_webhook",
+                "faka_bridge"
+              ]
+            }
+          },
+          "requireStructuredDelivery": {
+            "type": "string",
+            "enum": [
+              "none",
+              "inventory_fields",
+              "fixed_fields"
+            ]
+          },
+          "requireRequiredDateField": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProductTemplateDefinition": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "key",
+          "version",
+          "label",
+          "productSchema",
+          "offerSchema",
+          "ui",
+          "fulfillmentRules"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "enum": [
+              "redemption_code",
+              "account",
+              "digital_file",
+              "fixed_content",
+              "subscription",
+              "manual_service",
+              "appointment"
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "productSchema": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "JSON Schema 2020-12 attribute definition."
+          },
+          "offerSchema": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "JSON Schema 2020-12 attribute definition."
+          },
+          "ui": {
+            "$ref": "#/components/schemas/ProductTemplateUi"
+          },
+          "fulfillmentRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductTemplateFulfillmentRule"
+            }
+          }
+        }
+      },
+      "ProductTemplateRegistry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "registryVersion",
+          "templates"
+        ],
+        "properties": {
+          "registryVersion": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "templates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductTemplateDefinition"
+            }
+          }
+        }
       }
     },
     "responses": {
@@ -5005,9 +5179,10 @@
             "in": "query",
             "schema": {
               "type": "integer",
-              "default": 20,
-              "maximum": 100
-            }
+              "maximum": 500,
+              "minimum": 1
+            },
+            "description": "省略时使用 defaultPageSize 配置；请求值按 maxPageSize 配置截断，绝对输入上限为 500。"
           }
         ],
         "responses": {
@@ -5489,8 +5664,10 @@
             "in": "query",
             "schema": {
               "type": "integer",
-              "default": 20
-            }
+              "maximum": 500,
+              "minimum": 1
+            },
+            "description": "省略时使用 defaultPageSize 配置；请求值按 maxPageSize 配置截断，绝对输入上限为 500。"
           },
           {
             "name": "status",
@@ -8192,6 +8369,37 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/product-templates": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "公开商品模板注册表",
+        "description": "返回商品和规格字段定义、展示配置与履约规则，不包含模板 examples。",
+        "operationId": "getProductTemplateRegistry",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "商品模板注册表",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "public, max-age=60"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductTemplateRegistry"
+                }
+              }
+            }
           }
         }
       }

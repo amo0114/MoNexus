@@ -1,6 +1,7 @@
+import { lockProductRow } from '../catalog/productLock.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
+import { HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { syncProductProjection } from '../../lib/offers.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { CATALOG_ERROR_CODES, PRODUCT_STATUS } from '../catalog/constants.js'
@@ -12,14 +13,6 @@ export function archivedWhere(filter: ArchivedFilter = 'exclude'): Prisma.Produc
   if (filter === 'only') return { archivedAt: { not: null } }
   if (filter === 'all') return {}
   return { archivedAt: null }
-}
-
-export async function lockProductRow(tx: Tx, productId: number) {
-  const rows = await tx.$queryRaw<Array<{ id: number }>>`
-    SELECT id FROM "Product" WHERE id = ${productId} FOR UPDATE
-  `
-  if (rows.length === 0) throw notFound('商品不存在')
-  return tx.product.findUniqueOrThrow({ where: { id: productId } })
 }
 
 function restoreStatus(publishedAt: Date | null): 'draft' | 'inactive' {

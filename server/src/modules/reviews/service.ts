@@ -8,7 +8,7 @@ import {
   buildProductReviewsCacheKey,
   invalidateProductPublicCache,
 } from '../products/cache.js'
-import { normalizeOrderStatus } from '../orders/fulfillment.js'
+import { normalizeOrderStatus } from '../orders/statusPolicy.js'
 import { assertPublicProductAccess, type ProductAudience } from '../products/visibility.js'
 
 const EDIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000

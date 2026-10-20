@@ -1,10 +1,10 @@
 import { createHash, randomInt } from 'node:crypto'
-import { prisma } from '../prisma.js'
-import { badRequest, tooManyRequests, provisionEmailUnverified } from '../httpError.js'
-import { getMailer } from '../mailer/index.js'
-import { renderMail } from '../mailer/templates/index.js'
+import { prisma } from '../../lib/prisma.js'
+import { badRequest, tooManyRequests, provisionEmailUnverified } from '../../lib/httpError.js'
+import { getMailer } from '../../lib/mailer/index.js'
+import { renderMail } from '../../lib/mailer/templates/index.js'
 import { config } from '../../config/index.js'
-import { FAKA_PROVISION_EMAIL_KEYS } from './provisionEmail.js'
+import { FAKA_PROVISION_EMAIL_KEYS } from '../../lib/fakaBridge/provisionEmail.js'
 
 /** OTP 有效期 */
 export const PROVISION_CODE_TTL_MS = 10 * 60 * 1000

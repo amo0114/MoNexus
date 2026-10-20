@@ -14,6 +14,19 @@ The read-only checkout quote lives in its own module: `GET /api/checkout/preview
 
 Admin counterparts (`/api/admin/orders/*`) are documented in `../admin/README.md`.
 
+## Shared rules and dependencies
+
+`statusPolicy.ts` owns pure fulfillment/status constants, legacy status mapping and
+legal transition checks. `settlementPolicy.ts` consumes those rules without loading
+database transition/notification workflows. `fulfillment.ts` applies transitions in
+the caller's transaction and retains compatibility exports for existing callers.
+
+`provisioningConfig.ts` owns the shared active-webhook read lock used by checkout
+and offer writes. Caller writes must remain in that same transaction. Merchant
+configuration rotation/revocation owns the corresponding write-side locks.
+Spending restrictions come from `points/spendingPolicy.ts`; Faka use cases come
+from `fakaBridge/service.ts`, while remote protocol helpers remain in `lib/fakaBridge`.
+
 ## Price confirmation (`expectedPrice`) and checkout version (`expectedPurchaseFormVersion`)
 
 If the request body carries `expectedPrice` and it differs from the product's current price, the order is rejected with `409 PRICE_CHANGED` and no side effects. Likewise, `expectedPurchaseFormVersion` (the digest of the normalized purchase-form definitions, returned by `GET /api/checkout/preview` as `purchaseFormVersion`) is compared against the product's current form: a mismatch — the merchant added a required field, removed an option, etc. while the buyer had the dialog open — is rejected with `409 CHECKOUT_CHANGED` instead of failing the buyer's stale answers with an unexplained 400. In both cases the client must re-fetch the preview, rotate the idempotency key and get an explicit re-confirmation from the user — silently charging under changed terms is forbidden. Both fields are optional for backward compatibility; the shipped frontend always sends them.
@@ -26,7 +39,7 @@ Answers share the `DeliveryRecord.content` exposure boundary: buyer order detail
 
 ## High-risk verification (`verificationPassword`)
 
-Orders above configurable thresholds require the buyer's **login password** as a second confirmation (`../checkout/verification.ts`; spec P3 — deliberately no separate payment-password system). Two `SystemConfig` thresholds, both admin-editable and `0 = off` (the default): `checkoutVerifyAmountThreshold` (single order price) and `checkoutVerifyDailyThreshold` (today's non-refunded order total + this order, server-local day boundary).
+Orders above configurable thresholds require the buyer's **login password** as a second confirmation (`../checkout/verification.ts`; spec P3 — deliberately no separate payment-password system). Two `SystemConfig` thresholds, both admin-editable and `0 = off` (the default): `checkoutVerifyAmountThreshold` (single order price) and `checkoutVerifyDailyThreshold` (today's non-refunded order total + this order, Asia/Shanghai natural-day boundary).
 
 - `GET /api/checkout/preview` returns `requiresVerification` so the dialog can pre-render the password field — display only. The order endpoint **recomputes the trigger server-side** and never trusts the client's claim.
 - A lightweight `expectedPrice` / form-version pre-check runs **before** the password check: when a merchant price change pushes the order across the threshold, the client gets the familiar `409 PRICE_CHANGED` / `409 CHECKOUT_CHANGED` (fresh preview → password field appears) instead of a `VERIFICATION_REQUIRED` it cannot act on with the stale dialog. The transaction still holds the authoritative checks.
@@ -89,7 +102,7 @@ When `Product.merchantId IS NOT NULL`, the order transaction also creates one `S
 
 Platform-owned products (`merchantId IS NULL`) do **not** produce a settlement row. The full price stays on the platform.
 
-Batch-settling is owned by `admin/service.ts → batchSettle`; see `../admin/README.md`.
+Batch-settling is owned by `admin/settlementAdmin.ts → batchSettle`; see `../admin/README.md`.
 
 ## Delivery content exposure rules
 

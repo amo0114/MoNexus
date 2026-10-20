@@ -73,6 +73,29 @@ Merchant order endpoints scope by `product.merchantId = me`:
 - Merchants **cannot** trigger settlement themselves. The flip from `pending → settled` happens only via `/api/admin/settlements/batch-settle` (admin module).
 - Each settlement row carries the snapshot fields (`orderAmount` / `commissionRate` / `commissionAmount` / `settlementAmount`) captured at order time, so historical rows survive merchant commission changes.
 
+## Service responsibilities
+
+`orderService.ts` owns order queries, fulfillment, progress, rejection and dispute
+responses. `dashboardQueries.ts` owns settlement and dashboard queries. Both consume
+shared order rules rather than exposing policy to admin services.
+`deliveryFilePolicy.ts` delegates file ownership and availability checks for offer
+writes and order delivery to `catalog/deliveryFileOwnership.ts`.
+Cross-module ownership lookups use the small public `identity.ts` entry point;
+they must not import the profile-management workflow.
+
+`profileService.ts` handles applications and merchant profiles. `productService.ts`
+owns product queries, writes and publication. `offerService.ts` owns offer writes and
+their commercial/delivery validation; it exposes `insertOffer` for product creation
+inside the caller's existing transaction. Product creation and all extra offers
+therefore still commit or roll back together. `inventoryService.ts` owns previews,
+imports, voiding, capacity changes and inventory logs. `offerSerialization.ts` keeps
+checkout-version response fields consistent between product and offer lists.
+
+`service.ts` keeps the existing public exports for compatibility. Controllers call
+specific services directly; implementations never import this public entry point.
+Product and inventory pagination share the system-config defaults and caps in
+`lib/pagination.ts`, also used by admin user/order queries.
+
 ## Related
 
 - `server/src/modules/orders/README.md` — redemption transaction that produces settlements.

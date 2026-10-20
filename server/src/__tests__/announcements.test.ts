@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { api, authHeader, createTestMerchant, createTestUser, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
+import { deleteAnnouncement } from '../modules/announcements/adminService.js'
 
 async function loginAdmin(email = 'ann-admin@test.local') {
   const { user, password } = await createTestUser(email, 'admin123', 'admin')
@@ -93,6 +94,16 @@ describe('Announcements admin CRUD (M3-S3)', () => {
 
     const gone = await prisma.announcement.findUnique({ where: { id: created.body.id } })
     expect(gone).toBeNull()
+  })
+
+  it('rolls back deletion when its audit log cannot be written', async () => {
+    const { accessToken } = await loginAdmin()
+    const created = await createAnnouncement(accessToken, {
+      title: '保留公告', content: '审计失败时保留', startsAt: pastDate(1).toISOString(),
+    }).expect(201)
+
+    await expect(deleteAnnouncement(-1, created.body.id)).rejects.toMatchObject({ code: 'P2003' })
+    expect(await prisma.announcement.findUnique({ where: { id: created.body.id } })).not.toBeNull()
   })
 
   it('rejects partial updates that would invert the time window', async () => {

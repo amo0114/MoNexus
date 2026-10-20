@@ -1,3 +1,5 @@
+import { createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema } from '../announcements/adminSchema.js'
+import * as announcementController from '../announcements/adminController.js'
 import { Router } from 'express'
 import { authenticate, requireActiveUser, requireAdmin, requireAdminMfa } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
@@ -11,7 +13,6 @@ import {
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema, merchantAgentPilotSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
-  createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema,
   setFakaCapacitySchema, previewFakaPlanSchema, importFakaPlanSchema, addFakaOffersSchema,
   listAdminProductsQuerySchema, archiveProductSchema, adminOfferPatchSchema,
   rebindOfferSkuSchema, confirmFakaSyncSchema,
@@ -268,9 +269,9 @@ router.get('/settlements', validate({ query: listSettlementsQuerySchema }), cont
 router.post('/settlements/batch-settle', validate(batchSettleSchema), controller.batchSettle)
 
 // Announcements
-router.get('/announcements', validate({ query: listAnnouncementsQuerySchema }), controller.listAnnouncementsRoute)
-router.post('/announcements', validate(createAnnouncementSchema), controller.createAnnouncementRoute)
-router.put('/announcements/:id', validate({ params: idParamSchema, body: updateAnnouncementSchema }), controller.updateAnnouncementRoute)
-router.delete('/announcements/:id', validate({ params: idParamSchema }), controller.deleteAnnouncementRoute)
+router.get('/announcements', validate({ query: listAnnouncementsQuerySchema }), announcementController.listAnnouncementsRoute)
+router.post('/announcements', validate(createAnnouncementSchema), announcementController.createAnnouncementRoute)
+router.put('/announcements/:id', validate({ params: idParamSchema, body: updateAnnouncementSchema }), announcementController.updateAnnouncementRoute)
+router.delete('/announcements/:id', validate({ params: idParamSchema }), announcementController.deleteAnnouncementRoute)
 
 export { router as adminRoutes }
