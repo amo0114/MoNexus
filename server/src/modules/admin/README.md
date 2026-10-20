@@ -50,7 +50,7 @@ Privileged surface for the platform operator: user / merchant / product / settle
 | --- | --- | --- |
 | GET | `/api/admin/point-logs` | Paginated, filtered `PointLog` entries (user balance movements). |
 | GET | `/api/admin/audit` | Paginated, filtered `AdminLog` projection. |
-| GET | `/api/admin/logs` | Deprecated recent 100 `PointLog` entries; use `/point-logs`. |
+| GET | `/api/admin/logs` | Deprecated recent 100 `PointLog` entries, not `AdminLog`; use `/point-logs` for balance movements and `/audit` for administrator actions. |
 
 ### Registration abuse operations (SPEC-RAP-001)
 | Method | Path | Notes |
