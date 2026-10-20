@@ -117,18 +117,18 @@ export async function createOrder(
 }
 
 export async function getOrders(params?: { page?: number; pageSize?: number; status?: string }): Promise<UserOrderListItem[]> {
-  const { data } = await api.get('/orders', { params })
+  const { data } = await api.get<UserOrderListItem[]>('/orders', { params })
   return data
 }
 
 /** PR-3：买家「进行中」订单权威计数（顶栏/底栏红点角标），与列表分页解耦。 */
 export async function getOrderAttentionCount(): Promise<number> {
-  const { data } = await api.get('/orders/attention-count')
+  const { data } = await api.get<{ count: number }>('/orders/attention-count')
   return data.count
 }
 
 export async function getOrderDetail(id: number): Promise<UserOrderDetail> {
-  const { data } = await api.get(`/orders/${id}`)
+  const { data } = await api.get<UserOrderDetail>(`/orders/${id}`)
   return data
 }
 

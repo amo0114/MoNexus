@@ -1,5 +1,5 @@
 import type { ComponentProps } from 'react'
-import type { Product } from '../../../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../../../types/product'
 import { offerPeriodSubtitle } from '../../../../utils/offerPeriodDisplay'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../../ui/Dialog'
 import { isOfferSoldOut } from '../../ProductOfferSelector'

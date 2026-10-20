@@ -1,5 +1,5 @@
 import { Check, ChevronRight, CircleCheck, Headphones, Minus, PackageCheck, Plus, ShieldCheck, ShoppingCart, Zap } from 'lucide-react'
-import type { Product } from '../../../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../../../types/product'
 import { offerPeriodSubtitle, offerPeriodDetailNote } from '../../../../utils/offerPeriodDisplay'
 import { formatFileSize } from '../../../../utils/formatFileSize'
 import { isOfferSoldOut } from '../../ProductOfferSelector'
