@@ -3,13 +3,13 @@
 //
 // Thin Express adapters over applicationService. Merchant routes resolve the
 // caller's merchantId through the existing merchant ownership boundary
-// (getMyMerchant) — it is never read from the request body. Admin routes use
+// (getMerchantIdentity) — it is never read from the request body. Admin routes use
 // the authenticated admin userId (the mounted admin router already enforced
 // authenticate → active → admin → MFA).
 
 import { Request, Response, NextFunction } from 'express'
 import * as applicationService from './applicationService.js'
-import { getMyMerchant } from '../merchant/service.js'
+import { getMerchantIdentity } from '../merchant/identity.js'
 import type {
   ApproveCategoryApplicationInput,
   CreateCategoryApplicationInput,
@@ -20,7 +20,7 @@ import type {
 
 /** Ownership resolution: derive the active merchant id from the authenticated user. */
 async function resolveMerchantId(req: Request): Promise<number> {
-  const merchant = await getMyMerchant(req.user!.userId)
+  const merchant = await getMerchantIdentity(req.user!.userId)
   return merchant.id
 }
 

@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs'
 import { prisma } from '../../lib/prisma.js'
 import { HttpError, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { businessDayRange } from '../../lib/businessTime.js'
 
 // 防爆破：验证失败按用户计数，窗口内连错达到上限后拒绝继续尝试。
 // 单实例内存计数即可（当前部署形态）；多实例化时迁移到 Redis。
@@ -41,7 +42,7 @@ function assertNotLocked(userId: number) {
  * 高风险订单二次验证的触发判定（spec P3：首版仅金额维度）。
  * - 单笔金额 ≥ checkoutVerifyAmountThreshold（0 = 关闭）
  * - 当日已成交累计 + 本单 ≥ checkoutVerifyDailyThreshold（0 = 关闭）
- * 当日口径：服务器本地日界；退款单不计入（用户实际未支出）。
+ * 当日口径：上海自然日；退款单不计入（用户实际未支出）。
  * 并发下两笔订单可能都按"累计未超"放行——阈值是风控软措施，
  * 不是记账不变量，不为此加锁。
  */
@@ -54,13 +55,11 @@ export async function resolveVerificationRequirement(userId: number, price: numb
   if (amountThreshold > 0 && price >= amountThreshold) return true
 
   if (dailyThreshold > 0) {
-    const startOfDay = new Date()
-    startOfDay.setHours(0, 0, 0, 0)
     const spent = await prisma.order.aggregate({
       _sum: { price: true },
       where: {
         userId,
-        createdAt: { gte: startOfDay },
+        createdAt: businessDayRange(),
         status: { not: 'refunded' },
       },
     })

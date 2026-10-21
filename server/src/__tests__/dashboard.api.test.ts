@@ -1,3 +1,4 @@
+import { businessDateString, businessDayStartUtc } from '../lib/businessTime.js'
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import {
@@ -11,9 +12,7 @@ import {
 } from './helpers.js'
 
 function middayToday() {
-  const date = new Date()
-  date.setHours(12, 0, 0, 0)
-  return date
+  return new Date(businessDayStartUtc(businessDateString()).getTime() + 12 * 60 * 60 * 1000)
 }
 
 async function createMerchantOrder(input: {

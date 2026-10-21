@@ -2,12 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
-import {
-  __setFakaClientOverridesForTests,
-  onFakaOrderRefundedInTx,
-  processFakaRevokeTask,
-  periodFromFakaSku,
-} from '../lib/fakaBridge/index.js'
+import { periodFromFakaSku } from '../lib/fakaBridge/index.js'
+import { __setFakaClientOverridesForTests, onFakaOrderRefundedInTx, processFakaRevokeTask } from '../modules/fakaBridge/service.js'
 import { forceFakaBridgeRevoke } from '../modules/admin/service.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'

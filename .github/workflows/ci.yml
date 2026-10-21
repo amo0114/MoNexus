@@ -64,9 +64,11 @@ jobs:
           filters: |
             server:
               - 'server/**'
+              - 'scripts/check-runtime.mjs'
               - '.github/workflows/ci.yml'
             frontend:
               - 'src/**'
+              - 'scripts/check-runtime.mjs'
               - 'public/**'
               - 'index.html'
               - 'package.json'
@@ -94,6 +96,7 @@ jobs:
               - '.github/workflows/ci.yml'
             code:
               - 'server/**'
+              - 'scripts/check-runtime.mjs'
               - 'src/**'
               - 'public/**'
               - 'index.html'
@@ -637,12 +640,35 @@ jobs:
       - name: Validate deployment scripts and workflow safeguards
         run: npm run verify:compose-production-deploy
 
+  architecture:
+    name: Architecture boundaries and API contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install architecture parser dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Test architecture rules
+        run: npm run test:architecture
+
+      - name: Check module boundaries and API contract
+        run: npm run check:architecture
+
   ci-ok:
     # Single required status check for branch protection: succeeds when no
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract]
+    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract, architecture]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

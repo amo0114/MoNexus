@@ -148,7 +148,7 @@ describe('GET /api/admin/users search & pagination', () => {
 
     await api
       .get('/api/admin/users')
-      .query({ pageSize: 101 })
+      .query({ pageSize: 501 })
       .set(authHeader(accessToken))
       .expect(400)
 

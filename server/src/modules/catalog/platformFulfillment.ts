@@ -8,13 +8,11 @@ import {
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
 import { isFakaBridgeOffer } from '../../lib/fakaBridge/offerIntegration.js'
-import {
-  createOrderStatusEvent,
-  getProductFulfillmentMode,
-  transitionOrderStatus,
-} from '../orders/fulfillment.js'
+import { createOrderStatusEvent, transitionOrderStatus } from '../orders/fulfillment.js'
+import { getProductFulfillmentMode } from '../orders/statusPolicy.js'
 import { releaseHeldOrder } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
+import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 
 const EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE = '外部开通订单不能由平台人工替代交付'
 
@@ -51,15 +49,6 @@ async function assertPlatformOrder(orderId: number, tx: Prisma.TransactionClient
     throw badRequest(EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE)
   }
   return order
-}
-
-async function assertPlatformFile(tx: Prisma.TransactionClient, fileId: number) {
-  const file = await tx.deliveryFile.findFirst({
-    where: { id: fileId, merchantId: null },
-    select: { status: true },
-  })
-  if (!file) throw notFound('交付文件不存在')
-  if (file.status !== 'active') throw badRequest('交付文件已不可用，请重新上传')
 }
 
 export async function startPlatformFulfillment(adminUserId: number, orderId: number) {
@@ -112,7 +101,7 @@ export async function deliverPlatformOrder(
       throw badRequest('只有人工服务订单可由平台履约交付')
     }
     if (input.attachmentFileId != null) {
-      await assertPlatformFile(tx, input.attachmentFileId)
+      await assertOwnedActiveDeliveryFile(tx, { kind: 'admin' }, input.attachmentFileId)
     }
     const fields = parseStoredDeliveryFields(order.deliveryFieldsSnapshot)
     const hasStructured = input.structuredValues != null && Object.keys(input.structuredValues).length > 0

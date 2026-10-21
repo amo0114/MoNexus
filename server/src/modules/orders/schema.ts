@@ -1,10 +1,5 @@
 import { z } from 'zod'
-import {
-  FULFILLMENT_MODES,
-  ORDER_STATUSES,
-  ORDER_STATUS_ACTOR_ROLES,
-  normalizeOrderStatus,
-} from './fulfillment.js'
+import { FULFILLMENT_MODES, ORDER_STATUSES, ORDER_STATUS_ACTOR_ROLES, normalizeOrderStatus } from './statusPolicy.js'
 
 export const fulfillmentModeSchema = z.enum(FULFILLMENT_MODES)
 export const fulfillmentOrderStatusSchema = z.enum(ORDER_STATUSES)

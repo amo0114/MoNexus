@@ -1,23 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
-import { logger } from '../logger.js'
-import { prisma } from '../prisma.js'
-import { transitionOrderStatus } from '../../modules/orders/fulfillment.js'
-import { captureHeldOrder, releaseHeldOrder } from '../../modules/orders/accounting.js'
+import { logger } from '../../lib/logger.js'
+import { prisma } from '../../lib/prisma.js'
+import { transitionOrderStatus } from '../orders/fulfillment.js'
+import { captureHeldOrder, releaseHeldOrder } from '../orders/accounting.js'
 import {
   fakaProvisionTotal,
   fakaRevokePendingGauge,
   fakaTasksGauge,
-} from '../metrics.js'
+} from '../../lib/metrics.js'
 import {
   callFakaOrderPaid,
   callFakaOrderStatus,
   fakaRemoteOrderNoMatches,
   isFakaBridgeConfigured,
-} from './client.js'
-import { parseFakaExpiredAt } from './expiredAt.js'
-import { buildFakaDeliveryPayload, subscriptionFromPaidBody } from './subscriptionResult.js'
-import type { FakaSubscriptionResult } from './types.js'
+} from '../../lib/fakaBridge/client.js'
+import { parseFakaExpiredAt } from '../../lib/fakaBridge/expiredAt.js'
+import { buildFakaDeliveryPayload, subscriptionFromPaidBody } from '../../lib/fakaBridge/subscriptionResult.js'
+import type { FakaSubscriptionResult } from '../../lib/fakaBridge/types.js'
 import {
   classifyFakaRemoteStatus,
   FAKA_ERROR,
@@ -25,16 +25,16 @@ import {
   isFakaProvisionSuccessStatus,
   isFakaUncertainResult,
   type FakaErrorCode,
-} from './errors.js'
-import { applyRefundInventoryPolicy } from '../../modules/orders/refundInventory.js'
-import type { FakaBridgeClientOptions } from './client.js'
+} from '../../lib/fakaBridge/errors.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
+import type { FakaBridgeClientOptions } from '../../lib/fakaBridge/client.js'
 import {
   runFakaReconcileBatch,
   runFakaRevokeBatch,
   __setFakaLifecycleClientOverridesForTests,
 } from './lifecycle.js'
-import { prewarmFakaCapacityForSkus } from './capacity.js'
-import { readTaskScheduleUtc } from './scheduleUtc.js'
+import { prewarmFakaCapacityForSkus } from '../../lib/fakaBridge/capacity.js'
+import { readTaskScheduleUtc } from '../../lib/fakaBridge/scheduleUtc.js'
 
 /** Lease covers HTTP timeout + result write headroom. */
 const LEASE_MS = () => config.fakaBridge.timeoutMs + 20_000

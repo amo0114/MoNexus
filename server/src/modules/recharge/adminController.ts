@@ -1,5 +1,7 @@
 import type { NextFunction, Request, Response } from 'express'
-import * as adminService from './adminService.js'
+import * as adminQueries from './adminQueries.js'
+import * as adminPaymentOperations from './adminPaymentOperations.js'
+import * as pricePolicyAdmin from './pricePolicyAdmin.js'
 import type {
   PaymentDisputeStatus,
   PaymentEventStatus,
@@ -20,7 +22,7 @@ export async function listOrders(req: Request, res: Response, next: NextFunction
       userId?: number
       provider?: PaymentProviderName
     }
-    res.json(await adminService.adminListOrders(query))
+    res.json(await adminQueries.adminListOrders(query))
   } catch (err) {
     next(err)
   }
@@ -28,7 +30,7 @@ export async function listOrders(req: Request, res: Response, next: NextFunction
 
 export async function getOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminGetOrder(String(req.params.id)))
+    res.json(await adminQueries.adminGetOrder(String(req.params.id)))
   } catch (err) {
     next(err)
   }
@@ -46,7 +48,7 @@ export async function listRefunds(req: Request, res: Response, next: NextFunctio
       from?: string
       to?: string
     }
-    res.json(await adminService.adminListRefunds(query))
+    res.json(await adminQueries.adminListRefunds(query))
   } catch (err) {
     next(err)
   }
@@ -60,7 +62,7 @@ export async function listEvents(req: Request, res: Response, next: NextFunction
       status?: PaymentEventStatus
       provider?: PaymentProviderName
     }
-    res.json(await adminService.adminListEvents(query))
+    res.json(await adminQueries.adminListEvents(query))
   } catch (err) {
     next(err)
   }
@@ -68,7 +70,7 @@ export async function listEvents(req: Request, res: Response, next: NextFunction
 
 export async function retryEvent(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminRetryEvent(String(req.params.id), req.user!.userId))
+    res.json(await adminPaymentOperations.adminRetryEvent(String(req.params.id), req.user!.userId))
   } catch (err) {
     next(err)
   }
@@ -76,7 +78,7 @@ export async function retryEvent(req: Request, res: Response, next: NextFunction
 
 export async function reconcileOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminReconcileOrder(String(req.params.id), req.user!.userId))
+    res.json(await adminPaymentOperations.adminReconcileOrder(String(req.params.id), req.user!.userId))
   } catch (err) {
     next(err)
   }
@@ -84,7 +86,7 @@ export async function reconcileOrder(req: Request, res: Response, next: NextFunc
 
 export async function requestRefund(req: Request, res: Response, next: NextFunction) {
   try {
-    res.status(201).json(await adminService.adminRequestRefund(
+    res.status(201).json(await adminPaymentOperations.adminRequestRefund(
       String(req.params.id),
       req.user!.userId,
       typeof req.body?.reasonCode === 'string' ? req.body.reasonCode : undefined,
@@ -96,7 +98,7 @@ export async function requestRefund(req: Request, res: Response, next: NextFunct
 
 export async function confirmSandboxOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminConfirmSandboxOrder(
+    res.json(await adminPaymentOperations.adminConfirmSandboxOrder(
       String(req.params.id),
       req.user!.userId,
     ))
@@ -107,7 +109,7 @@ export async function confirmSandboxOrder(req: Request, res: Response, next: Nex
 
 export async function listReconRuns(_req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminListReconRuns())
+    res.json(await adminQueries.adminListReconRuns())
   } catch (err) {
     next(err)
   }
@@ -121,7 +123,7 @@ export async function createReconRun(req: Request, res: Response, next: NextFunc
       scopeType: ReconciliationScopeType
       scopeKey?: string
     }
-    res.status(201).json(await adminService.adminCreateReconRun({
+    res.status(201).json(await adminPaymentOperations.adminCreateReconRun({
       ...body,
       createdByUserId: req.user!.userId,
     }))
@@ -132,7 +134,7 @@ export async function createReconRun(req: Request, res: Response, next: NextFunc
 
 export async function rerunRecon(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminRerunRecon(String(req.params.id), req.user!.userId))
+    res.json(await adminPaymentOperations.adminRerunRecon(String(req.params.id), req.user!.userId))
   } catch (err) {
     next(err)
   }
@@ -145,7 +147,7 @@ export async function listDisputes(req: Request, res: Response, next: NextFuncti
       pageSize: number
       status?: PaymentDisputeStatus
     }
-    res.json(await adminService.adminListDisputes(query))
+    res.json(await adminQueries.adminListDisputes(query))
   } catch (err) {
     next(err)
   }
@@ -153,7 +155,7 @@ export async function listDisputes(req: Request, res: Response, next: NextFuncti
 
 export async function resolveDispute(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminResolveDispute(
+    res.json(await adminPaymentOperations.adminResolveDispute(
       String(req.params.id),
       req.body.outcome as 'won' | 'lost',
       req.user!.userId,
@@ -165,7 +167,7 @@ export async function resolveDispute(req: Request, res: Response, next: NextFunc
 
 export async function closeRecoveryCase(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminCloseRecoveryCase(
+    res.json(await adminPaymentOperations.adminCloseRecoveryCase(
       String(req.params.id),
       req.body.status as 'recovered' | 'written_off' | 'restored',
       req.user!.userId,
@@ -185,7 +187,7 @@ export async function listPricePolicies(req: Request, res: Response, next: NextF
       status?: RechargePricePolicyStatus
       adminSandbox?: 'true' | 'false'
     }
-    res.json(await adminService.adminListPricePolicies({
+    res.json(await pricePolicyAdmin.adminListPricePolicies({
       page: query.page,
       pageSize: query.pageSize,
       currency: query.currency,
@@ -199,7 +201,7 @@ export async function listPricePolicies(req: Request, res: Response, next: NextF
 
 export async function createPricePolicy(req: Request, res: Response, next: NextFunction) {
   try {
-    res.status(201).json(await adminService.adminCreatePricePolicy(req.body, req.user!.userId))
+    res.status(201).json(await pricePolicyAdmin.adminCreatePricePolicy(req.body, req.user!.userId))
   } catch (err) {
     next(err)
   }
@@ -207,7 +209,7 @@ export async function createPricePolicy(req: Request, res: Response, next: NextF
 
 export async function patchPricePolicy(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminPatchPricePolicy(String(req.params.id), req.body, req.user!.userId))
+    res.json(await pricePolicyAdmin.adminPatchPricePolicy(String(req.params.id), req.body, req.user!.userId))
   } catch (err) {
     next(err)
   }
@@ -215,7 +217,7 @@ export async function patchPricePolicy(req: Request, res: Response, next: NextFu
 
 export async function activatePricePolicy(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.adminActivatePricePolicy(String(req.params.id), req.user!.userId))
+    res.json(await pricePolicyAdmin.adminActivatePricePolicy(String(req.params.id), req.user!.userId))
   } catch (err) {
     next(err)
   }

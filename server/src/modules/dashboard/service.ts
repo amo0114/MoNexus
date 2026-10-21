@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
+import { addCalendarDays, businessDateString, businessDayStartUtc, businessMonthRange } from '../../lib/businessTime.js'
 import type {
   DashboardStatusBreakdown,
   DashboardSummary,
@@ -43,25 +44,12 @@ interface TopOfferRow {
   pointsRevenue: number | bigint | null
 }
 
-function startOfCurrentMonth() {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1)
-}
-
-function startOfNextMonth() {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth() + 1, 1)
-}
-
 function getRangeWindow(range: Range) {
-  const end = new Date()
-  end.setHours(0, 0, 0, 0)
-  end.setDate(end.getDate() + 1)
-
-  const start = new Date(end)
-  start.setDate(start.getDate() - RANGE_DAYS[range])
-
-  return { start, end }
+  const endDay = addCalendarDays(businessDateString(), 1)
+  return {
+    start: businessDayStartUtc(addCalendarDays(endDay, -RANGE_DAYS[range])),
+    end: businessDayStartUtc(endDay),
+  }
 }
 
 function toNumber(value: number | bigint | null | undefined) {
@@ -78,12 +66,11 @@ function logDuration(op: 'dashboard.summary' | 'dashboard.timeseries' | 'dashboa
 
 export async function getSummary(merchantId: number): Promise<DashboardSummary> {
   const startedAt = performance.now()
-  const monthStart = startOfCurrentMonth()
-  const nextMonthStart = startOfNextMonth()
+  const monthRange = businessMonthRange()
 
   const [monthOrderCount, monthRevenueResult, onSaleProductCount, pendingSettlementResult] = await Promise.all([
-    prisma.order.count({ where: { merchantId, createdAt: { gte: monthStart, lt: nextMonthStart } } }),
-    prisma.order.aggregate({ where: { merchantId, createdAt: { gte: monthStart, lt: nextMonthStart }, status: { not: 'refunded' } }, _sum: { price: true } }),
+    prisma.order.count({ where: { merchantId, createdAt: monthRange } }),
+    prisma.order.aggregate({ where: { merchantId, createdAt: monthRange, status: { not: 'refunded' } }, _sum: { price: true } }),
     prisma.product.count({ where: { merchantId, status: 'active' } }),
     prisma.settlement.aggregate({
       where: { merchantId, status: 'pending' },
@@ -104,7 +91,7 @@ export async function getSummary(merchantId: number): Promise<DashboardSummary> 
 async function getSeriesPoints(merchantId: number, start: Date, end: Date): Promise<DashboardSeriesPoint[]> {
   const rows = await prisma.$queryRaw<SeriesRow[]>`
     SELECT
-      to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS "date",
+      to_char(date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai'), 'YYYY-MM-DD') AS "date",
       COUNT(*)::int AS "orderCount",
       COALESCE(SUM("price"), 0)::int AS "pointsRevenue"
     FROM "Order"
@@ -112,8 +99,8 @@ async function getSeriesPoints(merchantId: number, start: Date, end: Date): Prom
       AND "createdAt" >= ${start}
       AND "createdAt" < ${end}
       AND "status" <> 'refunded'
-    GROUP BY date_trunc('day', "createdAt")
-    ORDER BY date_trunc('day', "createdAt") ASC
+    GROUP BY date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai')
+    ORDER BY date_trunc('day', "createdAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Shanghai') ASC
   `
 
   return rows.map(row => ({

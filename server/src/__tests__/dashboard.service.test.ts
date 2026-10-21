@@ -3,35 +3,25 @@ import { prisma } from '../lib/prisma.js'
 import { getSummary, getTimeseries } from '../modules/dashboard/service.js'
 import type { Range } from '../modules/dashboard/types.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
+import { addCalendarDays, businessDateString, businessDayStartUtc, businessMonthRange } from '../lib/businessTime.js'
 
 function middayToday() {
-  const date = new Date()
-  date.setHours(12, 0, 0, 0)
-  return date
+  return new Date(businessDayStartUtc(businessDateString()).getTime() + 12 * 60 * 60 * 1000)
 }
 
 function daysAgo(days: number) {
-  const date = middayToday()
-  date.setDate(date.getDate() - days)
-  return date
+  return new Date(businessDayStartUtc(addCalendarDays(businessDateString(), -days)).getTime() + 12 * 60 * 60 * 1000)
 }
 
 function lastMonthDate() {
-  const date = middayToday()
-  // Set the day before moving the month.  On month-end dates, directly
-  // changing July 31 to June would normalize the nonexistent June 31 back
-  // into July, making this fixture incorrectly count as current-month data.
-  date.setDate(1)
-  date.setMonth(date.getMonth() - 1)
-  return date
+  return new Date(businessMonthRange().gte.getTime() - 12 * 60 * 60 * 1000)
 }
 
-// getSummary 按服务端本地自然月 [当月1日00:00, 下月1日00:00) 统计（见
-// dashboard/service.ts 的 startOfCurrentMonth）。"本月订单"若用 daysAgo(1)/(2)
+// getSummary 按上海自然月 [当月1日00:00, 下月1日00:00) 统计。
+// "本月订单"若用 daysAgo(1)/(2)
 // 造数，每月 1–2 号会落进上月使计数归零；这里显式钉在当月窗口内。
 function thisMonthDate(hoursIntoMonth: number) {
-  const now = new Date()
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const monthStart = businessMonthRange().gte
   return new Date(monthStart.getTime() + hoursIntoMonth * 60 * 60 * 1000)
 }
 

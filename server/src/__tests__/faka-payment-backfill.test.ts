@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
-import { backfillFakaOrderPayment, listFakaPaymentBackfillCandidates } from '../lib/fakaBridge/paymentBackfill.js'
+import { backfillFakaOrderPayment, listFakaPaymentBackfillCandidates } from '../modules/fakaBridge/paymentBackfill.js'
 import { createTestMerchant, createTestUser } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 

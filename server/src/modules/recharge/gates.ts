@@ -1,6 +1,5 @@
 import { config } from '../../config/index.js'
 import {
-  accountSpendingRestricted,
   forbidden,
   paymentProviderUnavailable,
   rechargeCurrencyDisabled,
@@ -45,23 +44,23 @@ export async function assertRechargeNotRestricted(userId: number) {
   }
 }
 
-export async function assertSpendingNotRestricted(
-  userId: number,
-  db: { accountRestriction: { findFirst: typeof prisma.accountRestriction.findFirst } } = prisma,
-) {
-  const restriction = await db.accountRestriction.findFirst({
-    where: { userId, status: 'active', blocksPointSpending: true },
-    select: { id: true },
-  })
-  if (restriction) {
-    throw accountSpendingRestricted()
+export function isAdminSandboxMode(): boolean {
+  return config.recharge.mode === 'admin_sandbox'
+}
+
+export function assertAdminSandboxActor(role: string): void {
+  if (isAdminSandboxMode() && role !== 'admin') {
+    throw forbidden('管理员沙箱充值仅限管理员使用')
   }
 }
 
-export async function hasActiveSpendingRestriction(userId: number): Promise<boolean> {
-  const restriction = await prisma.accountRestriction.findFirst({
-    where: { userId, status: 'active', blocksPointSpending: true },
-    select: { id: true },
-  })
-  return restriction != null
+export function assertAdminSandboxSelection(input: {
+  currency: string
+  provider: string
+  paymentMethod: string
+}): void {
+  if (!isAdminSandboxMode()) return
+  if (input.currency !== 'CNY' || input.provider !== 'simulator' || input.paymentMethod !== 'card') {
+    throw paymentProviderUnavailable('管理员沙箱充值仅支持 CNY、Simulator 和卡支付')
+  }
 }
