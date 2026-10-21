@@ -26,7 +26,7 @@ import { Prisma } from '@prisma/client'
 import { HttpError, notFound } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
 import { creditAvailablePoints, debitAvailablePoints } from '../../points/checkedMutation.js'
-import { assertSpendingNotRestricted } from '../../recharge/gates.js'
+import { assertSpendingNotRestricted } from '../../points/spendingPolicy.js'
 
 /** 稳定 PointLog reason 模板（§7.3 / §7.4：charge 与 refund 均用固定文案，
  * 不允许审核长文本/内部 reason 进入 PointLog。CHK-SEC-003/004）。 */

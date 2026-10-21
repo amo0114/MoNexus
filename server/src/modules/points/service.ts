@@ -4,14 +4,7 @@ import { badRequest, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { applyTierBonus } from '../../lib/memberTier.js'
 import { creditAvailablePoints } from './checkedMutation.js'
-
-function getShanghaiDateString() {
-  const now = new Date()
-  const yyyy = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric' })
-  const mm = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', month: '2-digit' })
-  const dd = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', day: '2-digit' })
-  return `${yyyy}-${mm}-${dd}`
-}
+import { businessDateString as getShanghaiDateString } from '../../lib/businessTime.js'
 
 /**
  * 签到来源，仅用于统计，不参与幂等判定。

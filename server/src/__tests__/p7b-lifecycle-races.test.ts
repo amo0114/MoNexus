@@ -30,7 +30,7 @@ import {
 } from '../lib/mailer/smtp.js'
 import { createServer as createTcpServer } from 'node:net'
 import * as webhookConfigService from '../modules/merchant/webhookConfig.js'
-import { __setActiveConfigLockHooksForTests } from '../modules/merchant/webhookConfig.js'
+import { __setActiveConfigLockHooksForTests } from '../modules/orders/provisioningConfig.js'
 import { CaptureMailer } from '../lib/mailer/capture.js'
 import { __setMailerForTesting } from '../lib/mailer/index.js'
 import type { MailMessage } from '../lib/mailer/types.js'

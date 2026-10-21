@@ -24,7 +24,8 @@ import {
   recordProviderQuerySuccess,
 } from '../providers/circuitBreaker.js'
 import { config } from '../../../config/index.js'
-import { applyTerminalPaymentState, expireOrder, recoverProviderCreate } from '../../recharge/service.js'
+import { applyTerminalPaymentState } from '../../recharge/paymentCompletion.js'
+import { expireOrder, recoverProviderCreate } from '../../recharge/orderLifecycle.js'
 
 const TICK_MS = 2_000
 const PAID_NOT_CREDITED_MS = 30_000

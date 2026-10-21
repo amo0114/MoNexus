@@ -9,7 +9,7 @@ import {
   revokeAssuranceGrantSchema,
 } from './schema.js'
 import * as service from './service.js'
-import { getMyMerchant } from '../../merchant/service.js'
+import { getMerchantIdentity } from '../../merchant/identity.js'
 
 export const merchantAssuranceRouter = Router()
 
@@ -18,7 +18,7 @@ merchantAssuranceRouter.get(
   validate({ params: idParamSchema }),
   async (req, res, next) => {
     try {
-      const merchant = await getMyMerchant(req.user!.userId)
+      const merchant = await getMerchantIdentity(req.user!.userId)
       res.json(await service.getMerchantAssurance(merchant.id, req.params.id as unknown as number))
     } catch (err) {
       next(err)
@@ -31,7 +31,7 @@ merchantAssuranceRouter.post(
   validate({ params: idParamSchema, body: createAssuranceApplicationSchema }),
   async (req, res, next) => {
     try {
-      const merchant = await getMyMerchant(req.user!.userId)
+      const merchant = await getMerchantIdentity(req.user!.userId)
       res.status(201).json(await service.applyForAssurance(merchant.id, req.params.id as unknown as number, req.body.reason))
     } catch (err) {
       next(err)
@@ -44,7 +44,7 @@ merchantAssuranceRouter.post(
   validate({ params: idParamSchema }),
   async (req, res, next) => {
     try {
-      const merchant = await getMyMerchant(req.user!.userId)
+      const merchant = await getMerchantIdentity(req.user!.userId)
       res.json(await service.withdrawAssuranceApplication(merchant.id, req.params.id as unknown as number))
     } catch (err) {
       next(err)

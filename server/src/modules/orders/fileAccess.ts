@@ -5,7 +5,7 @@ import { config } from '../../config/index.js'
 import { notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { getDeliveryStorageForProvider } from '../../lib/storage/delivery.js'
-import { getProductFulfillmentMode, normalizeOrderStatus } from './fulfillment.js'
+import { getProductFulfillmentMode, normalizeOrderStatus } from './statusPolicy.js'
 
 /**
  * P5 T5：受控文件下载的唯一发放入口。

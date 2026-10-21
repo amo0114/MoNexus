@@ -9,6 +9,8 @@
   },
   "scripts": {
     "check:runtime": "node scripts/check-runtime.mjs",
+    "check:architecture": "node scripts/check-architecture.mjs",
+    "test:architecture": "node --test scripts/architecture-rules.test.mjs",
     "check:package-versions": "node scripts/check-package-versions.mjs",
     "generate:build-info": "node scripts/generate-build-info.mjs --output server/build-info.json --dev",
     "check:nginx": "bash scripts/check-nginx-config.sh",

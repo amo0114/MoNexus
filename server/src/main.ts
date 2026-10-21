@@ -11,7 +11,7 @@ import { startSubscriptionRemindCron, stopSubscriptionRemindCron } from './lib/s
 import { startSlaRemindCron, stopSlaRemindCron } from './lib/slaRemind.js'
 import { startBookingRemindCron, stopBookingRemindCron } from './lib/bookingRemind.js'
 import { startProvisionCron, stopProvisionCron } from './modules/orders/provisionCron.js'
-import { startFakaBridgeCron, stopFakaBridgeCron } from './lib/fakaBridge/index.js'
+import { startFakaBridgeCron, stopFakaBridgeCron } from './modules/fakaBridge/service.js'
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
 import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
 import { startLegalRetentionCron, stopLegalRetentionCron } from './modules/legal/cron.js'

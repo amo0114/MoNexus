@@ -4,6 +4,44 @@ Handles registration, password login, administrator TOTP MFA, refresh-token
 rotation, device-session management, password reset/change, email verification,
 and `/me`.
 
+## Internal Responsibilities
+
+- `service.ts` coordinates password pre-authentication, refresh, and profile.
+  It keeps the existing registration, challenge, MFA, password,
+  email-verification, password-cost, and revoke-all exports for compatibility
+  with callers.
+- `registrationService.ts` owns registration switches, public availability,
+  and the complete registration flow: protection, consent evidence, invite-code
+  claims, account/reward creation, and initial session issuance. Both the route
+  gate and the service entry enforce the same registration switch.
+- `passwordService.ts` owns password-reset delivery/activation, token claims,
+  and password changes, including MFA invalidation and session revocation.
+- `emailVerificationService.ts` owns verification-email issuance and authenticated
+  token claims, including the associated reward and abuse-event updates.
+- `authProtection.ts` shares abuse-limit error mapping and human-verification
+  enforcement across registration, password recovery, and verification mail.
+  It also issues the shared ALTCHA challenges for registration and password
+  recovery; challenge issuance is independent of the registration switch.
+- `credentialPrimitives.ts` shares the bcrypt cost, email normalization, and
+  one-time email-token generation/hashing.
+- `mfaService.ts` coordinates admin enrollment, factor verification, MFA session
+  issuance, and the offline break-glass reset. Controllers and the offline CLI
+  call it directly.
+- `mfa.ts` supplies challenge, TOTP, encryption, and recovery-code primitives.
+- `sessionIssuance.ts` builds the shared auth response, signs access tokens, and
+  creates hashed refresh credentials for registration, login, refresh, and MFA.
+- `sessionService.ts` owns user-scoped session locks, refresh records, family
+  revocation, and revoke-all auditing.
+
+Implementation modules do not import the `service.ts` facade; the architecture
+check enforces this dependency direction. Controllers call registration, MFA,
+password, email-verification, and session services directly. Extracted flows
+retain their complete transactions: credential claims, account changes, session
+revocation/creation, rewards, and auditing keep their original transaction and
+user lock boundaries. Password-reset SMTP delivery stays outside the activation
+transaction; verification-email delivery keeps its existing issuance-before-send
+behavior.
+
 ## Endpoint Contract
 
 | Method | Path | Auth | Notes |

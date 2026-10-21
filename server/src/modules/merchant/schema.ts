@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { markNotWritableFields } from '../../middlewares/validate.js'
-import { ORDER_STATUSES } from '../orders/fulfillment.js'
+import { ORDER_STATUSES } from '../orders/statusPolicy.js'
 import {
   productDescriptionSchema,
   productIconSchema,

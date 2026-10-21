@@ -4,25 +4,25 @@
  * revoke is scheduled in-tx, executed async by worker/cron.
  */
 import type { FakaBridgeTask, Prisma } from '@prisma/client'
-import { prisma } from '../prisma.js'
-import { logger } from '../logger.js'
+import { prisma } from '../../lib/prisma.js'
+import { logger } from '../../lib/logger.js'
 import {
   callFakaOrderRevoke,
   callFakaOrderStatus,
   fakaRemoteOrderNoMatches,
   isFakaBridgeConfigured,
   type FakaBridgeClientOptions,
-} from './client.js'
-import { classifyFakaRemoteStatus } from './errors.js'
-import { fakaReconcileTotal, fakaRevokeTotal } from '../metrics.js'
-import { transitionOrderStatus } from '../../modules/orders/fulfillment.js'
-import { captureHeldOrder, releaseHeldOrder } from '../../modules/orders/accounting.js'
-import { applyRefundInventoryPolicy } from '../../modules/orders/refundInventory.js'
+} from '../../lib/fakaBridge/client.js'
+import { classifyFakaRemoteStatus } from '../../lib/fakaBridge/errors.js'
+import { fakaReconcileTotal, fakaRevokeTotal } from '../../lib/metrics.js'
+import { transitionOrderStatus } from '../orders/fulfillment.js'
+import { captureHeldOrder, releaseHeldOrder } from '../orders/accounting.js'
+import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { config } from '../../config/index.js'
-import { isLeaseExpiredUtc, readTaskScheduleUtc } from './scheduleUtc.js'
-import { parseFakaExpiredAt } from './expiredAt.js'
-import { buildFakaDeliveryPayload, subscriptionFromPaidBody } from './subscriptionResult.js'
-import type { FakaSubscriptionResult } from './types.js'
+import { isLeaseExpiredUtc, readTaskScheduleUtc } from '../../lib/fakaBridge/scheduleUtc.js'
+import { parseFakaExpiredAt } from '../../lib/fakaBridge/expiredAt.js'
+import { buildFakaDeliveryPayload, subscriptionFromPaidBody } from '../../lib/fakaBridge/subscriptionResult.js'
+import type { FakaSubscriptionResult } from '../../lib/fakaBridge/types.js'
 
 type Tx = Prisma.TransactionClient
 

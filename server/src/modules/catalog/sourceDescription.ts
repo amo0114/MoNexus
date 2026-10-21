@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
-import { lockProductRow } from '../admin/productLifecycle.js'
+import { lockProductRow } from './productLock.js'
 import {
   fetchNormalizedFakaSource,
   type NormalizedFakaSource,

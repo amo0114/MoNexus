@@ -1,10 +1,22 @@
+import * as fakaSync from '../catalog/fakaSync.js'
+import * as productLifecycle from './productLifecycle.js'
+import * as auditQueries from './auditQueries.js'
+import * as orderAdmin from './orderAdmin.js'
+import * as userAdmin from './userAdmin.js'
+import * as fakaCatalogAdmin from './fakaCatalogAdmin.js'
+import * as inventoryAdmin from './inventoryAdmin.js'
+import * as productAdmin from './productAdmin.js'
 import { Request, Response, NextFunction } from 'express'
+import * as merchantAdmin from './merchantAdmin.js'
+import * as settlementAdmin from './settlementAdmin.js'
+import * as deliveryFileAdmin from './deliveryFileAdmin.js'
+import * as fakaTaskAdmin from './fakaTaskAdmin.js'
 import * as adminService from './service.js'
 import * as offerAdmin from './offerAdmin.js'
 import * as mailOperations from './mailOperations.js'
 import * as reviewService from '../reviews/service.js'
 import type {
-  ListAdminAuditQuery, ListAdminProductsQuery, ListAnnouncementsQuery, ListOrdersQuery, ListPointLogsQuery, ListUsersQuery,
+  ListAdminAuditQuery, ListAdminProductsQuery, ListOrdersQuery, ListPointLogsQuery, ListUsersQuery,
   ListDeliveryFilesQuery, ListFileGrantsQuery, OfferReportQuery,
   MailDeliveryTestInput,
 } from './schema.js'
@@ -15,7 +27,7 @@ export async function stats(_req: Request, res: Response, next: NextFunction) {
 
 export async function users(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.listUsers(req.query as unknown as ListUsersQuery))
+    res.json(await userAdmin.listUsers(req.query as unknown as ListUsersQuery))
   } catch (err) { next(err) }
 }
 
@@ -23,7 +35,7 @@ export async function adjustPoints(req: Request, res: Response, next: NextFuncti
   try {
     const targetId = req.params.id as unknown as number
     const { type, amount, reason } = req.body
-    const result = await adminService.adjustUserPoints(req.user!.userId, targetId, type, amount, reason)
+    const result = await userAdmin.adjustUserPoints(req.user!.userId, targetId, type, amount, reason)
     res.json(result)
   } catch (err) { next(err) }
 }
@@ -31,14 +43,14 @@ export async function adjustPoints(req: Request, res: Response, next: NextFuncti
 export async function banUser(req: Request, res: Response, next: NextFunction) {
   try {
     const targetId = req.params.id as unknown as number
-    res.json(await adminService.banUser(req.user!.userId, targetId, req.body.reason))
+    res.json(await userAdmin.banUser(req.user!.userId, targetId, req.body.reason))
   } catch (err) { next(err) }
 }
 
 export async function unbanUser(req: Request, res: Response, next: NextFunction) {
   try {
     const targetId = req.params.id as unknown as number
-    res.json(await adminService.unbanUser(req.user!.userId, targetId))
+    res.json(await userAdmin.unbanUser(req.user!.userId, targetId))
   } catch (err) { next(err) }
 }
 
@@ -61,14 +73,14 @@ export async function createProduct(req: Request, res: Response, next: NextFunct
       res.status(201).json(await createProductFromV2({ kind: 'admin', adminUserId: req.user!.userId }, req.body))
       return
     }
-    res.status(201).json(await adminService.createProduct(req.user!.userId, req.body))
+    res.status(201).json(await productAdmin.createProduct(req.user!.userId, req.body))
   } catch (err) { next(err) }
 }
 
 export async function updateProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as unknown as number
-    res.json(await adminService.updateProduct(req.user!.userId, id, req.body))
+    res.json(await productAdmin.updateProduct(req.user!.userId, id, req.body))
   } catch (err) { next(err) }
 }
 
@@ -130,7 +142,7 @@ export async function createPlatformOffer(req: Request, res: Response, next: Nex
 export async function productReadiness(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    const result = await adminService.getProductReadiness(productId)
+    const result = await productAdmin.getProductReadiness(productId)
     res.json({
       ready: result.ready,
       productId,
@@ -141,14 +153,14 @@ export async function productReadiness(req: Request, res: Response, next: NextFu
 
 export async function publishProduct(req: Request, res: Response, next: NextFunction) {
   try {
-    const outcome = await adminService.publishProduct(req.params.id as unknown as number)
+    const outcome = await productAdmin.publishProduct(req.params.id as unknown as number)
     res.json({ id: outcome.product.id, status: outcome.product.status, publishedAt: outcome.product.publishedAt })
   } catch (err) { next(err) }
 }
 
 export async function unpublishProduct(req: Request, res: Response, next: NextFunction) {
   try {
-    const outcome = await adminService.unpublishProduct(req.params.id as unknown as number)
+    const outcome = await productAdmin.unpublishProduct(req.params.id as unknown as number)
     res.json({ id: outcome.product.id, status: outcome.product.status, publishedAt: outcome.product.publishedAt })
   } catch (err) { next(err) }
 }
@@ -156,7 +168,7 @@ export async function unpublishProduct(req: Request, res: Response, next: NextFu
 export async function importInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    const result = await adminService.importInventory(productId, req.body, req.user!.userId)
+    const result = await inventoryAdmin.importInventory(productId, req.body, req.user!.userId)
     res.json(result)
   } catch (err) { next(err) }
 }
@@ -165,41 +177,41 @@ export async function importInventory(req: Request, res: Response, next: NextFun
 export async function previewInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    res.json(await adminService.previewInventory(productId, req.body))
+    res.json(await inventoryAdmin.previewInventory(productId, req.body))
   } catch (err) { next(err) }
 }
 
 export async function previewOfferInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await adminService.previewOfferInventory(id, offerId, req.body))
+    res.json(await inventoryAdmin.previewOfferInventory(id, offerId, req.body))
   } catch (err) { next(err) }
 }
 
 export async function importOfferInventory(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await adminService.importOfferInventory(id, offerId, req.body, req.user!.userId))
+    res.json(await inventoryAdmin.importOfferInventory(id, offerId, req.body, req.user!.userId))
   } catch (err) { next(err) }
 }
 
 export async function orders(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.listAllOrders(req.query as unknown as ListOrdersQuery))
+    res.json(await orderAdmin.listAllOrders(req.query as unknown as ListOrdersQuery))
   } catch (err) { next(err) }
 }
 
 export async function orderDetail(req: Request, res: Response, next: NextFunction) {
   try {
     const id = req.params.id as unknown as number
-    res.json(await adminService.getOrderDetail(id))
+    res.json(await orderAdmin.getOrderDetail(id))
   } catch (err) { next(err) }
 }
 
 export async function listPointLogs(req: Request, res: Response, next: NextFunction) {
   try {
     const query = req.query as unknown as ListPointLogsQuery
-    res.json(await adminService.listPointLogs(query))
+    res.json(await auditQueries.listPointLogs(query))
   } catch (err) { next(err) }
 }
 
@@ -208,26 +220,26 @@ export async function listPointLogs(req: Request, res: Response, next: NextFunct
  * Kept for backward compatibility. Use listPointLogs instead.
  */
 export async function logs(_req: Request, res: Response, next: NextFunction) {
-  try { res.json(await adminService.listLogs()) } catch (err) { next(err) }
+  try { res.json(await auditQueries.listLogs()) } catch (err) { next(err) }
 }
 
 export async function audit(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.listAdminLogs(req.query as unknown as ListAdminAuditQuery))
+    res.json(await auditQueries.listAdminLogs(req.query as unknown as ListAdminAuditQuery))
   } catch (err) { next(err) }
 }
 
 export async function products(req: Request, res: Response, next: NextFunction) {
   try {
     const query = req.query as unknown as ListAdminProductsQuery
-    res.json(await adminService.listAdminProducts(query))
+    res.json(await productAdmin.listAdminProducts(query))
   } catch (err) { next(err) }
 }
 
 export async function archiveProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    res.json(await adminService.archiveAdminProduct(req.user!.userId, productId, {
+    res.json(await productLifecycle.archiveAdminProduct(req.user!.userId, productId, {
       reason: req.body?.reason,
     }))
   } catch (err) { next(err) }
@@ -236,21 +248,21 @@ export async function archiveProduct(req: Request, res: Response, next: NextFunc
 export async function restoreProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    res.json(await adminService.restoreAdminProduct(req.user!.userId, productId))
+    res.json(await productLifecycle.restoreAdminProduct(req.user!.userId, productId))
   } catch (err) { next(err) }
 }
 
 export async function purgeProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    res.json(await adminService.purgeAdminProduct(req.user!.userId, productId))
+    res.json(await productLifecycle.purgeAdminProduct(req.user!.userId, productId))
   } catch (err) { next(err) }
 }
 
 export async function deleteProduct(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    res.json(await adminService.deleteAdminProduct(req.user!.userId, productId))
+    res.json(await productAdmin.deleteAdminProduct(req.user!.userId, productId))
   } catch (err) {
     next(err)
   }
@@ -287,35 +299,35 @@ export async function rejectPlatformOrder(req: Request, res: Response, next: Nex
 export async function patchOffer(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await adminService.patchAdminOffer(req.user!.userId, id, offerId, req.body))
+    res.json(await offerAdmin.patchAdminOffer(req.user!.userId, id, offerId, req.body))
   } catch (err) { next(err) }
 }
 
 export async function archiveOffer(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await adminService.archiveAdminOffer(req.user!.userId, id, offerId))
+    res.json(await offerAdmin.archiveAdminOffer(req.user!.userId, id, offerId))
   } catch (err) { next(err) }
 }
 
 export async function restoreOffer(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await adminService.restoreAdminOffer(req.user!.userId, id, offerId))
+    res.json(await offerAdmin.restoreAdminOffer(req.user!.userId, id, offerId))
   } catch (err) { next(err) }
 }
 
 export async function makeDefaultOffer(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await adminService.makeDefaultAdminOffer(req.user!.userId, id, offerId))
+    res.json(await offerAdmin.makeDefaultAdminOffer(req.user!.userId, id, offerId))
   } catch (err) { next(err) }
 }
 
 export async function previewRebindOfferSku(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await adminService.previewRebindAdminOfferSku(id, offerId, req.body.sku))
+    res.json(await offerAdmin.previewRebindAdminOfferSku(id, offerId, req.body.sku))
   } catch (err) { next(err) }
 }
 
@@ -326,7 +338,7 @@ export async function rebindOfferSku(req: Request, res: Response, next: NextFunc
       res.status(400).json({ error: { code: 'BAD_REQUEST', message: '重绑 SKU 需要 sourceHash' } })
       return
     }
-    res.json(await adminService.rebindAdminOfferSku(req.user!.userId, id, offerId, {
+    res.json(await offerAdmin.rebindAdminOfferSku(req.user!.userId, id, offerId, {
       sku: req.body.sku,
       sourceHash: req.body.sourceHash,
     }))
@@ -336,14 +348,14 @@ export async function rebindOfferSku(req: Request, res: Response, next: NextFunc
 export async function previewFakaSync(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    res.json(await adminService.previewAdminFakaSync(productId))
+    res.json(await fakaSync.previewAdminFakaSync(productId))
   } catch (err) { next(err) }
 }
 
 export async function confirmFakaSync(req: Request, res: Response, next: NextFunction) {
   try {
     const productId = req.params.id as unknown as number
-    res.json(await adminService.confirmAdminFakaSync(
+    res.json(await fakaSync.confirmAdminFakaSync(
       req.user!.userId,
       productId,
       req.body,
@@ -356,7 +368,7 @@ export async function setFakaCapacity(req: Request, res: Response, next: NextFun
   try {
     const productId = req.params.id as unknown as number
     res.json(
-      await adminService.setAdminFakaCapacity(req.user!.userId, productId, {
+      await fakaCatalogAdmin.setAdminFakaCapacity(req.user!.userId, productId, {
         offerId: req.body.offerId,
         capacityLimit: req.body.capacityLimit,
       })
@@ -368,7 +380,7 @@ export async function setFakaCapacity(req: Request, res: Response, next: NextFun
 
 export async function fakaCatalog(_req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.listAdminFakaCatalog())
+    res.json(await fakaCatalogAdmin.listAdminFakaCatalog())
   } catch (err) {
     next(err)
   }
@@ -376,7 +388,7 @@ export async function fakaCatalog(_req: Request, res: Response, next: NextFuncti
 
 export async function importFakaPlan(req: Request, res: Response, next: NextFunction) {
   try {
-    const result = await adminService.importAdminFakaPlan(
+    const result = await fakaCatalogAdmin.importAdminFakaPlan(
       req.user!.userId,
       req.body,
       req.headers['idempotency-key'] as string | undefined,
@@ -389,7 +401,7 @@ export async function importFakaPlan(req: Request, res: Response, next: NextFunc
 
 export async function previewFakaPlan(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.previewAdminFakaPlan(req.body))
+    res.json(await fakaCatalogAdmin.previewAdminFakaPlan(req.body))
   } catch (err) {
     next(err)
   }
@@ -399,7 +411,7 @@ export async function addFakaOffers(req: Request, res: Response, next: NextFunct
   try {
     const productId = req.params.id as unknown as number
     res.status(201).json(
-      await adminService.addAdminFakaOffers(req.user!.userId, productId, {
+      await fakaCatalogAdmin.addAdminFakaOffers(req.user!.userId, productId, {
         offers: req.body.offers,
       })
     )
@@ -410,7 +422,7 @@ export async function addFakaOffers(req: Request, res: Response, next: NextFunct
 
 export async function listFakaTasks(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.listFakaBridgeTasks(req.query as any))
+    res.json(await fakaTaskAdmin.listFakaBridgeTasks(req.query as any))
   } catch (err) {
     next(err)
   }
@@ -418,7 +430,7 @@ export async function listFakaTasks(req: Request, res: Response, next: NextFunct
 
 export async function fakaTaskStats(_req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.getFakaBridgeTaskStats())
+    res.json(await fakaTaskAdmin.getFakaBridgeTaskStats())
   } catch (err) {
     next(err)
   }
@@ -427,7 +439,7 @@ export async function fakaTaskStats(_req: Request, res: Response, next: NextFunc
 export async function retryFakaTask(req: Request, res: Response, next: NextFunction) {
   try {
     const taskId = req.params.id as unknown as number
-    res.json(await adminService.retryFakaBridgeTask(req.user!.userId, taskId))
+    res.json(await fakaTaskAdmin.retryFakaBridgeTask(req.user!.userId, taskId))
   } catch (err) {
     next(err)
   }
@@ -436,7 +448,7 @@ export async function retryFakaTask(req: Request, res: Response, next: NextFunct
 export async function forceFakaRevoke(req: Request, res: Response, next: NextFunction) {
   try {
     const taskId = req.params.id as unknown as number
-    res.json(await adminService.forceFakaBridgeRevoke(req.user!.userId, taskId))
+    res.json(await fakaTaskAdmin.forceFakaBridgeRevoke(req.user!.userId, taskId))
   } catch (err) {
     next(err)
   }
@@ -447,43 +459,43 @@ export async function forceFakaRevoke(req: Request, res: Response, next: NextFun
 export async function listMerchants(req: Request, res: Response, next: NextFunction) {
   try {
     const { status, q, page, pageSize } = req.query as Record<string, string>
-    res.json(await adminService.listMerchants(status, q, Number(page) || 1, Number(pageSize) || 20))
+    res.json(await merchantAdmin.listMerchants(status, q, Number(page) || 1, Number(pageSize) || 20))
   } catch (err) { next(err) }
 }
 
 export async function merchantDetail(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.getMerchantDetail(req.params.id as unknown as number))
+    res.json(await merchantAdmin.getMerchantDetail(req.params.id as unknown as number))
   } catch (err) { next(err) }
 }
 
 export async function approveMerchant(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.approveMerchant(req.user!.userId, req.params.id as unknown as number))
+    res.json(await merchantAdmin.approveMerchant(req.user!.userId, req.params.id as unknown as number))
   } catch (err) { next(err) }
 }
 
 export async function rejectMerchant(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.rejectMerchant(req.user!.userId, req.params.id as unknown as number, req.body.reason))
+    res.json(await merchantAdmin.rejectMerchant(req.user!.userId, req.params.id as unknown as number, req.body.reason))
   } catch (err) { next(err) }
 }
 
 export async function suspendMerchant(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.suspendMerchant(req.user!.userId, req.params.id as unknown as number))
+    res.json(await merchantAdmin.suspendMerchant(req.user!.userId, req.params.id as unknown as number))
   } catch (err) { next(err) }
 }
 
 export async function setMerchantAgentPilot(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.setMerchantAgentPilot(req.user!.userId, req.params.id as unknown as number, req.body.enabled))
+    res.json(await merchantAdmin.setMerchantAgentPilot(req.user!.userId, req.params.id as unknown as number, req.body.enabled))
   } catch (err) { next(err) }
 }
 
 export async function updateCommission(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.updateCommission(req.user!.userId, req.params.id as unknown as number, req.body.commissionRate))
+    res.json(await merchantAdmin.updateCommission(req.user!.userId, req.params.id as unknown as number, req.body.commissionRate))
   } catch (err) { next(err) }
 }
 
@@ -508,13 +520,13 @@ export async function removeReview(req: Request, res: Response, next: NextFuncti
 export async function listSettlements(req: Request, res: Response, next: NextFunction) {
   try {
     const { status, page, pageSize } = req.query as Record<string, string>
-    res.json(await adminService.listAllSettlements(status, Number(page) || 1, Number(pageSize) || 20))
+    res.json(await settlementAdmin.listAllSettlements(status, Number(page) || 1, Number(pageSize) || 20))
   } catch (err) { next(err) }
 }
 
 export async function batchSettle(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.batchSettle(req.user!.userId, req.body.settlementIds))
+    res.json(await settlementAdmin.batchSettle(req.user!.userId, req.body.settlementIds))
   } catch (err) { next(err) }
 }
 
@@ -523,42 +535,14 @@ export async function batchSettle(req: Request, res: Response, next: NextFunctio
 export async function resolveOrder(req: Request, res: Response, next: NextFunction) {
   try {
     const orderId = req.params.id as unknown as number
-    res.json(await adminService.resolveOrder(req.user!.userId, orderId, req.body))
-  } catch (err) { next(err) }
-}
-
-// ---- Announcements ----
-
-export async function listAnnouncementsRoute(req: Request, res: Response, next: NextFunction) {
-  try {
-    res.json(await adminService.listAnnouncements(req.query as unknown as ListAnnouncementsQuery))
-  } catch (err) { next(err) }
-}
-
-export async function createAnnouncementRoute(req: Request, res: Response, next: NextFunction) {
-  try {
-    res.status(201).json(await adminService.createAnnouncement(req.user!.userId, req.body))
-  } catch (err) { next(err) }
-}
-
-export async function updateAnnouncementRoute(req: Request, res: Response, next: NextFunction) {
-  try {
-    const id = req.params.id as unknown as number
-    res.json(await adminService.updateAnnouncement(req.user!.userId, id, req.body))
-  } catch (err) { next(err) }
-}
-
-export async function deleteAnnouncementRoute(req: Request, res: Response, next: NextFunction) {
-  try {
-    const id = req.params.id as unknown as number
-    res.json(await adminService.deleteAnnouncement(req.user!.userId, id))
+    res.json(await orderAdmin.resolveOrder(req.user!.userId, orderId, req.body))
   } catch (err) { next(err) }
 }
 
 // P5：吊销交付文件。
 export async function revokeDeliveryFile(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.revokeDeliveryFile(
+    res.json(await deliveryFileAdmin.revokeDeliveryFile(
       req.user!.userId,
       req.params.id as unknown as number,
       (req.body as { reason?: string }).reason,
@@ -570,21 +554,21 @@ export async function revokeDeliveryFile(req: Request, res: Response, next: Next
 
 export async function listDeliveryFiles(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminService.listDeliveryFiles(req.query as unknown as ListDeliveryFilesQuery))
+    res.json(await deliveryFileAdmin.listDeliveryFiles(req.query as unknown as ListDeliveryFilesQuery))
   } catch (err) { next(err) }
 }
 
 export async function deliveryFileGrants(req: Request, res: Response, next: NextFunction) {
   try {
     const fileId = req.params.id as unknown as number
-    res.json(await adminService.listDeliveryFileGrants(fileId, req.query as unknown as ListFileGrantsQuery))
+    res.json(await deliveryFileAdmin.listDeliveryFileGrants(fileId, req.query as unknown as ListFileGrantsQuery))
   } catch (err) { next(err) }
 }
 
 export async function offerReport(req: Request, res: Response, next: NextFunction) {
   try {
     const { range } = req.query as unknown as OfferReportQuery
-    res.json(await adminService.getOfferReport(range))
+    res.json(await auditQueries.getOfferReport(range))
   } catch (err) { next(err) }
 }
 
