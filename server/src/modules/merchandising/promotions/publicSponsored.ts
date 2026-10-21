@@ -101,7 +101,8 @@ export function computeSponsoredCacheKey(
  * categoryCode 过滤商品的 category.code）；Merchant.status=active。返回后按 bucket
  * 轮换 key 排序取 limit。命中 60s 缓存直接返回。
  */
-async function filterSponsoredByAudience(
+/** 导出供测试：这是推广入口唯一连接访问规则的接点，需要能直接驱动它。 */
+export async function filterSponsoredByAudience(
   items: SponsoredShelfItem[],
   audience: ProductAudience,
   db: Db,
@@ -116,6 +117,8 @@ async function filterSponsoredByAudience(
       visibility: true,
       merchantId: true,
       merchant: { select: { status: true } },
+      // SPEC-CATALOG-VIS-001 §3.3：推广卡片同样受分类可见性约束。
+      category: { select: { guestVisibility: true } },
     },
   })
   const visible = new Set(

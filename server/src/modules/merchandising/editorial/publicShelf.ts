@@ -33,6 +33,9 @@ export async function listEditorialShelf(
           visibility: true,
           merchantId: true,
           merchant: { select: { status: true } },
+          // SPEC-CATALOG-VIS-001 §3.3：访问判定需要分类可见性，
+          // 缺字段会让 PublicProductAccessRow 类型检查失败（不默认公开）。
+          category: { select: { guestVisibility: true } },
         },
       },
     },

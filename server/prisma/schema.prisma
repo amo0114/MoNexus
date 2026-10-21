@@ -1355,6 +1355,10 @@ model ProductCategory {
   defaultCoverUrl String? // platform public asset only
   sortOrder       Int      @default(0)
   status          String   @default("active") // active | inactive; PostgreSQL CHECK constrained
+  // SPEC-CATALOG-VIS-001 §3.1：分类级游客可见性。默认 public 表示「沿用原行为」，
+  // 因此本字段上线不改变任何既有商品对外可见性；管理员按实际敏感分类显式设
+  // members_only 收紧。PostgreSQL CHECK constrained。
+  guestVisibility String   @default("public") // public | members_only
   createdByUserId Int
   updatedByUserId Int
   createdAt       DateTime @default(now())

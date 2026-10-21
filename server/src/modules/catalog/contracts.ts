@@ -10,6 +10,7 @@ import type {
   CategoryCode,
   CategoryStatus,
 } from './constants.js'
+import type { CategoryGuestVisibility } from '../products/visibility.js'
 
 /** Public product category projection (spec §7.4). */
 export interface CategoryDto {
@@ -33,6 +34,8 @@ export interface CategoryAdminDto extends CategoryRegistryItem {
   description: string | null
   defaultCoverUrl: string | null
   status: CategoryStatus
+  /** SPEC-CATALOG-VIS-001 §3.1：分类级游客可见性，管理员可设置。 */
+  guestVisibility: CategoryGuestVisibility
   createdByUserId: number
   updatedByUserId: number
   createdAt: string
