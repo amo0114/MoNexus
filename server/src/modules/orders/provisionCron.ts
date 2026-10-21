@@ -13,7 +13,8 @@ import {
   signWebhookPayload,
   WEBHOOK_TIMEOUT_MS,
 } from '../../lib/outboundWebhook.js'
-import { normalizeOrderStatus, transitionOrderStatus } from './fulfillment.js'
+import { transitionOrderStatus } from './fulfillment.js'
+import { normalizeOrderStatus } from './statusPolicy.js'
 
 /**
  * P7b：自动开通任务执行 cron（设计 §3.4，硬验收 ⑥⑧⑨）。

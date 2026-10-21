@@ -93,3 +93,17 @@ export function businessWeekStart(dateStr: string): string {
 export function businessDayStartUtc(dateStr: string): Date {
   return new Date(`${dateStr}T00:00:00+08:00`)
 }
+
+/** 上海自然日的真实时间范围，适用于 createdAt 等时间戳查询（左闭右开）。 */
+export function businessDayRange(instant: Date = new Date()) {
+  const day = businessDateString(instant)
+  return { gte: businessDayStartUtc(day), lt: businessDayStartUtc(addCalendarDays(day, 1)) }
+}
+
+/** 上海自然月的真实时间范围，跨年时也不依赖宿主机时区。 */
+export function businessMonthRange(instant: Date = new Date()) {
+  const start = businessMonthStart(businessDateString(instant))
+  const [year, month] = start.split('-').map(Number)
+  const nextMonth = formatCalendarDay(new Date(Date.UTC(year, month, 1)))
+  return { gte: businessDayStartUtc(start), lt: businessDayStartUtc(nextMonth) }
+}

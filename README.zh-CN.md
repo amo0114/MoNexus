@@ -1,6 +1,6 @@
 # MoNexus
 
-[![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -166,8 +166,9 @@ git clone <your-repo-url> MoNexus-new
 cd MoNexus-new
 
 # 安装依赖
-npm install
-cd server && npm install && cd ..
+nvm use
+npm ci
+npm --prefix server ci
 
 # 启动全套（可选：重新写入演示数据）
 bash scripts/dev-up.sh
@@ -191,7 +192,7 @@ docker compose up -d postgres redis
 
 # 2) 后端
 cd server
-cp ../.env.example .env   # 或由 dev-up 自动写入 DATABASE_URL / JWT_SECRET
+cp .env.example .env      # 使用 server 模板，并填写下面的本地配置
 # 本地最小配置示例：
 #   DATABASE_URL=postgresql://monexus:monexus_dev_2026@localhost:5432/monexus?schema=public
 #   JWT_SECRET=local-development-secret-must-be-at-least-32-chars
@@ -261,18 +262,39 @@ docker compose --profile storage up -d
 ## 测试
 
 ```bash
-# 后端单测与接口测试（需可丢弃的测试库）
-cd server
-# 建议 TEST_DATABASE_URL 指向 monexus_test
-npm test
+# 本节全部命令从仓库根目录执行。
+nvm use
+npm run check:runtime
+npm test                  # 前端单元/组件测试
 
-# 仓库根目录完整校验
+# 启动本地 PostgreSQL；首次使用时创建可丢弃的测试库：
+docker compose up -d postgres
+docker compose exec -T postgres createdb -U monexus monexus_test
+# monexus_test 已存在时跳过 createdb。下列凭据对应本地 Compose 默认值。
+export TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public'
+DATABASE_URL="$TEST_DATABASE_URL" npm --prefix server run db:migrate:deploy
+REDIS_ENABLED=false npm --prefix server test
+
+# 本地构建、后端测试与移动端/主套件/法律页面浏览器验证
 npm run verify:local
 
-# 仅 E2E（需服务已启动）
-npm run e2e
-npm run e2e:ui      # Playwright 交互界面
+# 仅主浏览器套件：需先对测试库迁移并写入 seed
+# （verify:local 会自动准备这些夹具）。
+DATABASE_URL="$TEST_DATABASE_URL" npm run e2e
+DATABASE_URL="$TEST_DATABASE_URL" npm run e2e:ui # Playwright 交互界面
 ```
+
+后端测试强制要求 `TEST_DATABASE_URL`，每项测试前会清空共享业务表。请使用可丢弃
+数据库，同一测试库只运行一个后端测试进程。定向验证可追加文件，例如
+`npm --prefix server test -- src/__tests__/business-time-boundaries.test.ts`。
+
+`verify:local:no-e2e` 执行前后端构建和后端测试；`verify:local` 还会重置并 seed
+测试库，运行移动端、主套件与法律页面浏览器测试。两者都不执行根目录前端单测、
+架构检查或通知/catalog-ops 独立 E2E。前端单测另跑 `npm test`，其余检查见
+[测试策略](./docs/testing-policy.md)。本地 E2E 用于排查，最终交付代码的正式
+CI/E2E 由 GitHub Actions 执行；本地局部通过不能替代 `CI OK`。
+运行依赖数据库的本地 E2E 前先停止开发 API 服务：Playwright 可以复用已运行的服务，
+仅更改命令中的数据库 URL 不会改变该服务原先使用的数据库。
 
 CI 与部署工作流见 [`.github/workflows/`](./.github/workflows/)（`ci.yml`、`docker-publish.yml`、`compose-production-deploy.yml`、legacy `deploy.yml` 以及备份与告警相关作业）。
 
@@ -280,7 +302,7 @@ CI 与部署工作流见 [`.github/workflows/`](./.github/workflows/)（`ci.yml`
 
 ## 生产部署
 
-生产侧支持 **三条路径**。在 GitHub Actions 能向 GHCR 推送镜像时，优先用 **路径 A**。完整流程见下方运维文档链接。
+生产侧提供 **三条 Compose 路径（A–C）**，另保留非 Docker 的 legacy 兜底（D）。在 GitHub Actions 能向 GHCR 推送镜像时，优先用 **路径 A**。完整流程见下方运维文档链接。
 
 ### 通用前置
 
@@ -399,9 +421,9 @@ GitHub Actions 仍可打 tar 包，经 SSH 部署到 **nginx + systemd**（或 P
 
 本仓库主要为**内部产品**。若你有权限并希望贡献：
 
-1. 从 `master` 拉出功能分支（如 `feat/简短描述`）。
+1. 从 `develop` 拉出功能分支（如 `feat/简短描述`），PR 目标为 `develop`。`master` 接受 release/hotfix PR，详见[分支与 CI 规范](./docs/branching-and-ci.md)。
 2. 变更聚焦，遵循 `server/src/modules/` 与 `src/pages/` 现有边界。
-3. 提交前运行 `npm run verify:local:no-e2e`（或完整 `verify:local`）。
+3. 运行受影响测试与构建，定向检查可用 `npm run verify:quick`。需要更广的本地验证时，运行 `npm test` 和 `npm run verify:local:no-e2e`（或用 `verify:local` 运行其浏览器套件）。
 4. 优先小 PR、动机清晰；行为或运维流程变化时同步更新 `docs/`。
 5. **禁止**提交 `.env`、密钥或生产数据备份。
 

@@ -1,4 +1,4 @@
-import type { Product } from '../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../types/product'
 import type { ReviewItem } from '../../api/reviews'
 
 export const PRODUCT_MOCK_ASSETS = '/assets/mock/product-detail'

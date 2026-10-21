@@ -1,4 +1,4 @@
-import { normalizeOrderStatus } from './fulfillment.js'
+import { normalizeOrderStatus } from './statusPolicy.js'
 
 type OrderWithDelivery = {
   delivery?: ({ content?: unknown } & Record<string, unknown>) | null

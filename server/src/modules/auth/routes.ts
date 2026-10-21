@@ -22,7 +22,7 @@ import {
   expectedSessionBodySchema,
 } from './schema.js'
 import * as controller from './controller.js'
-import * as authService from './service.js'
+import { assertRegistrationEnabled } from './registrationService.js'
 
 const router = Router()
 
@@ -76,7 +76,7 @@ const refreshLimiter = rateLimit({
  */
 async function registrationGate(_req: Request, _res: Response, next: NextFunction) {
   try {
-    await authService.assertRegistrationEnabled()
+    await assertRegistrationEnabled()
     next()
   } catch (error) {
     next(error)

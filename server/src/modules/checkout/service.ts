@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma.js'
 import { notFound, badRequest } from '../../lib/httpError.js'
-import { getProductFulfillmentMode } from '../orders/fulfillment.js'
+import { getProductFulfillmentMode } from '../orders/statusPolicy.js'
 import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormField } from '../../lib/purchaseForm.js'
 import { resolveVerificationRequirement } from './verification.js'
 import { computeOfferCheckoutVersion, resolvePurchaseOffer } from '../../lib/offers.js'
@@ -12,7 +12,7 @@ import {
 } from '../../lib/fakaBridge/index.js'
 import { getLegalRequirement, type LegalRequirement } from '../legal/service.js'
 import { quoteOfferPricing, type OrderPricingDto } from '../valuePolicy/service.js'
-import { hasActiveSpendingRestriction } from '../recharge/gates.js'
+import { hasActiveSpendingRestriction } from '../points/spendingPolicy.js'
 import {
   buildProductContentSnapshot,
   loadEffectiveAssuranceGrant,

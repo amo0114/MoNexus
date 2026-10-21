@@ -1,11 +1,12 @@
+import { countOpenFakaTasksForOffer } from '../fakaBridge/taskQueries.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
 import { syncProductProjection } from '../../lib/offers.js'
 import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/index.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
-import { lockProductRow } from '../admin/productLifecycle.js'
-import { assertOriginalPrice, countOpenFakaTasksForOffer } from '../admin/offerAdmin.js'
+import { lockProductRow } from './productLock.js'
+import { assertOriginalPrice } from './offerPolicy.js'
 import {
   fakaCatalogSkuSet,
   fetchNormalizedFakaSource,

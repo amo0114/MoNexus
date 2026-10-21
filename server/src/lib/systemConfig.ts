@@ -3,6 +3,7 @@ import { config } from '../config/index.js'
 import { businessRegistry } from './businessRegistry.js'
 import { badRequest } from './httpError.js'
 import { prisma } from './prisma.js'
+import { MAX_CONFIGURABLE_PAGE_SIZE } from './paginationPolicy.js'
 
 export const systemConfigKeys = [
   'registerReward',
@@ -394,8 +395,8 @@ const RANGE_CONFIG_KEYS = {
   // 0 = 回退到环境默认（getRefreshTokenMaxAgeMs）。
   refreshTokenMaxAgeDays: { max: 365, message: 'Refresh Token 有效天数必须在 0..365 之间（0 = 使用默认）' },
   // 0 = 回退到 businessRegistry 内置值（resolvePagination）。
-  defaultPageSize: { max: 500, message: '列表默认分页大小必须在 0..500 之间（0 = 使用内置默认）' },
-  maxPageSize: { max: 500, message: '列表最大分页大小必须在 0..500 之间（0 = 使用内置上限）' },
+  defaultPageSize: { max: MAX_CONFIGURABLE_PAGE_SIZE, message: '列表默认分页大小必须在 0..500 之间（0 = 使用内置默认）' },
+  maxPageSize: { max: MAX_CONFIGURABLE_PAGE_SIZE, message: '列表最大分页大小必须在 0..500 之间（0 = 使用内置上限）' },
   lowStockThreshold: { max: 1_000_000, message: '低库存提醒阈值必须在 0..1000000 之间' },
   memberTierSilverThreshold: { max: MAX_THRESHOLD_POINTS, message: `会员等级门槛必须在 0..${MAX_THRESHOLD_POINTS} 积分之间` },
   memberTierGoldThreshold: { max: MAX_THRESHOLD_POINTS, message: `会员等级门槛必须在 0..${MAX_THRESHOLD_POINTS} 积分之间` },

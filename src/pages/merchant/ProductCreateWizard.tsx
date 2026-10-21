@@ -1,24 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useProductCreation } from './productCreation/useProductCreation'
+import {
+  allowedFulfillmentConfigurations,
+  allowedDeliveryModes,
+  allowedFixedContentTypes,
+  defaultDeliverySelection,
+  coerceDeliverySelection,
+  createEmptyExtraOffer,
+  validateCreationStep,
+  type WizardForm,
+} from './productCreation/draft'
+import { structuredRequirementFor } from '../../components/catalog/wizard/fulfillment'
 import { useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, CalendarDays, Check, CreditCard, Eye, FileText, Globe, Loader2,
-  Package, UserRound, Wrench,
+  ArrowLeft,
+  ArrowRight,
+  CalendarDays,
+  Check,
+  CreditCard,
+  Eye,
+  FileText,
+  Globe,
+  Loader2,
+  Package,
+  UserRound,
+  Wrench,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import { useAppStore } from '../../stores/appStore'
-import { captureFeedbackOwner } from '../../lib/completionFeedback'
-import { showProductPublished } from '../../lib/productPublicationFeedback'
 import ProductAvailabilityStep from '../../components/catalog/ProductAvailabilityStep'
 import ProductDraftAssistant from '../../components/catalog/ProductDraftAssistant'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
 import {
-  serializePurchaseFormFields,
-  validatePurchaseFormFields,
-} from '../../components/merchant/PurchaseFormFieldsEditor'
-import {
-  buildCreateProductV2Request, catalogApi, mapInsertedEditorImageToWriteRef, readinessErrorToIssues,
+  catalogApi,
+  mapInsertedEditorImageToWriteRef,
   type CatalogAdapter,
   type DescriptionImageWriteRef,
 } from '../../api/catalog'
@@ -28,28 +45,21 @@ import {
   EMPTY_PRODUCT_DETAILS,
   PRODUCT_VISIBILITY,
   TEMPLATE_KEYS,
-  type AvailabilityOffer,
   type CategoryRegistryItem,
-  type FulfillmentConfiguration,
-  type FulfillmentRule,
   type ProductDetails,
   type ProductTemplateDefinition,
   type ProductVisibility,
-  type PublicationReadiness,
   type TemplateAttributes,
   type TemplateKey,
 } from '../../types/catalog'
 import type { DeliveryField, DeliveryMode, PurchaseFormField, StockMode } from '../../types/merchant'
 
-import { DELIVERY_FIELDS_MAX, serializeDeliveryFields, serializeStructuredContent, validateStructuredRows } from '../../components/catalog/wizard/deliveryFields'
-import { deliveryModeFor } from '../../components/catalog/wizard/fulfillment'
 import PricingStep from '../../components/catalog/wizard/steps/PricingStep'
 import DeliveryStep from '../../components/catalog/wizard/steps/DeliveryStep'
 import PresentationStep from '../../components/catalog/wizard/steps/PresentationStep'
 import DraftReviewStep from '../../components/catalog/wizard/steps/DraftReviewStep'
 import {
   DEFAULT_OFFER_NAME,
-  type DeliverySelection,
   type ExtraOffer,
   type FixedContentType,
   type StructuredRequirement,
@@ -81,8 +91,6 @@ const DELIVERY_FALLBACK_LABEL: Record<DeliveryMode, string> = {
   instant_fixed: '固定内容（同一份）',
   manual_service: '人工服务',
 }
-
-const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
 
 /**
  * 步骤拆分（REQ-CAT-F-003）：目录/规格 → 保存草稿 → 可售量 → 发布。
@@ -117,25 +125,6 @@ export const WIZARD_PHASES: readonly WizardPhase[] = [
 const STEPS = ['选择模板', '展示信息', '定价', '交付方式', '确认草稿', '可售量', '发布'] as const
 const LAST_STEP = STEPS.length - 1
 
-interface WizardForm {
-  name: string
-  /** 稳定分类 id；分类只影响展示/检索，绝不自动切 deliveryMode（D-CAT-05）。 */
-  categoryId: number | null
-  description: string
-  richDescription: string | null
-  price: string
-  originalPrice: string
-  deliveryMode: DeliveryMode
-  stockMode: StockMode
-  fixedContent: string
-  fixedContentType: FixedContentType
-  validityDays: string
-  visibility: ProductVisibility
-  deliveryFields: DeliveryField[]
-  structuredFields: DeliveryField[]
-  structuredValues: Record<string, string>
-}
-
 interface Props {
   /** 可注入 Catalog adapter（生产默认共享 client；测试注入 fixture transport）。 */
   adapter?: CatalogAdapter
@@ -169,15 +158,6 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const [primaryOfferName, setPrimaryOfferName] = useState(DEFAULT_OFFER_NAME)
   const [primaryOfferAttributes, setPrimaryOfferAttributes] = useState<TemplateAttributes>({})
   const [extraOffers, setExtraOffers] = useState<ExtraOffer[]>([])
-  const [draft, setDraft] = useState<{ id: number } | null>(null)
-  const [availabilityOffers, setAvailabilityOffers] = useState<AvailabilityOffer[] | null>(null)
-  const [availabilityLoading, setAvailabilityLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const savingRef = useRef(false)
-  const [readiness, setReadiness] = useState<PublicationReadiness | null>(null)
-  const [readinessLoading, setReadinessLoading] = useState(false)
-  const [publishing, setPublishing] = useState(false)
-  const publishingRef = useRef(false)
   const [activeViewTab, setActiveViewTab] = useState<'wizard' | 'preview'>('wizard')
 
   function loadTemplates() {
@@ -378,268 +358,27 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
       : 'none'
   }
 
-  function validateStep(current: number): string | null {
-    if (current === 0 && templateKey == null) return '请选择商品形态'
-    if (current === 1) {
-      if (!form.name.trim()) return '商品名称不能为空'
-      if (form.categoryId == null) return '请选择商品分类'
-      const formError = validatePurchaseFormFields(purchaseForm)
-      if (formError) return formError
-    }
-    if (current === 2) {
-      const price = Number(form.price)
-      if (!Number.isInteger(price) || price <= 0) return '价格必须是大于 0 的整数'
-      if (form.originalPrice.trim() !== '') {
-        const original = Number(form.originalPrice)
-        if (!Number.isInteger(original) || original <= 0) return '原价必须是大于 0 的整数'
-        if (original < price) return '原价不能低于售价'
-      }
-      if (!primaryOfferName.trim()) return '主规格名称不能为空'
-      if (form.validityDays.trim() !== '') {
-        const days = Number(form.validityDays)
-        if (!Number.isInteger(days) || days < 1 || days > 3650) return '有效期必须是 1-3650 的整数天数，留空为永久'
-      }
-      const names = new Set<string>([primaryOfferName.trim()])
-      for (const [i, offer] of extraOffers.entries()) {
-        const label = `第 ${i + 1} 个附加规格`
-        if (!offer.name.trim()) return `${label}：名称不能为空`
-        if (names.has(offer.name.trim())) return `${label}：名称与其他规格重复`
-        names.add(offer.name.trim())
-        const offerPrice = Number(offer.price)
-        if (!Number.isInteger(offerPrice) || offerPrice <= 0) return `${label}：价格必须是大于 0 的整数`
-        if (offer.originalPrice.trim() !== '') {
-          const original = Number(offer.originalPrice)
-          if (!Number.isInteger(original) || original < offerPrice) return `${label}：原价不能低于售价`
-        }
-        if (offer.validityDays.trim() !== '') {
-          const days = Number(offer.validityDays)
-          if (!Number.isInteger(days) || days < 1 || days > 3650) return `${label}：有效期必须是 1-3650 的整数天数，留空为永久`
-        }
-        const extraRequirement = selectedTemplate
-          ? structuredRequirementFor(selectedTemplate, productAttributes, offer.deliveryMode)
-          : 'none'
-        if (extraRequirement === 'inventory_fields') {
-          const fieldsError = validateDeliveryFieldRows(offer.deliveryFields, `${label}：`)
-          if (fieldsError) return fieldsError
-        }
-        if (offer.deliveryMode === 'instant_fixed' && offer.fixedContentType !== 'file') {
-          if (extraRequirement === 'fixed_fields') {
-            const structuredError = validateStructuredRows(
-              offer.structuredFields,
-              offer.structuredValues,
-              `${label}：`, validateDeliveryFieldRows,
-            )
-            if (structuredError) return structuredError
-          } else {
-            if (!offer.fixedContent.trim()) return `${label}：固定内容交付必须填写交付内容`
-            if (offer.fixedContentType === 'url' && !/^https?:\/\//i.test(offer.fixedContent.trim())) {
-              return `${label}：链接必须以 http(s):// 开头`
-            }
-          }
-        }
-      }
-    }
-    if (current === 3) {
-      if (!allowedModes.includes(form.deliveryMode)) return '当前交付方式与所选商品形态不匹配'
-      if (primaryStructuredRequirement === 'inventory_fields') {
-        const fieldsError = validateDeliveryFieldRows(form.deliveryFields, '')
-        if (fieldsError) return fieldsError
-      }
-      if (form.deliveryMode === 'instant_fixed' && form.fixedContentType !== 'file') {
-        if (primaryStructuredRequirement === 'fixed_fields') {
-          const structuredError = validateStructuredRows(form.structuredFields, form.structuredValues, '', validateDeliveryFieldRows)
-          if (structuredError) return structuredError
-        } else {
-          if (!form.fixedContent.trim()) return '固定内容交付必须填写交付内容'
-          if (form.fixedContentType === 'url' && !/^https?:\/\//i.test(form.fixedContent.trim())) {
-            return '链接必须以 http(s):// 开头'
-          }
-        }
-      }
-    }
-    return null
+  const creationDraft = {
+    templateKey, selectedTemplate, form, productAttributes, productDetails, purchaseForm,
+    primaryOfferName, primaryOfferAttributes, extraOffers, images, imageKeys, descriptionImages,
   }
-
-  function buildOfferInput(input: {
-    name: string
-    price: string
-    originalPrice: string
-    deliveryMode: DeliveryMode
-    stockMode: StockMode
-    validityDays: string
-    fixedContent: string
-    fixedContentType: FixedContentType
-    attributes: TemplateAttributes
-    deliveryFields: DeliveryField[]
-    structuredFields: DeliveryField[]
-    structuredValues: Record<string, string>
-  }) {
-    const requirement = selectedTemplate
-      ? structuredRequirementFor(selectedTemplate, productAttributes, input.deliveryMode)
-      : 'none'
-    const structured = requirement === 'fixed_fields'
-      ? serializeStructuredContent(input.structuredFields, input.structuredValues)
-      : null
-    return {
-      name: input.name.trim(),
-      price: Number(input.price),
-      originalPrice: input.originalPrice.trim() === '' ? null : Number(input.originalPrice),
-      attributes: input.attributes,
-      deliveryMode: input.deliveryMode,
-      stockMode: input.deliveryMode === 'instant_inventory' ? 'limited' as const : input.stockMode,
-      validityDays: input.validityDays.trim() === '' ? null : Number(input.validityDays),
-      fixedContentType: input.fixedContentType,
-      fixedContent: structured ? null : input.fixedContent,
-      // Draft file offers may omit a bind; never invent an id.
-      fixedFileId: null,
-      fixedStructuredContent: structured,
-      deliveryFields: requirement === 'inventory_fields'
-        ? serializeDeliveryFields(input.deliveryFields)
-        : null,
-    }
-  }
-
-  async function loadAvailabilityOffers(productId: number): Promise<boolean> {
-    setAvailabilityLoading(true)
-    try {
-      const offers = await adapter.listProductOffers(productId)
-      setAvailabilityOffers(offers)
-      return true
-    } catch {
-      setAvailabilityOffers(null)
-      showToast('草稿已保存，但规格加载失败；请重试后再调整可售量', 'error')
-      return false
-    } finally {
-      setAvailabilityLoading(false)
-    }
-  }
-
-  /**
-   * 保存草稿：原子 create draft Product+Offers（v2）。成功后保留
-   * productId，失败保留全部输入并停留当前步。已保存过则幂等直接通过。
-   */
-  async function saveDraft(): Promise<boolean> {
-    if (draft || savingRef.current) return true
-    savingRef.current = true
-    const firstError = [0, 1, 2, 3].map(v => validateStep(v)).find(Boolean)
-    if (firstError || templateKey == null) {
-      savingRef.current = false
-      showToast(firstError ?? '请选择商品形态', 'error')
-      return false
-    }
-    setSaving(true)
-    try {
-      const created = await adapter.createProductV2(buildCreateProductV2Request({
-        templateKey,
-        name: form.name.trim(),
-        categoryId: form.categoryId ?? 0,
-        description: form.description.trim(),
-        richDescription: form.richDescription,
-        images,
-        imageKeys,
-        descriptionImages,
-        visibility: form.visibility,
-        attributes: productAttributes,
-        details: productDetails,
-        purchaseForm: serializePurchaseFormFields(purchaseForm),
-        offers: [
-          buildOfferInput({
-            name: primaryOfferName.trim() || DEFAULT_OFFER_NAME,
-            price: form.price,
-            originalPrice: form.originalPrice,
-            deliveryMode: form.deliveryMode,
-            stockMode: form.stockMode,
-            validityDays: form.validityDays,
-            fixedContent: form.fixedContent,
-            fixedContentType: form.fixedContentType,
-            attributes: primaryOfferAttributes,
-            deliveryFields: form.deliveryFields,
-            structuredFields: form.structuredFields,
-            structuredValues: form.structuredValues,
-          }),
-          ...extraOffers.map(offer => buildOfferInput(offer)),
-        ],
-      }))
-      setDraft({ id: created.id })
-      await loadAvailabilityOffers(created.id)
-      showToast('草稿已保存，可继续配置可售量')
-      return true
-    } catch (err) {
-      showToast(getErrorMessage(err, '草稿保存失败，请重试'), 'error')
-      return false
-    } finally {
-      savingRef.current = false
-      setSaving(false)
-    }
-  }
+  const {
+    draft, availabilityOffers, availabilityLoading, saving, readiness, readinessLoading, publishing,
+    saveDraft, loadAvailabilityOffers, handleAdjustCapacity, handleVoidInventory, handlePublish,
+  } = useProductCreation({ adapter, input: creationDraft, publicationStepActive: step === 6, navigate })
 
   async function goNext() {
     if (step === 4) {
       const ok = await saveDraft()
       if (!ok) return
     } else {
-      const error = validateStep(step)
+      const error = validateCreationStep(step, creationDraft)
       if (error) {
         showToast(error, 'error')
         return
       }
     }
     setStep(s => Math.min(s + 1, LAST_STEP))
-  }
-
-  async function handleAdjustCapacity(request: { offerId: number; delta: number; reason: string }) {
-    const id = draft?.id
-    if (id == null) throw new Error('尚未保存草稿')
-    await adapter.adjustCapacity(id, request)
-    showToast('可售名额已调整')
-  }
-
-  async function handleVoidInventory(request: { offerId: number; count: number; reason: string }) {
-    const id = draft?.id
-    if (id == null) throw new Error('尚未保存草稿')
-    await adapter.voidInventory(id, request)
-    showToast('交付库存已作废')
-  }
-
-  useEffect(() => {
-    if (step === 6 && draft && !publishing) {
-      let cancelled = false
-      setReadinessLoading(true)
-      adapter.getPublicationReadiness(draft.id)
-        .then(r => { if (!cancelled) setReadiness(r) })
-        .catch(() => {
-          if (!cancelled) {
-            setReadiness(null)
-            showToast('获取发布检查失败，请重试', 'error')
-          }
-        })
-        .finally(() => { if (!cancelled) setReadinessLoading(false) })
-      return () => { cancelled = true }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, draft, publishing])
-
-  async function handlePublish() {
-    const id = draft?.id
-    if (id == null || publishingRef.current) return
-    const isCurrent = captureFeedbackOwner()
-    publishingRef.current = true
-    setPublishing(true)
-    try {
-      const result = await adapter.publishProduct(id)
-      if (!isCurrent()) return
-      if (showProductPublished({ id, name: form.name.trim() }, result, navigate)) navigate('/merchant')
-    } catch (err) {
-      if (!isCurrent()) return
-      const issues = readinessErrorToIssues(err)
-      if (issues.length > 0) {
-        setReadiness({ ready: false, productId: id, issues })
-      }
-      showToast(getErrorMessage(err, '发布失败，请先解决检查清单中的问题'), 'error')
-    } finally {
-      publishingRef.current = false
-      setPublishing(false)
-    }
   }
 
   async function handleInsertDescriptionImage(): Promise<RichTextInsertedImage | null> {
@@ -853,7 +592,6 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
           </div>
         )}
 
-
         {step === 1 && (
           <PresentationStep
             name={form.name}
@@ -931,7 +669,6 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
             disabled={busy}
           />
         )}
-
 
         {step === 4 && (
           <DraftReviewStep
@@ -1049,121 +786,4 @@ function getErrorMessage(err: unknown, fallback: string): string {
   const e = err as { response?: { data?: { error?: { message?: unknown } } } } | undefined
   const message = e?.response?.data?.error?.message
   return typeof message === 'string' && message.trim() !== '' ? message : fallback
-}
-
-function allowedFulfillmentConfigurations(
-  template: ProductTemplateDefinition,
-  productAttributes: TemplateAttributes,
-): FulfillmentConfiguration[] {
-  const matched = template.fulfillmentRules.find(rule =>
-    Object.entries(rule.whenProductAttributes).every(([key, expected]) => productAttributes[key] === expected),
-  )
-  if (matched) return [...matched.configurations]
-  const union = new Set<FulfillmentConfiguration>()
-  for (const rule of template.fulfillmentRules) {
-    for (const configuration of rule.configurations) union.add(configuration)
-  }
-  return [...union]
-}
-
-function allowedDeliveryModes(configs: FulfillmentConfiguration[]): DeliveryMode[] {
-  const modes: DeliveryMode[] = []
-  const push = (mode: DeliveryMode) => { if (!modes.includes(mode)) modes.push(mode) }
-  for (const config of configs) {
-    const mode = deliveryModeFor(config)
-    if (mode) push(mode)
-  }
-  return modes
-}
-
-function allowedFixedContentTypes(configs: FulfillmentConfiguration[]): FixedContentType[] {
-  const types: FixedContentType[] = []
-  const push = (type: FixedContentType) => { if (!types.includes(type)) types.push(type) }
-  for (const config of configs) {
-    if (config === 'fixed_text') push('text')
-    if (config === 'fixed_url') push('url')
-    if (config === 'fixed_file') push('file')
-  }
-  return types
-}
-
-function defaultDeliverySelection(configs: FulfillmentConfiguration[]): DeliverySelection {
-  const first = configs[0]
-  if (first === 'inventory') return { deliveryMode: 'instant_inventory', stockMode: 'limited', fixedContentType: 'text' }
-  if (first === 'fixed_url') return { deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContentType: 'url' }
-  if (first === 'fixed_file') return { deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContentType: 'file' }
-  if (first === 'fixed_text') return { deliveryMode: 'instant_fixed', stockMode: 'unlimited', fixedContentType: 'text' }
-  if (first) return { deliveryMode: 'manual_service', stockMode: 'unlimited', fixedContentType: 'text' }
-  return { deliveryMode: 'instant_inventory', stockMode: 'limited', fixedContentType: 'text' }
-}
-
-function coerceDeliverySelection(current: DeliverySelection, configs: FulfillmentConfiguration[]): DeliverySelection {
-  const modes = allowedDeliveryModes(configs)
-  const types = allowedFixedContentTypes(configs)
-  if (!modes.includes(current.deliveryMode)) return defaultDeliverySelection(configs)
-  if (current.deliveryMode === 'instant_inventory') {
-    return { deliveryMode: 'instant_inventory', stockMode: 'limited', fixedContentType: 'text' }
-  }
-  if (current.deliveryMode === 'instant_fixed') {
-    const fixedContentType = types.includes(current.fixedContentType) ? current.fixedContentType : (types[0] ?? 'text')
-    return { deliveryMode: 'instant_fixed', stockMode: current.stockMode, fixedContentType }
-  }
-  return { deliveryMode: current.deliveryMode, stockMode: current.stockMode, fixedContentType: 'text' }
-}
-
-function createEmptyExtraOffer(form: Pick<WizardForm, 'deliveryMode' | 'stockMode' | 'fixedContentType'>): ExtraOffer {
-  const deliveryMode = form.deliveryMode
-  return {
-    name: '',
-    price: '',
-    originalPrice: '',
-    deliveryMode,
-    stockMode: deliveryMode === 'instant_inventory' ? 'limited' : form.stockMode,
-    fixedContent: '',
-    fixedContentType: form.fixedContentType,
-    validityDays: '',
-    attributes: {},
-    deliveryFields: [],
-    structuredFields: [],
-    structuredValues: {},
-  }
-}
-
-function matchedFulfillmentRule(
-  template: ProductTemplateDefinition,
-  productAttributes: TemplateAttributes,
-): FulfillmentRule | undefined {
-  return template.fulfillmentRules.find(rule =>
-    Object.entries(rule.whenProductAttributes).every(([key, expected]) => productAttributes[key] === expected),
-  )
-}
-
-function structuredRequirementFor(
-  template: ProductTemplateDefinition,
-  productAttributes: TemplateAttributes,
-  deliveryMode: DeliveryMode,
-): StructuredRequirement {
-  const matched = matchedFulfillmentRule(template, productAttributes)
-  if (matched) return matched.requireStructuredDelivery
-  for (const rule of template.fulfillmentRules) {
-    if (rule.requireStructuredDelivery === 'none') continue
-    if (allowedDeliveryModes(rule.configurations).includes(deliveryMode)) {
-      return rule.requireStructuredDelivery
-    }
-  }
-  return 'none'
-}
-
-function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): string | null {
-  if (fields.length === 0) return null
-  if (fields.length > DELIVERY_FIELDS_MAX) return `${prefix}交付字段最多 ${DELIVERY_FIELDS_MAX} 个`
-  const keys = new Set<string>()
-  for (const [index, field] of fields.entries()) {
-    const label = `${prefix}第 ${index + 1} 个字段`
-    if (!FIELD_KEY_PATTERN.test(field.key)) return `${label}：key 必须是字母开头的标识符（≤32 字符）`
-    if (keys.has(field.key)) return `${label}：key 与其他字段重复`
-    keys.add(field.key)
-    if (!field.label.trim()) return `${label}：名称不能为空`
-  }
-  return null
 }

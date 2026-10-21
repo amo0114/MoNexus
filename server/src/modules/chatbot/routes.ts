@@ -7,6 +7,7 @@ import { searchProducts, productDetail } from './catalog.js'
 import { config } from '../../config/index.js'
 import { HttpError } from '../../lib/httpError.js'
 import { consumeChatUnchecked } from './abusePolicy.js'
+import { businessDateString as shanghaiToday } from '../../lib/businessTime.js'
 
 /**
  * SPEC-CHAT-BOT-001 — 机器人专用接口。
@@ -186,13 +187,5 @@ router.post('/products/detail', async (req, res, next) => {
     next(err)
   }
 })
-
-function shanghaiToday() {
-  const now = new Date()
-  const yyyy = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', year: 'numeric' })
-  const mm = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', month: '2-digit' })
-  const dd = now.toLocaleString('en-US', { timeZone: 'Asia/Shanghai', day: '2-digit' })
-  return `${yyyy}-${mm}-${dd}`
-}
 
 export { router as chatBotRoutes }

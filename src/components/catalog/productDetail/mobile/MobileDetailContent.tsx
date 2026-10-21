@@ -8,7 +8,7 @@ import {
   Star,
   type LucideIcon,
 } from 'lucide-react'
-import type { Product } from '../../../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../../../types/product'
 import { EMPTY_PRODUCT_DETAILS, type ProductTemplateDefinition } from '../../../../types/catalog'
 import StarRating from '../../../ui/StarRating'
 import RichTextHtml from '../../RichTextHtml'

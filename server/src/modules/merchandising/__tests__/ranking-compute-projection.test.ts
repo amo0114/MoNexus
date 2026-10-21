@@ -476,7 +476,7 @@ describe('ranking projection — decorate contract (pure, no DB)', () => {
     const calls: unknown[] = []
     const identityCalls = { now: 0, editorial: 0, entitlement: 0 }
     const rows = [
-      { productId: 42, effectiveOrderCount: 18, categoryRank: 2, computedAt: new Date('2026-08-09T00:00:00.000Z') },
+      { productId: 42, isHot: true, effectiveOrderCount: 18, categoryRank: 2, computedAt: new Date('2026-08-09T00:00:00.000Z') },
     ]
     const stub = {
       $queryRaw: async () => {
@@ -515,5 +515,53 @@ describe('ranking projection — decorate contract (pure, no DB)', () => {
         merchandising: { ...NO_RUN_PROJECTION_FIXTURE, rankingRunId: FROZEN_RUN_ID, platformOwned: true },
       },
     ])
+  })
+
+  // 回归：compute 对每个 active 商品都写快照（含零订单），所以「快照存在」
+  // 绝不等于「热卖」。修复前这里只判断 snapshot 是否存在，导致非热商品也
+  // 拿到 hot 块 → 前端给全站商品挂「热卖」徽章。
+  it('never returns a hot block for a snapshot whose isHot is false (zero-order product)', async () => {
+    type DbLike = Parameters<typeof decorateProducts>[2]
+    const queried: Array<{ select?: Record<string, boolean> }> = []
+    const rows = [
+      // 零订单、排名第 7：compute 会写这一行，但 isHot 判定为 false。
+      { productId: 101, isHot: false, effectiveOrderCount: 0, categoryRank: 7, computedAt: new Date('2026-08-09T00:00:00.000Z') },
+      // 同批次里的真热卖商品，用来确认过滤没有误伤。
+      { productId: 102, isHot: true, effectiveOrderCount: 18, categoryRank: 1, computedAt: new Date('2026-08-09T00:00:00.000Z') },
+    ]
+    const stub = {
+      $queryRaw: async () => [{ now: new Date('2026-08-09T00:00:00.000Z') }],
+      productMerchandisingSnapshot: {
+        findMany: async (args: { select?: Record<string, boolean> }) => {
+          queried.push(args)
+          return rows
+        },
+      },
+      editorialFeature: { findMany: async () => [] },
+      merchantEntitlement: { findMany: async () => [] },
+    } as unknown as DbLike
+
+    const out = await decorateProducts(
+      [
+        { id: 101, merchantId: 1 },
+        { id: 102, merchantId: 1 },
+      ],
+      RUN,
+      stub,
+    )
+
+    // 关键：投影只读 DTO 字段还不够——必须证明数据库真的把 isHot 取了回来。
+    // stub 不会按 select 裁剪返回列，所以断言 select 本身是唯一能守住这条的
+    // 检查点；否则把 select 里的 isHot 删掉，本用例仍会因 stub 供数而通过。
+    expect(queried).toHaveLength(1)
+    expect(queried[0].select).toMatchObject({ isHot: true })
+
+    expect(out[0].merchandising.hot).toBeNull()
+    expect(out[1].merchandising.hot).toEqual({
+      effectiveOrders: 18,
+      rank: 1,
+      windowDays: RUN.windowDays,
+      computedAt: '2026-08-09T00:00:00.000Z',
+    })
   })
 })

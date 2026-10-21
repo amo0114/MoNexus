@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { api } from '../../__tests__/helpers.js'
 import { getActiveCategoryIdByLabel } from '../../__tests__/catalogFixture.js'
+import { runRetention } from '../merchandising/ranking/repository.js'
 
 async function createProduct(
   name: string,
@@ -144,10 +145,22 @@ describe('Catalog/Merch public Product integration', () => {
       .expect(200)
     expect(page2.body.items.map((item: { id: number }) => item.id)).toEqual([third.id])
     expect(page2.body.items[0].merchandising.rankingRunId).toBe(oldRun.id)
+    expect(page2.body.items[0].merchandising.hot).toBeNull()
 
     const mismatch = await api.get('/api/products')
       .query({ pageSize: 2, categoryCode: 'network-node', cursor: page1.body.nextCursor })
       .expect(409)
     expect(mismatch.body.error.code).toBe('PRODUCT_CURSOR_EXPIRED')
+
+    await runRetention()
+    expect(await prisma.merchandisingRun.findUnique({ where: { id: oldRun.id } })).toBeNull()
+    expect(await prisma.productMerchandisingSnapshot.count({ where: { runId: oldRun.id } })).toBe(0)
+    const expired = await api.get('/api/products')
+      .query({ pageSize: 2, cursor: page1.body.nextCursor })
+      .expect(409)
+    expect(expired.body.error.code).toBe('PRODUCT_CURSOR_EXPIRED')
+    const fresh = await api.get('/api/products').query({ pageSize: 2 }).expect(200)
+    expect(fresh.body.items.map((item: { id: number }) => item.id)).toEqual([third.id, second.id])
+    expect(fresh.body.items[0].merchandising.hot).not.toBeNull()
   })
 })

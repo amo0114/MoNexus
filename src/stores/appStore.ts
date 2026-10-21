@@ -97,6 +97,7 @@ interface AppState {
       灵动岛通知降级为横幅（模态交互期间岛不可见，反馈不能丢）。 */
   modalDepth: number
   registry: ConfigRegistry | null
+  registryStatus: 'idle' | 'loading' | 'ready' | 'error'
   /** 商城搜索/分类（V3 灵动岛）：岛内交互与 StorePage 网格共享同一状态 */
   storeQuery: string
   storeCategory: string
@@ -185,6 +186,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   islandNoticeAvailable: false,
   modalDepth: 0,
   registry: null,
+  registryStatus: 'idle',
   storeQuery: '',
   storeCategory: '全部',
   pointsHistoryOpen: false,
@@ -384,10 +386,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }),
 
   loadRegistry: async () => {
+    set({ registryStatus: 'loading' })
     try {
       const data = await getConfigRegistry()
-      set({ registry: data })
+      set({ registry: data, registryStatus: 'ready' })
     } catch (err) {
+      set({ registryStatus: 'error' })
       console.error('Failed to load config registry:', err)
     }
   },

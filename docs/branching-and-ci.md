@@ -41,7 +41,7 @@ chore/xxx ┘                                        ▲
 ## 本地验证
 
 - 小改动：`npm run verify:quick`（只跑受 git 变更影响的测试；`npm run verify:quick -- e2e/xxx.spec.ts` 追加指定 e2e spec）。
-- 全量（与 CI 等价）：`npm run verify:local` / `verify:local:no-e2e`。日常合并前无需本地全量，push→develop 的集成门会跑全套。
+- 较完整的本地验证：根目录 `npm test` 加 `npm run verify:local:no-e2e`（前后端构建及后端测试）；`verify:local` 另含移动端、主套件与法律页面浏览器测试。这些脚本不等价于全部 CI 作业，架构及通知/catalog-ops 独立检查见[测试策略](./testing-policy.md#7-本地验证)。日常运行受影响测试；关键旅程按策略在 PR 合并前完成 E2E，push→develop 另跑完整集成门。
 
 ## 镜像发布（`docker-publish.yml`）
 

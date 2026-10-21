@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ChevronRight, CircleCheck, ShoppingCart, Star, type LucideIcon } from 'lucide-react'
-import type { Product } from '../../../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../../../types/product'
 import { EMPTY_PRODUCT_DETAILS, type ProductTemplateDefinition } from '../../../../types/catalog'
 import RichTextHtml from '../../RichTextHtml'
 import ProductSpecSections, { titlesFromTemplate } from '../../ProductSpecSections'

@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BrowserRouter } from 'react-router-dom'
 import AnnouncementCenter from './AnnouncementCenter'
-import type { PublicAnnouncement } from '../types/announcement'
+import type { PublicAnnouncement } from '../types/admin'
 import { useAppStore } from '../stores/appStore'
 
 const { getNotifications, markNotificationRead } = vi.hoisted(() => ({
@@ -22,12 +22,11 @@ const sampleAnnouncement: PublicAnnouncement = {
   audience: 'all',
   priority: 100,
   presentation: 'notice',
+  maxImpressions: 1,
   startsAt: new Date(Date.now() - 3600_000).toISOString(),
   endsAt: null,
-  createdAt: new Date(Date.now() - 3600_000).toISOString(),
   updatedAt: new Date(Date.now() - 3600_000).toISOString(),
   version: 1,
-  status: 'published',
   readAt: null,
   acknowledgedAt: null,
 }

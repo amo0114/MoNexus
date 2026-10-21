@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { FULFILLMENT_MODES, isInstantMode } from '../modules/orders/fulfillment.js'
+import { FULFILLMENT_MODES, isInstantMode } from '../modules/orders/statusPolicy.js'
 import { businessRegistry } from '../lib/businessRegistry.js'
 
 describe('instant_fixed fulfillment mode', () => {

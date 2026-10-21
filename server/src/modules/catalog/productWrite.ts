@@ -21,7 +21,7 @@ import { listPersistedDescriptionImages, sanitizeProductRichContent } from './co
 import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 import { checkProductReadiness, type ProductReadinessResult } from './publicationReadiness.js'
 import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
-import { lockProductRow } from '../admin/productLifecycle.js'
+import { lockProductRow } from './productLock.js'
 import { isContentCopilotAvailable } from './contentCopilot/service.js'
 
 export type ProductWriteActor =

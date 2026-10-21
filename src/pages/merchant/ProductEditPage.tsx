@@ -1,58 +1,45 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { saveProductEdits, validateProductEdits } from './productEditor/saveProductEdits'
+import {
+  emptyForm,
+  formFromEditor,
+  bindImageRefs,
+  writableImage,
+  isTemplateKey,
+  type EditorForm,
+} from './productEditor/editorForm'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, Eye, Loader2, Package, Sparkles } from 'lucide-react'
-import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
+import { getApiErrorMessage } from '../../api/error'
 import {
   catalogApi,
-  mapEditorImagesToWriteRefs,
   mapInsertedEditorImageToWriteRef,
   type CatalogAdapter,
   type DescriptionImageWriteRef,
   type ProductEditorActor,
   type ProductEditorDto,
-  type ProductEditorImage,
   type ProductEditorOffer,
   type ProductEditorPublicationIssue,
 } from '../../api/catalog'
 import { uploadImage, UploadError } from '../../api/uploads'
 import { updateMerchantOffer, uploadDeliveryFile } from '../../api/merchant'
-import type { DeliveryField, OfferWriteRequest, PurchaseFormField } from '../../types/merchant'
 import type { RichTextInsertedImage } from '../../components/catalog/RichTextEditor'
 import {
-  CATALOG_ERROR_CODES,
-  EMPTY_PRODUCT_DETAILS,
   PRODUCT_STATUS,
-  PRODUCT_VISIBILITY,
   TEMPLATE_KEYS,
   type CategoryRegistryItem,
-  type ProductDetails,
   type ProductTemplateDefinition,
-  type ProductVisibility,
-  type TemplateAttributes,
   type TemplateKey,
 } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
 import ProductPublicationChecklist from '../../components/catalog/ProductPublicationChecklist'
 import ProductContentSuggestionDialog from '../../components/catalog/ProductContentSuggestionDialog'
 import LivePreviewSandbox, { type LivePreviewOffer, type LivePreviewProductData } from '../../components/merchant/LivePreviewSandbox'
-import {
-  serializePurchaseFormFields,
-  validatePurchaseFormFields,
-} from '../../components/merchant/PurchaseFormFieldsEditor'
 import EmptyState from '../../components/ui/EmptyState'
 
-import { DELIVERY_FIELDS_MAX, serializeDeliveryFields, serializeStructuredContent, validateStructuredRows } from '../../components/catalog/wizard/deliveryFields'
 import { pickFileFromInput } from '../../utils/pickFileFromInput'
 
-import {
-  draftsFromOffers, reconcileOfferDrafts, cloneOfferStructuredDraft,
-  type OfferStructuredDraft,
-} from './productEditor/offerDrafts'
-import {
-  offerStructuredRequirement,
-  shouldEditDeliveryFields,
-  shouldEditStructuredContent,
-} from './productEditor/offerRequirements'
+import { draftsFromOffers, type OfferStructuredDraft } from './productEditor/offerDrafts'
 import ProductInformationSection from './productEditor/ProductInformationSection'
 import OfferEditingSection from './productEditor/OfferEditingSection'
 import PurchaseFormSection from './productEditor/PurchaseFormSection'
@@ -67,20 +54,6 @@ const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
   [PRODUCT_STATUS.ACTIVE]: '已发布',
   [PRODUCT_STATUS.INACTIVE]: '已下架',
-}
-
-const FIELD_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9_]{0,31}$/
-
-type EditorForm = {
-  name: string
-  categoryId: number | null
-  description: string
-  richDescription: string | null
-  visibility: ProductVisibility
-  attributes: TemplateAttributes
-  details: ProductDetails
-  purchaseForm: PurchaseFormField[]
-  images: ProductEditorImage[]
 }
 
 interface Props {
@@ -406,148 +379,45 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   async function handleSave() {
     // Never write one product's form to another product's route.
     if (!validId || savingRef.current || !canEdit || editorProductId !== productId) return
-    if (!form.name.trim()) {
-      showToast('请填写商品名称', 'error')
+    const input = {
+      adapter, actor, productId, form, contentVersion, baseline, templateKey, savedTemplateKey,
+      selectedTemplate, imageKeys, descriptionImages, descriptionImagesTouched, offers,
+      offerDrafts, offerDraftsBaseline, offerStructuredDirty,
+    }
+    const error = validateProductEdits(input)
+    if (error) {
+      showToast(error, 'error')
       return
     }
-    if (form.categoryId == null) {
-      showToast('请选择商品分类', 'error')
-      return
-    }
-    const formError = validatePurchaseFormFields(form.purchaseForm)
-    if (formError) {
-      showToast(formError, 'error')
-      return
-    }
-    if (actor === 'merchant' && offerStructuredDirty) {
-      for (const offer of offers) {
-        const draft = offerDrafts[offer.id]
-        if (!draft) continue
-        const requirement = offerStructuredRequirement(offer, selectedTemplate, form.attributes)
-        const showDeliveryFields = shouldEditDeliveryFields(offer, requirement)
-        const showStructured = shouldEditStructuredContent(offer, requirement)
-        if (showDeliveryFields) {
-          const fieldsError = validateDeliveryFieldRows(draft.deliveryFields, `规格「${offer.name}」`)
-          if (fieldsError) {
-            showToast(fieldsError, 'error')
-            return
-          }
-        }
-        if (showStructured) {
-          const structuredError = validateStructuredRows(
-            draft.structuredFields,
-            draft.structuredValues,
-            `规格「${offer.name}」`, validateDeliveryFieldRows,
-          )
-          if (structuredError) {
-            showToast(structuredError, 'error')
-            return
-          }
-        }
-      }
-    }
-
     savingRef.current = true
     setSaving(true)
-    let workingOffers = offers
-    let workingDrafts = offerDrafts
-    let workingBaseline: Record<number, OfferStructuredDraft> = offerDraftsBaseline !== ''
-      ? JSON.parse(offerDraftsBaseline) as Record<number, OfferStructuredDraft>
-      : draftsFromOffers(offers)
     try {
-      const contentDirty = (baseline !== '' && JSON.stringify(form) !== baseline)
-        || descriptionImagesTouched
-        || templateKey !== savedTemplateKey
-      if (contentDirty) {
-        const imageRefs = mapEditorImagesToWriteRefs(form.images, imageKeys)
-        const assigningTemplate = savedTemplateKey == null && templateKey != null
-        const result = await adapter.patchContent(actor, productId, {
-          expectedContentVersion: contentVersion,
-          name: form.name.trim(),
-          categoryId: form.categoryId,
-          description: form.description,
-          richDescription: form.richDescription,
-          visibility: form.visibility,
-          details: form.details,
-          purchaseForm: serializePurchaseFormFields(form.purchaseForm),
-          ...(templateKey ? { attributes: form.attributes } : {}),
-          ...(assigningTemplate && templateKey
-            ? { templateKey, templateVersion: 1 as const }
-            : {}),
-          ...(imageRefs ? { images: imageRefs } : {}),
-          // Sanitizer allowlist: omit descriptionImages with richDescription => strip imgs.
-          descriptionImages,
-        })
-        setContentVersion(result.contentVersion)
-        setBaseline(JSON.stringify(form))
-        setDescriptionImagesTouched(false)
-        if (assigningTemplate) setSavedTemplateKey(templateKey)
-      }
-      if (actor === 'merchant' && offerStructuredDirty) {
-        for (const offer of workingOffers) {
-          const draft = workingDrafts[offer.id]
-          const baselineDraft = workingBaseline[offer.id]
-          if (!draft || JSON.stringify(draft) === JSON.stringify(baselineDraft)) continue
-          const requirement = offerStructuredRequirement(offer, selectedTemplate, form.attributes)
-          const payload: OfferWriteRequest & { fixedStructuredContent?: unknown | null } = {}
-          if (shouldEditDeliveryFields(offer, requirement)) {
-            payload.deliveryFields = serializeDeliveryFields(draft.deliveryFields)
-          }
-          if (shouldEditStructuredContent(offer, requirement)) {
-            payload.fixedStructuredContent = serializeStructuredContent(
-              draft.structuredFields,
-              draft.structuredValues,
-            )
-            payload.fixedContent = null
-          }
-          if (Object.keys(payload).length === 0) continue
-          if (typeof offer.checkoutVersion === 'string') {
-            payload.expectedCheckoutVersion = offer.checkoutVersion
-          }
-          const updated = await updateMerchantOffer(productId, offer.id, payload)
-          const nextOffer: ProductEditorOffer = {
-            ...offer,
-            ...('deliveryFields' in payload ? { deliveryFields: payload.deliveryFields ?? null } : {}),
-            ...('fixedStructuredContent' in payload
-              ? { fixedStructuredContent: payload.fixedStructuredContent }
-              : {}),
-            ...(typeof updated.checkoutVersion === 'string'
-              ? { checkoutVersion: updated.checkoutVersion }
-              : {}),
-          }
-          workingOffers = workingOffers.map(item => (item.id === offer.id ? nextOffer : item))
-          workingBaseline = {
-            ...workingBaseline,
-            [offer.id]: cloneOfferStructuredDraft(draft),
-          }
-          setOffers(workingOffers)
-          setOfferDraftsBaseline(JSON.stringify(workingBaseline))
-        }
-        setOfferDraftsBaseline(JSON.stringify(workingBaseline))
-        setOfferConflictLabels([])
-      }
-      showToast('商品内容已保存')
-    } catch (err) {
-      const code = getApiErrorCode(err)
-      if (code === CATALOG_ERROR_CODES.PRODUCT_CONTENT_CHANGED || code === 'CHECKOUT_CHANGED') {
-        try {
-          const fresh = await adapter.getEditor(actor, productId)
-          const reconciled = reconcileOfferDrafts(
-            workingDrafts,
-            workingOffers,
-            fresh.offers,
-            (offer) => offerStructuredRequirement(offer, selectedTemplate, form.attributes),
-          )
-          setContentVersion(fresh.product.contentVersion)
-          setStatus(fresh.product.status)
-          setCapabilities(fresh.capabilities)
-          setPublicationIssues(fresh.publicationIssues)
-          setOfferDrafts(reconciled.drafts)
-          setOfferConflictLabels(reconciled.conflictLabels)
-          setOffers(fresh.offers)
-          setOfferDraftsBaseline(JSON.stringify(draftsFromOffers(fresh.offers)))
-          const conflictNote = reconciled.conflictLabels.length > 0
-            ? `（冲突字段：${reconciled.conflictLabels.join('、')}）`
+      const result = await saveProductEdits(input, {
+        onContentSaved: (version, assigningTemplate) => {
+          setContentVersion(version)
+          setBaseline(JSON.stringify(form))
+          setDescriptionImagesTouched(false)
+          if (assigningTemplate) setSavedTemplateKey(templateKey)
+        },
+        onOffersSaved: (nextOffers, nextBaseline) => {
+          setOffers(nextOffers)
+          setOfferDraftsBaseline(nextBaseline)
+        },
+      })
+      if (result.kind === 'conflict') {
+        const { recovery, code } = result
+        if (recovery) {
+          const { editor, drafts, conflictLabels } = recovery
+          setContentVersion(editor.product.contentVersion)
+          setStatus(editor.product.status)
+          setCapabilities(editor.capabilities)
+          setPublicationIssues(editor.publicationIssues)
+          setOfferDrafts(drafts)
+          setOfferConflictLabels(conflictLabels)
+          setOffers(editor.offers)
+          setOfferDraftsBaseline(JSON.stringify(draftsFromOffers(editor.offers)))
+          const conflictNote = conflictLabels.length > 0
+            ? `（冲突字段：${conflictLabels.join('、')}）`
             : ''
           showToast(
             code === 'CHECKOUT_CHANGED'
@@ -555,7 +425,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
               : `商品内容已更新，规格草稿已核对，请再次保存${conflictNote}`,
             'error',
           )
-        } catch {
+        } else {
           showToast(
             code === 'CHECKOUT_CHANGED'
               ? '规格已更新，已保留你输入的内容，请核对后再次保存'
@@ -565,6 +435,9 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
         }
         return
       }
+      if (actor === 'merchant' && offerStructuredDirty) setOfferConflictLabels([])
+      showToast('商品内容已保存')
+    } catch (err) {
       showToast(getApiErrorMessage(err, '保存失败，请重试'), 'error')
     } finally {
       savingRef.current = false
@@ -864,115 +737,6 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       </div>
     </div>
   )
-}
-
-function emptyForm(): EditorForm {
-  return {
-    name: '',
-    categoryId: null,
-    description: '',
-    richDescription: null,
-    visibility: PRODUCT_VISIBILITY.MEMBERS_ONLY,
-    attributes: {},
-    details: { ...EMPTY_PRODUCT_DETAILS },
-    purchaseForm: [],
-    images: [],
-  }
-}
-
-function formFromEditor(dto: ProductEditorDto): EditorForm {
-  const visibility = dto.product.visibility === PRODUCT_VISIBILITY.PUBLIC
-    ? PRODUCT_VISIBILITY.PUBLIC
-    : PRODUCT_VISIBILITY.MEMBERS_ONLY
-  return {
-    name: dto.product.name ?? '',
-    categoryId: typeof dto.product.categoryId === 'number' ? dto.product.categoryId : null,
-    description: dto.product.description ?? '',
-    richDescription: dto.product.richDescription,
-    visibility,
-    attributes: dto.product.attributes && typeof dto.product.attributes === 'object' ? dto.product.attributes : {},
-    details: {
-      ...EMPTY_PRODUCT_DETAILS,
-      ...(dto.product.details ?? {}),
-    },
-    purchaseForm: parsePurchaseForm(dto.product.purchaseForm),
-    images: Array.isArray(dto.product.images)
-      ? dto.product.images.map(image => ({
-          url: image.url,
-          ref: image.ref ?? null,
-        }))
-      : [],
-  }
-}
-
-function parsePurchaseForm(raw: unknown): PurchaseFormField[] {
-  if (!Array.isArray(raw)) return []
-  const fields: PurchaseFormField[] = []
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue
-    const record = item as Record<string, unknown>
-    if (typeof record.key !== 'string' || typeof record.label !== 'string') continue
-    const type = record.type === 'select' || record.type === 'date' ? record.type : 'text'
-    const field: PurchaseFormField = {
-      key: record.key,
-      label: record.label,
-      type,
-      required: record.required === true,
-    }
-    if (typeof record.placeholder === 'string') field.placeholder = record.placeholder
-    if (type === 'select' && Array.isArray(record.options)) {
-      field.options = record.options.filter((option): option is string => typeof option === 'string')
-    }
-    if (type === 'date') {
-      if (typeof record.minDaysAhead === 'number') field.minDaysAhead = record.minDaysAhead
-      if (typeof record.maxDaysAhead === 'number') field.maxDaysAhead = record.maxDaysAhead
-    }
-    fields.push(field)
-  }
-  return fields
-}
-
-function bindImageRefs(
-  urls: string[],
-  previous: ProductEditorImage[],
-  keys?: Record<string, string>,
-): ProductEditorImage[] {
-  const unused = [...previous]
-  return urls.map(url => {
-    const index = unused.findIndex(image => image.url === url)
-    const objectKey = keys?.[url]
-    if (index >= 0) {
-      const [found] = unused.splice(index, 1)
-      if (!found.ref && objectKey) {
-        return { url, ref: { kind: 'upload', objectKey } }
-      }
-      return found
-    }
-    if (objectKey) return { url, ref: { kind: 'upload', objectKey } }
-    return { url, ref: null }
-  })
-}
-
-function writableImage(image: ProductEditorImage, keys?: Record<string, string>): boolean {
-  return Boolean(image.ref) || image.url.startsWith('/assets/') || Boolean(keys?.[image.url])
-}
-
-function isTemplateKey(value: string | null | undefined): value is TemplateKey {
-  return typeof value === 'string' && (TEMPLATE_KEYS as readonly string[]).includes(value)
-}
-
-function validateDeliveryFieldRows(fields: DeliveryField[], prefix: string): string | null {
-  if (fields.length === 0) return null
-  if (fields.length > DELIVERY_FIELDS_MAX) return `${prefix}：交付字段最多 ${DELIVERY_FIELDS_MAX} 个`
-  const keys = new Set<string>()
-  for (const [index, field] of fields.entries()) {
-    const label = `${prefix}第 ${index + 1} 个字段`
-    if (!FIELD_KEY_PATTERN.test(field.key)) return `${label}：key 必须是字母开头的标识符（≤32 字符）`
-    if (keys.has(field.key)) return `${label}：key 与其他字段重复`
-    keys.add(field.key)
-    if (!field.label.trim()) return `${label}：名称不能为空`
-  }
-  return null
 }
 
 function isNotFoundError(error: unknown): boolean {

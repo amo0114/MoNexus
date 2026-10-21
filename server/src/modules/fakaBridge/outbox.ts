@@ -1,8 +1,8 @@
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
-import { logger } from '../logger.js'
-import { buildFakaExternalOrderNo } from './client.js'
-import { periodFromFakaSku } from './skuPeriod.js'
+import { logger } from '../../lib/logger.js'
+import { buildFakaExternalOrderNo } from '../../lib/fakaBridge/client.js'
+import { periodFromFakaSku } from '../../lib/fakaBridge/skuPeriod.js'
 import { processFakaBridgeTask } from './worker.js'
 
 type Tx = Prisma.TransactionClient

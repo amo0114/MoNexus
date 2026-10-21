@@ -5,11 +5,7 @@ import { closeOrder, createOrder, disputeOrder } from '../modules/orders/service
 import { __runAutoCloseBatchForTests } from '../modules/orders/cron.js'
 import { batchSettle, resolveOrder } from '../modules/admin/service.js'
 import { prisma } from '../lib/prisma.js'
-import {
-  __setFakaClientOverridesForTests,
-  processFakaBridgeTask,
-  runFakaReconcileBatch,
-} from '../lib/fakaBridge/index.js'
+import { __setFakaClientOverridesForTests, processFakaBridgeTask, runFakaReconcileBatch } from '../modules/fakaBridge/service.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestMerchant, createTestUser } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'

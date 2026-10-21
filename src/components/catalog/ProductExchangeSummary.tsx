@@ -1,4 +1,4 @@
-import type { Product } from '../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../types/product'
 
 export default function ProductExchangeSummary({
   offer,

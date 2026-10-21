@@ -4,22 +4,16 @@ import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { badRequest, notFound, HttpError, provisionEmailUnverified } from '../../lib/httpError.js'
 import { runProvisionBatch } from './provisionCron.js'
-import { lockActiveWebhookConfigForShare } from '../merchant/webhookConfig.js'
-import {
-  createOrderStatusEvent,
-  getProductFulfillmentMode,
-  isInstantMode,
-  normalizeOrderStatus,
-  transitionOrderStatus,
-  resolveSubscriptionExpiresAt,
-} from './fulfillment.js'
+import { lockActiveWebhookConfigForShare } from './provisioningConfig.js'
+import { createOrderStatusEvent, transitionOrderStatus, resolveSubscriptionExpiresAt } from './fulfillment.js'
+import { getProductFulfillmentMode, isInstantMode, normalizeOrderStatus } from './statusPolicy.js'
 import {
   NotificationDispatcher,
   orderNotificationSnapshot,
   shouldNotifyMerchantNewOrder,
 } from '../notifications/dispatcher.js'
 import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
-import { assertSpendingNotRestricted } from '../recharge/gates.js'
+import { assertSpendingNotRestricted } from '../points/spendingPolicy.js'
 import {
   claimIdempotencyKey,
   completeIdempotencyClaim,
@@ -47,15 +41,8 @@ import {
   structuredContentToJson,
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
-import {
-  assertProvisionEmailTrusted,
-  createFakaBridgeTaskForOrder,
-  fetchFakaCapacityForSku,
-  isFakaBridgeConfigured,
-  isFakaBridgeOffer,
-  resolveFakaProvisionEmail,
-  scheduleFakaBridgeFirstAttempt,
-} from '../../lib/fakaBridge/index.js'
+import { fetchFakaCapacityForSku, isFakaBridgeConfigured, isFakaBridgeOffer, resolveFakaProvisionEmail } from '../../lib/fakaBridge/index.js'
+import { assertProvisionEmailTrusted, createFakaBridgeTaskForOrder, scheduleFakaBridgeFirstAttempt } from '../fakaBridge/service.js'
 import {
   recordOrderAcceptances,
   resolveConsentEvidence,

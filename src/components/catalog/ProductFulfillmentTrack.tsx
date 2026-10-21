@@ -1,5 +1,5 @@
 import { CheckCircle2, CreditCard, KeyRound, Sparkles } from 'lucide-react'
-import type { Product } from '../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../types/product'
 
 interface ProductFulfillmentTrackProps {
   offer?: NonNullable<Product['offers']>[number]

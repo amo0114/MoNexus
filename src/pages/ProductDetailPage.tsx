@@ -1,3 +1,4 @@
+import type { ProductDetail as Product } from '../types/product'
 import { useRecommendationTracking } from '../hooks/useRecommendationTracking'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -7,6 +8,7 @@ import PointCoin from '../components/ui/PointCoin'
 import api from '../api/client'
 import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
+import { captureException } from '../lib/errorReporter'
 import { createOrder, type CheckoutPreview } from '../api/orders'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
@@ -32,67 +34,12 @@ import ProductSpecSections, {
 import { isOfferSoldOut } from '../components/catalog/ProductOfferSelector'
 import { readAvailabilityStatus } from '../utils/publicAvailability'
 import type { Offer } from '../types/merchant'
-import type { MerchandisingProjection } from '../types/merchandising'
-import type { ProductDetails, ProductTemplateDefinition, TemplateAttributes } from '../types/catalog'
+import type { ProductTemplateDefinition } from '../types/catalog'
 import ProductDetailDesktop from '../components/catalog/ProductDetailDesktop'
 import ProductDetailMobile from '../components/catalog/ProductDetailMobile'
 import ProductDetailTablet from '../components/catalog/productDetail/ProductDetailTablet'
 import RelatedProductsSection from '../components/catalog/productDetail/RelatedProductsSection'
 import { referenceProduct, referenceReviews } from '../components/catalog/productDetailMock'
-
-type PublicOffer = Offer & { attributes?: TemplateAttributes }
-
-export interface ProductMerchant {
-  id: number
-  name: string
-  logoUrl?: string | null
-  avatarUrl?: string | null
-  title?: string | null
-  badges?: string[] | null
-  ratingAvg?: number
-  ratingCount?: number
-  sales?: number
-  orderCount?: number
-  productCount?: number
-  responseTime?: string | null
-  verified?: boolean
-}
-
-export interface Product {
-  id: number
-  name: string
-  description: string
-  richDescription?: string
-  type: string
-  category?: { id: number; code: string; label: string } | null
-  visibility?: 'public' | 'members_only'
-  templateKey?: string | null
-  templateVersion?: number | null
-  contentVersion?: number
-  attributes?: TemplateAttributes
-  details?: ProductDetails
-  icon: string
-  imageUrl: string
-  images?: string[]
-  price: number
-  originalPrice?: number
-  stock: number
-  stockMode?: string
-  sales: number
-  ratingAvg?: number
-  ratingCount?: number
-  merchant?: ProductMerchant | null
-  merchandising?: MerchandisingProjection | null
-  assurance?: null | {
-    label: string
-    policyCode: string
-    policyText: string
-    validUntil: string
-  }
-  fakaCapacity?: Offer['fakaCapacity']
-  availability?: Offer['availability']
-  offers?: PublicOffer[]
-}
 
 const SECTION_SCROLL_MARGIN = 'scroll-mt-[calc(var(--navbar-h)+var(--safe-top)+5.25rem)]'
 
@@ -161,6 +108,8 @@ export default function ProductDetailPage() {
   const [reviews, setReviews] = useState<ReviewItem[]>([])
   const [reviewTotal, setReviewTotal] = useState(0)
   const [reviewPage, setReviewPage] = useState(1)
+  const [reviewError, setReviewError] = useState(false)
+  const [reviewAttempt, setReviewAttempt] = useState(0)
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
   const inflowCardRef = useRef<HTMLDivElement>(null)
   const [midScreenScrolledPast, setMidScreenScrolledPast] = useState(false)
@@ -211,22 +160,26 @@ export default function ProductDetailPage() {
     setReviews(isReferencePreview ? referenceReviews : [])
     setReviewTotal(isReferencePreview ? (referenceProduct.ratingCount ?? 0) : 0)
     setReviewPage(1)
+    setReviewError(false)
   }, [id, isReferencePreview])
 
   useEffect(() => {
     if (!id || !product || loginRequired || isReferencePreview) return
     let cancelled = false
+    setReviewError(false)
     getProductReviews(Number(id), reviewPage)
       .then((data) => {
         if (cancelled) return
         setReviewTotal(data.total)
         setReviews((prev) => (reviewPage === 1 ? data.items : [...prev, ...data.items]))
       })
-      .catch(() => {})
+      .catch(() => {
+        if (!cancelled) setReviewError(true)
+      })
     return () => {
       cancelled = true
     }
-  }, [id, reviewPage, product, loginRequired, isReferencePreview])
+  }, [id, reviewPage, reviewAttempt, product, loginRequired, isReferencePreview])
 
   useEffect(() => {
     let cancelled = false
@@ -235,7 +188,7 @@ export default function ProductDetailPage() {
       .then((data) => {
         if (!cancelled) setTemplates(data.templates)
       })
-      .catch(() => {})
+      .catch(error => captureException(error, { operation: 'product-templates' }))
     return () => {
       cancelled = true
     }
@@ -260,7 +213,7 @@ export default function ProductDetailPage() {
       setProduct(null)
       setLoading(true)
       try {
-        const { data } = await api.get(`/products/${id}`)
+        const { data } = await api.get<Product>(`/products/${id}`)
         if (cancelled) return
         setProduct(data)
         setActiveImage(0)
@@ -607,6 +560,8 @@ export default function ProductDetailPage() {
         reviews={reviews}
         reviewTotal={reviewTotal}
         preview={isReferencePreview}
+        error={reviewError}
+        onRetry={() => setReviewAttempt(attempt => attempt + 1)}
         onLoadMore={() => setReviewPage((p) => p + 1)}
       />
     </div>
