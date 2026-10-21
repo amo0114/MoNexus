@@ -80,6 +80,45 @@ describe('createProductShareLink', () => {
     expect(member.url).toBe(PUBLIC_URL)
   })
 
+  /**
+   * SPEC-CATALOG-VIS-001 §3.4：分享创建与落地页仍执行当前访问检查，
+   * 受限商品无公开预览详情。
+   *
+   * 既有用例只覆盖了 Product.visibility='members_only'，没有覆盖
+   * **分类**受限——而分类是 P1 新增的门，两者共用同一个 403 码，
+   * 漏掉分类分支就等于分享入口仍能拿到受限分类商品的短链。
+   */
+  it('rejects sharing a public product that sits in a members_only category (guest)', async () => {
+    const product = await createTestProduct('受限分类可分享商品', 40, 1, ['SHARE-CAT'])
+    const categoryId = (await prisma.product.findUniqueOrThrow({
+      where: { id: product.id },
+      select: { categoryId: true },
+    })).categoryId
+
+    __setShortlinkClientForTests({
+      createShortLink: async () => ({ url: PUBLIC_URL }),
+    })
+
+    // 前置：分类 public，游客可分享。
+    await expect(createProductShareLink(product.id, 'guest')).resolves.toMatchObject({
+      url: PUBLIC_URL,
+    })
+
+    // 收紧分类：游客立即被拒，且不再产生新的短链。
+    await prisma.productCategory.update({
+      where: { id: categoryId },
+      data: { guestVisibility: 'members_only' },
+    })
+    await expect(createProductShareLink(product.id, 'guest')).rejects.toMatchObject({
+      status: 403,
+      code: CATALOG_ERROR_CODES.PRODUCT_LOGIN_REQUIRED,
+    })
+
+    // member 不受影响（分类可见性只约束游客）。
+    const member = await createProductShareLink(product.id, 'member')
+    expect(member.url).toBe(PUBLIC_URL)
+  })
+
   it('stores a ready URL but does not return it after the product becomes members_only for a guest', async () => {
     const product = await createTestProduct('分享后转会员', 40, 1, ['SHARE-FLIP'])
     __setShortlinkClientForTests({
