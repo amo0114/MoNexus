@@ -56,7 +56,9 @@ describe('chatbot catalog stock labels follow public availability', () => {
     const noOffer = await makeProduct('机器人无启用套餐', { status: 'inactive' })
     const open = await makeProduct('机器人可售', {})
 
-    const { items } = await searchProducts({ keyword: '机器人', page: 1, baseUrl })
+    // 视角显式传 guest：这些商品都是 visibility='public'，库存文案与视角无关，
+    // 但 audience 现在是必填参数（BOT-1 之后不再有隐含的 member 默认值）。
+    const { items } = await searchProducts({ keyword: '机器人', page: 1, baseUrl, audience: 'guest' })
     const labels = Object.fromEntries(items.map(item => [item.id, [item.stockLabel, item.soldOut]]))
     expect(labels).toEqual({
       [blocked.id]: ['暂不可售', true],
@@ -65,7 +67,10 @@ describe('chatbot catalog stock labels follow public availability', () => {
       [open.id]: ['不限', false],
     })
 
-    const detail = await productDetail({ id: blocked.id, baseUrl })
-    expect(detail).toMatchObject({ stockLabel: '暂不可售', soldOut: true })
+    const detail = await productDetail({ id: blocked.id, baseUrl, audience: 'guest' })
+    expect(detail).toMatchObject({
+      kind: 'found',
+      product: { stockLabel: '暂不可售', soldOut: true },
+    })
   })
 })
