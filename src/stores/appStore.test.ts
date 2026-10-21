@@ -12,10 +12,6 @@ vi.mock('../api/notifications', () => ({
 }))
 vi.mock('../api/registry', () => ({
   getConfigRegistry: vi.fn(async () => ({ capabilities: {} })),
-  // SPEC-CATALOG-VIS-001 §3.5：身份变化时 appStore 会清 registry 缓存并
-  // 重新注入身份，mock 必须提供这两个导出。
-  invalidateRegistryCache: vi.fn(),
-  setRegistryIdentity: vi.fn(),
 }))
 
 import { useAppStore } from './appStore'

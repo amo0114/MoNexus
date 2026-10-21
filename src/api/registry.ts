@@ -1,4 +1,5 @@
 import api from './client'
+import { useAuthStore } from '../stores/authStore'
 import { ConfigRegistry } from '../types/config'
 
 export interface MemberTierMeta {
@@ -39,29 +40,57 @@ interface CacheSlot {
 const slots = new Map<string, CacheSlot>()
 
 /**
- * 当前读取身份。由 appStore 在每次请求前注入，避免 registry 反向依赖 store
- * 造成循环引用（appStore 已经 import 本模块）。
+ * 当前读取身份。
+ *
+ * ⚠️ 两件事必须说清楚（P1-B 的回归教训）：
+ *
+ * 1. **不由 appStore 在 authStore.subscribe 里注入**。最初写成外部注入
+ *    （`setRegistryIdentity()` 由 appStore 的身份订阅回调调用），结果破坏了
+ *    `notification-realtime.spec.ts` 的 AC-RT-020：该用例在登出/换账号流程上
+ *    断言 SSE 中止与重建，而在 subscribe 回调里额外 setState 会改变那一步的
+ *    渲染时序，导致 SSE 迟迟不就绪（realtime probe timeout）。已实测确认：
+ *    移除该回调内的新增代码后用例恢复通过。
+ *
+ * 2. 因此改为**读取时惰性解析**：每次 getConfigRegistry 自己从 authStore 取
+ *    当前身份。没有订阅、没有副作用，也就不可能影响登录/登出时序。
  *
  * authEpoch 只用于区分「同一浏览器的不同登录会话」；游客统一 0。
  */
-let currentIdentity: { isAuthenticated: boolean; authEpoch: number } = {
-  isAuthenticated: false,
-  authEpoch: 0,
-}
+let overrideIdentity: { isAuthenticated: boolean; authEpoch: number } | null = null
 
-export function setRegistryIdentity(identity: { isAuthenticated: boolean; authEpoch: number }): void {
-  currentIdentity = {
-    isAuthenticated: identity.isAuthenticated,
-    authEpoch: identity.isAuthenticated ? identity.authEpoch : 0,
+function resolveAuthIdentity(): { isAuthenticated: boolean; authEpoch: number } {
+  // authStore 不依赖本模块（它只依赖 types / cache 工具），因此静态导入
+  // 不会形成循环。读取用 getState()，不订阅、不产生副作用。
+  const state = useAuthStore.getState()
+  return {
+    isAuthenticated: Boolean(state.user),
+    authEpoch: state.user ? state.authEpoch : 0,
   }
 }
 
+function resolveIdentity(): { isAuthenticated: boolean; authEpoch: number } {
+  return overrideIdentity ?? resolveAuthIdentity()
+}
+
+/**
+ * 仅供测试显式指定身份。生产路径不调用它——身份由 resolveAuthIdentity()
+ * 在每次读取时从 authStore 惰性解析（原因见上方注释 1）。
+ */
+export function setRegistryIdentity(identity: { isAuthenticated: boolean; authEpoch: number } | null): void {
+  overrideIdentity = identity
+    ? {
+        isAuthenticated: identity.isAuthenticated,
+        authEpoch: identity.isAuthenticated ? identity.authEpoch : 0,
+      }
+    : null
+}
+
 function perspectiveOf(): Perspective {
-  return currentIdentity.isAuthenticated ? 'member' : 'guest'
+  return resolveIdentity().isAuthenticated ? 'member' : 'guest'
 }
 
 function slotKey(): string {
-  return `${perspectiveOf()}:${currentIdentity.authEpoch}`
+  return `${perspectiveOf()}:${resolveIdentity().authEpoch}`
 }
 
 /**
@@ -82,7 +111,7 @@ export function invalidateRegistryCache(): void {
 export function __resetRegistryCacheForTests(): void {
   generation = 0
   slots.clear()
-  currentIdentity = { isAuthenticated: false, authEpoch: 0 }
+  overrideIdentity = null
 }
 
 export async function getConfigRegistry(): Promise<RegistryResponse> {
