@@ -4,8 +4,8 @@ import * as botService from './service.js'
 import * as pointService from '../points/service.js'
 import { checkinForBot } from './checkinBridge.js'
 import { searchProducts, productDetail } from './catalog.js'
+import { resolveBotProductAudience } from './audience.js'
 import { config } from '../../config/index.js'
-import { HttpError } from '../../lib/httpError.js'
 import { consumeChatUnchecked } from './abusePolicy.js'
 import { businessDateString as shanghaiToday } from '../../lib/businessTime.js'
 
@@ -143,18 +143,28 @@ router.post('/unchecked', async (req, res, next) => {
 })
 
 /**
- * 商品搜索（只读）。关键词为空时返回默认列表，与网站首页口径一致。
+ * 商品搜索（只读）。
  *
- * 该接口不需要绑定，任何人都能查——商品本身对访客可见，加绑定门槛只会
- * 让「先看看有什么」的新用户卡在第一步。
+ * ⚠️ 这里**不再**是「任何人都能查全部商品」。请求体可携带 platform /
+ * platformId / conversationType（private | group）；服务端据此判定视角
+ * （见 audience.ts）：
+ *
+ *   私聊 + 已绑定 + 账号正常 → member
+ *   缺字段 / 未知会话类型 / 群聊 / 未绑定 / 账号异常 → guest
+ *
+ * 缺字段走 guest 是刻意的默认：旧客户端不发这些字段，不能因此被当成
+ * 已绑定用户。新字段无需改签名逻辑——HMAC 已对整个 body + _path 签名
+ * （middleware.ts），篡改 conversationType 会直接校验失败。
  */
 router.post('/products/search', async (req, res, next) => {
   try {
-    const { keyword, page } = req.body ?? {}
+    const { keyword, page, platform, platformId, conversationType } = req.body ?? {}
+    const audience = await resolveBotProductAudience({ platform, platformId, conversationType })
     const result = await searchProducts({
       keyword,
       page,
       baseUrl: config.appBaseUrl,
+      audience,
     })
     res.json(result)
   } catch (err) {
@@ -163,27 +173,45 @@ router.post('/products/search', async (req, res, next) => {
 })
 
 /**
- * 商品详情（只读，guest 视角）。
+ * 商品详情（只读）。
  *
- * 注意 `getProductDetail` 对不存在/不可见的商品**抛 404**（不是返回 null），
- * 这是它与 listProducts 的契约差异。机器人需要的是「查无此物」这种可预期
- * 结果而非异常——用户手抖打错编号不该收到「服务异常」。这里把 404 收敛成
- * `found: false`，其余错误照常上抛。
+ * 身份与视角规则同搜索。三种可区分结果：
+ *
+ *   found          —— 200 { found: true, product }
+ *   not_found      —— 200 { found: false }（不存在/已归档/商家停用/草稿）
+ *   login_required —— 200 { found: false, loginRequired: true }
+ *
+ * `getProductDetail` 对不存在/不可见商品**抛 404**（不是返回 null），
+ * 对「存在但仅登录可见」抛 403 PRODUCT_LOGIN_REQUIRED。机器人需要的是
+ * 可预期结果而非异常，故两者都在这里收敛。
+ *
+ * login_required 的响应**不得包含任何商品字段**（ID、名称、价格、库存、
+ * 商家、分类、图片、描述一律没有）。它不是「查无此物」——用户拿的编号
+ * 是真实存在的商品，说成不存在会让他在群里被误导着反复重试；
+ * 它也不是信息出口——只回答「需登录后查看」。
+ *
+ * 其余错误（其他 403、500、DB 故障）继续 next(err)，不伪装成查无商品。
  */
 router.post('/products/detail', async (req, res, next) => {
   try {
-    const { productId } = req.body ?? {}
-    const result = await productDetail({ id: productId, baseUrl: config.appBaseUrl })
-    if (!result) {
-      res.json({ found: false })
-      return
+    const { productId, platform, platformId, conversationType } = req.body ?? {}
+    const audience = await resolveBotProductAudience({ platform, platformId, conversationType })
+    const result = await productDetail({
+      id: productId,
+      baseUrl: config.appBaseUrl,
+      audience,
+    })
+    switch (result.kind) {
+      case 'found':
+        res.json({ found: true, product: result.product })
+        return
+      case 'login_required':
+        res.json({ found: false, loginRequired: true })
+        return
+      default:
+        res.json({ found: false })
     }
-    res.json({ found: true, product: result })
   } catch (err) {
-    if (err instanceof HttpError && err.status === 404) {
-      res.json({ found: false })
-      return
-    }
     next(err)
   }
 })
