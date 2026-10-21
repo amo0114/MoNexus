@@ -1,0 +1,2722 @@
+{
+  "date": "2026-10-20",
+  "branch": "fix/merchandising-hot-badge-projection",
+  "head": "56791c3b34feea7748c0a7fc21e020cc58bf0367",
+  "scope": "main workspace only; review groups, not staged or independently validated commits",
+  "summary": {
+    "changedFiles": 214,
+    "trackedChanges": 111,
+    "untrackedFiles": 103,
+    "localOnlyFiles": 22,
+    "stagedFiles": 0,
+    "groups": {
+      "01-backend-rules": 135,
+      "02-frontend-contracts": 24,
+      "03-merchant-product-flows": 10,
+      "04-storefront-ranking": 12,
+      "05-bot-pagination": 4,
+      "06-operations-notes": 1,
+      "07-delivery-docs": 6,
+      "local-only": 22
+    },
+    "untrackedSourceFilesReferenced": 61,
+    "referenceEdgesToUntrackedSource": 188
+  },
+  "provenance": "listedBeforeNormalization reflects path membership only, not ownership of individual hunks. Original uncommitted contents were not snapshotted.",
+  "checks": {
+    "allDirtyPathsClassifiedExactlyOnce": true,
+    "scannedSourceFiles": 1445,
+    "unresolvedLiteralSourceImports": [],
+    "referencedUntrackedSourceExcludedFromDelivery": [],
+    "pairedFakaRelocations": [
+      {
+        "from": "server/src/lib/fakaBridge/worker.ts",
+        "to": "server/src/modules/fakaBridge/worker.ts",
+        "oldPathDeleted": true,
+        "newPathIncluded": true
+      },
+      {
+        "from": "server/src/lib/fakaBridge/lifecycle.ts",
+        "to": "server/src/modules/fakaBridge/lifecycle.ts",
+        "oldPathDeleted": true,
+        "newPathIncluded": true
+      },
+      {
+        "from": "server/src/lib/fakaBridge/outbox.ts",
+        "to": "server/src/modules/fakaBridge/outbox.ts",
+        "oldPathDeleted": true,
+        "newPathIncluded": true
+      },
+      {
+        "from": "server/src/lib/fakaBridge/paymentBackfill.ts",
+        "to": "server/src/modules/fakaBridge/paymentBackfill.ts",
+        "oldPathDeleted": true,
+        "newPathIncluded": true
+      },
+      {
+        "from": "server/src/lib/fakaBridge/provisionEmailProof.ts",
+        "to": "server/src/modules/fakaBridge/provisionEmailProof.ts",
+        "oldPathDeleted": true,
+        "newPathIncluded": true
+      }
+    ],
+    "alteredPreviouslyDirtyFilesThisRound": [
+      "CLAUDE.md"
+    ],
+    "productionSourcePreservedThisRound": true,
+    "newlyDirtyTrackedFilesThisRound": [
+      "README.md",
+      "README.zh-CN.md",
+      "src/components/AnnouncementCenter.test.tsx"
+    ],
+    "noDatabaseOrLockfileChanges": true,
+    "noStagedChanges": true,
+    "frontendRegression": {
+      "files": 18,
+      "testsPassed": 207,
+      "log": "/tmp/monexus-delivery-frontend-tests.log"
+    },
+    "announcementFixtureRegression": {
+      "files": 1,
+      "testsPassed": 3,
+      "log": "/tmp/monexus-delivery-announcement-test.log"
+    },
+    "frontendBuild": {
+      "passed": true,
+      "log": "/tmp/monexus-delivery-frontend-build.log"
+    },
+    "note": "Closure scan checks literal source imports (including type-only edges), not computed import paths, remote adapters, runtime behavior or individual commit completeness."
+  },
+  "groups": [
+    {
+      "id": "01-backend-rules",
+      "description": "后端服务拆分、公共规则和架构约束",
+      "dependsOn": [],
+      "files": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "docs/superpowers/specs/monexus-api-openapi.json",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "package.json",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/announcements.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/dashboard.api.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/dashboard.service.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-lifecycle.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-p1-hardening.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-provision-email-proof.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-worker.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/faka-payment-backfill.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/instant-fixed-mode.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/p7b-lifecycle-races.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/lib/ai/generation.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/lib/ai/task.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/lib/businessTime.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/lib/fakaBridge/index.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/lib/fakaBridge/lifecycle.ts",
+          "status": " D",
+          "listedBeforeNormalization": false,
+          "exists": false
+        },
+        {
+          "path": "server/src/lib/fakaBridge/outbox.ts",
+          "status": " D",
+          "listedBeforeNormalization": false,
+          "exists": false
+        },
+        {
+          "path": "server/src/lib/fakaBridge/paymentBackfill.ts",
+          "status": " D",
+          "listedBeforeNormalization": false,
+          "exists": false
+        },
+        {
+          "path": "server/src/lib/fakaBridge/provisionEmailProof.ts",
+          "status": " D",
+          "listedBeforeNormalization": false,
+          "exists": false
+        },
+        {
+          "path": "server/src/lib/fakaBridge/worker.ts",
+          "status": " D",
+          "listedBeforeNormalization": false,
+          "exists": false
+        },
+        {
+          "path": "server/src/lib/systemConfig.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/main.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/README.md",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/admin-query.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/controller.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/offerAdmin.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/productLifecycle.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/routes.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/schema.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/admin/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/auth/README.md",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/auth/controller.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/auth/routes.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/auth/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/auth/sessionService.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/applicationController.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/assurance/routes.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/assurance/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/deliveryFileOwnership.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/fakaSync.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/platformFulfillment.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/productWrite.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/sourceDescription.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/checkout/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/checkout/verification.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/dashboard/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/fakaBridge/controller.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchandising/promotions/points.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchant/README.md",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchant/controller.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchant/schema.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchant/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchant/webhookConfig.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/README.md",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/fileAccess.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/fulfillment.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/provisionCron.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/schema.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/serializers.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/payment/workers/index.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/points/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/recharge/adminController.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/recharge/adminService.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/recharge/gates.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/recharge/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/reviews/service.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/scripts/backfillFakaPayments.ts",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/scripts/resetAdminMfaForBreakGlass.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-business-rule-normalization.md",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "scripts/architecture-rules.mjs",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "scripts/architecture-rules.test.mjs",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "scripts/check-architecture.mjs",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "scripts/architecture-rules.test.mjs",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "scripts/check-architecture.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/business-time-boundaries.test.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/__tests__/pagination-policy.test.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/lib/ai/featurePolicy.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/lib/ai/generation.ts",
+              "line": 13,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/lib/ai/generation.ts",
+              "line": 14,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/lib/ai/task.ts",
+              "line": 16,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/lib/pagination.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/orderAdmin.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/userAdmin.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/inventoryService.ts",
+              "line": 16,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/productService.ts",
+              "line": 20,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/lib/paginationPolicy.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/__tests__/pagination-policy.test.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/lib/pagination.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/lib/systemConfig.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/schema.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/auditQueries.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 112,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/deliveryFileAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 12,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 64,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/fakaCatalogAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 90,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/fakaTaskAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 13,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 66,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/inventoryAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 7,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 83,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/merchantAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 10,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 39,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/orderAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 4,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 106,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/productAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 8,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 73,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/settlementAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 11,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 49,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/admin/userAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/controller.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/service.ts",
+              "line": 99,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/announcements/adminController.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/routes.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/announcements/adminSchema.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/announcements/adminController.ts",
+              "line": 3,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/announcements/adminService.ts",
+              "line": 4,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/routes.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/announcements/adminService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/announcements/adminController.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/__tests__/announcements.test.ts",
+              "line": 4,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/auth/authProtection.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/auth/emailVerificationService.ts",
+              "line": 11,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/passwordService.ts",
+              "line": 18,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/registrationService.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/controller.ts",
+              "line": 7,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 363,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/auth/credentialPrimitives.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/auth/emailVerificationService.ts",
+              "line": 10,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/passwordService.ts",
+              "line": 12,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/registrationService.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 352,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/auth/emailVerificationService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/auth/controller.ts",
+              "line": 9,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 354,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/auth/mfaService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/auth/controller.ts",
+              "line": 10,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 342,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/scripts/resetAdminMfaForBreakGlass.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/auth/passwordService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/auth/controller.ts",
+              "line": 8,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 353,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/auth/registrationService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/auth/controller.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/routes.ts",
+              "line": 25,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 356,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/auth/sessionIssuance.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/auth/mfaService.ts",
+              "line": 26,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/registrationService.ts",
+              "line": 7,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/auth/service.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/catalog/deliveryFileOwnership.test.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/catalog/offerPolicy.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/productAdmin.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/offerService.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/productService.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/offerAdmin.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/fakaSync.ts",
+              "line": 9,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/catalog/productLock.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/offerService.ts",
+              "line": 20,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/offerAdmin.ts",
+              "line": 16,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/productLifecycle.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/assurance/service.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/fakaSync.ts",
+              "line": 8,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/productWrite.ts",
+              "line": 24,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/sourceDescription.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/fakaBridge/README.md",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/fakaBridge/lifecycle.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/fakaBridge/service.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/fakaBridge/service.ts",
+              "line": 13,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/fakaBridge/worker.ts",
+              "line": 31,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/fakaBridge/outbox.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/fakaBridge/service.ts",
+              "line": 25,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/fakaBridge/service.ts",
+              "line": 30,
+              "runtime": false,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/fakaBridge/paymentBackfill.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/__tests__/faka-payment-backfill.test.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/scripts/backfillFakaPayments.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/fakaBridge/provisionEmailProof.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/fakaBridge/service.ts",
+              "line": 15,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/__tests__/faka-bridge-provision-email-proof.test.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/fakaBridge/controller.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/fakaBridge/service.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/fakaTaskAdmin.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/orderAdmin.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/orderService.ts",
+              "line": 10,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/__tests__/faka-bridge-lifecycle.test.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/__tests__/faka-bridge-p1-hardening.test.ts",
+              "line": 7,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/__tests__/faka-bridge-worker.test.ts",
+              "line": 8,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/main.ts",
+              "line": 14,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/service.ts",
+              "line": 45,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/fakaBridge/taskQueries.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/offerAdmin.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/fakaSync.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/fakaBridge/worker.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/fakaBridge/outbox.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/fakaBridge/service.ts",
+              "line": 32,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/fakaBridge/service.ts",
+              "line": 42,
+              "runtime": false,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/dashboardQueries.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/controller.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 34,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/deliveryFilePolicy.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/offerService.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/orderService.ts",
+              "line": 11,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/identity.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/catalog/applicationController.ts",
+              "line": 12,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/assurance/routes.ts",
+              "line": 12,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/inventoryService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/controller.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 11,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/offerSerialization.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/offerService.ts",
+              "line": 23,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/productService.ts",
+              "line": 21,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/offerService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/productService.ts",
+              "line": 22,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/controller.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 22,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/orderService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/controller.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 24,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/productService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/controller.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 23,
+              "runtime": false,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/merchant/profileService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/controller.ts",
+              "line": 4,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/orders/provisioningConfig.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/offerService.ts",
+              "line": 8,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/__tests__/p7b-lifecycle-races.test.ts",
+              "line": 33,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/service.ts",
+              "line": 7,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/orders/settlementPolicy.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/admin/settlementAdmin.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/dashboardQueries.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/statusPolicy.test.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/service.ts",
+              "line": 35,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/orders/statusPolicy.test.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/orders/statusPolicy.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/merchant/orderService.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/settlementPolicy.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/statusPolicy.test.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/__tests__/instant-fixed-mode.test.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/admin/schema.ts",
+              "line": 7,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/catalog/platformFulfillment.ts",
+              "line": 12,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/checkout/service.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchant/schema.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/fileAccess.ts",
+              "line": 8,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/fulfillment.ts",
+              "line": 10,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/fulfillment.ts",
+              "line": 17,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/provisionCron.ts",
+              "line": 17,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/schema.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/serializers.ts",
+              "line": 1,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/service.ts",
+              "line": 9,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/reviews/service.ts",
+              "line": 11,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/points/spendingPolicy.test.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/points/spendingPolicy.ts",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/points/spendingPolicy.test.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/checkout/service.ts",
+              "line": 15,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/merchandising/promotions/points.ts",
+              "line": 29,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/orders/service.ts",
+              "line": 16,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/README.md",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/recharge/adminPaymentOperations.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/recharge/adminController.ts",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/adminService.ts",
+              "line": 18,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/adminQueries.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/recharge/adminController.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/adminService.ts",
+              "line": 9,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/orderLifecycle.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/payment/workers/index.ts",
+              "line": 28,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/service.ts",
+              "line": 7,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/orderQueries.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/recharge/orderLifecycle.ts",
+              "line": 13,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/paymentCompletion.ts",
+              "line": 10,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/service.ts",
+              "line": 6,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/paymentCompletion.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/payment/workers/index.ts",
+              "line": 27,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/service.ts",
+              "line": 8,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/pricePolicyAdmin.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/recharge/adminController.ts",
+              "line": 4,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/adminService.ts",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/providerSelection.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/recharge/orderLifecycle.ts",
+              "line": 14,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/paymentCompletion.ts",
+              "line": 11,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "server/src/modules/recharge/quoteService.ts",
+              "line": 10,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "server/src/modules/recharge/quoteService.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "server/src/modules/recharge/service.ts",
+              "line": 5,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "02-frontend-contracts",
+      "description": "前端商品契约、订单详情和评价恢复",
+      "dependsOn": [],
+      "files": [
+        {
+          "path": "src/api/orders.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/api/productRecommendations.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/api/shops.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/AnnouncementCenter.test.tsx",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "src/components/OrderDetailModal.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/MerchantHoverCard.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/ProductDetailDesktop.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/ProductDetailPhase3.test.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/ProductExchangeSummary.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/ProductFulfillmentTrack.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/ProductDetailTablet.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/ProductReviewList.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/desktop/DesktopDetailContent.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/desktop/DesktopPurchasePanel.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileDetailContent.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileMerchantSection.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileOfferPanel.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileSkuSheet.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/productDetailMock.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/store/types.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/hooks/useShopProducts.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/ProductDetailPage.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/hooks/useOrderRenewal.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "src/components/OrderDetailModal.tsx",
+              "line": 4,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "src/types/product.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "src/api/storeFeed.ts",
+              "line": 2,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/api/productRecommendations.ts",
+              "line": 2,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/api/shops.ts",
+              "line": 2,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/MerchantHoverCard.tsx",
+              "line": 4,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/ProductDetailDesktop.tsx",
+              "line": 19,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/ProductDetailPhase3.test.tsx",
+              "line": 7,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/ProductExchangeSummary.tsx",
+              "line": 1,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/ProductFulfillmentTrack.tsx",
+              "line": 2,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetail/ProductDetailTablet.tsx",
+              "line": 5,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetail/desktop/DesktopDetailContent.tsx",
+              "line": 3,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetail/desktop/DesktopPurchasePanel.tsx",
+              "line": 19,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetail/mobile/MobileDetailContent.tsx",
+              "line": 11,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetail/mobile/MobileMerchantSection.tsx",
+              "line": 3,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetail/mobile/MobileOfferPanel.tsx",
+              "line": 2,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetail/mobile/MobileSkuSheet.tsx",
+              "line": 2,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/catalog/productDetailMock.ts",
+              "line": 1,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/components/store/types.ts",
+              "line": 1,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/hooks/useShopProducts.ts",
+              "line": 4,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/pages/ProductDetailPage.tsx",
+              "line": 1,
+              "runtime": false,
+              "dynamic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "03-merchant-product-flows",
+      "description": "商家创建与编辑流程",
+      "dependsOn": [],
+      "files": [
+        {
+          "path": "src/components/catalog/wizard/deliveryFields.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/components/catalog/wizard/fulfillment.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/merchant/ProductCreateWizard.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/merchant/ProductEditPage.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/merchant/productEditor/offerRequirements.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/merchant/PRODUCT_FLOWS.md",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/merchant/productCreation/draft.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "src/pages/merchant/productCreation/useProductCreation.ts",
+              "line": 9,
+              "runtime": true,
+              "dynamic": false
+            },
+            {
+              "file": "src/pages/merchant/ProductCreateWizard.tsx",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "src/pages/merchant/productCreation/useProductCreation.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "src/pages/merchant/ProductCreateWizard.tsx",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "src/pages/merchant/productEditor/editorForm.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "src/pages/merchant/productEditor/saveProductEdits.ts",
+              "line": 34,
+              "runtime": false,
+              "dynamic": false
+            },
+            {
+              "file": "src/pages/merchant/ProductEditPage.tsx",
+              "line": 3,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "src/pages/merchant/productEditor/saveProductEdits.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "src/pages/merchant/ProductEditPage.tsx",
+              "line": 2,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "04-storefront-ranking",
+      "description": "商城请求恢复、热卖投影与排行留存",
+      "dependsOn": [
+        "02-frontend-contracts"
+      ],
+      "files": [
+        {
+          "path": "server/src/modules/merchandising/__fixtures__/ranking.fixtures.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchandising/__tests__/ranking-compute-projection.test.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchandising/publicProjection.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchandising/ranking/cron.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchandising/ranking/index.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/StorePage.cmi.test.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/StorePage.tsx",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/stores/appStore.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/merchandising/__tests__/ranking-retention-cron.test.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/api/storeFeed.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "referencedBy": [
+            {
+              "file": "src/pages/StorePage.tsx",
+              "line": 4,
+              "runtime": true,
+              "dynamic": false
+            }
+          ]
+        },
+        {
+          "path": "src/pages/StorePage.cursor-expired.test.tsx",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "src/pages/StorePage.request-loop.test.tsx",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        }
+      ]
+    },
+    {
+      "id": "05-bot-pagination",
+      "description": "机器人分页兼容变更：等待适配器验收",
+      "dependsOn": [
+        "01-backend-rules"
+      ],
+      "files": [
+        {
+          "path": "server/src/modules/chatbot/catalog.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/chatbot/routes.ts",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true,
+          "sharedWith": [
+            "01-backend-rules"
+          ],
+          "requiresHunkSplit": "日期规则复用归 01；搜索请求 cursor 参数归 05。"
+        },
+        {
+          "path": "docs/api/bot-product-search-pagination-migration.md",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "server/src/modules/chatbot/bot-pagination.test.ts",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        }
+      ]
+    },
+    {
+      "id": "06-operations-notes",
+      "description": "既有运维现场记录",
+      "dependsOn": [],
+      "files": [
+        {
+          "path": "docs/operations/vps-1panel-openresty-deployment.md",
+          "status": " M",
+          "listedBeforeNormalization": true,
+          "exists": true
+        }
+      ]
+    },
+    {
+      "id": "07-delivery-docs",
+      "description": "交付清单与开发指引",
+      "dependsOn": [],
+      "files": [
+        {
+          "path": "README.md",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "README.zh-CN.md",
+          "status": " M",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "CLAUDE.md",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-workspace-delivery-manifest.json",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-workspace-delivery-review.md",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-backend-rules-snapshot.md",
+          "status": "??",
+          "listedBeforeNormalization": false,
+          "exists": true
+        }
+      ]
+    },
+    {
+      "id": "local-only",
+      "description": "本地诊断脚本，保留原位且不纳入交付",
+      "dependsOn": [],
+      "files": [
+        {
+          "path": "check_prisma_product.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "inspect_merchant_files.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "inspect_merchant_section.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "inspect_pdp_shop.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "inspect_store_page.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_api.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_browser_enc.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_clean_measure.sh",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_diskcache.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_dupcheck.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_login.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_mobile.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_perf.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_reuse.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_verify.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "mx_verify2.mjs",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "p",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "preview.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "run_tests.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "view_app.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "view_pdp_lines.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        },
+        {
+          "path": "view_store_types.py",
+          "status": "??",
+          "listedBeforeNormalization": true,
+          "exists": true
+        }
+      ]
+    }
+  ],
+  "followUp": {
+    "round": "isolated backend snapshot",
+    "report": "docs/refactoring/2026-10-20-backend-rules-snapshot.md",
+    "snapshotTree": "3ff490842b295728892b9bd717cd348a99f2c482",
+    "includedPrimaryGroup": "01-backend-rules",
+    "extraSharedPath": "server/src/modules/chatbot/routes.ts",
+    "sharedChange": "date reuse only; cursor forwarding excluded",
+    "snapshotChangedPaths": 136,
+    "mainSourceChangesThisRound": "one trailing blank line removed from each listed file; verified against pre-round hashes",
+    "eofWhitespaceNormalized": [
+      "server/src/lib/ai/featurePolicy.ts",
+      "server/src/modules/announcements/adminController.ts",
+      "server/src/modules/announcements/adminSchema.ts",
+      "server/src/modules/announcements/adminService.ts",
+      "server/src/modules/catalog/productLock.ts",
+      "server/src/modules/fakaBridge/taskQueries.ts",
+      "server/src/modules/orders/provisioningConfig.ts",
+      "server/src/modules/orders/statusPolicy.ts"
+    ],
+    "originalChecksScope": "checks above refer to the previous workspace review; snapshot verification is recorded separately in the linked report",
+    "validation": {
+      "backendTestFilesPassed": 46,
+      "backendTestsPassed": 548,
+      "architectureRuleTestsPassed": 6,
+      "backendBuildPassed": true,
+      "architectureScanPassed": true,
+      "patchReplayExact": true,
+      "temporaryDatabaseStoppedAndRemoved": true,
+      "formalGitHubCiRun": false,
+      "browserE2eRun": false
+    }
+  }
+}

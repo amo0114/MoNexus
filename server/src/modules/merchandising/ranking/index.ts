@@ -32,9 +32,15 @@ export {
 export {
   getRankingCompute,
   runRankingCronBatch,
+  runRankingRetentionBatch,
   setRankingCompute,
   startRankingCron,
+  startRankingRetentionCron,
   stopRankingCron,
+  stopRankingRetentionCron,
+  RANKING_RETENTION_LEASE,
+  RANKING_RETENTION_PERIOD_MS,
+  RANKING_RETENTION_TICK_MS,
 } from './cron.js'
 
 export {

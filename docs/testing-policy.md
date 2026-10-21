@@ -75,8 +75,10 @@
 
 - 小改动：`npm run verify:quick`（只跑受 git 变更影响的测试；
   `npm run verify:quick -- e2e/xxx.spec.ts` 追加指定 e2e spec）。
-- 全量（与 CI 等价）：`npm run verify:local`，或 `verify:local:no-e2e`。
-- `verify:local` 包含独立移动浏览器套件；`verify:quick -- e2e/mobile-chrome.spec.ts` 等移动 spec 会路由至专用配置，不为这些 spec 重置数据库。也可单独运行 `npm run verify:mobile-island`。
+- 较完整的本地验证：先在仓库根目录运行 `npm test`；`npm run verify:local:no-e2e` 执行前后端构建、测试库初始化/迁移和后端全量测试，`verify:local` 再增加 reset/seed、移动浏览器、主 E2E 与法律页面套件。两者都没有执行根目录前端单测，不等价于 CI 全部作业。
+- 架构与 OpenAPI 检查另跑 `npm run test:architecture`、`npm run check:architecture`；通知实时链路与 catalog-ops 使用各自脚本 `bash scripts/verify-notification-realtime-e2e.sh`、`bash scripts/verify-catalog-ops-e2e.sh`。这些检查仍由 GitHub CI 对最终交付代码执行；局部本地结果不能替代 `CI OK`。
+- 后端测试必须设置指向可丢弃测试库的 `TEST_DATABASE_URL`，同库只运行一个测试进程。直接运行前须创建测试库并迁移；`verify:quick` 仅在 schema/migrations 变化时自动迁移，首次准备方式见 [README](../README.zh-CN.md#测试)。
+- `verify:local` 包含独立移动浏览器套件，`verify:local:no-e2e` 不包含。`verify:quick -- e2e/mobile-chrome.spec.ts` 等移动 spec 会路由至专用配置，不为这些 spec 重置数据库。也可单独运行 `npm run verify:mobile-island`。
 - 日常无需本地全量：push→develop 集成门会跑全套，develop 上红了再修即可。
 
 ## 8. 后端公共开销计时

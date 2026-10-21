@@ -1,0 +1,955 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-20",
+  "scope": "original main workspace source manifest for consolidated delivery; source counts retain historical baseline",
+  "baseCommit": "56791c3b34feea7748c0a7fc21e020cc58bf0367",
+  "historicalManifest": "docs/refactoring/2026-10-20-workspace-delivery-manifest.json",
+  "combinedWorktree": "/root/projects/worktrees/monexus-delivery-candidate",
+  "counts": {
+    "candidatePaths": 198,
+    "businessSnapshotPaths": 184,
+    "documentationPaths": 14,
+    "excludedWholePaths": 25,
+    "currentDirtyPaths": 223
+  },
+  "groups": [
+    {
+      "id": "01-backend-rules",
+      "sourceTree": "75cf1f49bbd8e41edee06a82062962dd686b9b04",
+      "sourceBaseCommit": "56791c3b34feea7748c0a7fc21e020cc58bf0367",
+      "validation": "individually validated; combined local validation passed; final PR full CI/E2E pending",
+      "dependsOn": [],
+      "pathCount": 136,
+      "files": [
+        {
+          "path": ".github/workflows/ci.yml",
+          "operation": "modify"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-business-rule-normalization.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/superpowers/specs/monexus-api-openapi.json",
+          "operation": "modify"
+        },
+        {
+          "path": "package.json",
+          "operation": "modify"
+        },
+        {
+          "path": "scripts/architecture-rules.mjs",
+          "operation": "add"
+        },
+        {
+          "path": "scripts/architecture-rules.test.mjs",
+          "operation": "add"
+        },
+        {
+          "path": "scripts/check-architecture.mjs",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/__tests__/announcements.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/business-time-boundaries.test.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/__tests__/dashboard.api.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/dashboard.service.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-lifecycle.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-p1-hardening.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-provision-email-proof.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/faka-bridge-worker.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/faka-payment-backfill.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/instant-fixed-mode.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/p7b-lifecycle-races.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/__tests__/pagination-policy.test.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/lib/ai/featurePolicy.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/lib/ai/generation.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/lib/ai/task.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/lib/businessTime.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/lib/fakaBridge/index.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/lib/fakaBridge/lifecycle.ts",
+          "operation": "delete"
+        },
+        {
+          "path": "server/src/lib/fakaBridge/outbox.ts",
+          "operation": "delete"
+        },
+        {
+          "path": "server/src/lib/fakaBridge/paymentBackfill.ts",
+          "operation": "delete"
+        },
+        {
+          "path": "server/src/lib/fakaBridge/provisionEmailProof.ts",
+          "operation": "delete"
+        },
+        {
+          "path": "server/src/lib/fakaBridge/worker.ts",
+          "operation": "delete"
+        },
+        {
+          "path": "server/src/lib/pagination.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/lib/paginationPolicy.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/lib/systemConfig.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/main.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/README.md",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/admin-query.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/auditQueries.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/controller.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/deliveryFileAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/fakaCatalogAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/fakaTaskAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/inventoryAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/merchantAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/offerAdmin.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/orderAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/productAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/productLifecycle.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/routes.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/schema.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/admin/settlementAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/admin/userAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/announcements/adminController.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/announcements/adminSchema.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/announcements/adminService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/README.md",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/auth/authProtection.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/controller.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/auth/credentialPrimitives.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/emailVerificationService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/mfaService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/passwordService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/registrationService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/routes.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/auth/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/auth/sessionIssuance.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/auth/sessionService.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/applicationController.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/assurance/routes.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/assurance/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/deliveryFileOwnership.test.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/catalog/deliveryFileOwnership.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/fakaSync.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/offerPolicy.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/catalog/platformFulfillment.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/productLock.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/catalog/productWrite.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/catalog/sourceDescription.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/chatbot/routes.ts",
+          "operation": "modify",
+          "selection": "businessDateString reuse only; request page preserved; cursor forwarding excluded"
+        },
+        {
+          "path": "server/src/modules/checkout/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/checkout/verification.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/dashboard/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/README.md",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/controller.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/lifecycle.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/outbox.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/paymentBackfill.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/provisionEmailProof.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/service.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/taskQueries.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/fakaBridge/worker.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchandising/promotions/points.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchant/README.md",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchant/controller.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchant/dashboardQueries.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/deliveryFilePolicy.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/identity.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/inventoryService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/offerSerialization.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/offerService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/orderService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/productService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/profileService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/merchant/schema.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchant/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchant/webhookConfig.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/README.md",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/fileAccess.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/fulfillment.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/provisionCron.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/provisioningConfig.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/orders/schema.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/serializers.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/orders/settlementPolicy.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/orders/statusPolicy.test.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/orders/statusPolicy.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/payment/workers/index.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/points/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/points/spendingPolicy.test.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/points/spendingPolicy.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/README.md",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/adminController.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/recharge/adminPaymentOperations.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/adminQueries.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/adminService.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/recharge/gates.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/recharge/orderLifecycle.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/orderQueries.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/paymentCompletion.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/pricePolicyAdmin.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/providerSelection.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/quoteService.ts",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/recharge/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/reviews/service.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/scripts/backfillFakaPayments.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/scripts/resetAdminMfaForBreakGlass.ts",
+          "operation": "modify"
+        }
+      ]
+    },
+    {
+      "id": "02-frontend-contracts",
+      "sourceTree": "6594a5014f2a7a1d89ca90ae60eeef78bfa5ef34",
+      "sourceBaseCommit": "56791c3b34feea7748c0a7fc21e020cc58bf0367",
+      "validation": "individually validated; combined local validation passed; final PR full CI/E2E pending",
+      "dependsOn": [],
+      "pathCount": 25,
+      "files": [
+        {
+          "path": "src/api/orders.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/api/productRecommendations.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/api/shops.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/AnnouncementCenter.test.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/OrderDetailModal.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/MerchantHoverCard.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/ProductDetailDesktop.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/ProductDetailPhase3.test.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/ProductExchangeSummary.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/ProductFulfillmentTrack.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/ProductDetailTablet.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/ProductReviewList.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/desktop/DesktopDetailContent.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/desktop/DesktopPurchasePanel.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileDetailContent.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileMerchantSection.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileOfferPanel.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetail/mobile/MobileSkuSheet.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/productDetailMock.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/store/types.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/hooks/useShopProducts.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/pages/ProductDetailPage.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/hooks/useOrderRenewal.ts",
+          "operation": "add"
+        },
+        {
+          "path": "src/types/product.ts",
+          "operation": "add"
+        },
+        {
+          "path": "src/pages/ProductDetailPage.reviews.test.tsx",
+          "operation": "add"
+        }
+      ]
+    },
+    {
+      "id": "03-merchant-product-flows",
+      "sourceTree": "7c74df535972a26163c1f52d650666cd9d96909a",
+      "sourceBaseCommit": "56791c3b34feea7748c0a7fc21e020cc58bf0367",
+      "validation": "individually validated; combined local validation passed; final PR full CI/E2E pending",
+      "dependsOn": [],
+      "pathCount": 10,
+      "files": [
+        {
+          "path": "src/components/catalog/wizard/deliveryFields.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/components/catalog/wizard/fulfillment.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/pages/merchant/ProductCreateWizard.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/pages/merchant/ProductEditPage.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/pages/merchant/productEditor/offerRequirements.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/pages/merchant/PRODUCT_FLOWS.md",
+          "operation": "add"
+        },
+        {
+          "path": "src/pages/merchant/productCreation/draft.ts",
+          "operation": "add"
+        },
+        {
+          "path": "src/pages/merchant/productCreation/useProductCreation.ts",
+          "operation": "add"
+        },
+        {
+          "path": "src/pages/merchant/productEditor/editorForm.ts",
+          "operation": "add"
+        },
+        {
+          "path": "src/pages/merchant/productEditor/saveProductEdits.ts",
+          "operation": "add"
+        }
+      ]
+    },
+    {
+      "id": "04-storefront-ranking",
+      "sourceTree": "cd1b545bd043dfd4d0e9ca5897326309895f6d43",
+      "sourceBaseCommit": "cedc7408bd1c45ad7090f35d671857b25ff37425",
+      "validation": "individually validated; combined local validation passed; final PR full CI/E2E pending",
+      "dependsOn": [
+        "02-frontend-contracts"
+      ],
+      "pathCount": 13,
+      "files": [
+        {
+          "path": "server/src/modules/merchandising/__fixtures__/ranking.fixtures.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchandising/__tests__/ranking-compute-projection.test.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchandising/publicProjection.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchandising/ranking/cron.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchandising/ranking/index.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "src/pages/StorePage.cmi.test.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/pages/StorePage.tsx",
+          "operation": "modify"
+        },
+        {
+          "path": "src/stores/appStore.ts",
+          "operation": "modify"
+        },
+        {
+          "path": "server/src/modules/merchandising/__tests__/ranking-retention-cron.test.ts",
+          "operation": "add"
+        },
+        {
+          "path": "src/api/storeFeed.ts",
+          "operation": "add"
+        },
+        {
+          "path": "src/pages/StorePage.cursor-expired.test.tsx",
+          "operation": "add"
+        },
+        {
+          "path": "src/pages/StorePage.request-loop.test.tsx",
+          "operation": "add"
+        },
+        {
+          "path": "server/src/modules/products/catalog-merch-integration.test.ts",
+          "operation": "modify"
+        }
+      ]
+    },
+    {
+      "id": "06-operations-notes",
+      "source": "current main workspace documentation",
+      "validation": "static documentation checks; no production source changes this round",
+      "dependsOn": [],
+      "pathCount": 1,
+      "files": [
+        {
+          "path": "docs/operations/vps-1panel-openresty-deployment.md",
+          "operation": "modify"
+        }
+      ]
+    },
+    {
+      "id": "07-delivery-docs",
+      "source": "current main workspace documentation",
+      "validation": "static documentation checks; no production source changes this round",
+      "dependsOn": [],
+      "pathCount": 13,
+      "files": [
+        {
+          "path": "README.md",
+          "operation": "modify"
+        },
+        {
+          "path": "README.zh-CN.md",
+          "operation": "modify"
+        },
+        {
+          "path": "CLAUDE.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/branching-and-ci.md",
+          "operation": "modify"
+        },
+        {
+          "path": "docs/testing-policy.md",
+          "operation": "modify"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-workspace-delivery-manifest.json",
+          "operation": "add"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-workspace-delivery-review.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-backend-rules-snapshot.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-frontend-contracts-snapshot.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-merchant-product-flows-snapshot.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-storefront-ranking-snapshot.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-delivery-readiness.md",
+          "operation": "add"
+        },
+        {
+          "path": "docs/refactoring/2026-10-20-delivery-current-manifest.json",
+          "operation": "add"
+        }
+      ]
+    }
+  ],
+  "excluded": {
+    "bot-pagination": {
+      "wholeFiles": [
+        "server/src/modules/chatbot/catalog.ts",
+        "docs/api/bot-product-search-pagination-migration.md",
+        "server/src/modules/chatbot/bot-pagination.test.ts"
+      ],
+      "partialFiles": [
+        {
+          "path": "server/src/modules/chatbot/routes.ts",
+          "excluded": "cursor request forwarding",
+          "included": "date helper reuse from group 01"
+        }
+      ],
+      "reason": "adapter location, upgrade and real-session acceptance unresolved"
+    },
+    "local-only": {
+      "files": [
+        "check_prisma_product.py",
+        "inspect_merchant_files.py",
+        "inspect_merchant_section.py",
+        "inspect_pdp_shop.py",
+        "inspect_store_page.py",
+        "mx_api.mjs",
+        "mx_browser_enc.mjs",
+        "mx_clean_measure.sh",
+        "mx_diskcache.mjs",
+        "mx_dupcheck.mjs",
+        "mx_login.mjs",
+        "mx_mobile.mjs",
+        "mx_perf.mjs",
+        "mx_reuse.mjs",
+        "mx_verify.mjs",
+        "mx_verify2.mjs",
+        "p",
+        "preview.py",
+        "run_tests.py",
+        "view_app.py",
+        "view_pdp_lines.py",
+        "view_store_types.py"
+      ],
+      "action": "preserve in place; do not execute, stage or delete"
+    }
+  },
+  "deliveryPlan": {
+    "existingUnits": "PR #260 and #261 squash merged into develop on 2026-10-21; no duplicate delivery",
+    "remainingUnits": [
+      "03-merchant-product-flows",
+      "04-storefront-ranking",
+      "06-operations-notes",
+      "07-delivery-docs"
+    ],
+    "expectedRemainingPaths": 37,
+    "expectedRemainingCommits": 1,
+    "baseForFuturePR": "actual develop after dependency merges",
+    "combinedValidation": "passed locally: frontend 201 files/1700 tests; backend 53 files/639 tests; builds and architecture checks passed",
+    "finalGithubCIAndE2E": "required with run-e2e label; live outcome is recorded on the final PR",
+    "remoteStateCheckedThisRound": true,
+    "combinedValidationArtifacts": "outputs/delivery/2026-10-20-combined-validation/",
+    "actualDeliveryBase": "c73f879a0875836622b08be74289878c09446a35",
+    "deliveryWorktree": "/root/projects/worktrees/monexus-consolidated-delivery",
+    "deliveryBranch": "fix/merchant-storefront-normalization-20261021",
+    "remoteStateCheckedDate": "2026-10-21",
+    "dependencyMerges": [
+      {
+        "pr": 260,
+        "commit": "bdee5d2e58e66818df840997fe28829009963e6e",
+        "integrationCI": "https://github.com/amo0114/MoNexus/actions/runs/39537113387",
+        "conclusionAtPreparation": "success"
+      },
+      {
+        "pr": 261,
+        "commit": "c73f879a0875836622b08be74289878c09446a35",
+        "integrationCI": "https://github.com/amo0114/MoNexus/actions/runs/39538509017",
+        "conclusionAtPreparation": "in_progress"
+      }
+    ]
+  },
+  "notes": [
+    "Counts include added, modified and deleted paths with renames disabled.",
+    "The shared chatbot route is included only from the group 01 source tree.",
+    "Original historical manifest counts are retained; this file supplies the current scope.",
+    "This manifest has no self hash or candidate tree; exact replay identity is kept in ignored output metadata.",
+    "Source scope is 198 paths relative to the original baseline; actual remaining delivery is 37 paths relative to actualDeliveryBase. Local main dirty-path counts describe the preserved source workspace."
+  ]
+}

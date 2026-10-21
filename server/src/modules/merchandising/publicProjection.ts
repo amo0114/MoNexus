@@ -15,8 +15,10 @@
 //     isHot（D-MERCH-01 / AC-MERCH-008 / CHK-HOT-009）；
 //   - decorate 批量、有界（≤1000 商品，单条 IN 查询，无 N+1；CHK-PERF-003）；
 //   - public DTO 只暴露 Spec §9 字段：hot 只含本商品 effectiveOrders/rank/windowDays/
-//     computedAt；platformOwned 由 merchantId=null 派生；platformPick/merchantPartner
-//     由 BE-005 增量填充（当前恒 null）。绝不泄露内部字段（MERCH-015 / CHK-SEC-001）。
+//     computedAt，且仅当该快照 isHot=true 时才存在（compute 对每个 active 商品都写
+//     快照，快照存在 ≠ 热卖）；platformOwned 由 merchantId=null 派生；platformPick/
+//     merchantPartner 由 BE-005 增量填充（当前恒 null）。绝不泄露内部字段
+//     （MERCH-015 / CHK-SEC-001）。
 
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
@@ -274,15 +276,19 @@ export async function resolveCursorForRequest(
   return { mode: 'run', run: pinnedRun }
 }
 
-/** 有界批量读快照：单条 IN 查询（≤1000），无 N+1。 */
+/** 有界批量读快照：单条 IN 查询（≤1000），无 N+1。
+ *
+ * `isHot` 必须一起读：它才是「是否热卖」的唯一判据。投影只让 isHot=true 的
+ * 商品拿到 hot 块，而 compute 对每个 active 商品都写快照（含零订单），
+ * 因此不能拿「快照存在」当热卖信号——那会让所有在售商品都挂上热卖徽章。 */
 async function loadSnapshotsBounded(
   runId: string,
   productIds: number[],
   db: AnyDb,
-): Promise<Array<{ productId: number; effectiveOrderCount: number; categoryRank: number; computedAt: Date }>> {
+): Promise<Array<{ productId: number; isHot: boolean; effectiveOrderCount: number; categoryRank: number; computedAt: Date }>> {
   return db.productMerchandisingSnapshot.findMany({
     where: { runId, productId: { in: productIds } },
-    select: { productId: true, effectiveOrderCount: true, categoryRank: true, computedAt: true },
+    select: { productId: true, isHot: true, effectiveOrderCount: true, categoryRank: true, computedAt: true },
   })
 }
 
@@ -366,16 +372,21 @@ function buildNoRunProjection(product: ProjectionInputProduct, identity: Identit
   }
 }
 
-/** 钉住 run 的 projection：hot 只含本商品指标（Spec §9，CHK-SEC-001）。 */
+/** 钉住 run 的 projection：hot 只含本商品指标（Spec §9，CHK-SEC-001）。
+ *
+ * hot 块只在 `snapshot.isHot === true` 时返回。compute 为每个 active 商品都
+ * 写快照（零订单也有 0 计数行），若改用「快照存在」判定，所有在售商品都会
+ * 得到热卖徽章，热卖标签彻底失去区分度（D-MERCH-05 / D-MERCH-20）。
+ */
 function buildRunProjection(
   product: ProjectionInputProduct,
   run: ProjectionRun,
-  snapshot: { effectiveOrderCount: number; categoryRank: number; computedAt: Date } | null,
+  snapshot: { isHot: boolean; effectiveOrderCount: number; categoryRank: number; computedAt: Date } | null,
   identity: IdentityProjection,
 ): MerchandisingProjection {
   return {
     rankingRunId: run.id,
-    hot: snapshot
+    hot: snapshot?.isHot
       ? {
           effectiveOrders: snapshot.effectiveOrderCount,
           rank: snapshot.categoryRank,

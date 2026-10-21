@@ -210,6 +210,26 @@ afterEach(() => {
 })
 
 describe('StorePage CMI — step 1 (T-CMI-001)', () => {
+  it('lets a category deep link recover after registry loading fails', async () => {
+    const apiGet = makeApiGet([])
+    await renderStorePage(apiGet, null, {}, '/?category=network_nodes')
+    const { useAppStore } = await import('../stores/appStore')
+    apiGet.mockImplementationOnce(() => Promise.reject(new Error('registry unavailable')))
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      await act(async () => useAppStore.getState().loadRegistry())
+      expect(screen.getByText('商品分类加载失败')).toBeInTheDocument()
+      expect(apiGet.mock.calls.filter(([url]) => url === '/products')).toHaveLength(0)
+
+      apiGet.mockResolvedValueOnce({ data: DYNAMIC_REGISTRY })
+      fireEvent.click(screen.getByRole('button', { name: '重新加载' }))
+      await waitFor(() => expect(lastProductsParams(apiGet).categoryCode).toBe('network_nodes'), { timeout: 2000 })
+      expect(screen.queryByText('商品分类加载失败')).not.toBeInTheDocument()
+    } finally {
+      errorLog.mockRestore()
+    }
+  })
+
   it('waits for registry before fetching a URL category, then uses its stable code', async () => {
     const apiGet = makeApiGet([])
     await renderStorePage(apiGet, null, {}, '/?category=network_nodes')
