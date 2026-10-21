@@ -80,6 +80,21 @@
 - 后端测试必须设置指向可丢弃测试库的 `TEST_DATABASE_URL`，同库只运行一个测试进程。直接运行前须创建测试库并迁移；`verify:quick` 仅在 schema/migrations 变化时自动迁移，首次准备方式见 [README](../README.zh-CN.md#测试)。
 - `verify:local` 包含独立移动浏览器套件，`verify:local:no-e2e` 不包含。`verify:quick -- e2e/mobile-chrome.spec.ts` 等移动 spec 会路由至专用配置，不为这些 spec 重置数据库。也可单独运行 `npm run verify:mobile-island`。
 - 日常无需本地全量：push→develop 集成门会跑全套，develop 上红了再修即可。
+- **需要真实 Redis 的用例**（当前是 `src/modules/products/cacheRevocation.test.ts`）：
+  `isCacheEnabled()` 在 `REDIS_ENABLED=false` 时直接返回 false，`wrapCache`
+  一律走 fallback 查库——此时任何「缓存命中」断言都只证明了直查库正确，
+  没碰到缓存路径。这类用例在 Redis 未启用时**整组 skip 并打印原因**，
+  不会静默通过。本地验证方式：
+
+  ```bash
+  docker run -d --rm --name cgv-redis -p 6399:6379 redis:7-alpine
+  REDIS_ENABLED=true REDIS_URL=redis://localhost:6399 \
+    REDIS_CONNECT_TIMEOUT_MS=5000 REDIS_COMMAND_TIMEOUT_MS=5000 \
+    TEST_DATABASE_URL=... npm --prefix server test -- src/modules/products/cacheRevocation.test.ts
+  ```
+
+  CI 以 `REDIS_ENABLED=false` 运行，这组用例在 CI 上始终 skip；
+  涉及缓存失效语义的改动必须在本地按上述方式补跑并附结果。
 
 ## 8. 后端公共开销计时
 
