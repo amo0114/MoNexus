@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { ConfigRegistry } from '../types/config'
-import { getConfigRegistry } from '../api/registry'
+import { getConfigRegistry, invalidateRegistryCache, setRegistryIdentity } from '../api/registry'
 import { getOrderAttentionCount } from '../api/orders'
 import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
 import { useAuthStore } from './authStore'
@@ -386,6 +386,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }),
 
   loadRegistry: async () => {
+    // SPEC-CATALOG-VIS-001 §3.5：registry 按视角返回不同分类集合，
+    // 因此读取前必须把当前身份告诉 registry 模块（它以 perspective +
+    // authEpoch 隔离缓存）。读取 epoch 而非在模块内反向 import store，
+    // 避免循环依赖。
+    const auth = useAuthStore.getState()
+    setRegistryIdentity({
+      isAuthenticated: Boolean(auth.user),
+      authEpoch: auth.authEpoch,
+    })
     set({ registryStatus: 'loading' })
     try {
       const data = await getConfigRegistry()
@@ -441,6 +450,15 @@ useAuthStore.subscribe((authState) => {
   orderAttentionTrailing = false
   orderAttentionLastFetchAt = 0
   notificationUnreadRequestSeq++
+  // SPEC-CATALOG-VIS-001 §3.5：登录、退出、切换账号、鉴权失效都会改变
+  // 可见分类集合。清 registry 模块缓存（含作废在途请求），并把已载入的
+  // 分类数据一并丢弃，下次读取按新身份重新拉取——不能让上一个身份的
+  // 受限分类残留在 UI 里。
+  invalidateRegistryCache()
+  setRegistryIdentity({
+    isAuthenticated: Boolean(authState.user),
+    authEpoch: authState.authEpoch,
+  })
   useAppStore.setState({
     orderAttentionCount: authState.user ? -1 : 0,
     notificationUnreadCount: 0,
@@ -449,5 +467,8 @@ useAuthStore.subscribe((authState) => {
     toasts: [],
     islandNotice: null,
     islandQueue: [],
+    // 分类集合随身份变化：清空并标 idle，让 UI 重新加载而不是沿用旧列表。
+    registry: null,
+    registryStatus: 'idle',
   })
 })

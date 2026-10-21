@@ -24,6 +24,7 @@ import type { SponsoredShelfItem } from '../contracts.js'
 import { prisma } from '../../../lib/prisma.js'
 import { recordSponsoredItems } from './metrics.js'
 import {
+  CATEGORY_GUEST_VISIBILITY,
   isCurrentlyPubliclyVisible,
   type ProductAudience,
 } from '../../products/visibility.js'
@@ -152,8 +153,29 @@ export async function listSponsoredItems(
     product: {
       status: 'active',
       archivedAt: null,
+      // SPEC-CATALOG-VIS-001 §3.4（P1-B）：游客查询阶段就排除受限分类。
+      // 后续 filterSponsoredByAudience 会二次过滤，但那发生在 LIMIT 之后——
+      // 受限分类的 campaign 会先占用名额再被丢弃，导致游客看到的卡片数
+      // 少于设定值。查询条件补上分类门后名额才准。
       ...(audience === 'guest' ? { visibility: 'public' } : {}),
-      ...(categoryCode ? { category: { code: categoryCode } } : {}),
+      // ⚠️ category 必须合并成**一个**对象：visibility 与 code 是两个独立
+      // 过滤维度，若分两次展开 { category: ... }，后者会整体覆盖前者
+      // （对象展开是浅合并），游客的分类门就被 categoryCode 抹掉了。
+      // 两者是 AND：指定受限分类的 code 时游客不应得到任何结果。
+      ...((audience === 'guest' || categoryCode)
+        ? {
+            // Prisma 的 ProductWhereInput.category 是「关系过滤」的联合类型，
+            // 字段条件必须包在 is 里；直接写 code / 混写会失去类型一致性。
+            category: {
+              is: {
+                ...(categoryCode ? { code: categoryCode } : {}),
+                ...(audience === 'guest'
+                  ? { guestVisibility: CATEGORY_GUEST_VISIBILITY.PUBLIC }
+                  : {}),
+              },
+            },
+          }
+        : {}),
     },
     merchant: { status: 'active' },
   }

@@ -344,9 +344,21 @@ export function clearCacheProcessState() {
 export async function __resetCacheForTests() {
   clearCacheProcessState()
 
+  // 必须走 runRedisCommandWithTimeout 而不是裸 client：客户端是 lazyConnect +
+  // enableOfflineQueue:false，未连接时直接叫命令会抛
+  // "Stream isn't writeable and enableOfflineQueue options is false"。
+  // setup.ts 在每个 test 前都会调用本函数，因此 Redis 启用时必须先建立连接。
   const client = getRedis()
   if (!client?.keys) return
 
-  const keys = await client.keys(`${cacheKeyPrefix()}:*`)
-  if (keys.length > 0) await client.del(...keys)
+  try {
+    const keys = await runRedisCommandWithTimeout('keys', c => c.keys!(`${cacheKeyPrefix()}:*`))
+    if (keys.length > 0) {
+      await runRedisCommandWithTimeout('del', c => c.del(...keys))
+    }
+  } catch (err) {
+    // 测试基建不应因 Redis 抖动让整组 test 失败；清不掉只是缓存残留，
+    // 由各用例自己的断言负责。
+    logger.debug({ err }, '__resetCacheForTests: redis cleanup skipped')
+  }
 }

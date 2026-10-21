@@ -355,6 +355,19 @@ async function compareAdmissions(rows: ScopeRow[], sampleLimit: number) {
 
   for (const audience of AUDIENCES) {
     // Guests can only open public products; members_only bases are never requested as guests.
+    //
+    // ⚠️ SPEC-CATALOG-VIS-001 §3.4 — **已知偏差，仅 CLI/管理端**：
+    // 这里的游客口径只按 Product.visibility 分流，**不含**分类 guestVisibility。
+    // 因此分类被收紧为 members_only 后，本审计仍会把该分类下的商品当成
+    // 「游客可打开的 base」，guest 侧的基数与空位统计会偏多。
+    //
+    // 不影响线上权限：本文件的唯一入口是 `npm run recommendation:audit`
+    // （scripts/auditRecommendationData.ts），无 HTTP 路由，输出只给运维看。
+    // 真实的游客可见性由 products/visibility.ts 的四条路径决定，那些路径
+    // 已包含分类条件（见 visibility.equivalence.test.ts）。
+    //
+    // 按 P1-B 评审意见保留现状，不改代码；若日后需要精确口径，应改为复用
+    // isCurrentlyPubliclyVisible 而不是在这里重写一遍规则。
     const bases = audience === 'guest' ? rows.filter(row => row.visibility === 'public') : rows
     for (const base of bases) {
       const rules = {} as Record<RecommendationAdmission, Position[]>

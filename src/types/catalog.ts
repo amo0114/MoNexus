@@ -255,6 +255,11 @@ export interface CategoryRegistryItem {
   label: string
   iconKey: string | null
   sortOrder: number
+  /**
+   * SPEC-CATALOG-VIS-001 §3.1：只对登录用户下发。
+   * undefined = 未知（游客视角或旧数据），不得默认当作 public。
+   */
+  guestVisibility?: 'public' | 'members_only'
 }
 
 /** Admin category row (spec §7.2). */
@@ -263,6 +268,8 @@ export interface CategoryAdminDto extends CategoryRegistryItem {
   description: string | null
   defaultCoverUrl: string | null
   status: CategoryStatus
+  /** SPEC-CATALOG-VIS-001 §3.1：分类级游客可见性。 */
+  guestVisibility: 'public' | 'members_only'
   createdByUserId: number
   updatedByUserId: number
   createdAt: string
