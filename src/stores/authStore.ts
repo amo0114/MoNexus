@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import { AuthUser } from '../types/merchant'
 import { clearStorePageCache } from '../pages/storePageCache'
+import { invalidateRegistryCache } from '../api/registry'
 import {
   readAccessTokenIdentity,
   readPersistedAuthIdentity,
@@ -64,6 +65,51 @@ function clearLocalAuthState(state: AuthState) {
   }
 }
 
+/**
+ * SPEC-CATALOG-VIS-001 §3.5 — 身份切换时必须一并失效「身份相关的公共元数据」。
+ *
+ * `clearStorePageCache()` 只清店铺页缓存，不含分类 registry。而分类 registry
+ * 是**按视角返回不同内容**的（游客拿不到 members_only 分类），所以身份一变
+ * 就必须同时：
+ *   1. 作废 registry 模块缓存与在途请求（invalidateRegistryCache）；
+ *   2. 清空 appStore 里已载入的 registry 快照，让消费方重新拉取。
+ *
+ * 为什么放在这里而不是 authStore.subscribe 回调：
+ * 回调里做额外工作会打乱登录/换账号那一步的渲染时序，已实测破坏
+ * notification-realtime 的 AC-RT-020（SSE 迟迟不 ready）。这些切换入口是
+ * **显式动作**，在其中清理不影响时序。
+ *
+ * 用动态取值避免模块初始化环：appStore 依赖 authStore（为读身份），
+ * authStore 若在模块顶层静态依赖 appStore 会形成循环。
+ */
+/**
+ * 身份作用域元数据的清理钩子。
+ *
+ * authStore 不能静态 import appStore（appStore 已静态依赖 authStore，会成环），
+ * 动态 import 又是异步的——身份切换是同步流程，等到 import 落定时页面可能
+ * 已经用旧快照渲染过一帧（测试里也表现为「清理没生效」）。
+ *
+ * 因此改为**注册式**：appStore 在自己模块初始化时把「清空 registry 快照」
+ * 注册进来（见 appStore 末尾），authStore 在切换入口里同步调用。
+ */
+let identityScopedMetadataCleanup: (() => void) | null = null
+
+export function registerIdentityScopedMetadataCleanup(cleanup: () => void): void {
+  identityScopedMetadataCleanup = cleanup
+}
+
+/** 测试专用：解除注册，避免跨用例串味。 */
+export function __resetIdentityScopedMetadataCleanup(): void {
+  identityScopedMetadataCleanup = null
+}
+
+function invalidateIdentityScopedMetadata(): void {
+  // registry 模块缓存与在途请求（同步、无副作用）。
+  invalidateRegistryCache()
+  // appStore 里的 registry 快照（同步）。
+  identityScopedMetadataCleanup?.()
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -107,11 +153,13 @@ export const useAuthStore = create<AuthState>()(
           return clearedState
         })
         clearStorePageCache()
+        invalidateIdentityScopedMetadata()
         return nextAuthEpoch
       },
 
       beginUnpersistedIdentityTransition: () => {
         clearStorePageCache()
+        invalidateIdentityScopedMetadata()
         remotePersistenceFence = true
         set((state) => clearLocalAuthState(state))
         return get().authEpoch
@@ -180,6 +228,7 @@ export const useAuthStore = create<AuthState>()(
         }
 
         clearStorePageCache()
+        invalidateIdentityScopedMetadata()
         set((state) => clearLocalAuthState(state))
       },
 

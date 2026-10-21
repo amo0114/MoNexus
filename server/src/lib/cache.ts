@@ -15,7 +15,7 @@ import {
   cacheNegativeHitsTotal,
   cacheValueBytes,
 } from './metrics.js'
-import { getRedis, runRedisCommandWithTimeout } from './redis.js'
+import { getRedis, isRedisConfigured, runRedisCommandWithTimeout } from './redis.js'
 
 export type CacheName = 'product-list' | 'product-detail' | 'product-reviews' | 'category-registry' | 'traffic-report' | 'recommendation-report'
 
@@ -344,21 +344,22 @@ export function clearCacheProcessState() {
 export async function __resetCacheForTests() {
   clearCacheProcessState()
 
+  // Redis 未启用时没有远端缓存要清，直接返回——这是**唯一**允许跳过的情形。
+  // 不能用宽泛 catch 把连接失败也吞掉：那样 Redis 真出问题时会在测试里静默
+  // 藏住，缓存残留还会污染后续用例的断言。
+  if (!isRedisConfigured()) return
+
   // 必须走 runRedisCommandWithTimeout 而不是裸 client：客户端是 lazyConnect +
   // enableOfflineQueue:false，未连接时直接叫命令会抛
   // "Stream isn't writeable and enableOfflineQueue options is false"。
   // setup.ts 在每个 test 前都会调用本函数，因此 Redis 启用时必须先建立连接。
   const client = getRedis()
-  if (!client?.keys) return
+  if (!client?.keys) {
+    throw new Error('__resetCacheForTests: Redis enabled but client has no keys(); refusing to skip silently')
+  }
 
-  try {
-    const keys = await runRedisCommandWithTimeout('keys', c => c.keys!(`${cacheKeyPrefix()}:*`))
-    if (keys.length > 0) {
-      await runRedisCommandWithTimeout('del', c => c.del(...keys))
-    }
-  } catch (err) {
-    // 测试基建不应因 Redis 抖动让整组 test 失败；清不掉只是缓存残留，
-    // 由各用例自己的断言负责。
-    logger.debug({ err }, '__resetCacheForTests: redis cleanup skipped')
+  const keys = await runRedisCommandWithTimeout('keys', c => c.keys!(`${cacheKeyPrefix()}:*`))
+  if (keys.length > 0) {
+    await runRedisCommandWithTimeout('del', c => c.del(...keys))
   }
 }

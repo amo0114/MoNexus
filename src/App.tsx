@@ -76,10 +76,15 @@ function SessionLayout({
 
 export default function App() {
   const loadRegistry = useAppStore((state) => state.loadRegistry)
+  // SPEC-CATALOG-VIS-001 §3.5：registry 按视角返回不同分类集合。
+  // 原来只在挂载时取一次，登录/退出（SPA 不刷新）后不会更新，导致
+  // 「退出后仍显示受限分类」「登录后看不到受限分类」两种错误。
+  // 依赖 authEpoch：身份每次切换都会 +1，effect 随之重跑并重新拉取。
+  const authEpoch = useAuthStore((s) => s.authEpoch)
 
   useEffect(() => {
     loadRegistry()
-  }, [loadRegistry])
+  }, [loadRegistry, authEpoch])
 
   useEffect(() => subscribeToAuthSessionChanges(), [])
 

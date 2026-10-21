@@ -3,7 +3,7 @@ import { ConfigRegistry } from '../types/config'
 import { getConfigRegistry } from '../api/registry'
 import { getOrderAttentionCount } from '../api/orders'
 import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
-import { useAuthStore } from './authStore'
+import { registerIdentityScopedMetadataCleanup, useAuthStore } from './authStore'
 import { readAccessTokenIdentity } from '../auth/sessionContext'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
@@ -454,4 +454,17 @@ useAuthStore.subscribe((authState) => {
     islandNotice: null,
     islandQueue: [],
   })
+})
+
+/**
+ * SPEC-CATALOG-VIS-001 §3.5：把「清空 registry 快照」注册给 authStore。
+ *
+ * 身份切换（登录前重置、退出、跨标签失效）发生在 authStore 内部；它不能
+ * 静态 import 本模块（本模块已静态依赖它），动态 import 又来不及在同步流程里
+ * 生效。注册式回调让清理在切换入口里**同步**执行。
+ *
+ * 注册在模块末尾，此时 useAppStore 已定义。
+ */
+registerIdentityScopedMetadataCleanup(() => {
+  useAppStore.setState({ registry: null, registryStatus: 'idle' })
 })
