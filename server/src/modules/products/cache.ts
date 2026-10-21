@@ -56,7 +56,8 @@ function normalizeCategoryCode(categoryCode?: string) {
   return normalized || undefined
 }
 
-function normalizeProductListParams(params: ProductListCacheParams) {
+/** 导出供测试：其输出直接参与缓存键哈希，audience 在输出里即等于进入键。 */
+export function normalizeProductListParams(params: ProductListCacheParams) {
   const pageSize = Number(params.pageSize ?? 20)
   const query = normalizeSearchQuery(params.query)
 
