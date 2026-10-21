@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Crown, Headphones, ShieldCheck, ShoppingBag, Star, ChevronRight, BadgeCheck } from 'lucide-react'
-import type { ProductMerchant } from '../../pages/ProductDetailPage'
+import type { ProductMerchant } from '../../types/product'
 import MerchantHonorBadge from './MerchantHonorBadge'
 import './MerchantHoverCard.css'
 

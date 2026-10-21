@@ -4,7 +4,7 @@ import '@testing-library/jest-dom/vitest'
 import { MemoryRouter } from 'react-router-dom'
 import ProductDetailMobile from './ProductDetailMobile'
 import ProductDetailDesktop from './ProductDetailDesktop'
-import type { Product } from '../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../types/product'
 
 const createProductWithOffers = (offerCount = 6): Product => ({
   id: 101,

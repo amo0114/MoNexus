@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import { getShopProducts, type ShopProfile } from '../api/shops'
-import type { Product } from '../components/store/types'
+import type { ProductSummary as Product } from '../types/product'
 import { AuthSessionChangedError } from '../auth/sessionContext'
 import { captureException } from '../lib/errorReporter'
 import { useAuthSessionKey } from './useProductRecommendations'

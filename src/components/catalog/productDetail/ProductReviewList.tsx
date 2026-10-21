@@ -8,6 +8,8 @@ interface ProductReviewListProps {
   reviewTotal: number
   preview: boolean
   onLoadMore: () => void
+  error?: boolean
+  onRetry?: () => void
 }
 
 /**
@@ -20,8 +22,10 @@ export default function ProductReviewList({
   reviewTotal,
   preview,
   onLoadMore,
+  error = false,
+  onRetry,
 }: ProductReviewListProps) {
-  if (reviews.length === 0) {
+  if (reviews.length === 0 && !error) {
     return <EmptyState compact icon={Star} title="暂无评价" description="兑换后即可发表第一条评价" />
   }
 
@@ -47,7 +51,15 @@ export default function ProductReviewList({
           </div>
         </div>
       ))}
-      {!preview && reviews.length < reviewTotal && (
+      {error && (
+        <div role="alert" className="text-sm text-[var(--color-text-muted)]">
+          评价加载失败
+          <button type="button" className="btn-secondary ml-3 px-4 py-2" onClick={onRetry}>
+            重试
+          </button>
+        </div>
+      )}
+      {!error && !preview && reviews.length < reviewTotal && (
         <button
           type="button"
           onClick={onLoadMore}

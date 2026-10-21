@@ -16,7 +16,7 @@ import {
   Trash2,
   Zap,
 } from 'lucide-react'
-import type { Product } from '../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../types/product'
 import { EMPTY_PRODUCT_DETAILS, type ProductTemplateDefinition } from '../../types/catalog'
 import { useAppStore } from '../../stores/appStore'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import { BadgeCheck, Headphones, PackageCheck, ShieldCheck, Store } from 'lucide-react'
-import type { Product } from '../../../../pages/ProductDetailPage'
+import type { ProductDetail as Product } from '../../../../types/product'
 import MerchantHonorBadge from '../../MerchantHonorBadge'
 
 type Offer = NonNullable<Product['offers']>[number]

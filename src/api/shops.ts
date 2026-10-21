@@ -1,5 +1,5 @@
 import api from './client'
-import type { Product } from '../components/store/types'
+import type { ProductSummary as Product } from '../types/product'
 
 export interface ShopProfile {
   id: number
@@ -19,7 +19,7 @@ export async function getShopProducts(
   params: { q?: string; cursor?: string },
   signal?: AbortSignal,
 ): Promise<ShopProductsPage> {
-  const { data } = await api.get(`/shops/${merchantId}/products`, {
+  const { data } = await api.get<ShopProductsPage>(`/shops/${merchantId}/products`, {
     params: {
       ...(params.q ? { q: params.q } : {}),
       ...(params.cursor ? { cursor: params.cursor } : {}),
