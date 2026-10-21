@@ -64,12 +64,16 @@ async function openGallery(page: Page) {
     }))
   }, { authenticatedProfile: profile, accessToken: createMockAccessToken(profile) })
 
-  await page.route('**/api/**', async (route: Route) => {
+  await page.route(url => url.pathname.startsWith('/api/'), async (route: Route) => {
     const path = new URL(route.request().url()).pathname
     if (path === apiPath('/auth/me')) {
       await route.fulfill({ json: profile })
     } else if (path === apiPath('/config/registry')) {
       await route.fulfill({ json: registry })
+    } else if (path === apiPath('/product-templates')) {
+      await route.fulfill({ json: { registryVersion: 1, templates: [] } })
+    } else if (path === apiPath('/legal/documents')) {
+      await route.fulfill({ status: 404, json: { error: { code: 'NOT_FOUND', message: '页面不存在' } } })
     } else if (path === apiPath('/announcements')) {
       await route.fulfill({ json: [] })
     } else if (path === apiPath('/notifications/unread-count')) {
@@ -94,8 +98,13 @@ async function openGallery(page: Page) {
       await route.fulfill({ json: product })
     } else if (path === apiPath('/products/4242/reviews')) {
       await route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 10 } })
+    } else if (path === apiPath('/products/4242/recommendations')) {
+      // A real API rejects this unsigned fixture token. That 401 can clear
+      // the session and reload the product, resetting the image mid-gesture.
+      await route.fulfill({ json: { productId: product.id, items: [] } })
     } else {
-      await route.continue()
+      await route.abort('blockedbyclient')
+      throw new Error(`Unmocked gallery API request: ${route.request().method()} ${path}`)
     }
   })
 
@@ -167,20 +176,25 @@ test.describe('mobile product gallery', () => {
     const stage = page.getByTestId('product-gallery-stage')
     await expect(mainImage).toHaveCSS('object-fit', 'contain')
 
-    await stage.evaluate((element) => {
-      element.dispatchEvent(new PointerEvent('pointerdown', {
-        bubbles: true,
-        clientX: 300,
-        clientY: 180,
-        pointerType: 'touch',
-      }))
-      element.dispatchEvent(new PointerEvent('pointerup', {
-        bubbles: true,
-        clientX: 90,
-        clientY: 180,
-        pointerType: 'touch',
-      }))
-    })
+    await stage.scrollIntoViewIfNeeded()
+    const box = (await stage.boundingBox())!
+    // Exercise Chromium's real touch/pointer pipeline, including hit testing
+    // and touch-action, rather than dispatching untrusted DOM pointer events.
+    const touch = await page.context().newCDPSession(page)
+    try {
+      const y = box.y + box.height / 2
+      await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchStart', touchPoints: [{ x: box.x + box.width * 0.75, y }],
+      })
+      for (const fraction of [0.65, 0.5, 0.35, 0.25]) {
+        await touch.send('Input.dispatchTouchEvent', {
+          type: 'touchMove', touchPoints: [{ x: box.x + box.width * fraction, y }],
+        })
+      }
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    } finally {
+      await touch.detach()
+    }
 
     await expect(mainImage).toHaveAttribute('src', images[1])
   })

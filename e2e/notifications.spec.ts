@@ -10,9 +10,7 @@ async function ensureNotificationsEnabled(request: import('@playwright/test').AP
   const res = await request.get(`${API_BASE}/api/notifications/unread-count`, {
     headers: { Authorization: `Bearer ${token}` },
   })
-  if (res.status() === 404) {
-    test.skip(true, 'NOTIFICATION_ENABLED=false — skip notification E2E in this environment')
-  }
+  expect(res.status(), 'notification E2E requires NOTIFICATION_ENABLED=true').not.toBe(404)
   expect(res.ok(), await res.text()).toBeTruthy()
 }
 
@@ -231,17 +229,32 @@ test.describe('Order notification system Phase 1', () => {
     const b = await loginAsApi(request, SEED_ACCOUNTS.merchant)
     await ensureNotificationsEnabled(request, a.accessToken)
 
-    const list = await request.get(`${API_BASE}/api/notifications?limit=1`, {
+    // Own the notification fixture: this test must also run alone on a fresh DB.
+    const created = await request.post(`${API_BASE}/api/merchant/products`, {
+      headers: { Authorization: `Bearer ${b.accessToken}` },
+      data: {
+        name: `E2E通知越权-${Date.now()}`,
+        type: '网络节点', price: 30,
+        deliveryMode: 'manual_service', stockMode: 'unlimited',
+      },
+    })
+    expect(created.ok(), await created.text()).toBeTruthy()
+    const product = await created.json()
+    await publishMerchantProduct(request, b.accessToken, product.id)
+    const order = await request.post(`${API_BASE}/api/orders`, {
+      headers: { Authorization: `Bearer ${a.accessToken}` },
+      data: { productId: product.id },
+    })
+    expect(order.ok(), await order.text()).toBeTruthy()
+    const { orderId } = await order.json()
+    const list = await request.get(`${API_BASE}/api/notifications?limit=50`, {
       headers: { Authorization: `Bearer ${b.accessToken}` },
     })
-    if (!list.ok()) {
-      test.skip(true, 'merchant has no notifications to attempt cross-user read')
-    }
-    const notes = (await list.json()).notifications as Array<{ id: number }>
-    if (notes.length === 0) {
-      test.skip(true, 'no merchant notifications available')
-    }
-    const cross = await request.post(`${API_BASE}/api/notifications/${notes[0]!.id}/read`, {
+    expect(list.ok(), await list.text()).toBeTruthy()
+    const notes = (await list.json()).notifications as Array<{ id: number; relatedOrderId: number }>
+    const notification = notes.find(note => note.relatedOrderId === orderId)
+    expect(notification, 'the fixture order must notify its merchant').toBeTruthy()
+    const cross = await request.post(`${API_BASE}/api/notifications/${notification!.id}/read`, {
       headers: { Authorization: `Bearer ${a.accessToken}` },
     })
     expect(cross.status()).toBe(404)

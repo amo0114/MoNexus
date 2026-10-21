@@ -404,6 +404,10 @@ jobs:
           JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
           FRONTEND_ORIGIN: http://localhost:5173
           PORT: 3000
+          # The default suite includes notifications.spec.ts. Keep its feature
+          # gate aligned with the local Playwright server instead of skipping it.
+          NOTIFICATION_ENABLED: 'true'
+          NOTIFICATION_EMAIL_ENABLED: 'false'
 
       - name: Start frontend
         run: npm run dev -- --host 127.0.0.1 &

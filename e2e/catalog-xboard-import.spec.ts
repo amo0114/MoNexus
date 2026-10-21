@@ -188,15 +188,22 @@ async function assertAdminProductRowReadable(
   await expect(name).toBeVisible();
   await expect(status).toBeVisible();
   await expect(actions).toBeVisible();
-  const [nameBox, statusBox, actionsBox, rowBox] = await Promise.all([
-    name.boundingBox(),
-    status.boundingBox(),
-    actions.boundingBox(),
-    row.boundingBox(),
-  ]);
-  if (!nameBox || !statusBox || !actionsBox || !rowBox) {
-    throw new Error(`admin product row geometry missing at ${viewport.width}px`);
-  }
+  // Resizing starts the mobile page entrance animation. Separate CDP box
+  // reads can span animation frames and manufacture an overlap between cells
+  // that move together. Sample all rectangles in one synchronous DOM read.
+  const { nameBox, statusBox, actionsBox, rowBox } = await row.evaluate(element => {
+    const rect = (target: Element | null) => {
+      if (!target) throw new Error('admin product row geometry missing');
+      const { x, y, width, height } = target.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    return {
+      nameBox: rect(element.querySelector('td[data-label="商品名称"]')),
+      statusBox: rect(element.querySelector('td[data-label="状态"]')),
+      actionsBox: rect(element.querySelector('td[data-label="操作"]')),
+      rowBox: rect(element),
+    };
+  });
   const geometry = JSON.stringify({ viewport, nameBox, statusBox, actionsBox, rowBox });
   expect(boxesOverlap(nameBox, statusBox), `name/status overlap: ${geometry}`).toBe(false);
   expect(boxesOverlap(nameBox, actionsBox), `name/actions overlap: ${geometry}`).toBe(false);
