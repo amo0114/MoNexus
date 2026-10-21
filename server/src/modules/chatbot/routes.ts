@@ -158,12 +158,11 @@ router.post('/unchecked', async (req, res, next) => {
  */
 router.post('/products/search', async (req, res, next) => {
   try {
-    const { keyword, page, cursor, platform, platformId, conversationType } = req.body ?? {}
+    const { keyword, page, platform, platformId, conversationType } = req.body ?? {}
     const audience = await resolveBotProductAudience({ platform, platformId, conversationType })
     const result = await searchProducts({
       keyword,
       page,
-      cursor,
       baseUrl: config.appBaseUrl,
       audience,
     })

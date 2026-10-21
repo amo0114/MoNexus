@@ -2,7 +2,6 @@ import { badRequest, HttpError } from '../../lib/httpError.js'
 import { listProducts, getProductDetail } from '../products/service.js'
 import type { AvailabilityStatus } from '../products/publicAvailability.js'
 import type { ProductAudience } from '../products/visibility.js'
-import { PROJECTION_ERROR_CODES } from '../merchandising/publicProjection.js'
 
 /**
  * SPEC-CHAT-BOT-001 / BOT-1 —— 机器人侧商品查询（只读）。
@@ -118,22 +117,6 @@ export interface BotSearchResult {
   page: number
   /** 游标分页：service 返回 nextCursor 表示还有下一页。 */
   hasMore: boolean
-  /**
-   * 下一页游标。**必须回传**，否则 cursor 入参无从获得——只给 hasMore
-   * 而不给游标，等于宣告「还有更多」却不给翻页的手段，调用方只能靠
-   * 重发同一请求拿到同一页。
-   *
-   * 该游标钉着 filterHash（含 audience），所以它天然与视角绑定：
-   * 换账号或掉绑定后继续使用会得到 cursorExpired。
-   */
-  nextCursor?: string
-  /**
-   * 调用方带来的游标与当前视角/筛选不匹配（PRODUCT_CURSOR_EXPIRED）。
-   * 这是**可预期结果**而非服务异常：游标里钉着 filterHash，其中包含 audience，
-   * 所以「member 时期翻到第 2 页，掉绑定后继续翻」必然不匹配。此时返回空列表
-   * + 该标记，让机器人提示「请重新搜索」，而不是弹「服务异常」。
-   */
-  cursorExpired?: true
 }
 
 /**
@@ -154,47 +137,25 @@ export async function searchProducts(params: {
   page?: unknown
   baseUrl: string
   audience: ProductAudience
-  /** 上游传递的游标；与 audience 绑定，跨视角复用会失效。 */
-  cursor?: unknown
 }): Promise<BotSearchResult> {
   const keyword = normalizeKeyword(params.keyword)
   const page = normalizePage(params.page)
-  const cursor = typeof params.cursor === 'string' && params.cursor ? params.cursor : undefined
 
-  let result: Awaited<ReturnType<typeof listProducts>>
-  try {
-    result = await listProducts({
-      query: keyword || undefined,
-      page,
-      pageSize: PAGE_SIZE,
-      audience: params.audience,
-      cursor,
-    })
-  } catch (err) {
-    // 游标过期是契约的一部分（D-MERCH-07），不是服务故障。
-    // 只收敛这一个可识别 code；其他错误（DB、缓存、探测）继续上抛。
-    //
-    // 用 String(err.code) 比较：PRODUCT_CURSOR_EXPIRED 是 merchandising
-    // adapter 的错误码，属于共享 ErrorCode union 的超集（见 publicProjection.ts），
-    // 直接与字面量比较会被 TS 判为无交集。
-    if (err instanceof HttpError && String(err.code) === PROJECTION_ERROR_CODES.EXPIRED) {
-      return { items: [], page, hasMore: false, cursorExpired: true }
-    }
-    throw err
-  }
+  const result = await listProducts({
+    query: keyword || undefined,
+    page,
+    pageSize: PAGE_SIZE,
+    audience: params.audience,
+  })
 
   const items = (result.items as unknown as SerializedListItem[]).map(item =>
     projectSummary(item, params.baseUrl)
   )
 
-  // nextCursor 只在确实还有下一页时才回传，避免调用方拿着 null 去续传。
-  const nextCursor = (result as { nextCursor?: string | null }).nextCursor ?? undefined
-
   return {
     items,
     page,
-    hasMore: Boolean(nextCursor),
-    ...(nextCursor ? { nextCursor } : {}),
+    hasMore: Boolean((result as { nextCursor?: string | null }).nextCursor),
   }
 }
 

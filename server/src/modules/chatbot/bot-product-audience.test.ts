@@ -34,13 +34,18 @@ import { buildBotSignPayload } from './service.js'
  * 客户端也不校验绑定。任何 QQ 用户（含整个群）都能拿到 members_only 商品的
  * 名称、价格、库存、商家、分类、描述。
  *
- * 本文件锁定四条契约：
+ * 本文件锁定三条契约：
  *
  * 1. 视角判定：仅「私聊 + 已绑定 + 账号正常」为 member，其余一律 guest。
  * 2. 失败不降级：绑定/用户查询抛错按原错误流程处理，不当成 member，
  *    也不吞成「未找到」。
  * 3. 详情三分支：found / not_found(404) / login_required(403 收敛且无商品字段)。
- * 4. 游标与视角绑定：旧 member 游标在 guest 下 → 可识别的 cursorExpired 结果。
+ *
+ * 翻页不在本次范围内：机器人商品命令不提供翻页，接口不接收 cursor。
+ * develop 上的原始路由同样只接收 { keyword, page }，「还有更多结果，可加
+ * 关键词缩小范围」是有意设计。若日后要做翻页，客户端必须把关键词与游标
+ * 一起保存——filterHash 含 query（products/service.ts:550），丢了关键词
+ * 再续传必然被判为游标过期。
  */
 
 /** 按 middleware 的口径签名：body 全字段 + timestamp + _path，不参与 sign 自身。 */
@@ -333,103 +338,5 @@ describe('BOT-1 商品详情三分支', () => {
     } finally {
       spy.mockRestore()
     }
-  })
-})
-
-describe('BOT-1 游标与视角绑定', () => {
-  it('响应回传 nextCursor，且用它续传能拿到不同的一页（游标闭环）', async () => {
-    const bound = await makeBoundUser()
-    // 每页 8 条，造 10 件公开商品确保必有第二页。
-    for (let i = 0; i < 10; i += 1) {
-      await createTestProduct(`闭环商品${String(i).padStart(2, '0')}`, 10, 1, [`LOOP-${i}`])
-    }
-
-    const first = await botPost('/products/search', {
-      platform: bound.platform,
-      platformId: bound.platformId,
-      conversationType: 'private',
-    }).expect(200)
-
-    expect(first.body.hasMore).toBe(true)
-    // 只给 hasMore 而不给游标，调用方就无从翻页——这条断言锁住闭环。
-    expect(typeof first.body.nextCursor).toBe('string')
-    expect(first.body.items).toHaveLength(8)
-
-    const second = await botPost('/products/search', {
-      cursor: first.body.nextCursor,
-      platform: bound.platform,
-      platformId: bound.platformId,
-      conversationType: 'private',
-    }).expect(200)
-
-    const firstIds = first.body.items.map((item: { id: number }) => item.id)
-    const secondIds = second.body.items.map((item: { id: number }) => item.id)
-    expect(secondIds.length).toBeGreaterThan(0)
-    // 两页不重叠，且第二页确实推进了。
-    expect(secondIds.some((id: number) => firstIds.includes(id))).toBe(false)
-    expect(second.body.cursorExpired).toBeUndefined()
-  })
-
-  it('member 时期拿到的游标在 guest 下使用 → cursorExpired 结果而非服务异常', async () => {
-    const bound = await makeBoundUser()
-    // 每页 8 条，造 10 件公开商品，保证 member 侧首页就有 nextCursor。
-    for (let i = 0; i < 10; i += 1) {
-      await createTestProduct(`游标公开商品${String(i).padStart(2, '0')}`, 10, 1, [`CUR-${i}`])
-    }
-    // members_only 商品同样参与 member 列表，进一步确保两视角过滤不同。
-    await makeMembersOnlyProduct('游标会员商品')
-
-    const memberPage = await botPost('/products/search', {
-      platform: bound.platform,
-      platformId: bound.platformId,
-      conversationType: 'private',
-    }).expect(200)
-
-    // 游标现在直接来自响应，不再需要绕过接口去调内部 service。
-    expect(typeof memberPage.body.nextCursor).toBe('string')
-    const memberCursor = memberPage.body.nextCursor
-
-    // 同一枚游标交给 guest 请求：filterHash 含 audience，必然不匹配。
-    const guestRes = await botPost('/products/search', {
-      cursor: memberCursor,
-      platform: 'qq',
-      platformId: 'unbound-for-cursor',
-      conversationType: 'private',
-    }).expect(200)
-
-    // 关键：可识别的固定结果，不是 409 错误页、不是空列表假装「没找到」。
-    expect(guestRes.body.cursorExpired).toBe(true)
-    expect(guestRes.body.items).toEqual([])
-  })
-
-  it('最后一页不回传 nextCursor（避免调用方拿 null 续传）', async () => {
-    const bound = await makeBoundUser()
-    // 只有 2 件，首页即末页。
-    await createTestProduct('末页商品一', 10, 1, ['LAST-1'])
-    await createTestProduct('末页商品二', 10, 1, ['LAST-2'])
-
-    const only = await botPost('/products/search', {
-      platform: bound.platform,
-      platformId: bound.platformId,
-      conversationType: 'private',
-    }).expect(200)
-
-    if (only.body.hasMore === false) {
-      expect(only.body.nextCursor).toBeUndefined()
-    } else {
-      // 库被其他用例残留数据影响时，至少确认游标与 hasMore 同真同假。
-      expect(typeof only.body.nextCursor).toBe('string')
-    }
-  })
-
-  it('结构非法的游标不是 cursorExpired（那是调用方 bug，应暴露出来）', async () => {
-    const res = await botPost('/products/search', {
-      cursor: 'not-a-real-cursor',
-      conversationType: 'private',
-    })
-    // decodeOrganicCursor 对结构非法抛 400 PRODUCT_CURSOR_INVALID，
-    // 只收敛 EXPIRED，因此这里保持 400。
-    expect(res.status).toBe(400)
-    expect(res.body.cursorExpired).toBeUndefined()
   })
 })
