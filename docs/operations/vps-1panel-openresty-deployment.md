@@ -6,6 +6,10 @@ Render、Neon、R2、Cloudflare Tunnel，也不要再额外运行 Caddy。
 
 示例域名为 monexus.oai-o.com，请替换为自己的子域名。
 
+第 10 节及第 11 节证书段落保留历史现场记录。2026-10-20 的文档整理只核对仓库
+内容，没有连接 VPS、查询 Cloudflare 或重新采样公网；其中的命中率、站点数量和
+证书状态不代表当前线上状态。执行相关操作前应在自己的目标环境重新核对。
+
 ## 目标架构
 
 ~~~text
@@ -470,7 +474,96 @@ bash scripts/backup.sh
 | git 报 gnutls_handshake failed | GitHub HTTPS/HTTP2 在部分网络不稳定。 | 对单次命令使用 git -c http.version=HTTP/1.1 并重试。 |
 | Cloudflare 橙云后 HTTPS 循环或 52x | 证书未签发，或 SSL 模式不正确。 | 先灰云签证书；成功后橙云加 Full (strict)，不要 Flexible。 |
 
-## 10. 上线后检查清单
+## 10. 静态资源边缘缓存修复（历史现场记录）
+
+原记录未注明缓存采样日期，以下保留当时的问题、处理与结果。容器名、站点路径、
+代理参数数量均来自当时环境；本节不是可直接套用到任意 1Panel 版本的配置模板。
+
+### 问题
+
+浏览器与 Cloudflare 对静态资源持续回源验证，`cf-cache-status` 表现为 `REVALIDATED`
+且无 `age`，边缘命中率接近零。源站（bundled Nginx → MinIO）本身正常：直连
+`127.0.0.1:18089` 读同一张商品图 TTFB 仅约 2.8ms，并正确返回
+`Cache-Control: public, max-age=31536000, immutable`。
+
+### 根因
+
+1Panel 创建反向代理站点时，在 `www/sites/<站点>/proxy/root.conf` 的
+`location ^~ /` 中注入：
+
+~~~nginx
+add_header X-Cache $upstream_cache_status;
+add_header Cache-Control no-cache;
+~~~
+
+当时生效配置的逐层采样结果是：
+
+- **200 响应**：源站的一年缓存头与注入的 `no-cache` 并存，公网采样持续为
+  `REVALIDATED`，未观测到 `HIT`；
+- **404 响应**：未见这条注入头，公网采样出现 `HIT`，且 `age` 递增。
+
+这些是该次响应与 CDN 配置下的观测，不能把任意 2xx/3xx 状态码、404 或浏览器的
+缓存行为一概套入此结果。复查时应同时保留实际状态码和各层完整响应头。
+
+### 补丁
+
+**新增** `www/sites/monexus.oai-o.com/proxy/10-static.conf`，为 `/assets/`、
+`/uploads/`、`/brand/` 建立同级 `location ^~` 兄弟节点。前缀长于 `root.conf` 的
+`location ^~ /`，按最长前缀匹配优先；且 `add_header` 不跨同级 location 继承，
+故不受 `no-cache` 影响。
+
+该文件保留 `root.conf` 中适用的全部代理参数（`proxy_pass`、`proxy_http_version`、
+7 个 `proxy_set_header`、`proxy_ssl_*`）与 HSTS，仅去掉 `X-Cache` 与
+`Cache-Control no-cache`。
+
+**不要修改 `root.conf`**：面板重新保存站点配置会覆盖它。新增文件不受面板管理——
+此点作为**部署假设**记录，后续任一次面板保存站点配置后需复查 `10-static.conf`
+是否仍存在、内容是否被改写。
+
+**范围**：仅 monexus。原记录称同机其余 27 个站点存在相同注入，需各自评估静态资源结构后
+单独处理，不要批量套用。
+
+### 备份位置
+
+同目录快照 `proxy.bak-<epoch>/`，含修改前的 `root.conf` 与 `00-real-ip.conf`。
+
+### 当时的验收结果
+
+| 资源 | 修复前 | 修复后 |
+| --- | --- | --- |
+| 主 JS / CSS | `no-cache` 并存 | 仅源站 `max-age=31536000, immutable` |
+| 商品图 `/uploads/*.jpeg` | `no-cache` 并存 | 仅源站 `immutable` |
+| SPA 入口 `/` | `no-cache` | **保留** `no-cache`（避免发版后加载旧 index） |
+| 不存在的静态文件 | 404 | 404，无长缓存声明 |
+| 公网连续采样 | `REVALIDATED` | **`HIT` ×15/15**，`age` 单调递增 |
+
+当时未执行缓存清理：reload 后观察到上表结果。这不保证其他 Zone 或规则组合
+无需 `purge`；该次操作选择不清理整个 Zone，以保留其他站点的缓存。
+
+### 回滚
+
+~~~bash
+rm /opt/1panel/apps/openresty/openresty/www/sites/monexus.oai-o.com/proxy/10-static.conf
+docker exec 1Panel-openresty-iMZ6 /usr/local/openresty/nginx/sbin/nginx -t
+docker exec 1Panel-openresty-iMZ6 /usr/local/openresty/nginx/sbin/nginx -s reload
+~~~
+
+纯新增文件，删除即完全复原。回滚触发条件：`nginx -t` 或 reload 失败、真实静态资源
+不可访问、SPA 入口丢失 `no-cache`、其他站点回归异常。公网暂时 `MISS` 或尚未出现
+`HIT` **不构成**回滚理由，应继续观察。
+
+### 诊断路径（供同类问题复用）
+
+1. `analytics` 按 `clientRequestHTTPHost` 确认流量归属 Zone；
+2. 分别采样成功响应和 404 的完整响应头，核对是否存在注入头差异；
+3. 逐层对照响应头：直连 bundled Nginx（`127.0.0.1:<WEB_PORT>`）→ 经 OpenResty
+   (`--resolve <host>:443:127.0.0.1`) → 公网，定位注入发生在哪一层；
+4. 用 `nginx -T`（容器内执行）dump 生效配置，比对 `# configuration file` 分隔标记
+   确定每段配置的真实来源文件。
+
+注意 `nginx -T` 在配置有语法错误时**只输出错误、不输出配置**，务必保留 stderr。
+
+## 11. 上线后检查清单
 
 ~~~bash
 docker compose --project-name monexus-prod --env-file .env \
@@ -485,7 +578,29 @@ curl -fsS https://monexus.oai-o.com/api/health/ready
 
 - web 仅显示为 127.0.0.1:<端口>->80/tcp；
 - server、postgres、redis、minio 为 healthy 或符合预期；
-- Cloudflare 使用 Full (strict)；
 - .env 权限为 600，且不在 Git 内；
 - 已创建自有管理员，而非 seed 默认账号；
-- PostgreSQL 与 MinIO 均有异机且可恢复的备份。
+- PostgreSQL 与 MinIO 均有异机且可恢复的备份；
+- Cloudflare 使用 Full (strict)（**前置条件见下**）。
+
+### 源站证书状态（2026-10-16 记录）
+
+2026-10-16 的原记录显示，源站 OpenResty 加载的证书 `CN=oai-o.com`
+（SAN `*.oai-o.com`）有效期结束于 **2026-09-22**。
+
+该次记录中的 Zone SSL 模式为 `full`（非 `full (strict)`），当时站点仍正常服务。
+本轮没有复查证书或 Zone 配置。后续处理要求：
+
+- **在证书续期并确认服务实际加载新证书前，不要切换 `full (strict)`**，
+  否则会触发 526 Invalid SSL Certificate（证书无效）；
+- 证书过期本身**不能**直接推断 ACME 续期任务失败——原因可能是该域名未在
+  1Panel 纳管、DNS 验证未配置，或续期任务被关闭，需单独查 ACME 日志；
+- 续期后须确认服务进程**实际加载**了新证书（而非仅磁盘文件更新），再评估切换。
+
+排查命令：
+
+~~~bash
+docker exec 1Panel-openresty-iMZ6 sh -c \
+  'echo | openssl s_client -connect 127.0.0.1:443 -servername monexus.oai-o.com 2>/dev/null \
+   | openssl x509 -noout -subject -dates'
+~~~

@@ -1,6 +1,6 @@
 # MoNexus
 
-[![Node.js](https://img.shields.io/badge/Node.js-20-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
@@ -166,8 +166,9 @@ git clone <your-repo-url> MoNexus-new
 cd MoNexus-new
 
 # Install dependencies
-npm install
-cd server && npm install && cd ..
+nvm use
+npm ci
+npm --prefix server ci
 
 # Start everything (optional: reseed demo data)
 bash scripts/dev-up.sh
@@ -191,7 +192,7 @@ docker compose up -d postgres redis
 
 # 2) Backend
 cd server
-cp ../.env.example .env   # or let dev-up write DATABASE_URL / JWT_SECRET
+cp .env.example .env      # server template; fill local values below
 # Minimum local values:
 #   DATABASE_URL=postgresql://monexus:monexus_dev_2026@localhost:5432/monexus?schema=public
 #   JWT_SECRET=local-development-secret-must-be-at-least-32-chars
@@ -261,18 +262,40 @@ After `npm run db:seed` (or `bash scripts/dev-up.sh --seed`):
 ## Testing
 
 ```bash
-# Backend unit + API tests (requires disposable test DB)
-cd server
-# Prefer TEST_DATABASE_URL pointing at monexus_test
-npm test
+# All commands in this section run from the repository root.
+nvm use
+npm run check:runtime
+npm test                  # frontend unit/component tests
 
-# Full local verification from repo root
+# Start local PostgreSQL. On first use, create the disposable test DB:
+docker compose up -d postgres
+docker compose exec -T postgres createdb -U monexus monexus_test
+# Skip createdb if monexus_test already exists. These credentials match local Compose.
+export TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public'
+DATABASE_URL="$TEST_DATABASE_URL" npm --prefix server run db:migrate:deploy
+REDIS_ENABLED=false npm --prefix server test
+
+# Local builds + backend tests + mobile/main/legal browser suites
 npm run verify:local
 
-# E2E only (stack must be running)
-npm run e2e
-npm run e2e:ui      # interactive Playwright UI
+# Main browser suite only, after migration and seeding of the disposable DB
+# (verify:local prepares these fixtures automatically).
+DATABASE_URL="$TEST_DATABASE_URL" npm run e2e
+DATABASE_URL="$TEST_DATABASE_URL" npm run e2e:ui # interactive Playwright UI
 ```
+
+Backend tests require `TEST_DATABASE_URL` and truncate shared tables before each test.
+Use a disposable database and run only one backend test process per database. For targeted
+checks, append files, for example `npm --prefix server test -- src/__tests__/business-time-boundaries.test.ts`.
+
+`verify:local:no-e2e` runs both builds and backend tests. `verify:local` additionally resets
+and seeds its test DB, then runs mobile, main and legal browser suites. Neither command
+runs root frontend unit tests, architecture checks or the dedicated notification/catalog-ops
+E2E lanes. Run `npm test` separately; use [the testing policy](./docs/testing-policy.md) for
+the remaining checks. Local E2E is available for diagnosis; final CI/E2E runs in GitHub
+Actions on the delivered code. A successful local subset does not replace `CI OK`.
+Stop development API servers before database-backed local E2E: Playwright can reuse
+an existing server, so changing the command's database URL would not reconfigure it.
 
 CI and deployment workflows live under [`.github/workflows/`](./.github/workflows/) (`ci.yml`, `docker-publish.yml`, `compose-production-deploy.yml`, legacy `deploy.yml`, backup & alert jobs).
 
@@ -280,7 +303,7 @@ CI and deployment workflows live under [`.github/workflows/`](./.github/workflow
 
 ## Production
 
-There are **three** supported ways to run production-like stacks. Prefer **Path A** when GitHub Actions can publish images to GHCR. Full procedures live in the operations docs (linked below).
+There are **three Compose paths (A–C)** plus a legacy non-Docker fallback (D). Prefer **Path A** when GitHub Actions can publish images to GHCR. Full procedures live in the operations docs (linked below).
 
 ### Prerequisites (all paths)
 
@@ -400,9 +423,9 @@ Details: [`docs/operations/deployment-target.md`](./docs/operations/deployment-t
 
 This repository is primarily an **internal product**. If you have access and want to contribute:
 
-1. Create a feature branch from `master` (e.g. `feat/short-description`).
+1. Create a feature branch from `develop` (e.g. `feat/short-description`) and open the PR into `develop`. `master` accepts release and hotfix PRs; see [branching and CI](./docs/branching-and-ci.md).
 2. Keep changes focused; follow existing module boundaries under `server/src/modules/` and `src/pages/`.
-3. Run `npm run verify:local:no-e2e` (or full `verify:local`) before opening a PR.
+3. Run affected tests and builds; use `npm run verify:quick` for targeted checks. For broader local validation, run `npm test` and `npm run verify:local:no-e2e` (or `verify:local` for its browser suites).
 4. Prefer small PRs with clear motivation; update docs under `docs/` when behavior or ops procedures change.
 5. Never commit `.env`, secrets, or production dumps.
 

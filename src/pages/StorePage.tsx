@@ -1,7 +1,8 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Search, SearchX, X } from 'lucide-react'
-import api from '../api/client'
+import { listStoreProducts, loadStoreCandidates, type StoreProductQuery } from '../api/storeFeed'
+import { getApiErrorCode } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import { usePageView } from '../hooks/usePageView'
@@ -21,30 +22,20 @@ import {
   type FeedOutputItem,
   type SponsoredFeedCandidate,
 } from '../components/merchandising/storeFeed'
-import type { SponsoredShelfItem } from '../types/merchandising'
 import CategorySlidingNav from '../components/catalog/CategorySlidingNav'
 import FluidOrb from '../components/ui/FluidOrb'
 import BackToTop from '../components/BackToTop'
 import { useTheme } from '../lib/ThemeProvider'
-
-interface PublicEditorialItem {
-  productId: number
-  placement: 'store_editorial' | 'category_editorial'
-  publicReason: string | null
-  label: '平台精选'
-}
-
-interface ProductListResponse {
-  items: Product[]
-  nextCursor: string | null
-  hasMore: boolean
-}
 
 interface StorePageCache extends Omit<StoredStorePageCache, 'feedItems'> {
   feedItems: FeedOutputItem<Product>[]
 }
 
 const PAGE_SIZE = 60
+// A dead organic cursor is worth exactly one automatic page-1 refetch. Retrying
+// more would hammer the same failing response, so a second 409 surfaces as an
+// ordinary load failure instead of an unbounded retry loop.
+const MAX_CURSOR_RECOVERY_ATTEMPTS = 1
 // Card geometry is bucketed by viewport (spec M2): <768px renders a
 // 2-column compact grid; ≥768px keeps the original roomy card. The
 // virtual scroller needs uniform row height, hence fixed buckets
@@ -86,6 +77,8 @@ export default function StorePage() {
   usePageView('/')
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
+  const registryStatus = useAppStore((s) => s.registryStatus)
+  const loadRegistry = useAppStore((s) => s.loadRegistry)
   const navigate = useNavigate()
   const [params, setParams] = useSearchParams()
   const urlCategory = params.get('category')?.trim() || null
@@ -152,7 +145,7 @@ export default function StorePage() {
   // store 在 SPA 生命周期内持续，详情页返回时状态自然保留
   const searchQuery = useAppStore((s) => s.storeQuery)
   const setSearchQuery = useAppStore((s) => s.setStoreQuery)
-  const [loading, setLoading] = useState(() => initialCacheRef.current?.feedItems.length === 0)
+  const [loading, setLoading] = useState(() => !initialCacheRef.current?.feedItems.length)
   const [nextCursor, setNextCursor] = useState<string | null>(() => initialCacheRef.current?.nextCursor ?? null)
   const [hasMore, setHasMore] = useState(() => initialCacheRef.current?.hasMore ?? false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -170,6 +163,14 @@ export default function StorePage() {
   const gridRef = useRef<HTMLDivElement | null>(null)
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
   const loadingMoreRef = useRef(false)
+  /**
+   * Cursor whose append request failed for a non-cursor reason (network, 5xx).
+   * Auto-loading pauses for exactly that cursor so the prefetch effect cannot
+   * re-submit a request that just failed; `hasMore`/`nextCursor` stay untouched
+   * because a network failure says nothing about the remaining pages. Cleared
+   * on query switch and whenever a fetch for that cursor succeeds.
+   */
+  const failedCursorRef = useRef<string | null>(null)
   const scrollFrameRef = useRef<number | null>(null)
   const candidateRequestRef = useRef(0)
   // 有机列表 stale-response guard：分类/搜索切换后，在途旧响应必须被丢弃。
@@ -206,6 +207,7 @@ export default function StorePage() {
     restoreScrollRef.current = null
     restoreProductIdRef.current = null
     hydratedQueryKeyRef.current = null
+    failedCursorRef.current = null
   }
   // A cached pre-Catalog session may still hold a legacy label. Once the
   // dynamic registry is available, migrate that local selection to stable code.
@@ -249,16 +251,47 @@ export default function StorePage() {
     setFeedItems((prev) => [...prev, ...appended])
   }, [])
 
+  /**
+   * Recovery for a cursor the server can no longer honour (409
+   * PRODUCT_CURSOR_EXPIRED). Not every run change invalidates a cursor — an
+   * older-but-retained run keeps its cursors valid (they stay pinned to it).
+   * Expiry comes from the pinned run actually disappearing (retention cleanup),
+   * from a no-run fallback cursor drifting into the first completed run, or
+   * from a filter/contract mismatch. Whatever the cause, appending on a dead
+   * cursor would silently truncate the feed, so page 1 is refetched instead.
+   * Bumping the epoch first guarantees the request that just failed can never
+   * overwrite the fresh result.
+   */
+  const recoverFromExpiredCursor = useCallback(() => {
+    organicEpochRef.current += 1
+    setNextCursor(null)
+    setHasMore(false)
+    setFeedItems([])
+    seenRef.current = new Set()
+    page1OrganicRef.current = null
+    composedRef.current = false
+    hydratedQueryKeyRef.current = null
+    restoreScrollRef.current = null
+    restoreProductIdRef.current = null
+    // Candidates are audience/query scoped, not run scoped, so they are kept and
+    // marked settled: page 1 must be able to compose immediately with whatever
+    // already arrived, without waiting for another candidate round trip.
+    candidatesSettledRef.current = true
+    // The paused cursor belonged to the dead run; a fresh page 1 will issue new ones.
+    failedCursorRef.current = null
+  }, [])
+
   const fetchProducts = useCallback(async (
     cursor: string | null,
     append: boolean,
     queryKey = getProductQueryKey(category, searchQuery),
+    recoveryAttempt = 0,
   ) => {
     // Stale-response guard: a category/search switch while a list request is
     // in flight must never land old-filter results (AC-CAT-017).
-    const epoch = organicEpochRef.current
+    let epoch = organicEpochRef.current
     try {
-      const params: any = { pageSize: PAGE_SIZE }
+      const params: StoreProductQuery = { pageSize: PAGE_SIZE }
       if (cursor) params.cursor = cursor
       if (searchQuery) params.q = searchQuery
       if (category !== '全部') {
@@ -266,8 +299,10 @@ export default function StorePage() {
         if (dynamicCategory) params.categoryCode = dynamicCategory.code
         else params.category = category
       }
-      const { data } = await api.get<ProductListResponse>('/products', { params })
+      const data = await listStoreProducts(params)
       if (epoch !== organicEpochRef.current) return
+      // A successful fetch clears any pause recorded for this cursor.
+      failedCursorRef.current = null
       setNextCursor(data.nextCursor)
       setHasMore(data.hasMore)
       if (!append) {
@@ -278,15 +313,37 @@ export default function StorePage() {
       } else {
         appendOrganicPage(data.items)
       }
-    } catch {
-      if (epoch === organicEpochRef.current) showToast('商品加载失败', 'error')
+    } catch (error) {
+      if (epoch !== organicEpochRef.current) return
+      const expired = getApiErrorCode(error) === 'PRODUCT_CURSOR_EXPIRED'
+      // One automatic retry only. A 409 on the retried page 1 means recovery
+      // cannot succeed (e.g. the server keeps rejecting), so stop and surface
+      // the failure instead of looping on the same response.
+      if (expired && recoveryAttempt < MAX_CURSOR_RECOVERY_ATTEMPTS) {
+        recoverFromExpiredCursor()
+        // Adopt the post-recovery epoch: the retry below owns the loading flags
+        // and must not be discarded by the guard in `finally`.
+        epoch = organicEpochRef.current
+        try {
+          await fetchProducts(null, false, queryKey, recoveryAttempt + 1)
+        } catch {
+          // The retry reports its own failure; nothing left to escalate here.
+        }
+        return
+      }
+      showToast('商品加载失败', 'error')
+      // Pause auto-loading for this exact cursor. The prefetch effect re-runs
+      // whenever `loadMore` changes identity (it does, because the failure
+      // clears `loadingMore`), so without this the same failed append would be
+      // resubmitted immediately and forever.
+      if (cursor) failedCursorRef.current = cursor
     } finally {
       if (epoch !== organicEpochRef.current) return
       setLoading(false)
       setLoadingMore(false)
       loadingMoreRef.current = false
     }
-  }, [searchQuery, category, registry?.productCategories, showToast, maybeComposePage1, appendOrganicPage])
+  }, [searchQuery, category, registry?.productCategories, showToast, maybeComposePage1, appendOrganicPage, recoverFromExpiredCursor])
 
   useEffect(() => {
     const requestId = ++candidateRequestRef.current
@@ -310,62 +367,9 @@ export default function StorePage() {
       return () => { candidateRequestRef.current += 1 }
     }
 
-    const loadProducts = async (ids: number[]) => {
-      const uniqueIds = [...new Set(ids)]
-      const results = await Promise.allSettled(
-        uniqueIds.map(id => api.get<Product>(`/products/${id}`)),
-      )
-      return results.flatMap(result => result.status === 'fulfilled' ? [result.value.data] : [])
-    }
-
-    void Promise.allSettled([
-      api.get<{ items: SponsoredShelfItem[] }>('/products/sponsored', {
-        params: {
-          placement: dynamicCategory ? 'category_sponsored' : 'store_home_sponsored',
-          ...(dynamicCategory ? { categoryCode: dynamicCategory.code } : {}),
-          limit: 6,
-        },
-      }),
-      api.get<{ items: PublicEditorialItem[] }>('/products/editorial', {
-        params: {
-          placement: dynamicCategory ? 'category_editorial' : 'store_editorial',
-          limit: 6,
-        },
-      }),
-    ]).then(async ([sponsoredResult, editorialResult]) => {
+    void loadStoreCandidates(dynamicCategory?.code).then(candidates => {
       if (requestId !== candidateRequestRef.current) return
-
-      const sponsored: SponsoredFeedCandidate<Product>[] = []
-      if (sponsoredResult.status === 'fulfilled') {
-        const items = sponsoredResult.value.data.items
-        const details = await loadProducts(items.map(item => item.productId))
-        if (requestId !== candidateRequestRef.current) return
-        const byId = new Map(details.map(p => [p.id, p]))
-        for (const item of items) {
-          sponsored.push({ productId: item.productId, product: byId.get(item.productId) ?? null })
-        }
-      }
-      // Fail-open: a failed/500 sponsored fetch contributes no candidates.
-
-      const editorial: EditorialFeedCandidate<Product>[] = []
-      if (editorialResult.status === 'fulfilled') {
-        const rawItems = editorialResult.value.data.items
-        let details = await loadProducts(rawItems.map(item => item.productId))
-        if (requestId !== candidateRequestRef.current) return
-        if (dynamicCategory) {
-          details = details.filter(product => product.category?.code === dynamicCategory.code)
-        }
-        const byId = new Map(details.map(p => [p.id, p]))
-        for (const item of rawItems) {
-          editorial.push({
-            productId: item.productId,
-            product: byId.get(item.productId) ?? null,
-            publicReason: item.publicReason,
-          })
-        }
-      }
-
-      candidatesRef.current = { sponsored, editorial }
+      candidatesRef.current = candidates
       candidatesSettledRef.current = true
       maybeComposePage1()
     })
@@ -418,6 +422,8 @@ export default function StorePage() {
     composedRef.current = false
     restoreScrollRef.current = null
     restoreProductIdRef.current = null
+    // New query/category: any paused cursor belongs to the previous result set.
+    failedCursorRef.current = null
     if (typeof window !== 'undefined') {
       window.sessionStorage.removeItem('monexus:restore-store-scroll')
       window.sessionStorage.removeItem('monexus:restore-product-id')
@@ -436,8 +442,15 @@ export default function StorePage() {
     saveStorePageCache()
   }, [saveStorePageCache])
 
-  const loadMore = useCallback(() => {
+  /**
+   * @param manual true only for an explicit user action (the 加载更多 button or
+   * a retry click). Automatic paths (prefetch effect, infinite-scroll sentinel)
+   * must respect a cursor paused by a previous failure.
+   */
+  const loadMore = useCallback((manual = false) => {
     if (loadingMoreRef.current || loadingMore || loading || !hasMore || !nextCursor) return
+    if (!manual && failedCursorRef.current === nextCursor) return
+    failedCursorRef.current = null
     loadingMoreRef.current = true
     setLoadingMore(true)
     fetchProducts(nextCursor, true)
@@ -739,7 +752,18 @@ export default function StorePage() {
           editorial cards carry a text+aria disclosure, organic cards unchanged. */}
 
       {/* Product Grid */}
-      {loading ? (
+      {urlCategory && !registry && registryStatus === 'error' ? (
+        <EmptyState
+          icon={SearchX}
+          title="商品分类加载失败"
+          description="请重新加载后查看此分类"
+          action={
+            <button type="button" className="btn-secondary px-6 py-2" onClick={() => void loadRegistry()}>
+              重新加载
+            </button>
+          }
+        />
+      ) : loading ? (
         // P2-3：骨架与最终网格同几何（列数/gap/卡高）且共享同一 pt-2
         // 起点容器——加载完成零跳动（R2）
         <div className="pt-2">
@@ -801,7 +825,7 @@ export default function StorePage() {
           {hasMore && (
             <div ref={loadMoreRef} className="flex justify-center pt-4">
               <button
-                onClick={loadMore}
+                onClick={() => loadMore(true)}
                 disabled={loadingMore}
                 data-testid="store-load-more"
                 className="btn-secondary px-10 py-3"

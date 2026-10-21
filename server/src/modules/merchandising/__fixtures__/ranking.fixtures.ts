@@ -56,25 +56,28 @@ export const HOT_PROJECTION_FIXTURE: MerchandisingProjection = {
   merchantPartner: null,
 }
 
-/** 冻结 projection DTO：非 hot 商品（有 snapshot 但未达阈值；hot 块仍返回本商品指标）。 */
+/** 冻结 projection DTO：非 hot 商品（有 snapshot，但 isHot=false → hot 块缺省）。
+ *
+ * compute 为每个 active 商品都写快照，零订单商品也有 (count=0) 行；因此
+ * 「有快照」不能推出「热卖」。投影只对 isHot=true 返回 hot 块，非热商品的
+ * hot 必须是 null，否则前端 badgeSpecsFromProjection 会给全站商品挂热卖徽章。 */
 export const NON_HOT_PROJECTION_FIXTURE: MerchandisingProjection = {
   rankingRunId: FROZEN_RUN_ID,
-  hot: {
-    effectiveOrders: 1,
-    rank: 7,
-    windowDays: 30,
-    computedAt: '2026-08-09T00:00:00.000Z',
-  },
+  hot: null,
   platformOwned: false,
   platformPick: null,
   merchantPartner: null,
 }
 
-/** 冻结 projection DTO：平台自营（merchantId=null），hot 块正常。 */
+/** 冻结 projection DTO：平台自营（merchantId=null）与热卖并存。
+ *
+ * 自营身份与热卖相互独立：本样例刻意让两者同时成立，防止后续把
+ * platformOwned 误当作「不能热卖」。
+ * 5 单 = hotMinSales 默认阈值（systemConfig.ts:127），恰好在门槛上。 */
 export const PLATFORM_OWNED_PROJECTION_FIXTURE: MerchandisingProjection = {
   rankingRunId: FROZEN_RUN_ID,
   hot: {
-    effectiveOrders: 3,
+    effectiveOrders: 5,
     rank: 1,
     windowDays: 30,
     computedAt: '2026-08-09T00:00:00.000Z',
