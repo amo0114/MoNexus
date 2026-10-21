@@ -119,6 +119,15 @@ export interface BotSearchResult {
   /** 游标分页：service 返回 nextCursor 表示还有下一页。 */
   hasMore: boolean
   /**
+   * 下一页游标。**必须回传**，否则 cursor 入参无从获得——只给 hasMore
+   * 而不给游标，等于宣告「还有更多」却不给翻页的手段，调用方只能靠
+   * 重发同一请求拿到同一页。
+   *
+   * 该游标钉着 filterHash（含 audience），所以它天然与视角绑定：
+   * 换账号或掉绑定后继续使用会得到 cursorExpired。
+   */
+  nextCursor?: string
+  /**
    * 调用方带来的游标与当前视角/筛选不匹配（PRODUCT_CURSOR_EXPIRED）。
    * 这是**可预期结果**而非服务异常：游标里钉着 filterHash，其中包含 audience，
    * 所以「member 时期翻到第 2 页，掉绑定后继续翻」必然不匹配。此时返回空列表
@@ -178,10 +187,14 @@ export async function searchProducts(params: {
     projectSummary(item, params.baseUrl)
   )
 
+  // nextCursor 只在确实还有下一页时才回传，避免调用方拿着 null 去续传。
+  const nextCursor = (result as { nextCursor?: string | null }).nextCursor ?? undefined
+
   return {
     items,
     page,
-    hasMore: Boolean((result as { nextCursor?: string | null }).nextCursor),
+    hasMore: Boolean(nextCursor),
+    ...(nextCursor ? { nextCursor } : {}),
   }
 }
 
@@ -199,9 +212,18 @@ export async function searchProducts(params: {
  * 这个结果本身**不得携带任何商品字段**（名称、价格、库存、商家、分类、
  * 图片、描述、ID 都不给）——只回答「这里有东西，但你得先登录」。
  *
- * ⚠️ 与仓库「不属于你的资源返回 404 而非 403」的通用原则的偏差是有意的：
- * 该原则防的是**枚举**，而这里的 403 结果不随商品是否存在而变化——只要
- * 是 members_only 且视角为 guest 就返回同一固定结构，不存在区分度泄露。
+ * ⚠️ 与仓库「不属于你的资源返回 404 而非 403」的通用原则存在偏差，代价要
+ * 说清楚：**商品的存在性可被探测**。guest 逐个试编号时，看到的是
+ * 「{ found: false }」与「{ found: false, loginRequired: true }」两种不同结果，
+ * 因此能区分「不存在」和「存在但需登录」，也就能数出 members_only 商品的
+ * 数量。这与网站详情页当前的行为一致（访客直访受限商品同样收 403），
+ * 方案 §2.1 已接受这一取舍——§2.3 的保护目标是名称、说明、价格、套餐、
+ * 评价、分类元数据和图片 URL，存在性本身不在其中。
+ *
+ * 真正被禁的是**内容**：固定结果不随商品变化，只有「需登录」这一个比特，
+ * 商品字段一个都不给（含 ID）。若日后要连存在性一起收敛，正确做法是让
+ * guest 对受限商品也返回 not_found——但那会让真实买家以为商品下架，
+ * 属于产品决策，不在这里顺手改。
  */
 export type BotProductDetailResult =
   | { kind: 'found'; product: BotProductDetail }
