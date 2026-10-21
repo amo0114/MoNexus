@@ -1,11 +1,12 @@
-import { badRequest } from '../../lib/httpError.js'
+import { badRequest, HttpError } from '../../lib/httpError.js'
 import { listProducts, getProductDetail } from '../products/service.js'
 import type { AvailabilityStatus } from '../products/publicAvailability.js'
+import type { ProductAudience } from '../products/visibility.js'
 
 /**
- * SPEC-CHAT-BOT-001 —— 机器人侧商品查询（只读）。
+ * SPEC-CHAT-BOT-001 / BOT-1 —— 机器人侧商品查询（只读）。
  *
- * 三条设计约束：
+ * 四条设计约束：
  *
  * 1. **复用网站的 service，不另写查询。** 商品可见性（members_only、商家状态、
  *    归档）、售罄判定、Xboard 名额探测都是业务规则；另写一套迟早与网站漂移。
@@ -18,6 +19,14 @@ import type { AvailabilityStatus } from '../products/publicAvailability.js'
  *
  * 3. **只读，不支持下单。** 机器人负责发现，成交回网站。下单涉及积分扣除与
  *    库存占用，聊天窗口内无法二次确认，风险高于收益。
+ *
+ * 4. **视角由 audience 参数决定，本文件不自行假设身份。**
+ *    历史实现固定传 `'member'`，理由是「HMAC 校验通过 ⇒ 面向已绑定用户」——
+ *    这个推理是错的：HMAC 只证明请求来自受信机器人服务，不证明消息发送者
+ *    是谁。任何能敲 `/搜索` 的 QQ 用户（含整个群）都拿到了 members_only
+ *    商品的名称、价格、库存、商家、分类、描述。现在 audience 由
+ *    chatbot/audience.ts 依据「私聊 + 已绑定 + 账号正常」判定，缺字段、
+ *    群聊、未绑定、账号异常一律 guest（见 docs/specs/product-guest-visibility-ai-moderation.md §5）。
  */
 
 export interface BotProductSummary {
@@ -114,21 +123,20 @@ export interface BotSearchResult {
  * 关键词搜索。空关键词返回默认列表，让用户在不
  * 知道买什么时也有东西可看。
  *
- * ⚠️ audience 必须是 'member' 而非 'guest'。
+ * ⚠️ audience 由调用方按请求者身份传入（见 chatbot/audience.ts）。
+ * 未绑定/群聊/缺字段必须传 'guest'；只有「私聊 + 已绑定 + 账号正常」才传
+ * 'member'。不要在这里改回固定 'member'——那会重新打开 BOT-1 关掉的泄露路径。
  *
- * 平台上绝大多数商品的 visibility 是默认值 `members_only`（实测 830 个
- * active 商品里有 759 个），而 `publicVisibilityWhere('guest')` 会加上
- * `visibility: 'public'` 过滤——等于滤掉 91% 的商品，用户搜索时几乎
- * 什么都看不到。
- *
- * 用 'member' 是合理的：调用方在路由层已通过 HMAC 校验，且这些命令面向
- * 已绑定站内账号的用户；商品本身对登录用户可见，机器人代其查询与网站在
- * 登录态下浏览的口径一致。
+ * 关于覆盖面：guest 会带上 `visibility: 'public'` 过滤，所以 members_only
+ * 商品不会出现在结果里。这是刻意的：这些商品只对登录用户可见，而机器人
+ * 侧的请求者尚未证明自己是谁。受限商品的存在、数量、名称都不能出现在
+ * 响应里，因此空结果是正常输出，不是错误。
  */
 export async function searchProducts(params: {
   keyword?: unknown
   page?: unknown
   baseUrl: string
+  audience: ProductAudience
 }): Promise<BotSearchResult> {
   const keyword = normalizeKeyword(params.keyword)
   const page = normalizePage(params.page)
@@ -137,7 +145,7 @@ export async function searchProducts(params: {
     query: keyword || undefined,
     page,
     pageSize: PAGE_SIZE,
-    audience: 'member',
+    audience: params.audience,
   })
 
   const items = (result.items as unknown as SerializedListItem[]).map(item =>
@@ -151,30 +159,78 @@ export async function searchProducts(params: {
   }
 }
 
-/** 商品详情。同 searchProducts，用 'member' 视角以覆盖 members_only 商品。 */
+/**
+ * 商品详情。
+ *
+ * 返回三种可区分的结果，调用方据此给出不同文案：
+ *
+ *   { kind: 'found' }         —— 当前视角可见，带完整投影
+ *   { kind: 'not_found' }     —— 不存在 / 已归档 / 商家停用 / 草稿（原 404 契约）
+ *   { kind: 'login_required' }—— 商品存在但仅登录可见，403 PRODUCT_LOGIN_REQUIRED
+ *
+ * 为什么把 403 单列出来而不是并进 404：用户拿到的编号是真实存在的商品，
+ * 告诉他「不存在」会让他在群友面前被误导着反复重试。但「仅登录可见」
+ * 这个结果本身**不得携带任何商品字段**（名称、价格、库存、商家、分类、
+ * 图片、描述、ID 都不给）——只回答「这里有东西，但你得先登录」。
+ *
+ * ⚠️ 与仓库「不属于你的资源返回 404 而非 403」的通用原则存在偏差，代价要
+ * 说清楚：**商品的存在性可被探测**。guest 逐个试编号时，看到的是
+ * 「{ found: false }」与「{ found: false, loginRequired: true }」两种不同结果，
+ * 因此能区分「不存在」和「存在但需登录」，也就能数出 members_only 商品的
+ * 数量。这与网站详情页当前的行为一致（访客直访受限商品同样收 403），
+ * 方案 §2.1 已接受这一取舍——§2.3 的保护目标是名称、说明、价格、套餐、
+ * 评价、分类元数据和图片 URL，存在性本身不在其中。
+ *
+ * 真正被禁的是**内容**：固定结果不随商品变化，只有「需登录」这一个比特，
+ * 商品字段一个都不给（含 ID）。若日后要连存在性一起收敛，正确做法是让
+ * guest 对受限商品也返回 not_found——但那会让真实买家以为商品下架，
+ * 属于产品决策，不在这里顺手改。
+ */
+export type BotProductDetailResult =
+  | { kind: 'found'; product: BotProductDetail }
+  | { kind: 'not_found' }
+  | { kind: 'login_required' }
+
 export async function productDetail(params: {
   id: unknown
   baseUrl: string
-}): Promise<BotProductDetail | null> {
+  audience: ProductAudience
+}): Promise<BotProductDetailResult> {
   const id = Number(params.id)
   if (!Number.isInteger(id) || id < 1) throw badRequest('商品编号不合法')
 
-  const detail = (await getProductDetail(id, 'member')) as unknown as
+  let detail: Awaited<ReturnType<typeof getProductDetail>>
+  try {
+    detail = await getProductDetail(id, params.audience)
+  } catch (err) {
+    if (err instanceof HttpError) {
+      if (err.status === 404) return { kind: 'not_found' }
+      if (err.status === 403 && err.code === 'PRODUCT_LOGIN_REQUIRED') {
+        return { kind: 'login_required' }
+      }
+    }
+    throw err
+  }
+
+  const row = detail as unknown as
     | (SerializedListItem & {
         description?: string | null
         images?: string[] | null
         sales?: number | null
       })
     | null
-  if (!detail) return null
+  if (!row) return { kind: 'not_found' }
 
-  const summary = projectSummary(detail, params.baseUrl)
-  const images = Array.isArray(detail.images) ? detail.images : []
+  const summary = projectSummary(row, params.baseUrl)
+  const images = Array.isArray(row.images) ? row.images : []
 
   return {
-    ...summary,
-    description: detail.description ?? null,
-    imageUrl: images.length > 0 ? images[0] : null,
-    sales: detail.sales ?? 0,
+    kind: 'found',
+    product: {
+      ...summary,
+      description: row.description ?? null,
+      imageUrl: images.length > 0 ? images[0] : null,
+      sales: row.sales ?? 0,
+    },
   }
 }
