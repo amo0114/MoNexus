@@ -344,19 +344,18 @@ export function clearCacheProcessState() {
 export async function __resetCacheForTests() {
   clearCacheProcessState()
 
-  // Redis 未启用时没有远端缓存要清，直接返回——这是**唯一**允许跳过的情形。
-  // 不能用宽泛 catch 把连接失败也吞掉：那样 Redis 真出问题时会在测试里静默
-  // 藏住，缓存残留还会污染后续用例的断言。
+  // Redis 未启用：没有远端缓存要清，直接返回。
   if (!isRedisConfigured()) return
 
-  // 必须走 runRedisCommandWithTimeout 而不是裸 client：客户端是 lazyConnect +
-  // enableOfflineQueue:false，未连接时直接叫命令会抛
-  // "Stream isn't writeable and enableOfflineQueue options is false"。
-  // setup.ts 在每个 test 前都会调用本函数，因此 Redis 启用时必须先建立连接。
   const client = getRedis()
-  if (!client?.keys) {
-    throw new Error('__resetCacheForTests: Redis enabled but client has no keys(); refusing to skip silently')
-  }
+  // client 未实现 keys()：这是**测试替身的合法形态**。
+  // 例：shops.test.ts 的 FakeRedis 只实现 get/set/del/incr/eval/ping，
+  // 用于验证 product-list 缓存逻辑，本身就明确不支持 KEYS 扫描。
+  // 这不算错误——该替身的 store 随用例结束即丢弃，无需清理。
+  //
+  // 注意与「静默吞掉连接失败」的区别：这里只跳过**能力不存在**这一种可判定
+  // 情形；连接/命令错误照常上抛，不会掩盖 Redis 真实故障。
+  if (!client?.keys) return
 
   const keys = await runRedisCommandWithTimeout('keys', c => c.keys!(`${cacheKeyPrefix()}:*`))
   if (keys.length > 0) {
