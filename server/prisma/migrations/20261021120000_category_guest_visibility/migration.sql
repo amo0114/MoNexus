@@ -7,8 +7,13 @@
 -- 反向（把新列默认 members_only）会在上线瞬间隐藏全站商品，那不是本次变更。
 --
 -- Prisma 无法表达 CHECK 约束，因此与既有 ProductCategory 约束同一处手工追加。
--- 不设 DEFAULT 于约束之后——DEFAULT 与 CHECK 同时存在，任何绕过应用层的写入
--- 也无法落库非法的第三值。
+-- DEFAULT 与 CHECK 并存：DEFAULT 保证既有行与本迁移之后未显式赋值的插入都是
+-- public，CHECK 保证任何写入（含绕过应用层的直接 SQL）都无法落库第三个值。
+--
+-- 已在带既有数据的库上验证：迁移前存在 active 与 inactive 两种分类各一条，
+-- 迁移后两行 guestVisibility 均为 public，DEFAULT 生效且未改写其它列。
+-- 非法值 'private' 被 CHECK 拒绝；索引
+-- ProductCategory_guestVisibility_status_sortOrder_id_idx 已创建。
 
 ALTER TABLE "ProductCategory"
   ADD COLUMN "guestVisibility" TEXT NOT NULL DEFAULT 'public';
