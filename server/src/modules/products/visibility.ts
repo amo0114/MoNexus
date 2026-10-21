@@ -119,15 +119,6 @@ export function guestVisibilitySql(): Prisma.Sql {
     AND c."guestVisibility" = ${CATEGORY_GUEST_VISIBILITY.PUBLIC})`
 }
 
-/**
- * 分类过滤的 SQL 片段生成器。与 guestVisibilitySql 分开导出，便于调用方在
- * 不同的 JOIN 形态下复用同一条件文本，避免各写一份而漂移。
- */
-export function categoryGuestVisibilitySql(alias = 'c'): Prisma.Sql {
-  // 别名来自本模块常量（非用户输入），此处仍是参数化写入以保持一致风格。
-  return Prisma.sql`${Prisma.raw(`"${alias}"."guestVisibility"`)} = ${CATEGORY_GUEST_VISIBILITY.PUBLIC}`
-}
-
 export function merchantVisibleSql(): Prisma.Sql {
   return Prisma.sql`(p."merchantId" IS NULL OR EXISTS (
     SELECT 1 FROM "Merchant" m WHERE m."id" = p."merchantId" AND m."status" = 'active'
@@ -171,16 +162,4 @@ export function isCurrentlyPubliclyVisible(
   if (product.merchantId != null && product.merchant?.status !== 'active') return false
   if (guestRequiresLogin(product) && audience === 'guest') return false
   return true
-}
-
-/**
- * 分类是否对游客可见（registry、分类筛选等按分类维度输出时使用）。
- * 与商品侧同一语义：缺字段不默认公开。
- */
-export function isCategoryGuestVisible(
-  category: { guestVisibility: string | null; status?: string } | null | undefined,
-): boolean {
-  if (!category) return false
-  if (category.status !== undefined && category.status !== 'active') return false
-  return readCategoryGuestVisibility(category) === CATEGORY_GUEST_VISIBILITY.PUBLIC
 }
