@@ -157,6 +157,18 @@ let orderAttentionRequestSeq = 0
 let orderAttentionLastFetchAt = 0
 /** 通知未读刷新的请求代次：A 的慢响应不得写入 B 的界面（PR-3 复审）。 */
 let notificationUnreadRequestSeq = 0
+
+/**
+ * SPEC-CATALOG-VIS-001 §3.5（P1-B 复审阻塞项）：registry 请求的代数哨兵。
+ *
+ * 与 notificationUnreadRequestSeq 同思路——它保护的是**页面状态**而不是
+ * 模块缓存。api/registry.ts 的 generation 只保证「旧响应不写入缓存」，
+ * 但旧响应仍会 return 给调用方；若 loadRegistry 不加判断就 set，游客页面上
+ * 会重新出现 members_only 分类名。
+ *
+ * 递增时机见 loadRegistry / invalidateIdentityScopedMetadata 注册处。
+ */
+let registryRequestSeq = 0
 let previousAuthUserId = useAuthStore.getState().user?.id ?? null
 let previousAuthSessionId = getCurrentSessionId(useAuthStore.getState())
 let previousAuthEpoch = useAuthStore.getState().authEpoch
@@ -390,12 +402,27 @@ export const useAppStore = create<AppState>()((set, get) => ({
     // 身份由 api/registry 在读取时自行从 authStore 解析——这里不做注入，
     // 也不在身份订阅回调里做任何额外 setState（那会打乱登录/登出时序，
     // 见 api/registry.ts 顶部注释）。
+    //
+    // 代际保护（照 refreshNotificationUnread 的先例）：请求发出前记下序号
+    // 与身份，返回后只有二者都没变才写入。否则「member 请求在途 → 退出 →
+    // guest 请求发出 → member 响应后到」会让游客页面重新出现受限分类名。
+    const seq = ++registryRequestSeq
+    const epochAtStart = useAuthStore.getState().authEpoch
+    const isCurrentRequest = () =>
+      seq === registryRequestSeq && useAuthStore.getState().authEpoch === epochAtStart
+
     set({ registryStatus: 'loading' })
     try {
       const data = await getConfigRegistry()
-      set({ registry: data, registryStatus: 'ready' })
+      if (isCurrentRequest()) {
+        set({ registry: data, registryStatus: 'ready' })
+      }
     } catch (err) {
-      set({ registryStatus: 'error' })
+      // 旧请求的失败同样不得改写新请求的状态（否则新请求成功后被旧错误
+      // 覆盖成 error，页面停在错误态）。
+      if (isCurrentRequest()) {
+        set({ registryStatus: 'error' })
+      }
       console.error('Failed to load config registry:', err)
     }
   },
@@ -466,5 +493,8 @@ useAuthStore.subscribe((authState) => {
  * 注册在模块末尾，此时 useAppStore 已定义。
  */
 registerIdentityScopedMetadataCleanup(() => {
+  // 递增序号以作废所有在途 registry 请求：它们返回时代际不匹配，不会被
+  // 写回页面状态（见 loadRegistry 的 isCurrentRequest）。
+  registryRequestSeq += 1
   useAppStore.setState({ registry: null, registryStatus: 'idle' })
 })

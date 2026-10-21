@@ -139,6 +139,71 @@ describe('SPEC-CATALOG-VIS-001 §3.5 身份切换后 registry 与身份一致', 
     expect(app.useAppStore.getState().registry).toBeNull()
   })
 
+  it('两个在途请求乱序返回（旧 member 后到），最终快照为 guest 视角', async () => {
+    const { auth, app } = await loadModules()
+
+    // 1) 以登录身份发起请求 A（挂起）。
+    auth.useAuthStore.setState({
+      user: { id: 21, email: 'q@test.local', nickname: 'Q', role: 'user', points: 0 } as never,
+      isLoggedIn: true,
+    })
+    let resolveMember: (v: unknown) => void = () => {}
+    getMock.mockReturnValueOnce(new Promise(resolve => { resolveMember = resolve }))
+    const memberPending = app.useAppStore.getState().loadRegistry()
+
+    // 2) 期间退出，App 依 authEpoch 变化发起 guest 请求 B（挂起）。
+    auth.useAuthStore.getState().logout()
+    await flushMicrotasks()
+    let resolveGuest: (v: unknown) => void = () => {}
+    getMock.mockReturnValueOnce(new Promise(resolve => { resolveGuest = resolve }))
+    const guestPending = app.useAppStore.getState().loadRegistry()
+
+    // 3) 关键顺序：guest（新）先返回，member（旧）后返回。
+    resolveGuest(registryPayload(['public-cat']))
+    await guestPending
+    await flushMicrotasks()
+    expect(app.useAppStore.getState().registry?.productCategories.map(c => c.code))
+      .toEqual(['public-cat'])
+
+    resolveMember(registryPayload(['public-cat', 'locked-cat']))
+    await memberPending
+    await flushMicrotasks()
+
+    // 4) 旧响应不得覆盖新快照。
+    const codes = app.useAppStore.getState().registry?.productCategories.map(c => c.code) ?? []
+    expect(codes).toEqual(['public-cat'])
+    expect(codes).not.toContain('locked-cat')
+    expect(app.useAppStore.getState().registryStatus).toBe('ready')
+  })
+
+  it('旧请求失败不得把新请求的成功状态改写成 error', async () => {
+    const { auth, app } = await loadModules()
+
+    auth.useAuthStore.setState({
+      user: { id: 31, email: 'r@test.local', nickname: 'R', role: 'user', points: 0 } as never,
+      isLoggedIn: true,
+    })
+    let rejectMember: (e: unknown) => void = () => {}
+    getMock.mockReturnValueOnce(new Promise((_res, rej) => { rejectMember = rej }))
+    const memberPending = app.useAppStore.getState().loadRegistry()
+
+    auth.useAuthStore.getState().logout()
+    await flushMicrotasks()
+
+    getMock.mockResolvedValueOnce(registryPayload(['public-cat']))
+    await app.useAppStore.getState().loadRegistry()
+    expect(app.useAppStore.getState().registryStatus).toBe('ready')
+
+    rejectMember(new Error('stale member failure'))
+    await memberPending
+    await flushMicrotasks()
+
+    // 状态仍是 ready（新请求的结果），不被旧失败改写。
+    expect(app.useAppStore.getState().registryStatus).toBe('ready')
+    expect(app.useAppStore.getState().registry?.productCategories.map(c => c.code))
+      .toEqual(['public-cat'])
+  })
+
   it('退出后旧的在途请求返回，不得把受限分类写回快照', async () => {
     const { auth, app, registry } = await loadModules()
 
@@ -166,5 +231,13 @@ describe('SPEC-CATALOG-VIS-001 §3.5 身份切换后 registry 与身份一致', 
     const guest = await registry.getConfigRegistry()
     expect(guest.productCategories.map(c => c.code)).toEqual(['public-cat'])
     expect(getMock).toHaveBeenCalledTimes(2)
+
+    // 关键：**页面状态**同样不得被旧响应写回。这是上一版本的漏点——
+    // generation 只保护模块缓存，旧结果仍 return 给调用方，而
+    // appStore.loadRegistry 会把它原样写进 registry。
+    expect(app.useAppStore.getState().registry).toBeNull()
+    const snapshotCodes = app.useAppStore.getState().registry?.productCategories
+      ?.map(c => c.code) ?? []
+    expect(snapshotCodes).not.toContain('locked-cat')
   })
 })
