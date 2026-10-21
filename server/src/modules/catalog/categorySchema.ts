@@ -7,6 +7,8 @@
 
 import { z } from 'zod'
 import { CATEGORY_CODE_PATTERN, CATEGORY_STATUS } from './constants.js'
+import { CATEGORY_GUEST_VISIBILITY } from '../products/visibility.js'
+import type { CategoryGuestVisibility } from '../products/visibility.js'
 
 export const MAX_CATEGORY_LABEL_LENGTH = 50
 export const MAX_CATEGORY_DESCRIPTION_LENGTH = 500
@@ -73,6 +75,21 @@ export const categorySortOrderSchema = z.number().int('排序值必须是整数'
   .min(0, '排序值不能为负数')
   .max(MAX_CATEGORY_SORT_ORDER, `排序值不能超过 ${MAX_CATEGORY_SORT_ORDER}`)
 
+/**
+ * SPEC-CATALOG-VIS-001 §3.1 —— 分类级游客可见性。
+ *
+ * 只有两个合法值，与 ProductCategory.guestVisibility 的 DB CHECK 约束一致。
+ * 创建时缺省 public（沿用原行为，不因新增字段而突然隐藏分类）；
+ * 更新时缺省表示「不改」，由 service 按 undefined 判断。
+ *
+ * 刻意不做成 boolean：「是否游客可见」在未来引入分类树/多分类时需要扩展为
+ * 更细的规则，二值字符串留出了追加取值的空间，也让 DB 约束与 DTO 同名同义。
+ */
+export const categoryGuestVisibilitySchema = z.enum(
+  [CATEGORY_GUEST_VISIBILITY.PUBLIC, CATEGORY_GUEST_VISIBILITY.MEMBERS_ONLY],
+  { message: '游客可见性只能是 public 或 members_only' },
+)
+
 export const categoryDescriptionField = z.string().trim()
   .max(MAX_CATEGORY_DESCRIPTION_LENGTH, `分类描述最多 ${MAX_CATEGORY_DESCRIPTION_LENGTH} 字`)
 
@@ -120,6 +137,8 @@ export const createCategorySchema = z.object({
   defaultCoverUrl: emptyToUnset(categoryDefaultCoverUrlField),
   defaultCover: platformMediaRefSchema.optional(),
   sortOrder: categorySortOrderSchema.default(0),
+  // 缺省 public：新分类默认与既有分类一致，收紧是显式动作。
+  guestVisibility: categoryGuestVisibilitySchema.default(CATEGORY_GUEST_VISIBILITY.PUBLIC),
 }).strict().superRefine(rejectDualCoverFields)
 // Input type (sortOrder optional — the default is applied by validation). The
 // service accepts this so direct callers don't have to repeat the default, and
@@ -132,6 +151,7 @@ export interface CreateCategoryInput {
   defaultCoverUrl?: string
   defaultCover?: PlatformMediaRefInput
   sortOrder?: number
+  guestVisibility?: CategoryGuestVisibility
 }
 
 /** code is intentionally absent — D-CAT-06: code is immutable after creation. */
@@ -142,6 +162,8 @@ export const updateCategorySchema = z.object({
   defaultCoverUrl: emptyToNull(categoryDefaultCoverUrlField),
   defaultCover: platformMediaRefSchema.nullable().optional(),
   sortOrder: categorySortOrderSchema.optional(),
+  // undefined = 不改；显式传值才会写库。
+  guestVisibility: categoryGuestVisibilitySchema.optional(),
 }).strict().superRefine(rejectDualCoverFields)
 export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>
 

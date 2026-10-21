@@ -27,6 +27,10 @@ import {
   type CategoryStatus,
 } from './constants.js'
 import type { CategoryAdminDto } from './contracts.js'
+import {
+  CATEGORY_GUEST_VISIBILITY,
+  type CategoryGuestVisibility,
+} from '../products/visibility.js'
 import { normalizeCategoryLabel, type CreateCategoryInput, type ListCategoriesQuery, type UpdateCategoryInput } from './categorySchema.js'
 import { bumpCategoryRegistryCacheVersion } from './registry.js'
 import { bumpProductListVersionCoalesced } from '../../lib/cache.js'
@@ -48,6 +52,7 @@ const adminSelect = {
   defaultCoverUrl: true,
   sortOrder: true,
   status: true,
+  guestVisibility: true,
   createdByUserId: true,
   updatedByUserId: true,
   createdAt: true,
@@ -139,6 +144,7 @@ function toAdminDto(row: AdminCategoryRow): CategoryAdminDto {
     defaultCoverUrl: row.defaultCoverUrl,
     sortOrder: row.sortOrder,
     status: row.status as CategoryStatus,
+    guestVisibility: row.guestVisibility as CategoryGuestVisibility,
     createdByUserId: row.createdByUserId,
     updatedByUserId: row.updatedByUserId,
     createdAt: row.createdAt.toISOString(),
@@ -221,12 +227,20 @@ export async function createCategory(
           defaultCoverUrl,
           sortOrder: input.sortOrder ?? 0,
           status: CATEGORY_STATUS.ACTIVE,
+          // SPEC-CATALOG-VIS-001 §3.1：缺省 public，与既有分类行为一致。
+          guestVisibility: input.guestVisibility ?? CATEGORY_GUEST_VISIBILITY.PUBLIC,
           createdByUserId: adminId,
           updatedByUserId: adminId,
         },
         select: adminSelect,
       })
-      await writeCategoryAdminLog(tx, adminId, '创建分类', created.id, `code=${code}`)
+      await writeCategoryAdminLog(
+        tx,
+        adminId,
+        '创建分类',
+        created.id,
+        `code=${code},guestVisibility=${created.guestVisibility}`,
+      )
       return created
     })
     await bumpCategoryRegistryCacheVersion()
@@ -306,6 +320,7 @@ export async function updateCategory(
         data.defaultCoverUrl = nextUrl
       }
       if (input.sortOrder !== undefined) data.sortOrder = input.sortOrder
+      if (input.guestVisibility !== undefined) data.guestVisibility = input.guestVisibility
 
       const updated = await tx.productCategory.update({ where: { id }, data, select: adminSelect })
       const changed = Object.keys(input)

@@ -116,6 +116,8 @@ async function filterSponsoredByAudience(
       visibility: true,
       merchantId: true,
       merchant: { select: { status: true } },
+      // SPEC-CATALOG-VIS-001 §3.3：推广卡片同样受分类可见性约束。
+      category: { select: { guestVisibility: true } },
     },
   })
   const visible = new Set(
