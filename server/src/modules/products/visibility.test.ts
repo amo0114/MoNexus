@@ -158,3 +158,77 @@ describe('product audience visibility (SPEC-PRODUCT-COMMERCE-002 §6)', () => {
     expect(memberDetail.body.category).not.toHaveProperty('guestVisibility')
   })
 })
+
+/**
+ * SPEC-CATALOG-VIS-001 §3.1 / §8.1 —— 分类限制变更对该分类已有商品
+ * **立即生效**，不等待商品重存或人工复核。
+ *
+ * 这里刻意不预热缓存就断言，原因说清楚：测试环境 `REDIS_ENABLED=false`，
+ * `wrapCache` 直接走 fallback 查库，缓存命中路径根本不执行。因此本用例
+ * 证明的是「规则实时读库」这一半；缓存命中后的复核能力由
+ * `isCurrentlyPubliclyVisible` 在 `listProducts` 里对每个 item 重新查
+ * Product 表保证（同一函数，同一语义），其等价性已在
+ * visibility.equivalence.test.ts 覆盖。
+ *
+ * 真正需要 Redis 才能验证的「缓存预热后收紧仍拒绝」留给 P1-B 的缓存
+ * 隔离工作——那里本就要重做缓存键与失效通知。
+ */
+describe('SPEC-CATALOG-VIS-001 §3.1 分类限制即时生效', () => {
+  it('把分类改为 members_only 后，游客立即看不到该分类下原本公开的商品', async () => {
+    const product = await createTestProduct('即时生效商品', 20, 1, ['NOW-1'])
+    // 前置：分类默认 public，游客可见。
+    const before = await api.get('/api/products').expect(200)
+    expect(before.body.items.map((i: { id: number }) => i.id)).toContain(product.id)
+
+    // 收紧该商品所属分类。
+    const row = await prisma.product.findUniqueOrThrow({
+      where: { id: product.id },
+      select: { categoryId: true },
+    })
+    await prisma.productCategory.update({
+      where: { id: row.categoryId },
+      data: { guestVisibility: 'members_only' },
+    })
+
+    // 列表立即消失。
+    const after = await api.get('/api/products').expect(200)
+    expect(after.body.items.map((i: { id: number }) => i.id)).not.toContain(product.id)
+    expect(JSON.stringify(after.body)).not.toContain('即时生效商品')
+
+    // 详情立即 403，且错误体不含商品信息（§3.2）。
+    const detail = await api.get(`/api/products/${product.id}`).expect(403)
+    expect(detail.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+    expect(JSON.stringify(detail.body)).not.toContain('即时生效商品')
+
+    // 评价入口同样拒绝。
+    await api.get(`/api/products/${product.id}/reviews`).expect(403)
+
+    // 登录用户不受影响（member 不看分类可见性）。
+    await createTestUser('vis-now-member@test.local', 'pass123', 'user', 1000)
+    const { accessToken } = await loginAs('vis-now-member@test.local', 'pass123')
+    const memberList = await api.get('/api/products').set(authHeader(accessToken)).expect(200)
+    expect(memberList.body.items.map((i: { id: number }) => i.id)).toContain(product.id)
+    const memberDetail = await api.get(`/api/products/${product.id}`).set(authHeader(accessToken)).expect(200)
+    expect(memberDetail.body.name).toBe('即时生效商品')
+  })
+
+  it('分类放开后游客立即恢复可见，无需重新保存商品', async () => {
+    const product = await createTestProduct('放开恢复商品', 20, 1, ['OPEN-1'])
+    const row = await prisma.product.findUniqueOrThrow({
+      where: { id: product.id },
+      select: { categoryId: true },
+    })
+    await prisma.productCategory.update({
+      where: { id: row.categoryId },
+      data: { guestVisibility: 'members_only' },
+    })
+    await api.get(`/api/products/${product.id}`).expect(403)
+
+    await prisma.productCategory.update({
+      where: { id: row.categoryId },
+      data: { guestVisibility: 'public' },
+    })
+    const res = await api.get(`/api/products/${product.id}`).expect(200)
+    expect(res.body.name).toBe('放开恢复商品')
+  })
+})
