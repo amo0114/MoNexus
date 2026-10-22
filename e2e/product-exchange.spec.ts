@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, SEED_ACCOUNTS, publishMerchantProduct } from './helpers'
+import { API_BASE, SEED_ACCOUNTS, approveGuestEligibility, publishMerchantProduct } from './helpers'
 
 async function createPublishedProduct(request: import('@playwright/test').APIRequestContext, name: string, visibility: 'public' | 'members_only') {
   const merchantLogin = await request.post(`${API_BASE}/api/auth/login`, { data: SEED_ACCOUNTS.merchant })
@@ -35,6 +35,11 @@ async function createPublishedProduct(request: import('@playwright/test').APIReq
       data: { expectedContentVersion: contentVersion, visibility: 'public' },
     })
     expect(patched.ok(), await patched.text()).toBeTruthy()
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5）：把 visibility 改成 public 同样会
+    // 递增 publicContentRevision 并把准入重置为 pending——因此
+    // publishMerchantProduct 里那次批准到这里已经失效，必须**在改完
+    // visibility 之后**重新批准，否则游客详情拿不到该商品。
+    await approveGuestEligibility(request, productId)
   }
   return productId
 }

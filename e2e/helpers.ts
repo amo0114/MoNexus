@@ -133,6 +133,46 @@ export async function publishMerchantProduct(
     headers: { Authorization: `Bearer ${token}` },
   })
   expect(published.ok(), await published.text()).toBeTruthy()
+
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：发布后商品对**登录用户**可见，
+  // 但对游客还需管理员批准当前公开内容版本。E2E 若断言"游客可见"，
+  // 必须走这一步；只发布不批准会让游客侧拿到 403/空列表。
+  await approveGuestEligibility(request, productId)
+}
+
+/**
+ * 管理员批准商品的游客公开资格（P1.5）。
+ *
+ * 两个 expected 值从当前状态读出后再提交，模拟真实管理员的"打开审批 →
+ * 提交"两步；并发场景下服务端会以 409 拒绝不匹配的提交。
+ */
+export async function approveGuestEligibility(
+  request: APIRequestContext,
+  productId: number,
+) {
+  const admin = await loginAsApi(request, SEED_ACCOUNTS.admin)
+  const current = await request.get(
+    `${API_BASE}/api/admin/products/${productId}/guest-eligibility`,
+    { headers: { Authorization: `Bearer ${admin.accessToken}` } },
+  )
+  expect(current.ok(), await current.text()).toBeTruthy()
+  const state = await current.json() as {
+    publicContentRevision: number
+    version: number
+  }
+
+  const approved = await request.post(
+    `${API_BASE}/api/admin/products/${productId}/guest-eligibility`,
+    {
+      headers: { Authorization: `Bearer ${admin.accessToken}` },
+      data: {
+        action: 'approve',
+        expectedPublicContentRevision: state.publicContentRevision,
+        expectedEligibilityVersion: state.version,
+      },
+    },
+  )
+  expect(approved.ok(), await approved.text()).toBeTruthy()
 }
 
 async function loginAdminPage(page: Page, account: SeedAccount) {

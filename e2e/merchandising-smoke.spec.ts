@@ -1,6 +1,6 @@
 import { expect, test, type Locator } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
-import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, loginAs, loginAsApi } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, approveGuestEligibility, loginAs, loginAsApi } from './helpers'
 
 /**
  * SPEC-MERCH-001 / PAR-CMI-001 — Merchandising smoke (T-MERCH-QA-003, AMD-CMI-012 §3.5).
@@ -178,6 +178,11 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
       },
     })
     expect(visibilityPatch.ok(), await visibilityPatch.text()).toBeTruthy()
+
+    // 2.5 SPEC-CATALOG-VIS-001 §4.2（P1.5）：改为 public 会递增公开内容版本并
+    // 把准入重置为 pending。游客 sponsored 投影要求"已批准且版本匹配"，
+    // 因此这里必须走一次管理员批准，否则第 5 步拿到空列表。
+    await approveGuestEligibility(request, productId)
 
     // 3. merchant 为自己的 active 商品申请推广（requestedStartAt=null → 尽快开始）。
     const createCampaign = await request.post(`${API_BASE}/api/merchant/promotion-campaigns`, {
