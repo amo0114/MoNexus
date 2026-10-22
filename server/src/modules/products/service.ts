@@ -68,6 +68,7 @@ const productListSelect = {
   stock: true,
   sales: true,
   status: true,
+  archivedAt: true,
   deliveryMode: true,
   stockMode: true,
   ratingAvg: true,
@@ -77,7 +78,10 @@ const productListSelect = {
   visibility: true,
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
-  category: { select: { id: true, code: true, label: true } },
+  category: { select: { id: true, code: true, label: true, guestVisibility: true } },
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。必填，漏查会编译失败。
+  publicContentRevision: true,
+  guestEligibility: { select: { decision: true, reviewedRevision: true } },
   // P4a：公开可售状态从 active 规格集合推导，不再信任 Product 投影——
   // stockMode 投影取自默认规格（可能已下架），混合规格商品会误报售罄/不限。
   // Faka：列表页也要 external* 以投影 Xboard 剩余名额。
@@ -136,7 +140,10 @@ const productDetailSelect = {
   },
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
-  category: { select: { id: true, code: true, label: true } },
+  category: { select: { id: true, code: true, label: true, guestVisibility: true } },
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。必填，漏查会编译失败。
+  publicContentRevision: true,
+  guestEligibility: { select: { decision: true, reviewedRevision: true } },
 } satisfies Prisma.ProductSelect
 
 type ProductListItem = Prisma.ProductGetPayload<{ select: typeof productListSelect }>
@@ -258,6 +265,21 @@ function publicMerchant(merchant: { id: number; name: string; status?: string } 
   return { id: merchant.id, name: merchant.name }
 }
 
+/**
+ * SPEC-CATALOG-VIS-001 §3.1：公开分类投影只有 id/code/label。
+ *
+ * 查询层为做访问判定而加载了 guestVisibility，但它是**内部字段**：
+ * 输出给游客等同于告知「这个分类受限」，属于分类元数据泄露。
+ * 因此这里显式白名单投影，而不是透传 Prisma 对象——新增分类字段时
+ * 必须在这里显式决定是否对外，默认不对外。
+ */
+function publicCategory(
+  category: { id: number; code: string; label: string; guestVisibility?: string | null } | null | undefined,
+) {
+  if (!category) return null
+  return { id: category.id, code: category.code, label: category.label }
+}
+
 function resolvePublicTemplate(templateKey: string | null, templateVersion: number | null) {
   if (templateKey == null || templateVersion == null) return null
   if (!(TEMPLATE_KEYS as readonly string[]).includes(templateKey)) return null
@@ -296,7 +318,7 @@ function serializePublicProductListItem(
   fakaBySku: Map<string, FakaCapacitySnapshot>,
   availability: AvailabilityStatus,
 ) {
-  const { _count, offers, merchant, ...publicProduct } = product
+  const { _count, offers, merchant, category, ...publicProduct } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
 
   const fakaCaps: FakaCapacitySnapshot[] = []
@@ -312,6 +334,11 @@ function serializePublicProductListItem(
   return {
     ...publicProduct,
     merchant: publicMerchant(merchant),
+    // SPEC-CATALOG-VIS-001 §3.1：分类 DTO 只输出公开标识三件套。
+    // guestVisibility 是访问判定用的内部字段，绝不能出现在公开响应里
+    // （否则等于把「这个分类受限」告诉游客）；category 在查询层仍被加载，
+    // 因为判定需要它。
+    category: publicCategory(category),
     // 可售状态：Faka 用 Xboard 名额，否则本地规格推导。列表不携带 offers 数组。
     ...(fakaAvailability ?? localAvailability),
     fakaCapacity,
@@ -461,6 +488,7 @@ function serializePublicProductDetail(
     offers,
     archivedAt: _archivedAt,
     merchant,
+    category,
     attributes: rawAttributes,
     details: rawDetails,
     ...publicProduct
@@ -475,6 +503,8 @@ function serializePublicProductDetail(
   return {
     ...publicProduct,
     merchant: publicMerchant(merchant),
+    // 同列表：分类只输出公开三件套，guestVisibility 不对外。
+    category: publicCategory(category),
     attributes: projectPublicTemplateAttributes(rawAttributes, productAttributeKeys),
     details: toPublicProductDetails(rawDetails),
     // Faka 商品：用 Xboard 剩余名额投影到 stock/stockMode，详情页「库存」可见。
@@ -669,6 +699,12 @@ export async function listProducts(params: ProductListParams = {}) {
       visibility: true,
       merchantId: true,
       merchant: { select: { status: true } },
+      // SPEC-CATALOG-VIS-001 §3.4：缓存命中后必须用实时分类可见性复核，
+      // 不能信任缓存里那份可能已过期的判定结果。
+      category: { select: { guestVisibility: true } },
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。
+      publicContentRevision: true,
+      guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
   })
   // A cached shop page must not keep showing a product that moved to another owner.
@@ -704,7 +740,11 @@ async function hydratePublicListItems(orderedIds: number[], audience: ProductAud
     where: { id: { in: ids }, ...publicVisibilityWhere(audience) },
     select: productListSelect,
   })
-  const productById = new Map(products.map(product => [product.id, product]))
+  // publicVisibilityWhere 对游客只做准入粗筛（Prisma where 无法跨表比较
+  // reviewedRevision 与 publicContentRevision），这里补精判，
+  // 否则「已批准但内容已改」的商品仍会出现在推荐/店铺卡片里。
+  const visible = products.filter(product => isCurrentlyPubliclyVisible(product, audience))
+  const productById = new Map(visible.map(product => [product.id, product]))
   const items = ids.flatMap(id => {
     const product = productById.get(id)
     return product ? [product] : []
@@ -780,6 +820,10 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
       visibility: true,
       merchantId: true,
       merchant: { select: { status: true } },
+      category: { select: { guestVisibility: true } },
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。
+      publicContentRevision: true,
+      guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
   })
   if (!live) throw notFound('商品暂不可用')
@@ -847,6 +891,11 @@ export async function getProductRecommendations(id: number, audience: ProductAud
       archivedAt: true,
       visibility: true,
       merchant: { select: { status: true } },
+      // SPEC-CATALOG-VIS-001 §3.3：源商品先鉴权，再逐批过滤候选。
+      category: { select: { guestVisibility: true } },
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。
+      publicContentRevision: true,
+      guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
   })
   if (!base) throw notFound('商品暂不可用')

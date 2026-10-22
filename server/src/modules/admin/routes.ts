@@ -26,6 +26,7 @@ import {
 } from './schema.js'
 import { adminReviewsQuerySchema } from '../reviews/schema.js'
 import { createProductV2Schema, patchProductContentSchema, draftOfferV2WriteSchema } from '../catalog/productV2Schema.js'
+import { guestEligibilityActionSchema } from './guestEligibilitySchema.js'
 import {
   adminContentSuggestionSchema,
   contentSuggestionAppliedSchema,
@@ -157,6 +158,13 @@ router.get('/products/:id/editor', validate({ params: idParamSchema }), controll
 router.post('/products/:id/content-suggestions', validate({ params: idParamSchema, body: adminContentSuggestionSchema }), controller.createContentSuggestion)
 router.post('/products/:id/content-suggestions/:generationId/applied', validate({ params: contentSuggestionParamSchema, body: contentSuggestionAppliedSchema }), controller.reportContentSuggestionApplied)
 router.get('/products/:id/readiness', validate({ params: idParamSchema }), controller.productReadiness)
+// SPEC-CATALOG-VIS-001 §4.6（P1.5-A）：游客公开准入查询与审批。
+router.get('/products/:id/guest-eligibility', validate({ params: idParamSchema }), controller.getGuestEligibility)
+router.post(
+  '/products/:id/guest-eligibility',
+  validate({ params: idParamSchema, body: guestEligibilityActionSchema }),
+  controller.applyGuestEligibility,
+)
 router.post('/products/:id/publish', validate({ params: idParamSchema }), controller.publishProduct)
 router.post('/products/:id/unpublish', validate({ params: idParamSchema }), controller.unpublishProduct)
 router.post('/products/:id/archive', validate({ params: idParamSchema, body: archiveProductSchema }), controller.archiveProduct)

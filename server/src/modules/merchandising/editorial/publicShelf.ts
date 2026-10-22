@@ -1,5 +1,6 @@
 import { prisma } from '../../../lib/prisma.js'
 import {
+  CATEGORY_GUEST_VISIBILITY,
   isCurrentlyPubliclyVisible,
   type ProductAudience,
 } from '../../products/visibility.js'
@@ -18,7 +19,16 @@ export async function listEditorialShelf(
       product: {
         status: 'active',
         archivedAt: null,
-        ...(audience === 'guest' ? { visibility: 'public' } : {}),
+        // SPEC-CATALOG-VIS-001 §3.4（P1-B）：游客查询阶段就排除受限分类。
+        // 后续 isCurrentlyPubliclyVisible 会二次过滤，但那发生在 take 之后——
+        // 受限分类的 feature 先占名额再被丢弃，游客看到的卡片数会少于
+        // limit。查询条件补上分类门后名额才准。
+        ...(audience === 'guest'
+          ? {
+              visibility: 'public',
+              category: { is: { guestVisibility: CATEGORY_GUEST_VISIBILITY.PUBLIC } },
+            }
+          : {}),
         OR: [{ merchantId: null }, { merchant: { status: 'active' } }],
       },
     },
@@ -33,6 +43,12 @@ export async function listEditorialShelf(
           visibility: true,
           merchantId: true,
           merchant: { select: { status: true } },
+          // SPEC-CATALOG-VIS-001 §3.3：访问判定需要分类可见性，
+          // 缺字段会让 PublicProductAccessRow 类型检查失败（不默认公开）。
+          category: { select: { guestVisibility: true } },
+          // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定需要当前版本 + 准入记录。
+          publicContentRevision: true,
+          guestEligibility: { select: { decision: true, reviewedRevision: true } },
         },
       },
     },

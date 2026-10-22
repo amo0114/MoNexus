@@ -10,6 +10,7 @@ import type {
   CategoryCode,
   CategoryStatus,
 } from './constants.js'
+import type { CategoryGuestVisibility } from '../products/visibility.js'
 
 /** Public product category projection (spec §7.4). */
 export interface CategoryDto {
@@ -18,13 +19,22 @@ export interface CategoryDto {
   label: string
 }
 
-/** Public category registry item (spec §7.1 — only active categories). */
+/**
+ * Public category registry item (spec §7.1 — only active categories).
+ *
+ * SPEC-CATALOG-VIS-001 §3.1（P1-B）：`guestVisibility` **只对登录用户下发**。
+ * 游客侧整条受限分类记录都不返回，因此该字段永远不会以 'members_only'
+ * 出现在游客响应里；它存在的意义是让商家/管理员在分类选择器里看出
+ * 「选这个分类会导致商品对游客不可见」。缺省（游客视角、旧数据）为 undefined，
+ * 消费方必须按「未知」处理，不能默认 public。
+ */
 export interface CategoryRegistryItem {
   id: number
   code: CategoryCode
   label: string
   iconKey: string | null
   sortOrder: number
+  guestVisibility?: CategoryGuestVisibility
 }
 
 /** Admin category row (spec §7.2). */
@@ -33,6 +43,8 @@ export interface CategoryAdminDto extends CategoryRegistryItem {
   description: string | null
   defaultCoverUrl: string | null
   status: CategoryStatus
+  /** SPEC-CATALOG-VIS-001 §3.1：分类级游客可见性，管理员可设置。 */
+  guestVisibility: CategoryGuestVisibility
   createdByUserId: number
   updatedByUserId: number
   createdAt: string

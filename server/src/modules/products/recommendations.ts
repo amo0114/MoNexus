@@ -203,6 +203,10 @@ export async function queryRecommendationCandidates(
     FROM (
       SELECT p."id" AS "id", ${tier} AS "tier", ${secondary} AS "secondary"
       FROM "Product" p
+      -- SPEC-CATALOG-VIS-001 §3.3：guestVisibilitySql 引用分类别名 c，
+      -- 因此这里必须 JOIN 分类。Product.categoryId NOT NULL 且指向已存在行，
+      -- INNER JOIN 不会丢弃合法候选。
+      INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
       CROSS JOIN (SELECT "attributes" FROM "Product" WHERE "id" = ${base.id}) b
       WHERE ${Prisma.join(where, ' AND ')}
     ) scored

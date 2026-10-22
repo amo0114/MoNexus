@@ -431,6 +431,16 @@ export async function confirmAdminFakaSync(
       })
     }
 
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A）核查结论：本函数**不触发**公开审核失效。
+    //
+    // 逐个动作看过：
+    //   - create_offer：新套餐以 status='inactive' 创建，未启用 → 不属于
+    //     「新增或启用未审核套餐」，启用动作在别处（offerAdmin）发生；
+    //   - archive_removed：只改 status / isDefault，不改名称与说明；
+    //   - update_sku：只改 externalIntegration/externalSku；
+    //   - apply_price：只改 price（§4.4 明确价格不触发）；
+    //   - restore_product：只改 status/archivedAt。
+    // 因此这里不留失效调用；若日后新增「改套餐名称/说明」的动作，必须补上。
     const maxSort = fresh.offers.reduce((max, offer) => Math.max(max, offer.sortOrder ?? 0), 0)
     let created = 0
     for (const action of bound) {

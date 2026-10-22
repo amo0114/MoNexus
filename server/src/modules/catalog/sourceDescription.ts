@@ -3,6 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { lockProductRow } from './productLock.js'
+import { invalidateGuestEligibilityIfNeeded } from './guestEligibility.js'
 import {
   fetchNormalizedFakaSource,
   type NormalizedFakaSource,
@@ -116,6 +117,10 @@ export async function applyProductSourceDescription(
     const data: { description?: string; richDescription?: string | null } = {}
     if (fields.includes('description')) data.description = source.plainDescription
     if (fields.includes('richDescription')) data.richDescription = source.richDescription
+
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：description / richDescription
+    // 是明确的展示字段，来源同步改写它们必须让旧批准失效。**写前**判定。
+    await invalidateGuestEligibilityIfNeeded(tx, productId, data)
 
     const product = await tx.product.update({
       where: { id: productId },

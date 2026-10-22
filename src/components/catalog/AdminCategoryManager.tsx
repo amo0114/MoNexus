@@ -250,6 +250,8 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
             ? { defaultCover: form.defaultCover }
             : {}),
           sortOrder: form.sortOrder.trim() === '' ? 0 : Number(form.sortOrder),
+          // SPEC-CATALOG-VIS-001 §3.1：游客可见性随表单一起提交。
+          guestVisibility: form.guestVisibility,
         }
         await adapter.updateCategory(categoryForm.category.id, payload)
         showToast('分类已更新')
@@ -263,6 +265,7 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
             ? { defaultCover: form.defaultCover }
             : {}),
           sortOrder: form.sortOrder.trim() === '' ? 0 : Number(form.sortOrder),
+          guestVisibility: form.guestVisibility,
         })
         showToast('分类已创建')
       }
@@ -530,6 +533,16 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
                         )}
                       </div>
                       {c.description && <div className="text-xs text-[var(--color-text-muted)] mt-0.5 line-clamp-1">{c.description}</div>}
+                      {c.guestVisibility === 'members_only' && (
+                        <div className="mt-1">
+                          <span
+                            className="inline-block text-[11px] px-2 py-0.5 rounded bg-[var(--color-primary-tint)] text-[var(--color-text-muted)]"
+                            data-testid={`category-guest-locked-${c.id}`}
+                          >
+                            仅登录可见
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td><CategoryStatusBadge status={c.status} /></td>
                     <td className="text-sm text-[var(--color-text-muted)]">{c.sortOrder}</td>

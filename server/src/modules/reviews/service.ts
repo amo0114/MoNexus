@@ -30,6 +30,11 @@ export async function listProductReviews(
     visibility: true,
     merchantId: true,
     merchant: { select: { status: true } },
+    // SPEC-CATALOG-VIS-001 §3.4：评价入口与详情同一门禁。
+    category: { select: { guestVisibility: true } },
+    // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定需要当前版本 + 准入记录。
+    publicContentRevision: true,
+    guestEligibility: { select: { decision: true, reviewedRevision: true } },
   } as const
   const product = await prisma.product.findUnique({
     where: { id: productId },

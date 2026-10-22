@@ -18,6 +18,10 @@ import {
   normalizeFixedStructuredContent,
 } from '../catalog/structuredFixedContent.js'
 import { lockProductRow } from '../catalog/productLock.js'
+import {
+  invalidateGuestEligibilityForNewOffer,
+  invalidateGuestEligibilityForOfferChange,
+} from '../catalog/guestEligibility.js'
 import { normalizeFakaOfferIntegration, assertOfferProvisionMutex } from '../../lib/fakaBridge/index.js'
 
 import { withCheckoutVersion } from './offerSerialization.js'
@@ -365,6 +369,10 @@ export async function createMyOffer(
   await assertMyProduct(merchantId, productId)
   const offer = await prisma.$transaction(async tx => {
     const created = await insertOffer(tx, merchantId, productId, input)
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：商家新建套餐若直接启用，
+    // 属于「新增未审核套餐」，必须让商品旧批准失效。
+    // insertOffer 内部已 lockProductRow（见该函数开头）。
+    await invalidateGuestEligibilityForNewOffer(tx, productId, created)
     await syncProductProjection(tx, productId)
     return created
   })
@@ -489,10 +497,8 @@ export async function updateMyOffer(
       throw badRequest('不能直接取消默认规格，请在其他规格上设为默认')
     }
 
-    const next = await tx.offer.update({
-      where: { id: offer.id },
-      data: {
-        ...(input.isDefault === true ? { isDefault: true } : {}),
+    const offerWriteData: Record<string, unknown> = {
+      ...(input.isDefault === true ? { isDefault: true } : {}),
         ...(input.name != null ? { name: input.name } : {}),
         ...(input.price != null ? { price: input.price } : {}),
         ...('originalPrice' in input ? { originalPrice: input.originalPrice ?? null } : {}),
@@ -531,7 +537,15 @@ export async function updateMyOffer(
               externalSku: fakaUpdate.externalSku,
             }
           : {}),
-      },
+    }
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审阻塞项）：商家修改套餐的
+    // 名称/说明/展示属性，以及**启用**套餐，都必须让旧批准失效。
+    // **写前**判定：按值是否真的变了，整包提交但内容一致时不失效。
+    await invalidateGuestEligibilityForOfferChange(tx, productId, offer.id, offerWriteData)
+
+    const next = await tx.offer.update({
+      where: { id: offer.id },
+      data: offerWriteData as Prisma.OfferUpdateInput,
     })
     await syncProductProjection(tx, productId)
     return next

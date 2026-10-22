@@ -777,6 +777,9 @@ const CATEGORY_ADMIN_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'description',
   'defaultCoverUrl',
   'status',
+  // SPEC-CATALOG-VIS-001 §3.1（P1-B）：分类级游客可见性，属合法 admin DTO 字段
+  // （server 端 CategoryAdminDto / toAdminDto 已输出）。
+  'guestVisibility',
   'createdByUserId',
   'updatedByUserId',
   'createdAt',

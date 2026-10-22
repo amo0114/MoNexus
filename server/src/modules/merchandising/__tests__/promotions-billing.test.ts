@@ -82,6 +82,10 @@ async function setupFixture(balance = 10_000): Promise<Fixture> {
       merchantId: merchant.id,
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：推广位对游客可见还要求准入已批准。
+  await prisma.productGuestEligibility.create({
+    data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+  })
   const pricePoints = 120
   const promotionPackage = await prisma.promotionPackage.create({
     data: {

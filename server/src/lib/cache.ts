@@ -15,7 +15,7 @@ import {
   cacheNegativeHitsTotal,
   cacheValueBytes,
 } from './metrics.js'
-import { getRedis, runRedisCommandWithTimeout } from './redis.js'
+import { getRedis, isRedisConfigured, runRedisCommandWithTimeout } from './redis.js'
 
 export type CacheName = 'product-list' | 'product-detail' | 'product-reviews' | 'category-registry' | 'traffic-report' | 'recommendation-report'
 
@@ -344,9 +344,21 @@ export function clearCacheProcessState() {
 export async function __resetCacheForTests() {
   clearCacheProcessState()
 
+  // Redis 未启用：没有远端缓存要清，直接返回。
+  if (!isRedisConfigured()) return
+
   const client = getRedis()
+  // client 未实现 keys()：这是**测试替身的合法形态**。
+  // 例：shops.test.ts 的 FakeRedis 只实现 get/set/del/incr/eval/ping，
+  // 用于验证 product-list 缓存逻辑，本身就明确不支持 KEYS 扫描。
+  // 这不算错误——该替身的 store 随用例结束即丢弃，无需清理。
+  //
+  // 注意与「静默吞掉连接失败」的区别：这里只跳过**能力不存在**这一种可判定
+  // 情形；连接/命令错误照常上抛，不会掩盖 Redis 真实故障。
   if (!client?.keys) return
 
-  const keys = await client.keys(`${cacheKeyPrefix()}:*`)
-  if (keys.length > 0) await client.del(...keys)
+  const keys = await runRedisCommandWithTimeout('keys', c => c.keys!(`${cacheKeyPrefix()}:*`))
+  if (keys.length > 0) {
+    await runRedisCommandWithTimeout('del', c => c.del(...keys))
+  }
 }

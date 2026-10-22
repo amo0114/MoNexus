@@ -7,8 +7,12 @@ const images = ['https://cdn.test.local/pub-1.png', 'https://cdn.test.local/pub-
 
 describe('Public products API images serialization', () => {
   it('includes images in product list', async () => {
-    await prisma.product.create({
+    const created = await prisma.product.create({
       data: { name: '公开多图商品', type: '网络节点', price: 100, images, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
+    })
+    // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见还要求当前内容版本已批准。
+    await prisma.productGuestEligibility.create({
+      data: { productId: created.id, decision: 'approved', reviewedRevision: 1 },
     })
 
     const res = await api.get('/api/products').expect(200)
@@ -19,12 +23,17 @@ describe('Public products API images serialization', () => {
   })
 
   it('paginates the no-run product list by id DESC without reading legacy isHot/sales', async () => {
-    await prisma.product.createMany({
+    const idemCategoryId = await getActiveNetworkNodeCategoryId()
+    const createdMany = await prisma.product.createManyAndReturn({
       data: [
-        { name: '热门高销量', type: '网络节点', price: 100, isHot: true, sales: 10, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
-        { name: '热门低销量', type: '网络节点', price: 100, isHot: true, sales: 5, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
-        { name: '普通高销量', type: '网络节点', price: 100, isHot: false, sales: 100, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
+        { name: '热门高销量', type: '网络节点', price: 100, isHot: true, sales: 10, status: 'active', visibility: 'public', categoryId: idemCategoryId },
+        { name: '热门低销量', type: '网络节点', price: 100, isHot: true, sales: 5, status: 'active', visibility: 'public', categoryId: idemCategoryId },
+        { name: '普通高销量', type: '网络节点', price: 100, isHot: false, sales: 100, status: 'active', visibility: 'public', categoryId: idemCategoryId },
       ],
+      select: { id: true },
+    })
+    await prisma.productGuestEligibility.createMany({
+      data: createdMany.map(row => ({ productId: row.id, decision: 'approved', reviewedRevision: 1 })),
     })
 
     const firstPage = await api.get('/api/products').query({ pageSize: 2 }).expect(200)
@@ -51,6 +60,10 @@ describe('Public products API images serialization', () => {
   it('includes images in product detail', async () => {
     const product = await prisma.product.create({
       data: { name: '公开详情商品', type: '网络节点', price: 100, images, status: 'active', visibility: 'public', categoryId: await getActiveNetworkNodeCategoryId() },
+    })
+    // §4.2：游客可见还要求当前内容版本已批准。
+    await prisma.productGuestEligibility.create({
+      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
     })
 
     const res = await api.get(`/api/products/${product.id}`).expect(200)

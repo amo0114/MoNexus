@@ -32,6 +32,12 @@ const productAccessSelect = {
   visibility: true,
   merchantId: true,
   merchant: { select: { status: true } },
+  // SPEC-CATALOG-VIS-001 §3.4：分享落地页仍执行当前访问检查，
+  // 受限商品无公开预览详情。
+  category: { select: { guestVisibility: true } },
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定需要当前版本 + 准入记录。
+  publicContentRevision: true,
+  guestEligibility: { select: { decision: true, reviewedRevision: true } },
 } satisfies Prisma.ProductSelect
 
 let clientForTests: ShortlinkClient | null | undefined

@@ -1,3 +1,5 @@
+import * as guestEligibilityService from './guestEligibilityService.js'
+import type { GuestEligibilityActionInput } from './guestEligibilitySchema.js'
 import * as fakaSync from '../catalog/fakaSync.js'
 import * as productLifecycle from './productLifecycle.js'
 import * as auditQueries from './auditQueries.js'
@@ -585,4 +587,27 @@ export async function mailTest(req: Request, res: Response, next: NextFunction) 
     const { email } = req.body as MailDeliveryTestInput
     res.json(await mailOperations.sendMailDeliveryTest({ adminUserId: req.user!.userId, email }))
   } catch (err) { next(err) }
+}
+
+// SPEC-CATALOG-VIS-001 §4.6（P1.5-A）：游客公开准入。
+export async function getGuestEligibility(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id as unknown as number
+    res.json(await guestEligibilityService.getGuestEligibility(id))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function applyGuestEligibility(req: Request, res: Response, next: NextFunction) {
+  try {
+    const id = req.params.id as unknown as number
+    res.json(await guestEligibilityService.applyGuestEligibilityAction(
+      req.user!.userId,
+      id,
+      req.body as GuestEligibilityActionInput,
+    ))
+  } catch (err) {
+    next(err)
+  }
 }
