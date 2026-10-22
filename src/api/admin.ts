@@ -6,6 +6,7 @@ import {
   UpdateAnnouncementRequest,
 } from '../types/admin'
 import type { GuestReviewState, ProductVisibility } from '../types/catalog'
+import type { ProductVideoSummary } from '../types/product'
 
 export interface PaginatedResult<T> {
   items: T[]
@@ -456,6 +457,7 @@ export interface GuestEligibilityView {
   version: number
   reasonCode: string | null
   guestVisible: boolean
+  promoVideo: ProductVideoSummary | null
 }
 
 export interface AdminProductReadiness {

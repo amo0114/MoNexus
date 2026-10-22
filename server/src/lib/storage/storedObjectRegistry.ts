@@ -2,7 +2,7 @@ import { prisma } from '../prisma.js'
 import type { Prisma } from '@prisma/client'
 
 export type BucketRole = 'public' | 'private'
-export type StoredObjectSource = 'upload_image' | 'delivery_file'
+export type StoredObjectSource = 'upload_image' | 'delivery_file' | 'product_video'
 
 export function providerRefFor(providerConfigId: number | null | undefined): string {
   return providerConfigId == null ? 'env' : String(providerConfigId)

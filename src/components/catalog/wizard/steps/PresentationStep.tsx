@@ -1,3 +1,4 @@
+import ProductVideoUploader, { type ProductVideoUploaderProps } from '../../../merchant/ProductVideoUploader'
 import { lazy, Suspense } from 'react'
 import type {
   CategoryRegistryItem,
@@ -20,6 +21,7 @@ import { PUBLIC_VISIBILITY_REVIEW_HINT } from '../../guestReview'
 const RichTextEditor = lazy(() => import('../../RichTextEditor'))
 
 interface Props {
+  video?: ProductVideoUploaderProps
   name: string
   onNameChange: (name: string) => void
   categories: CategoryRegistryItem[]
@@ -61,6 +63,7 @@ export default function PresentationStep({
   categories,
   categoryId,
   onCategoryIdChange,
+  video,
   images,
   imageKeys,
   onImagesChange,
@@ -94,6 +97,7 @@ export default function PresentationStep({
         onChange={onCategoryIdChange}
         disabled={disabled}
       />
+      {video && <ProductVideoUploader {...video} />}
       <ProductImageUploader
         images={images}
         imageKeys={imageKeys}

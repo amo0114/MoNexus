@@ -48,7 +48,16 @@ export interface ProductMerchant {
   verified?: boolean
 }
 
+export interface ProductVideoSummary {
+  assetId: string
+  durationMs: number
+  width: number
+  height: number
+  hasAudio: boolean
+}
+
 export interface ProductDetail extends ProductSummary {
+  promoVideo?: ProductVideoSummary | null
   richDescription?: string
   visibility?: 'public' | 'members_only'
   templateKey?: string | null

@@ -533,6 +533,8 @@ export default function ProductDetailPage() {
 
   const gallery = (
     <ProductDetailGallery
+      productId={product.id}
+      promoVideo={product.promoVideo}
       productName={product.name}
       images={galleryImages}
       activeImage={activeImage}
