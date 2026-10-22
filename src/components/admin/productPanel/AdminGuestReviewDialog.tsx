@@ -1,5 +1,5 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ExternalLink, Loader2, X } from 'lucide-react'
 import { DialogOverlay } from '../../ui/Dialog'
 import {
@@ -12,6 +12,7 @@ import {
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
 import { ADMIN_GUEST_REVIEW_LABELS } from '../../catalog/guestReview'
+import ProductVideoPlayer from '../../catalog/ProductVideoPlayer'
 
 interface Props {
   product: AdminProductListItem | null
@@ -33,19 +34,27 @@ const ACTION_LABELS: Record<GuestEligibilityAction, string> = {
  */
 export default function AdminGuestReviewDialog({ product, onClose, onChanged }: Props) {
   const showToast = useAppStore((s) => s.showToast)
-  const [view, setView] = useState<GuestEligibilityView | null>(null)
+  const [loadedView, setView] = useState<GuestEligibilityView | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [conflict, setConflict] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState<GuestEligibilityAction | null>(null)
   const productId = product?.id ?? null
+  const selection = useRef(productId)
+  selection.current = productId
+  const loadGeneration = useRef(0)
+  const view = loadedView?.productId === productId ? loadedView : null
 
   async function load(id: number) {
+    const generation = ++loadGeneration.current
     setView(null)
     setLoadError(null)
     try {
-      setView(await getAdminGuestEligibility(id))
+      const result = await getAdminGuestEligibility(id)
+      if (selection.current === id && loadGeneration.current === generation) setView(result)
     } catch (err) {
-      setLoadError(getApiErrorMessage(err, '读取公开审核状态失败'))
+      if (selection.current === id && loadGeneration.current === generation) {
+        setLoadError(getApiErrorMessage(err, '读取公开审核状态失败'))
+      }
     }
   }
 
@@ -53,6 +62,7 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
     setConflict(null)
     setSubmitting(null)
     if (productId != null) void load(productId)
+    return () => { loadGeneration.current++ }
   }, [productId])
 
   async function submit(action: GuestEligibilityAction) {
@@ -66,10 +76,12 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
         expectedEligibilityVersion: view.version,
         ...(action === 'reject' ? { reasonCode: 'rejected' as const } : {}),
       })
+      if (selection.current !== product.id) return
       showToast(`“${product.name}”已${ACTION_LABELS[action]}`)
       onChanged()
       onClose()
     } catch (err) {
+      if (selection.current !== product.id) return
       const status = (err as { response?: { status?: number } })?.response?.status
       if (status === 409) {
         // Reload so the admin re-reviews the current version before acting again.
@@ -80,7 +92,7 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
         showToast(getApiErrorMessage(err, '操作失败'), 'error')
       }
     } finally {
-      setSubmitting(null)
+      if (selection.current === product.id) setSubmitting(null)
     }
   }
 
@@ -108,7 +120,7 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
         <DialogOverlay />
         <DialogPrimitive.Content
           data-testid="admin-guest-review-dialog"
-          className="modal fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-2xl p-6 focus:outline-none max-md:sheet-enter max-md:inset-x-0 max-md:bottom-0 max-md:top-auto max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-b-none max-md:rounded-t-2xl max-md:max-h-[92dvh] max-md:pb-[calc(1.5rem+var(--safe-bottom))]"
+          className="modal fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md max-h-[92dvh] overflow-y-auto bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl shadow-2xl p-6 focus:outline-none max-md:sheet-enter max-md:inset-x-0 max-md:bottom-0 max-md:top-auto max-md:max-w-none max-md:translate-x-0 max-md:translate-y-0 max-md:rounded-b-none max-md:rounded-t-2xl max-md:pb-[calc(1.5rem+var(--safe-bottom))]"
         >
           <div className="flex items-center justify-between pb-3 border-b border-[var(--color-border)]">
             <DialogPrimitive.Title className="font-heading text-lg font-bold text-[var(--color-text)]">
@@ -130,7 +142,7 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
             <DialogPrimitive.Description className="text-[var(--color-text-muted)]">
               批准后，游客无需登录即可浏览「
               <strong className="text-[var(--color-text)]">{product?.name}</strong>
-              」的名称、图片、介绍和套餐。商品内容再次变更会自动退回待审核。
+              」的名称、图片、视频、介绍和套餐。商品内容再次变更会自动退回待审核。
             </DialogPrimitive.Description>
 
             <a
@@ -143,6 +155,19 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
               <ExternalLink className="w-3.5 h-3.5" />
               在新窗口查看商品页内容
             </a>
+
+            {view?.promoVideo && (
+              <section aria-label="公开审核视频预览" className="space-y-2">
+                <p className="text-[var(--color-text-muted)]">
+                  请完整播放并检查画面、字幕和二维码。
+                  {view.promoVideo.hasAudio ? '此视频包含声音，请打开播放器声音并听取全部口播后再批准。' : '此视频没有音轨。'}
+                </p>
+                <p className="break-all text-[var(--color-text-muted)]" data-testid="admin-guest-review-video-version">
+                  内容版本 v{view.publicContentRevision} · 视频 {view.promoVideo.assetId}
+                </p>
+                <ProductVideoPlayer key={`${productId}:${view.publicContentRevision}`} assetId={view.promoVideo.assetId} actor="admin" />
+              </section>
+            )}
 
             {state && (
               <div data-testid="admin-guest-review-state">

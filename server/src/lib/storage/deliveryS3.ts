@@ -1,3 +1,4 @@
+import { assertInlineVideoKey, type VideoMime } from './videoKeys.js'
 import { createHash } from 'node:crypto'
 import { Transform, type Readable } from 'node:stream'
 import {
@@ -49,16 +50,18 @@ export class DeliveryS3Storage implements DeliveryStorage {
       region: cfg.region,
       credentials,
       forcePathStyle: cfg.forcePathStyle,
+      requestHandler: { connectionTimeout: 10_000, requestTimeout: 60_000 },
     })
     this.presigner = new S3Client({
       endpoint: cfg.publicEndpoint,
       region: cfg.region,
       credentials,
       forcePathStyle: cfg.forcePathStyle,
+      requestHandler: { connectionTimeout: 10_000, requestTimeout: 60_000 },
     })
   }
 
-  async putStream(tmpKey: string, stream: Readable, maxBytes: number): Promise<StreamPutResult> {
+  async putStream(tmpKey: string, stream: Readable, maxBytes: number, options?: { contentType?: VideoMime; signal?: AbortSignal }): Promise<StreamPutResult> {
     const hash = createHash('sha256')
     let size = 0
     let tooLarge = false
@@ -83,7 +86,7 @@ export class DeliveryS3Storage implements DeliveryStorage {
         Bucket: this.cfg.bucket,
         Key: tmpKey,
         Body: stream.pipe(meter),
-        ContentType: 'application/octet-stream',
+        ContentType: options?.contentType ?? 'application/octet-stream',
       },
       // 8MB 分段、串行——上传大文件时保持恒定内存占用。
       partSize: 8 * 1024 * 1024,
@@ -91,19 +94,25 @@ export class DeliveryS3Storage implements DeliveryStorage {
       leavePartsOnError: false,
     })
 
+    const abort = () => { stream.destroy(new Error('upload aborted')); void upload.abort() }
+    stream.once('error', err => meter.destroy(err))
+    options?.signal?.addEventListener('abort', abort, { once: true })
     try {
+      options?.signal?.throwIfAborted()
       await upload.done()
     } catch (err) {
       // 中止/失败后尽力清掉可能已成形的临时对象；删不掉的由 tmp/ GC 兜底。
-      await this.delete(tmpKey).catch(() => {})
+      await this.delete(tmpKey, AbortSignal.timeout(5000)).catch(() => {})
       if (tooLarge || err instanceof FileTooLargeError) throw new FileTooLargeError(maxBytes)
       throw err
+    } finally {
+      options?.signal?.removeEventListener('abort', abort)
     }
     return { sha256: hash.digest('hex'), size }
   }
 
   async promote(tmpKey: string, finalKey: string): Promise<void> {
-    const exists = await this.exists(finalKey)
+    const exists = await this.objectExists(finalKey)
     if (!exists) {
       await this.ops.send(new CopyObjectCommand({
         Bucket: this.cfg.bucket,
@@ -117,9 +126,9 @@ export class DeliveryS3Storage implements DeliveryStorage {
     await this.delete(tmpKey)
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(key: string, signal?: AbortSignal): Promise<void> {
     // DeleteObject 对不存在的键本就静默成功——GC 幂等重试依赖这一点。
-    await this.ops.send(new DeleteObjectCommand({ Bucket: this.cfg.bucket, Key: key }))
+    await this.ops.send(new DeleteObjectCommand({ Bucket: this.cfg.bucket, Key: key }), { abortSignal: signal })
   }
 
   async presignDownload(key: string, fileName: string, ttlSeconds: number): Promise<PresignedDownload> {
@@ -140,6 +149,26 @@ export class DeliveryS3Storage implements DeliveryStorage {
       { expiresIn: ttlSeconds }
     )
     return { url, expiresAt: new Date(Date.now() + ttlSeconds * 1000) }
+  }
+
+  async presignInlineVideo(key: string, mimeType: VideoMime, ttlSeconds: number): Promise<PresignedDownload> {
+    assertInlineVideoKey(key, mimeType)
+    const url = await getSignedUrl(this.presigner, new GetObjectCommand({
+      Bucket: this.cfg.bucket, Key: key,
+      ResponseContentType: mimeType, ResponseContentDisposition: 'inline',
+      ResponseCacheControl: 'private, no-store',
+    }), { expiresIn: ttlSeconds })
+    return { url, expiresAt: new Date(Date.now() + ttlSeconds * 1000) }
+  }
+
+  async getObjectStream(key: string, signal?: AbortSignal): Promise<Readable | null> {
+    try {
+      const res = await this.ops.send(new GetObjectCommand({ Bucket: this.cfg.bucket, Key: key }), { abortSignal: signal })
+      return res.Body as Readable | undefined ?? null
+    } catch (err) {
+      if ((err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return null
+      throw err
+    }
   }
 
   async listTmpKeysOlderThan(before: Date): Promise<string[]> {
@@ -214,9 +243,9 @@ export class DeliveryS3Storage implements DeliveryStorage {
     }))
   }
 
-  private async exists(key: string): Promise<boolean> {
+  async objectExists(key: string, signal?: AbortSignal): Promise<boolean> {
     try {
-      await this.ops.send(new HeadObjectCommand({ Bucket: this.cfg.bucket, Key: key }))
+      await this.ops.send(new HeadObjectCommand({ Bucket: this.cfg.bucket, Key: key }), { abortSignal: signal })
       return true
     } catch (err: unknown) {
       const e = err as { name?: string; $metadata?: { httpStatusCode?: number } }

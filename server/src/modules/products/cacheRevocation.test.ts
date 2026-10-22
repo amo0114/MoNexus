@@ -50,6 +50,9 @@ const redisUp = config.redisEnabled === true
           stock: 1,
           status: 'active',
           visibility: 'public',
+          // P1.5 requires approval of the current revision before warming a
+          // guest cache; classification alone no longer grants public access.
+          guestEligibility: { create: { decision: 'approved', reviewedRevision: 1 } },
         },
       })
 

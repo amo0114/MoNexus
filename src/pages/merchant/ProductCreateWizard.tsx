@@ -1,3 +1,4 @@
+import type { ProductVideoSummary } from '../../types/product'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useProductCreation } from './productCreation/useProductCreation'
 import {
@@ -140,6 +141,8 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   const [templatesLoading, setTemplatesLoading] = useState(true)
   const [templatesError, setTemplatesError] = useState(false)
   const [templateKey, setTemplateKey] = useState<TemplateKey | null>(null)
+  const [promoVideo, setPromoVideo] = useState<ProductVideoSummary | null>(null)
+  const [videoBusy, setVideoBusy] = useState(false)
   const [images, setImages] = useState<string[]>([])
   const [imageKeys, setImageKeys] = useState<Record<string, string>>({})
   const [descriptionImages, setDescriptionImages] = useState<DescriptionImageWriteRef[]>([])
@@ -360,7 +363,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
 
   const creationDraft = {
     templateKey, selectedTemplate, form, productAttributes, productDetails, purchaseForm,
-    primaryOfferName, primaryOfferAttributes, extraOffers, images, imageKeys, descriptionImages,
+    primaryOfferName, primaryOfferAttributes, extraOffers, images, imageKeys, descriptionImages, promoVideoAssetId: promoVideo?.assetId ?? null,
   }
   const {
     draft, availabilityOffers, availabilityLoading, saving, readiness, readinessLoading, publishing,
@@ -368,6 +371,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   } = useProductCreation({ adapter, input: creationDraft, publicationStepActive: step === 6, navigate })
 
   async function goNext() {
+    if (videoBusy) return
     if (step === 4) {
       const ok = await saveDraft()
       if (!ok) return
@@ -407,7 +411,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
     ? { mode: '服务名额模式', unlimited: '不限服务名额', limited: '限量服务名额' }
     : { mode: '可售名额模式', unlimited: '不限可售名额', limited: '限量可售名额' }
 
-  const busy = saving || publishing
+  const busy = saving || publishing || videoBusy
   const selectedCategory = categories.find(c => c.id === form.categoryId) ?? null
   const deliveryModeOptions = allowedModes.map(value => ({
     value,
@@ -594,6 +598,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
 
         {step === 1 && (
           <PresentationStep
+            video={{ value: promoVideo, onChange: setPromoVideo, onBusyChange: setVideoBusy, disabled: saving || publishing }}
             name={form.name}
             onNameChange={handleNameChange}
             categories={categories}
@@ -761,7 +766,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
               {saving ? '保存中…' : '保存草稿并继续'} <ArrowRight className="w-4 h-4" />
             </button>
           ) : (
-            <button type="button" onClick={goNext} disabled={step === 0 && templateKey == null}
+            <button type="button" onClick={goNext} disabled={busy || (step === 0 && templateKey == null)}
               className="btn-primary px-6 py-2.5 disabled:opacity-40 scroll-mb-24" data-testid="wizard-next">
               下一步 <ArrowRight className="w-4 h-4" />
             </button>

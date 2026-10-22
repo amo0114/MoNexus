@@ -25,7 +25,7 @@ export function requestLogger(req: Request, res: Response, next: NextFunction) {
       {
         requestId,
         method: req.method,
-        path: req.path,
+        path: req.path.startsWith('/api/uploads/product-video-signed/') ? '/api/uploads/product-video-signed/[redacted]' : req.path,
         status: res.statusCode,
         durationMs: Math.round(durationMs),
         userId: req.user?.userId,

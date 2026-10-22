@@ -97,7 +97,7 @@ export function normalizeProductListParams(params: ProductListCacheParams) {
 
 // Bumped when the cached public product/card shape changes, so entries written by
 // the previous deploy are never served with missing fields; old keys just expire.
-const PUBLIC_PROJECTION_VERSION = 'public-availability-v1'
+const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v2'
 
 export async function buildProductListCacheKey(params: ProductListCacheParams) {
   const normalized = normalizeProductListParams(params)

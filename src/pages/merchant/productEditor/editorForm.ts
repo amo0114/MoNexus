@@ -1,3 +1,4 @@
+import type { ProductVideoSummary } from '../../../types/product'
 import type { ProductEditorDto, ProductEditorImage } from '../../../api/catalog'
 import {
   EMPTY_PRODUCT_DETAILS,
@@ -19,11 +20,13 @@ export type EditorForm = {
   attributes: TemplateAttributes
   details: ProductDetails
   purchaseForm: PurchaseFormField[]
+  promoVideo?: ProductVideoSummary | null
   images: ProductEditorImage[]
 }
 
 export function emptyForm(): EditorForm {
   return {
+    promoVideo: null,
     name: '',
     categoryId: null,
     description: '',
@@ -41,6 +44,7 @@ export function formFromEditor(dto: ProductEditorDto): EditorForm {
     ? PRODUCT_VISIBILITY.PUBLIC
     : PRODUCT_VISIBILITY.MEMBERS_ONLY
   return {
+    promoVideo: dto.product.promoVideo ?? null,
     name: dto.product.name ?? '',
     categoryId: typeof dto.product.categoryId === 'number' ? dto.product.categoryId : null,
     description: dto.product.description ?? '',

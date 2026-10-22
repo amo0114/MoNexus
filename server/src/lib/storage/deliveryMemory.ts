@@ -1,5 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
-import type { Readable } from 'node:stream'
+import { Readable } from 'node:stream'
+import { assertInlineVideoKey, type VideoMime } from './videoKeys.js'
 import { config } from '../../config/index.js'
 import {
   DeliveryStorage,
@@ -23,11 +24,12 @@ interface StoredBlob {
 export class DeliveryMemoryStorage implements DeliveryStorage {
   private readonly blobs = new Map<string, StoredBlob>()
 
-  async putStream(tmpKey: string, stream: Readable, maxBytes: number): Promise<StreamPutResult> {
+  async putStream(tmpKey: string, stream: Readable, maxBytes: number, options?: { contentType?: VideoMime; signal?: AbortSignal }): Promise<StreamPutResult> {
     const hash = createHash('sha256')
     const chunks: Buffer[] = []
     let size = 0
     for await (const chunk of stream) {
+      options?.signal?.throwIfAborted()
       const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       size += buf.length
       if (size > maxBytes) throw new FileTooLargeError(maxBytes)
@@ -46,7 +48,8 @@ export class DeliveryMemoryStorage implements DeliveryStorage {
     this.blobs.delete(tmpKey)
   }
 
-  async delete(key: string): Promise<void> {
+  async delete(key: string, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
     this.blobs.delete(key)
   }
 
@@ -55,6 +58,25 @@ export class DeliveryMemoryStorage implements DeliveryStorage {
     const token = signDeliveryToken(key, sanitizeFileName(fileName), expiresAt)
     // 相对路径：supertest / 前端 axios 都从同源解析。
     return { url: `/api/uploads/delivery-signed/${token}`, expiresAt }
+  }
+
+  async presignInlineVideo(key: string, mimeType: VideoMime, ttlSeconds: number): Promise<PresignedDownload> {
+    assertInlineVideoKey(key, mimeType)
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000)
+    const body = Buffer.from(JSON.stringify({ key, mimeType, exp: expiresAt.getTime() })).toString('base64url')
+    const mac = createHmac('sha256', config.jwtSecret).update(`product-video:${body}`).digest('base64url')
+    return { url: `/api/uploads/product-video-signed/${body}.${mac}`, expiresAt }
+  }
+
+  async objectExists(key: string, signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted()
+    return this.blobs.has(key)
+  }
+
+  async getObjectStream(key: string, signal?: AbortSignal): Promise<Readable | null> {
+    signal?.throwIfAborted()
+    const blob = this.blobs.get(key)
+    return blob ? Readable.from(blob.buffer) : null
   }
 
   async listTmpKeysOlderThan(before: Date): Promise<string[]> {
@@ -126,4 +148,18 @@ export function verifyDeliveryToken(token: string): DeliveryTokenPayload | null 
   } catch {
     return null
   }
+}
+
+export function verifyVideoToken(token: string): { key: string; mimeType: VideoMime; exp: number } | null {
+  try {
+    const [body, mac, extra] = token.split('.')
+    if (!body || !mac || extra) return null
+    const expected = createHmac('sha256', config.jwtSecret).update(`product-video:${body}`).digest()
+    const received = Buffer.from(mac, 'base64url')
+    if (expected.length !== received.length || !timingSafeEqual(expected, received)) return null
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString())
+    if (!Number.isFinite(payload.exp) || payload.exp <= Date.now()) return null
+    assertInlineVideoKey(payload.key, payload.mimeType)
+    return payload
+  } catch { return null }
 }

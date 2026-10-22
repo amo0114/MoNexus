@@ -20,7 +20,7 @@ RUN npx tsc
 FROM node:22.23.4-alpine AS runtime
 # pg_dump / pg_restore talk to PostgreSQL over the normal network protocol.
 # This keeps portable backups independent from Docker sockets and host volumes.
-RUN apk add --no-cache openssl tini wget tar gzip postgresql16-client && \
+RUN apk add --no-cache openssl tini wget tar gzip postgresql16-client ffmpeg util-linux && \
     addgroup -S app && adduser -S app -G app
 WORKDIR /app
 # 不设 TZ：业务日历已在代码层显式使用 Asia/Shanghai（lib/businessTime.ts），

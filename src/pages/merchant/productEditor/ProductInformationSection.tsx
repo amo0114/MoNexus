@@ -1,3 +1,4 @@
+import ProductVideoUploader, { type ProductVideoUploaderProps } from '../../../components/merchant/ProductVideoUploader'
 import { lazy, Suspense, type Dispatch, type SetStateAction } from 'react'
 import ProductCategorySelect from '../../../components/catalog/ProductCategorySelect'
 import TemplateAttributeFields from '../../../components/catalog/TemplateAttributeFields'
@@ -19,6 +20,7 @@ import {
 const RichTextEditor = lazy(() => import('../../../components/catalog/RichTextEditor'))
 
 interface Props {
+  video?: ProductVideoUploaderProps
   images: string[]
   imageKeys: Record<string, string>
   onImagesChange: Dispatch<SetStateAction<string[]>>
@@ -51,6 +53,7 @@ interface Props {
 }
 
 export default function ProductInformationSection({
+  video,
   images,
   imageKeys,
   onImagesChange,
@@ -84,6 +87,7 @@ export default function ProductInformationSection({
   return (
     <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-5" data-testid="product-edit-info">
       <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">商品信息</h2>
+      {video && <ProductVideoUploader {...video} />}
       <ProductImageUploader
         images={images}
         imageKeys={imageKeys}
