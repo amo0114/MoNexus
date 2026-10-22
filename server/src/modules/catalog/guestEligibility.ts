@@ -277,3 +277,39 @@ export async function invalidateGuestEligibilityForNewOffer(
   if (!newOfferNeedsInvalidation(offer)) return null
   return invalidateGuestEligibility(tx, productId)
 }
+
+/**
+ * SPEC-CATALOG-VIS-001 §4.6（P1.5-B）——列表展示用的准入状态，供管理端待审队列
+ * 与商家商品列表共用。只做展示，不参与授权；门禁仍以 products/visibility.ts 为准。
+ */
+export type GuestReviewState =
+  | 'members_only'
+  | 'category_restricted'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'revoked'
+
+export interface GuestReviewInput {
+  visibility: string
+  publicContentRevision: number
+  categoryGuestVisibility: string | null | undefined
+  eligibility: { decision: string; reviewedRevision: number | null; reasonCode: string | null } | null
+}
+
+export function guestReviewState(input: GuestReviewInput): GuestReviewState {
+  if (input.visibility !== 'public') return 'members_only'
+  if (input.categoryGuestVisibility !== 'public') return 'category_restricted'
+  const row = input.eligibility
+  if (row?.decision === 'approved' && row.reviewedRevision === input.publicContentRevision) return 'approved'
+  if (row?.decision === 'denied') return row.reasonCode === 'revoked' ? 'revoked' : 'rejected'
+  return 'pending'
+}
+
+/** Prisma 片段：列表读取 guestReviewState 所需的关联字段。 */
+export const guestReviewInclude = {
+  category: { select: { guestVisibility: true } },
+  guestEligibility: {
+    select: { decision: true, reviewedRevision: true, version: true, reasonCode: true },
+  },
+} as const

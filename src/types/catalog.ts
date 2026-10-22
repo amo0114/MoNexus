@@ -135,6 +135,15 @@ export const PRODUCT_VISIBILITY = {
 } as const
 export type ProductVisibility = (typeof PRODUCT_VISIBILITY)[keyof typeof PRODUCT_VISIBILITY]
 
+/** SPEC-CATALOG-VIS-001 §4.6: display-only guest review state; never used for authorization. */
+export type GuestReviewState =
+  | 'members_only'
+  | 'category_restricted'
+  | 'pending'
+  | 'approved'
+  | 'rejected'
+  | 'revoked'
+
 export const TEMPLATE_KEYS = [
   'redemption_code',
   'account',

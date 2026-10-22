@@ -2,7 +2,11 @@ import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { lockProductRow } from '../catalog/productLock.js'
-import { invalidateGuestEligibilityIfNeeded } from '../catalog/guestEligibility.js'
+import {
+  guestReviewInclude,
+  guestReviewState,
+  invalidateGuestEligibilityIfNeeded,
+} from '../catalog/guestEligibility.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { createDefaultOffer, getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
 import {
@@ -343,6 +347,18 @@ export async function listAdminProducts(
   if (status) {
     conditions.push({ status })
   }
+  // SPEC-CATALOG-VIS-001 §4.5（P1.5-B）：待公开审核 = 选择了 public、分类允许游客、
+  // 当前没有批准（无记录或 pending）。被拒绝的保持拒绝，需商家改内容后才回到队列。
+  if (query.guestReview === 'pending') {
+    conditions.push({
+      visibility: 'public',
+      category: { is: { guestVisibility: 'public' } },
+      OR: [
+        { guestEligibility: { is: null } },
+        { guestEligibility: { is: { decision: 'pending' } } },
+      ],
+    })
+  }
   if (q) {
     const isNumeric = /^\d+$/.test(q)
     if (isNumeric) {
@@ -372,6 +388,7 @@ export async function listAdminProducts(
       take: pageSize,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: {
+        ...guestReviewInclude,
         _count: {
           select: { inventory: { where: { status: 'available' } } },
         },
@@ -429,9 +446,27 @@ export async function listAdminProducts(
     })
     const primaryFaka = offers.find(o => o.fakaCapacity?.source === 'xboard')?.fakaCapacity ?? null
     // D-MERCH-01：显式剥离遗留 Product.isHot 与 fixedContent，其余管理字段原样保留。
-    const { isHot: _legacyIsHot, fixedContent: _fixedContent, ...productDto } = p
+    const {
+      isHot: _legacyIsHot,
+      fixedContent: _fixedContent,
+      category,
+      guestEligibility,
+      ...productDto
+    } = p
     return {
       ...productDto,
+      // Versions are returned so the review dialog can send both expected values (§4.5 CAS).
+      guestReview: {
+        state: guestReviewState({
+          visibility: p.visibility,
+          publicContentRevision: p.publicContentRevision,
+          categoryGuestVisibility: category?.guestVisibility,
+          eligibility: guestEligibility,
+        }),
+        publicContentRevision: p.publicContentRevision,
+        eligibilityVersion: guestEligibility?.version ?? 0,
+        reasonCode: guestEligibility?.reasonCode ?? null,
+      },
       offers,
       fakaBridge: offers.some(o => o.externalIntegration === 'faka_bridge'),
       fakaCapacity: primaryFaka,

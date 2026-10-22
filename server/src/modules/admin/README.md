@@ -16,7 +16,9 @@ Privileged surface for the platform operator: user / merchant / product / settle
 ### Product management
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/api/admin/products` | All platform products (includes `inactive`). |
+| GET | `/api/admin/products` | All platform products (includes `inactive`). Each item carries `guestReview { state, publicContentRevision, eligibilityVersion, reasonCode }` (SPEC-CATALOG-VIS-001); `guestReview=pending` filters to the guest review queue. |
+| GET | `/api/admin/products/:id/guest-eligibility` | Current guest eligibility and the two CAS versions. |
+| POST | `/api/admin/products/:id/guest-eligibility` | `approve` / `reject` / `revoke` with `expectedPublicContentRevision` + `expectedEligibilityVersion`; stale → 409. |
 | POST | `/api/admin/products` | Platform-owned product (no `merchantId`). |
 | PUT | `/api/admin/products/:id` | Partial update. |
 | POST | `/api/admin/products/:id/content-suggestions` | AI content copilot (SPEC-AI-PRODUCT-001); `useUpstreamDescription` only for Xboard-imported products (local `latestDescriptionText`, no remote fetch). Writes no product data. |

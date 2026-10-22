@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { ConfigRegistry } from '../../../types/config'
 import type { MerchantProduct } from '../../../types/merchant'
 import EmptyState from '../../ui/EmptyState'
+import { MERCHANT_GUEST_REVIEW_LABELS } from '../../catalog/guestReview'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { PaginationControls, Th } from './MerchantPanelPrimitives'
 
@@ -272,6 +273,18 @@ export default function MerchantProductsPanel({
                     </td>
                     <td className="py-3 px-2 text-sm" data-label="状态">
                       <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
+                      {p.guestReview && (
+                        <div
+                          className={`mt-1 text-xs ${
+                            p.guestReview === 'rejected' || p.guestReview === 'revoked'
+                              ? 'text-red-500'
+                              : 'text-[var(--color-text-muted)]'
+                          }`}
+                          data-testid={`merchant-product-guest-review-${p.id}`}
+                        >
+                          {MERCHANT_GUEST_REVIEW_LABELS[p.guestReview]}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
                       {rowOffers.length > 0 && (

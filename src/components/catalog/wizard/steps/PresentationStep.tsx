@@ -15,6 +15,7 @@ import TemplateAttributeFields from '../../TemplateAttributeFields'
 import ProductImageUploader from '../../../merchant/ProductImageUploader'
 import PurchaseFormFieldsEditor from '../../../merchant/PurchaseFormFieldsEditor'
 import FieldLabel from '../FieldLabel'
+import { PUBLIC_VISIBILITY_REVIEW_HINT } from '../../guestReview'
 
 const RichTextEditor = lazy(() => import('../../RichTextEditor'))
 
@@ -131,7 +132,9 @@ export default function PresentationStep({
             <span>仅登录后可浏览</span>
           </label>
         </div>
-        <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">兑换始终需要登录</p>
+        <p className="mt-1.5 text-xs text-[var(--color-text-muted)]" data-testid="visibility-review-hint">
+          {visibility === PRODUCT_VISIBILITY.PUBLIC ? PUBLIC_VISIBILITY_REVIEW_HINT : '兑换始终需要登录'}
+        </p>
       </div>
       <div>
         <FieldLabel>图文详情</FieldLabel>
