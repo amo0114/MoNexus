@@ -28,6 +28,7 @@ export default function ProductCategorySelect({
   error = null,
 }: Props) {
   const id = useId()
+  const selectedCategory = categories.find(c => c.id === value) ?? null
   const selected = value != null && categories.some((c) => c.id === value)
   const empty = categories.length === 0
 
@@ -56,7 +57,11 @@ export default function ProductCategorySelect({
           </option>
           {categories.map((category) => (
             <option key={category.id} value={category.id}>
-              {category.label}
+              {/* SPEC-CATALOG-VIS-001 §3.1：选到受限分类时商家必须知情——
+                  选它会让商品对游客完全不可见（不只是列表里少一条）。 */}
+              {category.guestVisibility === 'members_only'
+                ? `${category.label}（仅登录可见）`
+                : category.label}
             </option>
           ))}
         </select>
@@ -64,6 +69,14 @@ export default function ProductCategorySelect({
       <p className="mt-1.5 text-xs text-[var(--color-text-muted)]" data-testid="product-category-hint">
         分类仅影响展示与检索，不会改变交付方式。
       </p>
+      {selectedCategory?.guestVisibility === 'members_only' && (
+        <p
+          className="mt-1 rounded px-2 py-1 text-xs bg-[var(--color-primary-tint)] text-[var(--color-text-muted)]"
+          data-testid="product-category-guest-locked-hint"
+        >
+          该分类仅登录用户可见，选择后商品对游客不可见（不影响已登录用户的购买）。
+        </p>
+      )}
       {error && (
         <p id={`${id}-error`} role="alert" className="mt-1.5 text-xs text-[var(--color-danger)]" data-testid="product-category-error">
           {error}

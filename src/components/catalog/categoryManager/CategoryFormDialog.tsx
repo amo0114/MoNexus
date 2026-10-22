@@ -50,6 +50,8 @@ const EMPTY_CATEGORY_FORM: CategoryFormState = {
   iconKey: '',
   defaultCover: undefined,
   sortOrder: '0',
+  // 默认 public：与 DB 默认一致，新建分类不因新字段而突然对游客隐藏。
+  guestVisibility: 'public',
 }
 
 function validateCategoryForm(
@@ -117,6 +119,7 @@ export default function CategoryFormDialog({
         // existing canonical URL until the admin uploads/removes a cover.
         defaultCover: undefined,
         sortOrder: String(category.sortOrder ?? 0),
+        guestVisibility: category.guestVisibility ?? 'public',
       })
     } else {
       setForm(EMPTY_CATEGORY_FORM)
@@ -202,6 +205,41 @@ export default function CategoryFormDialog({
               disabled={busy}
             />
             {errors.sortOrder && <p role="alert" className="text-xs text-[var(--color-danger)] mt-1">{errors.sortOrder}</p>}
+          </div>
+
+          {/* SPEC-CATALOG-VIS-001 §3.1：分类级游客可见性。
+              只有两个取值，与 ProductCategory.guestVisibility 的 DB CHECK 一致。
+              收紧对该分类下已有商品立即生效，不需要商品重新保存。 */}
+          <div>
+            <label htmlFor="cat-form-guest-visibility" className="block text-sm font-semibold mb-1">
+              游客可见性
+              <span className="text-[11px] font-normal text-[var(--color-text-muted)] ml-1">
+                （仅影响未登录访客；登录用户始终可见）
+              </span>
+            </label>
+            <select
+              id="cat-form-guest-visibility"
+              aria-label="游客可见性"
+              data-testid="category-form-guest-visibility"
+              className="input"
+              value={form.guestVisibility}
+              onChange={(e) => setForm((f) => ({
+                ...f,
+                guestVisibility: e.target.value as 'public' | 'members_only',
+              }))}
+              disabled={busy}
+            >
+              <option value="public">公开 — 游客可见</option>
+              <option value="members_only">仅登录可见 — 游客不可见</option>
+            </select>
+            {form.guestVisibility === 'members_only' && (
+              <p
+                className="text-xs mt-1 rounded px-2 py-1 bg-[var(--color-primary-tint)] text-[var(--color-text-muted)]"
+                data-testid="category-form-guest-visibility-hint"
+              >
+                保存后该分类下所有商品对游客立即隐藏（含已上架的），登录用户不受影响。
+              </p>
+            )}
           </div>
 
           <div>

@@ -106,8 +106,6 @@ async function seedActorId(): Promise<number> {
   // 刻意**不做跨测试缓存**：setup.ts 在每个 test 前 TRUNCATE "User" 并
   // RESTART IDENTITY，任何缓存的 id 到了下个 test 都是失效外键
   // （catalogFixture.ts 顶部对此有同样的说明）。
-  // upsert 而非 findFirst+create：同一 test 内的样例是 Promise.all 并发
-  // 播种的，先查后插会撞 email 唯一约束。
   const actor = await prisma.user.upsert({
     where: { email: 'vis-eq-actor@test.local' },
     update: {},
@@ -117,6 +115,22 @@ async function seedActorId(): Promise<number> {
   return actor.id
 }
 
+/**
+ * 并发播种前的**一次性**取 actor。
+ *
+ * ⚠️ P1-B 复审发现：原实现让每个 seedCase 各自 upsert 同一 email，而样板是
+ * `Promise.all` 并发的——Postgres 的 INSERT … ON CONFLICT 在并发下仍可能让
+ * 多个事务同时进入插入路径，其中一个拿到唯一约束冲突（CI 上稳定复现：
+ * `Unique constraint failed on the fields: (email)`）。本地偶发，CI 必现。
+ *
+ * 修法是把 actor 的创建提到并发之外，只做一次；并发部分只做纯 create。
+ */
+let actorIdPromise: Promise<number> | null = null
+function ensureActorId(): Promise<number> {
+  actorIdPromise ??= seedActorId()
+  return actorIdPromise
+}
+
 
 /** 造一条真实数据库记录，返回 id 与可直接喂给内存判定的快照。 */
 async function seedCase(
@@ -124,7 +138,8 @@ async function seedCase(
   c: Case,
 ): Promise<{ productId: number; row: PublicProductAccessRow }> {
   // 每个组合一个独立分类，避免同批用例互相影响分类可见性。
-  const actorId = await seedActorId()
+  // actor 由 ensureActorId() 串行提供（见上方说明），此处不再各自 upsert。
+  const actorId = await ensureActorId()
   const category = await prisma.productCategory.create({
     data: {
       code: `vis-eq-${index}`,
@@ -185,6 +200,8 @@ async function seedCase(
 
 describe('SPEC-CATALOG-VIS-001 §3.3 四条路径等价性', () => {
   it('同一组样例在四条路径上的可见性判定完全一致', async () => {
+    // 本 test 前 table 被 TRUNCATE，旧的 actorPromise 若存在必然失效。
+    actorIdPromise = null
     const rows = await Promise.all(CASES.map((c, i) => seedCase(i, c)))
 
     const mismatches: string[] = []
@@ -235,7 +252,9 @@ describe('SPEC-CATALOG-VIS-001 §3.3 四条路径等价性', () => {
   })
 
   it('分类受限时，商品自身 public 也不对游客可见（双向都要拦）', async () => {
-    const actorId = await seedActorId()
+    // 同上：本 test 前 User 表已 TRUNCATE，清掉可能失效的 actor 缓存。
+    actorIdPromise = null
+    const actorId = await ensureActorId()
     const category = await prisma.productCategory.create({
       data: {
         code: 'vis-eq-locked-cat',

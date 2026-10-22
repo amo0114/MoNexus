@@ -13,6 +13,8 @@ export interface CategoryFormState {
   /** Form-draft cover ref; undefined = untouched (edit keeps existing). */
   defaultCover: PlatformMediaRef | null | undefined
   sortOrder: string
+  /** SPEC-CATALOG-VIS-001 §3.1：分类级游客可见性。 */
+  guestVisibility: 'public' | 'members_only'
 }
 
 export type ReviewMode = 'create_new' | 'map_existing' | 'reject'

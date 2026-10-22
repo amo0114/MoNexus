@@ -63,6 +63,8 @@ export interface CreateCategoryRequest {
   /** SPEC-CMI-UX-001 §5.3: preferred new-contract cover (objectKey/static). */
   defaultCover?: PlatformMediaRef | null
   sortOrder?: number
+  /** SPEC-CATALOG-VIS-001 §3.1：缺省 public。 */
+  guestVisibility?: 'public' | 'members_only'
 }
 
 /**
@@ -78,6 +80,8 @@ export interface UpdateCategoryRequest {
   /** SPEC-CMI-UX-001 §5.3: preferred new-contract cover (objectKey/static). */
   defaultCover?: PlatformMediaRef | null
   sortOrder?: number
+  /** SPEC-CATALOG-VIS-001 §3.1：undefined = 不改。 */
+  guestVisibility?: 'public' | 'members_only'
 }
 
 /** POST /api/admin/product-categories/reorder body (spec §7.2). */
