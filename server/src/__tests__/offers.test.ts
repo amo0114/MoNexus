@@ -17,6 +17,30 @@ import {
  * 且单 SKU 商品对既有购买链路完全透明(不传 offerId 行为与 P3 前一致)。
  */
 
+/**
+ * SPEC-CATALOG-VIS-001 §4.2/§4.4（P1.5）：套餐展示变更会让旧批准失效
+ * （这是本 PR 引入的**正确**行为）。本文件的用例在通过 API 增改套餐后
+ * 断言"游客可见"，因此需要在断言前重新批准一次。
+ */
+async function approveGuestEligibilityForTest(productId: number) {
+  const email = `offer-approver-${Date.now()}-${Math.random().toString(36).slice(2)}@test.local`
+  await createTestUser(email, 'admin123', 'admin')
+  const { accessToken } = await loginAs(email, 'admin123')
+  const current = await api
+    .get(`/api/admin/products/${productId}/guest-eligibility`)
+    .set(authHeader(accessToken))
+    .expect(200)
+  await api
+    .post(`/api/admin/products/${productId}/guest-eligibility`)
+    .set(authHeader(accessToken))
+    .send({
+      action: 'approve',
+      expectedPublicContentRevision: current.body.publicContentRevision,
+      expectedEligibilityVersion: current.body.version,
+    })
+    .expect(200)
+}
+
 async function setupMerchant(email: string, name = 'SKU 商家') {
   const { merchant } = await createTestMerchant(email, 'pass123', {
     role: 'merchant',
@@ -79,6 +103,9 @@ describe('P4a Offers — default offer & product projection', () => {
       })
       .expect(201)
 
+    // 新增 active 套餐 → 旧批准失效（§4.4）；断言游客可见前重新批准。
+    await approveGuestEligibilityForTest(product.id)
+
     const detail = await api.get(`/api/products/${product.id}`).expect(200)
     expect(Array.isArray(detail.body.offers)).toBe(true)
     expect(detail.body.offers.length).toBe(2)
@@ -127,6 +154,7 @@ describe('P4a Offers — public availability from active offers (not the project
       .set(authHeader(accessToken))
       .send({ name: '不限量人工档', price: 200, deliveryMode: 'manual_service', stockMode: 'unlimited' })
       .expect(201)
+    await approveGuestEligibilityForTest(product.id)
 
     // 列表与详情都不能把它当售罄（前端契约：stockMode !== 'unlimited' && stock === 0）
     const list = await api.get('/api/products').expect(200)
@@ -158,6 +186,9 @@ describe('P4a Offers — public availability from active offers (not the project
       .set(authHeader(accessToken))
       .send({ status: 'inactive' })
       .expect(200)
+    // 归档是 active→inactive，按 §4.4 不触发失效；但前面的新建已触发，
+    // 因此仍需批准一次才能断言游客可见。
+    await approveGuestEligibilityForTest(product.id)
 
     // 投影 stockMode 仍是已下架默认档的 'unlimited'；公开可售状态必须无视它
     const detail = await api.get(`/api/products/${product.id}`).expect(200)

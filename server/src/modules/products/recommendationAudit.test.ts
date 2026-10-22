@@ -22,6 +22,13 @@ async function makeProduct(data: {
       attributes: (data.serviceName === undefined ? {} : { serviceName: data.serviceName }) as Prisma.InputJsonValue,
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：审计经 queryRecommendationCandidates
+  // 拉候选，而该函数对 guest 现在要求准入。为使本测试继续聚焦"离线准入规则
+  // 比较"（而非被新门禁污染），造数时给一条已批准记录；商品仍是 members_only，
+  // 因此 guest 侧是否纳入仍由 visibility 决定——正是本测试要验证的口径。
+  await prisma.productGuestEligibility.create({
+    data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+  })
   await prisma.offer.create({
     data: {
       productId: product.id, name: '默认', isDefault: true, price: 100, stock: 0,

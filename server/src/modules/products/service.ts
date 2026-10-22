@@ -68,6 +68,7 @@ const productListSelect = {
   stock: true,
   sales: true,
   status: true,
+  archivedAt: true,
   deliveryMode: true,
   stockMode: true,
   ratingAvg: true,
@@ -78,6 +79,9 @@ const productListSelect = {
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
   category: { select: { id: true, code: true, label: true, guestVisibility: true } },
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。必填，漏查会编译失败。
+  publicContentRevision: true,
+  guestEligibility: { select: { decision: true, reviewedRevision: true } },
   // P4a：公开可售状态从 active 规格集合推导，不再信任 Product 投影——
   // stockMode 投影取自默认规格（可能已下架），混合规格商品会误报售罄/不限。
   // Faka：列表页也要 external* 以投影 Xboard 剩余名额。
@@ -137,6 +141,9 @@ const productDetailSelect = {
   _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
   category: { select: { id: true, code: true, label: true, guestVisibility: true } },
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。必填，漏查会编译失败。
+  publicContentRevision: true,
+  guestEligibility: { select: { decision: true, reviewedRevision: true } },
 } satisfies Prisma.ProductSelect
 
 type ProductListItem = Prisma.ProductGetPayload<{ select: typeof productListSelect }>
@@ -695,6 +702,9 @@ export async function listProducts(params: ProductListParams = {}) {
       // SPEC-CATALOG-VIS-001 §3.4：缓存命中后必须用实时分类可见性复核，
       // 不能信任缓存里那份可能已过期的判定结果。
       category: { select: { guestVisibility: true } },
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。
+      publicContentRevision: true,
+      guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
   })
   // A cached shop page must not keep showing a product that moved to another owner.
@@ -730,7 +740,11 @@ async function hydratePublicListItems(orderedIds: number[], audience: ProductAud
     where: { id: { in: ids }, ...publicVisibilityWhere(audience) },
     select: productListSelect,
   })
-  const productById = new Map(products.map(product => [product.id, product]))
+  // publicVisibilityWhere 对游客只做准入粗筛（Prisma where 无法跨表比较
+  // reviewedRevision 与 publicContentRevision），这里补精判，
+  // 否则「已批准但内容已改」的商品仍会出现在推荐/店铺卡片里。
+  const visible = products.filter(product => isCurrentlyPubliclyVisible(product, audience))
+  const productById = new Map(visible.map(product => [product.id, product]))
   const items = ids.flatMap(id => {
     const product = productById.get(id)
     return product ? [product] : []
@@ -807,6 +821,9 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
       merchantId: true,
       merchant: { select: { status: true } },
       category: { select: { guestVisibility: true } },
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。
+      publicContentRevision: true,
+      guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
   })
   if (!live) throw notFound('商品暂不可用')
@@ -876,6 +893,9 @@ export async function getProductRecommendations(id: number, audience: ProductAud
       merchant: { select: { status: true } },
       // SPEC-CATALOG-VIS-001 §3.3：源商品先鉴权，再逐批过滤候选。
       category: { select: { guestVisibility: true } },
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。
+      publicContentRevision: true,
+      guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
   })
   if (!base) throw notFound('商品暂不可用')

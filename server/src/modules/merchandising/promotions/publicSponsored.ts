@@ -120,6 +120,9 @@ export async function filterSponsoredByAudience(
       merchant: { select: { status: true } },
       // SPEC-CATALOG-VIS-001 §3.3：推广卡片同样受分类可见性约束。
       category: { select: { guestVisibility: true } },
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定需要当前版本 + 准入记录。
+      publicContentRevision: true,
+      guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
   })
   const visible = new Set(

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, fillWizardOfferAttributes, fillWizardPublicationDetails, loginAs, loginAsApi } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, approveGuestEligibility, fillWizardOfferAttributes, fillWizardPublicationDetails, loginAs, loginAsApi } from './helpers'
 
 /**
  * SPEC-CATALOG-OPS / PAR-CMI-001 — Catalog product lifecycle 前置段（极窄 E2E 卡）。
@@ -422,6 +422,10 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     await expect(toggleButton).toHaveText('下架')
     await expect(toggleButton).toBeEnabled()
 
+    // 4.5 SPEC-CATALOG-VIS-001 §4.2（P1.5）：发布让商品对登录用户可见，
+    // 但游客还需管理员批准当前公开内容版本。不批准则下一步的游客 GET 会 403。
+    await approveGuestEligibility(request, productId)
+
     // 5. 只读 GET 公开产品详情（无需登录），200；offers 含 offerId 且 stock === 5（此前补名额）。
     const detail = await request.get(`${API_BASE}/api/products/${productId}`)
     expect(detail.status()).toBe(200)
@@ -609,6 +613,9 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
   test('after republish, public detail, store search and checkout preview recover', async ({ page, request }) => {
     expect(productId).toBeGreaterThan(0)
     expect(offerId).toBeGreaterThan(0)
+
+    // 0.5 §4.2（P1.5）：republish 后同样需要管理员批准才能对游客可见。
+    await approveGuestEligibility(request, productId)
 
     // 1. 公开商品详情（无需登录）：republish 后恢复 → 200；offers 含 offerId 且 stock === 5。
     const detail = await request.get(`${API_BASE}/api/products/${productId}`)

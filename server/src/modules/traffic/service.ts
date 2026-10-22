@@ -3,7 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { makeCacheKey, wrapCache } from '../../lib/cache.js'
 import { addCalendarDays, businessDateString, businessDayStartUtc, calendarDayToUtc } from '../../lib/businessTime.js'
 import { notFound } from '../../lib/httpError.js'
-import { publicVisibilityWhere, type ProductAudience } from '../products/visibility.js'
+import { guestVisibilitySql, merchantVisibleSql, publicVisibilityWhere, type ProductAudience } from '../products/visibility.js'
 import type { TrafficEventInput, TrafficRange } from './schema.js'
 
 export const TRAFFIC_RETENTION_DAYS = 90
@@ -14,8 +14,25 @@ export async function recordTrafficEvent(input: TrafficEventInput, audience: Pro
   let merchantId: number | null = null
   if (productId !== null) {
     // Ownership and visibility come from the server, never from tracking payloads.
+    //
+    // guest 走**精确** raw SQL：Prisma where 无法跨表比较
+    // reviewedRevision 与 publicContentRevision，只用它会放行「已批准但内容
+    // 已改」的商品（等价性测试可复现）。member 沿用原 where——登录用户不看准入。
+    if (audience === 'guest') {
+      const rows = await prisma.$queryRaw<Array<{ id: number }>>`
+        SELECT p."id" FROM "Product" p
+        INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
+        WHERE p."id" = ${productId} AND ${guestVisibilitySql()}
+          AND p."status" = 'active' AND p."archivedAt" IS NULL
+          AND ${merchantVisibleSql()}
+      `
+      if (rows.length === 0) throw notFound('商品暂不可用')
+    }
+
     const product = await prisma.product.findFirst({
-      where: { id: productId, ...publicVisibilityWhere(audience) },
+      where: audience === 'member'
+        ? { id: productId, ...publicVisibilityWhere(audience) }
+        : { id: productId },
       select: { merchantId: true },
     })
     if (!product) throw notFound('商品暂不可用')

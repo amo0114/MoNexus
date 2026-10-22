@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { lockProductRow } from '../catalog/productLock.js'
+import { invalidateGuestEligibility } from '../catalog/guestEligibility.js'
 import { badRequest, notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { createDefaultOffer } from '../../lib/offers.js'
 import {
@@ -660,6 +662,9 @@ export async function addAdminFakaOffers(
   }
 
   await prisma.$transaction(async tx => {
+    // SPEC-CATALOG-VIS-001 §4.5（P1.5-A 复审）：给**已存在**商品追加套餐
+    // 属于展示类写入（新增 active 套餐），必须持有商品行锁并让旧批准失效。
+    await lockProductRow(tx, productId)
     for (let i = 0; i < resolved.length; i++) {
       const row = resolved[i]!
       await tx.offer.create({
@@ -679,6 +684,8 @@ export async function addAdminFakaOffers(
         },
       })
     }
+    // 全部以 status='active' 新建 → 「新增未审核套餐」。
+    await invalidateGuestEligibility(tx, productId)
     await tx.adminLog.create({
       data: {
         adminUserId,

@@ -41,6 +41,10 @@ async function makePromotableProduct(name: string, categoryId?: number) {
       visibility: 'public',
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见还要求当前内容版本已批准。
+  await prisma.productGuestEligibility.create({
+    data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+  })
   await prisma.offer.create({
     data: {
       productId: product.id,

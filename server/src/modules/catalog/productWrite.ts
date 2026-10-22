@@ -22,6 +22,7 @@ import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 import { checkProductReadiness, type ProductReadinessResult } from './publicationReadiness.js'
 import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
 import { lockProductRow } from './productLock.js'
+import { invalidateGuestEligibilityIfNeeded } from './guestEligibility.js'
 import { isContentCopilotAvailable } from './contentCopilot/service.js'
 
 export type ProductWriteActor =
@@ -518,6 +519,14 @@ export async function patchProductContent(
         }
       }
     }
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：**写前**判定——写入后再比较
+    // 读到的是新值，必然判为"未变"。分类变更走局部变量 categoryId，
+    // 因此显式并入（§4.4 明确分类选择属于展示内容）。
+    const touchedFields: Record<string, unknown> = categoryId != null
+      ? { ...data, categoryId }
+      : { ...data }
+    const eligibilityInvalidation = await invalidateGuestEligibilityIfNeeded(tx, productId, touchedFields)
+
     const updatedRow = await tx.product.update({
       where: { id: productId },
       data: {
@@ -525,17 +534,30 @@ export async function patchProductContent(
         ...(categoryId != null ? { categoryId, type: categoryType } : {}),
         contentVersion: { increment: 1 },
       },
-      select: { id: true, contentVersion: true },
+      select: { id: true, contentVersion: true, publicContentRevision: true },
     })
+
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A）：展示内容或 visibility 变化时，
+    // 递增 publicContentRevision 并把准入记录重置为 pending。同一事务、
+    // 同一商品行锁内完成（lockProductRow 在本事务开头已获取）。
+    // 价格/库存/销量等交易字段不在 data 里触发，见 guestEligibility 的字段表。
     if (current.status === 'active') {
       const readiness = await checkProductReadiness(productId, tx, { requireCurrentlySellable: false })
       if (!readiness.ready) notReadyError(readiness)
     }
-    return updatedRow
+    return { ...updatedRow, guestEligibilityInvalidated: eligibilityInvalidation !== null }
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: true })
-  return { id: updated.id, contentVersion: updated.contentVersion, updatedFields }
+  return {
+    id: updated.id,
+    contentVersion: updated.contentVersion,
+    updatedFields,
+    // 公开审核状态：本次写入是否让旧批准失效（§4.4）。
+    // 供 P1.5-B 的商家界面显示「待公开审核」。
+    publicContentRevision: updated.publicContentRevision,
+    guestEligibilityInvalidated: updated.guestEligibilityInvalidated,
+  }
 }
 
 export async function getProductEditor(actor: ProductWriteActor, productId: number) {

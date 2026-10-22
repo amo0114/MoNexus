@@ -248,6 +248,10 @@ describe('product list/detail cache with public availability', () => {
         status: 'active', visibility: 'public', deliveryMode: 'manual_service', stockMode: 'unlimited',
       },
     })
+    // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客读取详情还要求准入已批准。
+    await prisma.productGuestEligibility.create({
+      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+    })
     const offer = (name: string, externalSku: string) => prisma.offer.create({
       data: {
         productId: product.id, name, price: 100, stock: 0, deliveryMode: 'manual_service', stockMode: 'unlimited',

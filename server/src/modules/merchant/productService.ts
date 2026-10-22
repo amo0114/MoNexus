@@ -1,6 +1,8 @@
 import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { lockProductRow } from '../catalog/productLock.js'
+import { invalidateGuestEligibilityIfNeeded } from '../catalog/guestEligibility.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import {
@@ -347,6 +349,19 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
   const switchedToInstantInventory =
     deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
   const updated = await prisma.$transaction(async tx => {
+    // SPEC-CATALOG-VIS-001 §4.5（P1.5-A）：展示写入与准入失效必须共用商品行锁，
+    // 否则两个并发编辑可能各自基于不同版本递增 revision，导致批准失效错乱。
+    await lockProductRow(tx, productId)
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：**必须在写入前判定**是否
+    // 触及展示内容——写入后读到的已是新值，比较必然判为"未变"。
+    const productWriteData: Record<string, unknown> = {
+      ...normalizedProductData,
+      ...(resolvedCategory
+        ? { categoryId: resolvedCategory.categoryId, type: resolvedCategory.type }
+        : {}),
+    }
+    const invalidation = await invalidateGuestEligibilityIfNeeded(tx, productId, productWriteData)
+
     await tx.product.update({
       where: { id: productId },
       data: {
@@ -380,10 +395,14 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
       },
     })
     await syncProductProjection(tx, productId)
-    return tx.product.findUniqueOrThrow({ where: { id: productId } })
+    const row = await tx.product.findUniqueOrThrow({ where: { id: productId } })
+    return { row, guestEligibilityInvalidated: invalidation !== null }
   })
 
   await invalidateProductPublicCache(productId, { detail: true, list: true })
   // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
-  return stripLegacyIsHot(updated)
+  return {
+    ...stripLegacyIsHot(updated.row),
+    guestEligibilityInvalidated: updated.guestEligibilityInvalidated,
+  }
 }

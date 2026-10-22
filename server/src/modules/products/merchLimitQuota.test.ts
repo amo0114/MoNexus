@@ -58,6 +58,10 @@ async function makeFeatured(name: string, categoryId: number, sortWeight: number
       visibility: 'public',
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见还要求当前内容版本已批准。
+  await prisma.productGuestEligibility.create({
+    data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+  })
   const now = Date.now()
   await prisma.editorialFeature.create({
     data: {

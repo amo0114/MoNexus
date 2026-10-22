@@ -143,6 +143,17 @@ export async function createTestProduct(
       visibility: 'public',
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见 = 生命周期 + 商品 public
+  // + 分类 public + 当前内容版本已批准。helper 造的是"正常在售商品"，
+  // 因此同步建一条已批准记录，否则所有既有用例都会被新门禁拦成不可见。
+  // 需要"未批准"语义的用例请显式删除/覆盖这条记录。
+  await prisma.productGuestEligibility.create({
+    data: {
+      productId: product.id,
+      decision: 'approved',
+      reviewedRevision: 1,
+    },
+  })
   // P4a：Offer 是价格/履约配置真相源；测试商品同步建一条默认 Offer。
   const offer = await prisma.offer.create({
     data: {
