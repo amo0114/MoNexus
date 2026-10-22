@@ -1,15 +1,16 @@
 import { expect, test } from '@playwright/test'
 import { fileURLToPath } from 'node:url'
-import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, approveGuestEligibility, loginAs, loginAsApi } from './helpers'
+import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, loginAs, loginAsApi, selectAdminTab } from './helpers'
 const fixture = fileURLToPath(new URL('./fixtures/product-video.mp4', import.meta.url))
 
 /** Real upload/save → admin preview/approval → guest decode, with no API stubs. */
 test('private video waits for a click, plays real MP4 and releases media on gallery navigation across layouts', async ({ page, request, browser }) => {
   test.setTimeout(90_000)
   const merchant = await loginAsApi(request, SEED_ACCOUNTS.merchant)
+  const name = `E2E商品视频-${Date.now()}`
   const created = await request.post(`${API_BASE}/api/merchant/products`, {
     headers: { Authorization: `Bearer ${merchant.accessToken}` },
-    data: { name: `E2E商品视频-${Date.now()}`, type: '充值卡密', price: 2, deliveryMode: 'manual_service', stockMode: 'unlimited', imageUrl: E2E_PRODUCT_COVER, images: [E2E_PRODUCT_COVER] },
+    data: { name, type: '充值卡密', price: 2, deliveryMode: 'manual_service', stockMode: 'unlimited', imageUrl: E2E_PRODUCT_COVER, images: [E2E_PRODUCT_COVER] },
   })
   expect(created.ok(), await created.text()).toBeTruthy()
   const productId = (await created.json()).id as number
@@ -33,15 +34,25 @@ test('private video waits for a click, plays real MP4 and releases media on gall
   try {
     const admin = await adminContext.newPage()
     await loginAs(admin, SEED_ACCOUNTS.admin)
-    await admin.goto(`/admin/products/${productId}/edit`)
-    const preview = admin.getByRole('region', { name: '商品视频上传' })
+    await admin.goto('/admin')
+    await selectAdminTab(admin, 'products')
+    await admin.getByTestId('admin-products-search-input').fill(name)
+    await admin.getByTestId('admin-products-guest-review-filter').selectOption('pending')
+    await admin.getByTestId('admin-products-search-btn').click()
+    await admin.getByTestId(`admin-guest-review-open-${productId}`).click()
+    const dialog = admin.getByTestId('admin-guest-review-dialog')
+    const preview = dialog.getByRole('region', { name: '公开审核视频预览' })
+    await expect(preview.getByTestId('admin-guest-review-video-version')).toContainText(assetId)
+    await expect(preview.getByText(/此视频包含声音/)).toBeVisible()
     await preview.getByRole('button', { name: '▶ 播放商品视频' }).click()
     const adminVideo = preview.locator('video')
-    await adminVideo.evaluate((element: HTMLVideoElement) => element.play())
-    await expect.poll(() => adminVideo.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0)
-    // P1.5-B's review console is a separate delivery; use the real approval
-    // contract after previewing the exact asset in the shared admin editor.
-    await approveGuestEligibility(request, productId)
+    await adminVideo.evaluate((element: HTMLVideoElement) => { element.muted = false; return element.play() })
+    await expect.poll(() => adminVideo.evaluate((element: HTMLVideoElement) => element.ended)).toBe(true)
+    expect(await adminVideo.evaluate((element: HTMLVideoElement) => element.muted)).toBe(false)
+    const approved = admin.waitForResponse(response => new URL(response.url()).pathname === `/api/admin/products/${productId}/guest-eligibility` && response.request().method() === 'POST')
+    await dialog.getByTestId('admin-guest-review-approve').click()
+    expect((await approved).status()).toBe(200)
+    await expect(dialog).toBeHidden()
     await adminContext.close()
 
     const guest = await guestContext.newPage()

@@ -143,6 +143,33 @@ describe('video routes, ownership and public approval', () => {
     await patch({ expectedContentVersion: 3, promoVideoAssetId: null }).expect(200)
     expect((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).promoVideoAssetId).toBeNull()
   })
+  it('returns the reviewed video snapshot to admins and rejects approval after video replacement', async () => {
+    const owner = await merchant()
+    const { user: admin } = await createTestUser('video-review-admin@test.local', 'pass123', 'admin')
+    const adminHeaders = authHeader((await loginAs(admin.email, 'pass123')).accessToken)
+    const a = await asset(owner.merchant.id, owner.user.id)
+    const p = await createTestProduct('视频审核版本', 10, 1, ['code'], owner.merchant.id)
+    await prisma.product.update({ where: { id: p.id }, data: { status: 'draft' } })
+    const patch = (body: object) => api.patch(`/api/merchant/products/${p.id}/content`).set(owner.headers).send(body)
+    await patch({ expectedContentVersion: 1, promoVideoAssetId: a.id }).expect(200)
+    const url = `/api/admin/products/${p.id}/guest-eligibility`
+    await api.get(url).expect(401)
+    await api.get(url).set(owner.headers).expect(403)
+    const reviewed = (await api.get(url).set(adminHeaders).expect(200)).body
+    expect(reviewed.promoVideo).toEqual({ assetId: a.id, durationMs: a.durationMs, width: a.width, height: a.height, hasAudio: a.hasAudio })
+    expect(reviewed.publicContentRevision).toBe(2)
+    const b = await asset(owner.merchant.id, owner.user.id)
+    await patch({ expectedContentVersion: 2, promoVideoAssetId: b.id }).expect(200)
+    const stale = await api.post(url).set(adminHeaders).send({ action: 'approve', expectedPublicContentRevision: reviewed.publicContentRevision, expectedEligibilityVersion: reviewed.version }).expect(409)
+    expect(stale.body.error.code).toBe('PRODUCT_CONTENT_CHANGED')
+    const current = (await api.get(url).set(adminHeaders).expect(200)).body
+    expect(current.publicContentRevision).toBe(3)
+    expect(current.promoVideo.assetId).toBe(b.id)
+    const approved = await api.post(url).set(adminHeaders).send({ action: 'approve', expectedPublicContentRevision: current.publicContentRevision, expectedEligibilityVersion: current.version }).expect(200)
+    expect(approved.body.promoVideo).toEqual(current.promoVideo)
+    await patch({ expectedContentVersion: 3, promoVideoAssetId: null }).expect(200)
+    expect((await api.get(url).set(adminHeaders).expect(200)).body.promoVideo).toBeNull()
+  })
   it('does not let a merchant bind a platform asset; one asset cannot bind two products', async () => {
     const owner = await merchant()
     const { user } = await createTestUser('video-admin@test.local', 'pass123', 'admin')

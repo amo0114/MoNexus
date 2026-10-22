@@ -3930,6 +3930,72 @@
             "description": "省略保留，null移除；变化递增公开内容版本并重置审核pending"
           }
         }
+      },
+      "AdminGuestEligibilityView": {
+        "type": "object",
+        "required": [
+          "productId",
+          "publicContentRevision",
+          "decision",
+          "reviewedRevision",
+          "version",
+          "reasonCode",
+          "guestVisible",
+          "promoVideo"
+        ],
+        "properties": {
+          "productId": {
+            "type": "integer"
+          },
+          "publicContentRevision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              null
+            ],
+            "nullable": true
+          },
+          "reviewedRevision": {
+            "type": "integer",
+            "nullable": true
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reviewedByUserId": {
+            "type": "integer",
+            "nullable": true
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "guestVisible": {
+            "type": "boolean"
+          },
+          "promoVideo": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProductVideoSummary"
+              }
+            ],
+            "description": "与 publicContentRevision 同次读取的当前不可变视频元数据；不包含签名或存储位置",
+            "type": "object"
+          }
+        }
       }
     },
     "responses": {
@@ -8699,6 +8765,144 @@
         "responses": {
           "200": {
             "description": "uploadEnabled / playbackEnabled / toolsAvailable / busy"
+          }
+        }
+      }
+    },
+    "/api/admin/products/{id}/guest-eligibility": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "summary": "读取游客公开审核版本和视频预览元数据",
+        "responses": {
+          "200": {
+            "description": "当前审核快照；视频与公开内容版本绑定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGuestEligibilityView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录"
+          },
+          "403": {
+            "description": "需要有效管理员及MFA"
+          },
+          "404": {
+            "description": "商品不存在"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "summary": "批准、拒绝或撤销游客公开资格；同时校验两个 expected 版本",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action",
+                  "expectedPublicContentRevision",
+                  "expectedEligibilityVersion"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject",
+                      "revoke"
+                    ]
+                  },
+                  "expectedPublicContentRevision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "expectedEligibilityVersion": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "reasonCode": {
+                    "type": "string",
+                    "enum": [
+                      "rejected",
+                      "revoked",
+                      "content_changed",
+                      "manual"
+                    ],
+                    "description": "reject 时必填；approve/revoke 由服务端固定"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "当前审核快照；视频与公开内容版本绑定",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminGuestEligibilityView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录"
+          },
+          "403": {
+            "description": "需要有效管理员及MFA"
+          },
+          "404": {
+            "description": "商品不存在"
+          },
+          "400": {
+            "description": "不合法状态或缺少拒绝原因"
+          },
+          "409": {
+            "description": "PRODUCT_CONTENT_CHANGED 或 CONFLICT；重新读取并审核当前内容"
           }
         }
       }

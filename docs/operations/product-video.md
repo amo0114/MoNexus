@@ -1,6 +1,6 @@
 # 商品展示视频运行说明
 
-实现分支 `feat/product-showcase-video`，独立目录 `/root/projects/worktrees/monexus-product-showcase-video`。基线叠加 P1.5-A `e226d6a`（其远程分支尚未合并 develop）；合并前需按 P1/P1.5 的最终契约重新集成。原工作区的既存修改未带入。
+实现分支 `feat/product-showcase-video`，独立目录 `/root/projects/worktrees/monexus-product-showcase-video`。已接入最终 P1/P1.5 基线 `e0cc7cf`（P1.5-B #280 已合并 develop），原先叠加的 P1.5-A 开发提交已由正式基线替代。原工作区的既存修改未带入。
 
 ## 使用和权限
 
@@ -8,7 +8,7 @@
 
 普通详情首屏使用原封面，点击后获取 180 秒播放凭证；原生控件再次点击播放，默认静音，可打开声音。列表和分享封面沿用图片。图库图片灯箱不包含视频。
 
-视频的新增、替换、移除与商品内容 CAS、公开审核失效在同一事务完成。游客签发复用分类、生命周期及当前版本批准门禁；登录用户复用 member 门禁。审批人员从管理员编辑页完整预览并听取音频后，使用 P1.5 的版本 CAS 审批；P1.5-B 审核工作台需复用 `ProductVideoPlayer actor="admin"` 和编辑 DTO，不能仅看缩略图批准。视频分支没有另建一套审核控制台。
+视频的新增、替换、移除与商品内容 CAS、公开审核失效在同一事务完成。游客签发复用分类、生命周期及当前版本批准门禁；登录用户复用 member 门禁。P1.5-B 审核工作台已接入 `ProductVideoPlayer actor="admin"`，显示公开内容版本、视频资产标识与声音检查提示。审核 API 从同一次商品读取中返回版本和当前不可变视频元数据，不含签名或存储位置；点击后单独鉴权预览。管理员完整播放并听取音频后，沿用 P1.5 的两个 expected 版本批准；409 后释放旧视频并重新读取。管理员编辑页也保留预览能力。
 
 ## 部署参数
 
@@ -62,7 +62,7 @@ npm test -- src/components/catalog/ProductVideoPlayer.test.tsx src/components/me
 
 `server/scripts/product-video-backup-integration.ts` 从 server 目录运行，要求 `VIDEO_BACKUP_SOURCE_URL`、`VIDEO_BACKUP_TARGET_URL` 两个独立且空的已迁移数据库，名称必须以 `monexus_video_backup_` 开头。默认连接 localhost:19380 的隔离 MinIO；脚本创建专用桶并只清理自身桶。包含加密导出、篡改清单回滚、恢复原包、授权Range播放、付费附件字节核对。数据库由操作者事后清理。
 
-## 本地验证记录（2026-10-22）
+## 本地验证记录（2026-10-22，初始视频实现）
 
 - 全新库105个迁移通过；从 P1.5 的104个迁移、含已批准商品的数据升级通过，原商品视频引用为空、批准版本保持不变。
 - 前端全量205文件/1720用例通过；最终视频、真实 Redis 缓存及付费存储回归5文件/51用例通过。较早的商品写入、准入失效和审批 CAS 回归5文件/60用例通过。
@@ -72,4 +72,11 @@ npm test -- src/components/catalog/ProductVideoPlayer.test.tsx src/components/me
 - 真实隔离 MinIO 的私有签名/Range/过期/付费 attachment 回归通过；加密 v3 跨库跨桶恢复、篡改清单事务回滚、恢复后授权 Range 播放和付费文件字节核对通过。
 - 前后端构建、架构/OpenAPI 引用、Nginx 静态检查通过；最终服务端镜像构建和镜像内非 root 有界解码/封装/海报生成通过。镜像内 FFmpeg 为8.1.2；本机测试工具为4.4.2。
 
-上线还需要生产实际 provider/完整反代链、目标服务器容量、iOS Safari/Android Chrome/桌面 Firefox 的真实兼容验证，以及 P1.5-B 审核 UI 集成和最终 CI。Chromium 视口不能替代 iOS Safari；本地通过不等于已发布。
+## 最终 P1/P1.5 集成回归（2026-10-22）
+
+- 已基于 `e0cc7cf` 集成审核工作台；前端视频/上传/审核组件3文件12用例通过，包含视频替换后409重新读取及切商品时忽略晚到响应。
+- 独立 PostgreSQL 全新105个迁移通过；视频、审批 CAS、待审队列及套餐写入失效回归4文件33用例通过，1项真实 Redis 专项在本轮未启用 Redis 时跳过。缓存路径的真实 Redis 验证见上方初始实现记录，本轮不将跳过计为通过。
+- Chromium 真实流程3项通过：P1.5 公开审核及分类收紧旅程，以及商家上传保存 → 审核台完整播放含 AAC-LC 音轨样片（取消静音）→ UI 批准 → 游客三种布局播放。视频旅程不再通过 helper 代替审核台批准。自动化取消静音不等于实际设备扬声器听感验收。
+- 前后端构建、架构与 OpenAPI 引用、架构测试、Nginx 静态检查通过；后端与前端独立代码复核未发现阻塞项。
+
+上线还需要最终远程 CI、生产实际 provider/完整反代链、目标服务器容量及 iOS Safari/Android Chrome/桌面 Firefox 的真实兼容验证。Chromium 视口不能替代 iOS Safari；本地通过不等于已发布。生产 Compose 视频上传/播放继续默认关闭，完成上线验收后再启用。
