@@ -122,4 +122,15 @@ describe('AdminGuestReviewDialog (SPEC-CATALOG-VIS-001 §4.5)', () => {
       expectedEligibilityVersion: 2,
     })
   })
+
+  it('does not offer approval for a members_only product', async () => {
+    vi.mocked(adminApi.getAdminGuestEligibility).mockResolvedValue(view({ decision: null, version: 0 }))
+
+    render(<AdminGuestReviewDialog product={product('members_only')} onClose={() => {}} onChanged={() => {}} />)
+
+    expect(await screen.findByText(/先将商品改为游客可浏览/)).toBeInTheDocument()
+    await waitFor(() => expect(adminApi.getAdminGuestEligibility).toHaveBeenCalled())
+    expect(screen.queryByTestId('admin-guest-review-approve')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('admin-guest-review-reject')).not.toBeInTheDocument()
+  })
 })
