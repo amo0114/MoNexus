@@ -1,190 +1,206 @@
-# MoNexus
+<p align="center">
+  <img src="./docs/assets/readme/logo.png" alt="MoNexus logo" width="88" height="88">
+</p>
 
-[![Node.js](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![License](https://img.shields.io/badge/License-Private-lightgrey)](#license)
+<h1 align="center">MoNexus</h1>
 
-**English** | [简体中文](./README.zh-CN.md)
+<p align="center">
+  <b>An internal points exchange for digital goods.</b><br>
+  Users earn and spend platform points; merchants supply card codes, subscriptions and digital services.
+</p>
 
-> An internal points-based digital goods exchange platform. Users earn and spend platform points for virtual products (card codes, subscription links, digital services). A recharge module exists; live payment providers stay disabled without credentials and merchant qualification.
+<p align="center">
+  <img alt="Node.js 22" src="https://img.shields.io/badge/Node.js-22-339933?style=flat-square&amp;logo=node.js&amp;logoColor=white">
+  <img alt="PostgreSQL 16" src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&amp;logo=postgresql&amp;logoColor=white">
+  <img alt="License: Private" src="https://img.shields.io/badge/License-Private-lightgrey?style=flat-square">
+</p>
 
----
+<p align="center">
+  <b>English</b> ·
+  <a href="./README.zh-CN.md">简体中文</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#production">Production</a>
+</p>
 
-## Table of Contents
+<p align="center">
+  <img src="./docs/assets/readme/store-desktop.webp" alt="MoNexus store on desktop" width="100%">
+</p>
 
-- [About](#about)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Demo Accounts](#demo-accounts)
-- [Scripts](#scripts)
-- [Testing](#testing)
-- [Production](#production)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
+<table align="center">
+  <tr>
+    <td width="70%"><img src="./docs/assets/readme/product-desktop.webp" alt="Product detail page" width="100%"></td>
+    <td width="30%"><img src="./docs/assets/readme/store-mobile.webp" alt="Store on mobile" width="100%"></td>
+  </tr>
+</table>
 
----
+<p align="center"><sub>Screenshots use local seed data with neutral demo product names.</sub></p>
 
 ## About
 
-**MoNexus** is an **internal welfare / points incentive platform**. Platform operators grant points; merchants supply digital goods; users redeem points. Ledger amounts stay in-system integers. Optional user-funded recharge is implemented (quotes, orders, credit, refund, dispute, reconciliation) with a Simulator for local/staging. Production default is `RECHARGE_MODE=disabled`. Live adapters (Stripe, PayPal, WeChat Pay, Alipay) stay disabled until credentials and merchant qualification are provided.
+MoNexus is an **internal welfare / points incentive platform**. Operators grant points, merchants supply digital goods, users redeem points. All ledger amounts are in-system integers.
 
-| Role | Capabilities |
-| --- | --- |
-| **User** | Register, check in, invite friends, browse the store, redeem products, review orders, recharge points when enabled |
-| **Merchant** | Apply to join, manage catalog & inventory, fulfill orders, view settlements |
-| **Admin** | Approve merchants, adjust points, configure system rewards, batch settlements, audit logs, recharge/payment operations |
+| Role | What they do |
+| :--- | :--- |
+| **User** | Register, check in, invite friends, browse the store, redeem, review orders, recharge points when enabled |
+| **Merchant** | Apply to join, manage catalog and inventory, fulfill orders, view settlements |
+| **Admin** | Approve merchants, adjust points, configure rewards, run settlements, audit logs, operate recharge/payments |
 
-**Product boundary (intentionally out of scope):** fiat withdrawal, physical goods / logistics, multi-tenant white-label SaaS, and native mobile apps. Web + responsive mobile browser only. User-funded recharge exists as a module; live providers remain disabled without credentials and merchant qualification. Production deploys cannot start with Simulator or `RECHARGE_MODE=sandbox`.
-
----
+> [!NOTE]
+> **Out of scope by design:** fiat withdrawal, physical goods / logistics, multi-tenant white-label SaaS and native apps — Web and responsive mobile browser only.
+> User-funded recharge exists as a module (quotes, orders, credit, refund, dispute, reconciliation; Simulator for local/staging). Production defaults to `RECHARGE_MODE=disabled`, refuses to start with Simulator or `sandbox`, and live adapters (Stripe, PayPal, WeChat Pay, Alipay) stay disabled until credentials and merchant qualification exist.
 
 ## Features
 
-### User
+<table>
+  <tr>
+    <th width="33%">🛍️ Users</th>
+    <th width="33%">🏪 Merchants</th>
+    <th width="33%">🛡️ Admins</th>
+  </tr>
+  <tr>
+    <td valign="top">
+      <ul>
+        <li>Email sign-up / login, HttpOnly refresh cookies</li>
+        <li>Email verification and password reset</li>
+        <li>Store with search, categories, cursor pagination</li>
+        <li>Instant inventory, fixed content and manual-service fulfillment</li>
+        <li>Daily check-in, invite codes, points ledger</li>
+        <li>Order history, delivery copy, reviews</li>
+        <li>Optional recharge (quote → pay → credit)</li>
+      </ul>
+    </td>
+    <td valign="top">
+      <ul>
+        <li>Self-service onboarding with admin review</li>
+        <li>Product CRUD, bulk inventory import, change logs</li>
+        <li>Orders, disputes, manual delivery</li>
+        <li>Dashboard and settlement statements with commission snapshots</li>
+      </ul>
+    </td>
+    <td valign="top">
+      <ul>
+        <li>Users, merchants, products, orders, settlements</li>
+        <li>Merchant approval / suspension, per-merchant commission</li>
+        <li>Manual point adjustment with audit trail</li>
+        <li>Recharge orders, refunds, disputes, reconciliation</li>
+        <li>Runtime config: rewards, member tiers</li>
+        <li>Health probes, Prometheus metrics, Sentry</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
-- Email registration / login with HttpOnly refresh-token cookies
-- Email verification & password reset (SMTP; console fallback in local dev)
-- Product store with search, categories, cursor pagination
-- Instant inventory redeem, fixed-content redeem, and manual-service fulfillment
-- Daily check-in, invite codes, points ledger
-- Optional fiat recharge (quote → pay → credit) when `RECHARGE_MODE` is sandbox/live; return URLs are never treated as payment success
-- Order history, delivery content copy, product reviews
+**Platform guarantees**
 
-### Merchant
+- One database transaction per redeem: debit points, reserve inventory, create order, delivery, point log and settlement.
+- Integer-only math for points, commission and recharge money.
+- Cross-owner resource access returns **404**, not 403, to prevent enumeration.
+- Optional Redis public-read cache with a circuit breaker; S3-compatible uploads (MinIO locally, S3/R2/OSS in production).
 
-- Self-service onboarding with admin review (`pending → active / rejected / suspended`)
-- Product CRUD, multi-line inventory import, inventory change logs
-- Order list, dispute handling, manual delivery
-- Dashboard metrics and settlement statements (commission snapshots)
+## Tech stack
 
-### Admin
-
-- Users, merchants, products, orders, settlements overview
-- Merchant approval / suspension and per-merchant commission rate
-- Manual points adjustment with admin audit trail
-- Recharge orders, refunds, disputes, and reconciliation (live channels stay disabled without credentials)
-- Runtime system config (register / invite / check-in rewards, member tiers)
-- Operational observability: health probes, Prometheus metrics, Sentry
-
-### Platform quality
-
-- Transactional redeem: debit points + reserve inventory + order + delivery + settlement in one DB transaction
-- Integer-only points, commission, and recharge money math (no floating point)
-- Recharge production default `RECHARGE_MODE=disabled`; a production deploy refuses Simulator / sandbox
-- Redis optional public-read cache with circuit breaker
-- S3-compatible uploads (MinIO locally, external S3/R2/OSS in production)
-- CI/CD, backup scripts, production compose, runbooks
-
----
-
-## Tech Stack
+<p align="center">
+  <img src="https://skillicons.dev/icons?i=react,ts,vite,tailwind,nodejs,express,prisma,postgres,redis,docker,nginx,githubactions,vitest,sentry,prometheus&amp;perline=8" alt="React, TypeScript, Vite, Tailwind CSS, Node.js, Express, Prisma, PostgreSQL, Redis, Docker, nginx, GitHub Actions, Vitest, Sentry, Prometheus">
+</p>
 
 | Layer | Technologies |
-| --- | --- |
+| :--- | :--- |
 | **Frontend** | React 18, TypeScript, Vite 6, React Router 6, Zustand, Tailwind CSS, Radix UI, Axios, Sentry |
 | **Backend** | Node.js 22, Express 4, TypeScript, Zod, Prisma 6, JWT + cookie refresh tokens |
 | **Data** | PostgreSQL 16, Redis 7 (optional), MinIO / S3-compatible storage |
 | **Ops** | Docker Compose, nginx, GitHub Actions, Vitest, Playwright, pino, prom-client |
 
-**Runtime constraint:** Node.js `>=22 <23`, npm `>=10 <11` (see `.nvmrc`).
-
----
+Runtime: Node.js `>=22 <23`, npm `>=10 <11` (see `.nvmrc`).
 
 ## Architecture
 
-```text
-Browser (Vite/React)
-        │  /api  (dev proxy / prod nginx)
-        ▼
-   Express API  ── Prisma ── PostgreSQL
-        │              └── Redis (optional cache)
-        ├── Mailer (SMTP / console)
-        ├── Storage (memory / S3)
-        └── Metrics + Sentry
+```mermaid
+flowchart TB
+  B["Browser<br/>React + Vite"] -->|"/api (dev proxy · prod nginx)"| A["Express API"]
+  A --> P[("PostgreSQL")]
+  A -.->|optional cache| R[("Redis")]
+  A --> S["Object storage<br/>memory · S3"]
+  A --> M["Mailer<br/>SMTP · console"]
+  A --> O["Metrics · Sentry"]
 ```
 
-**Core business flow (redeem):**
+**Redeem flow** — everything inside one transaction:
 
-```text
-POST /api/orders
-  → same transaction:
-      check balance & product → lock inventory item → debit points
-      → create order + delivery + point log + settlement → update stock
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant API as POST /api/orders
+  participant DB as PostgreSQL
+  U->>API: Redeem (Idempotency-Key, expectedPrice)
+  API->>DB: BEGIN
+  API->>DB: Check balance and product
+  API->>DB: Lock inventory item
+  API->>DB: Debit points
+  API->>DB: Create order, delivery, point log, settlement
+  API->>DB: Update stock and sales
+  API->>DB: COMMIT
+  API-->>U: Order with delivery content
 ```
 
-Roles: `user` | `merchant` | `admin`. Merchant resource access is scoped; cross-merchant reads return **404** (not 403) to avoid resource enumeration.
+Roles are `user`, `merchant` and `admin`; merchant resources are scoped to their owner.
 
----
-
-## Project Structure
+<details>
+<summary><b>Project structure</b></summary>
 
 ```text
-MoNexus-new/
-├── src/                      # React frontend
-│   ├── api/                  # HTTP clients
-│   ├── components/           # Shared + role-specific UI
-│   ├── pages/                # Route pages (store, profile, merchant, admin)
-│   ├── stores/               # Zustand stores
-│   └── lib/                  # Theme, web vitals, error reporter
-├── server/                   # Express backend
-│   ├── prisma/               # schema + migrations + seed
-│   └── src/
-│       ├── modules/          # auth, products, orders, merchant, admin, ...
-│       ├── middlewares/      # auth, validate, metrics, errors
-│       └── lib/              # prisma, redis, cache, mailer, storage
-├── e2e/                      # Playwright end-to-end tests
-├── docs/                     # PRD, specs, operations, archive/
-├── scripts/                  # dev-up, backup, prod smoke, verify-local
-├── docker-compose.yml        # Local Postgres + Redis (+ optional MinIO)
-├── docker-compose.prod.yml   # Production stack
-└── design-system/            # UI tokens & brand assets
+MoNexus/
+├── src/            # React frontend (api, components, pages, stores, lib)
+├── server/         # Express backend (prisma schema + migrations, src/modules, middlewares, lib)
+├── e2e/            # Playwright end-to-end tests
+├── docs/           # PRD, specs, operations, archive
+├── scripts/        # dev-up, backup, prod smoke, verify-local
+└── design-system/  # UI tokens and brand assets
 ```
 
----
+Backend modules follow `routes.ts` → `controller.ts` → services; contracts live in `server/src/modules/*/README.md`.
 
-## Getting Started
+</details>
 
-### Prerequisites
+## Quick start
 
-- [Node.js 22](https://nodejs.org/) and npm 10
-- [Docker](https://docs.docker.com/get-docker/) (for PostgreSQL / Redis)
-- Git
-
-### Quick start (recommended)
-
-One-shot local stack (Postgres + Redis + migrate + backend + frontend):
+Requires Node.js 22 with npm 10, Docker (PostgreSQL / Redis) and Git.
 
 ```bash
-# Clone
-git clone <your-repo-url> MoNexus-new
-cd MoNexus-new
+git clone https://github.com/amo0114/MoNexus.git
+cd MoNexus
 
-# Install dependencies
 nvm use
 npm ci
 npm --prefix server ci
 
-# Start everything (optional: reseed demo data)
+# Postgres + Redis, migrations, backend :3000 and frontend :5173
 bash scripts/dev-up.sh
-# bash scripts/dev-up.sh --seed
+# bash scripts/dev-up.sh --seed   # reseed demo data
 ```
 
 | Service | URL |
-| --- | --- |
+| :--- | :--- |
 | Frontend | http://localhost:5173 |
 | Backend API | http://localhost:3000 |
-| Health (live) | http://localhost:3000/api/health/live |
-| Health (ready) | http://localhost:3000/api/health/ready |
+| Health | http://localhost:3000/api/health/live · `/ready` |
 
-Stop: `Ctrl+C` in the `dev-up` terminal, then `docker stop monexus-db monexus-redis`.
+Stop with `Ctrl+C` in the `dev-up` terminal, then `docker stop monexus-db monexus-redis`.
 
-### Manual setup
+**Demo accounts** (after `npm run db:seed` or `dev-up.sh --seed`):
+
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| Admin | `admin@moyuan.net` | `admin123` |
+| User | `test@moyuan.net` | `user123` |
+| Merchant | `merchant@moyuan.net` | `merchant123` |
+
+> [!WARNING]
+> These credentials are for **local development only**. Change every default before any shared deployment.
+
+<details>
+<summary><b>Manual setup</b></summary>
 
 ```bash
 # 1) Infrastructure
@@ -206,36 +222,17 @@ npm run dev               # http://localhost:3000
 npm run dev               # http://localhost:5173
 ```
 
-Optional object storage for real image uploads:
+Optional object storage for real image uploads: `docker compose --profile storage up -d`. Without MinIO the backend uses an in-memory storage adapter.
 
-```bash
-docker compose --profile storage up -d
-```
+</details>
 
-Without MinIO, the backend uses an in-memory storage adapter suitable for local development.
+<details>
+<summary><b>Scripts</b></summary>
 
----
-
-## Demo Accounts
-
-After `npm run db:seed` (or `bash scripts/dev-up.sh --seed`):
-
-| Role | Email | Password |
-| --- | --- | --- |
-| Admin | `admin@moyuan.net` | `admin123` |
-| User | `test@moyuan.net` | `user123` |
-| Merchant | `merchant@moyuan.net` | `merchant123` |
-
-> **Security:** These credentials are for **local development only**. Never use them in staging or production. Change all defaults before any shared deployment.
-
----
-
-## Scripts
-
-### Root (`package.json`)
+**Root (`package.json`)**
 
 | Command | Description |
-| --- | --- |
+| :--- | :--- |
 | `npm run dev` | Start Vite frontend |
 | `npm run build` | Typecheck + production frontend build |
 | `npm run e2e` | Playwright E2E suite |
@@ -246,10 +243,10 @@ After `npm run db:seed` (or `bash scripts/dev-up.sh --seed`):
 | `npm run prod:smoke` | Production smoke checks |
 | `npm run backup:restore-check` | Validate a DB restore into a disposable target |
 
-### Server (`server/package.json`)
+**Server (`server/package.json`)**
 
 | Command | Description |
-| --- | --- |
+| :--- | :--- |
 | `npm run dev` | Express with hot reload (`tsx watch`) |
 | `npm run build` / `npm start` | Compile TypeScript and run `dist` |
 | `npm run db:migrate` | Prisma migrate (dev) |
@@ -257,24 +254,28 @@ After `npm run db:seed` (or `bash scripts/dev-up.sh --seed`):
 | `npm run db:seed` | Seed demo users / products |
 | `npm test` | Vitest unit / API tests |
 
----
+</details>
 
 ## Testing
 
 ```bash
-# All commands in this section run from the repository root.
+# Run from the repository root.
 nvm use
 npm run check:runtime
 npm test                  # frontend unit/component tests
 
-# Start local PostgreSQL. On first use, create the disposable test DB:
+# Backend tests need a disposable database
 docker compose up -d postgres
-docker compose exec -T postgres createdb -U monexus monexus_test
-# Skip createdb if monexus_test already exists. These credentials match local Compose.
+docker compose exec -T postgres createdb -U monexus monexus_test   # first time only
 export TEST_DATABASE_URL='postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public'
 DATABASE_URL="$TEST_DATABASE_URL" npm --prefix server run db:migrate:deploy
 REDIS_ENABLED=false npm --prefix server test
+```
 
+<details>
+<summary><b>Local gates, E2E and caveats</b></summary>
+
+```bash
 # Local builds + backend tests + mobile/main/legal browser suites
 npm run verify:local
 
@@ -284,93 +285,79 @@ DATABASE_URL="$TEST_DATABASE_URL" npm run e2e
 DATABASE_URL="$TEST_DATABASE_URL" npm run e2e:ui # interactive Playwright UI
 ```
 
-Backend tests require `TEST_DATABASE_URL` and truncate shared tables before each test.
-Use a disposable database and run only one backend test process per database. For targeted
-checks, append files, for example `npm --prefix server test -- src/__tests__/business-time-boundaries.test.ts`.
+- Backend tests require `TEST_DATABASE_URL` and truncate shared tables before each test. Use a disposable database and run only one backend test process per database. For targeted checks append files, e.g. `npm --prefix server test -- src/__tests__/business-time-boundaries.test.ts`.
+- `verify:local:no-e2e` runs both builds and backend tests. `verify:local` additionally resets and seeds its test DB, then runs mobile, main and legal browser suites. Neither runs root frontend unit tests, architecture checks or the dedicated notification/catalog-ops E2E lanes — run `npm test` separately and see [the testing policy](./docs/testing-policy.md).
+- Local E2E is for diagnosis; final CI/E2E runs in GitHub Actions on the delivered code. A successful local subset does not replace `CI OK`.
+- Stop development API servers before database-backed local E2E: Playwright can reuse an existing server, so changing the command's database URL would not reconfigure it.
 
-`verify:local:no-e2e` runs both builds and backend tests. `verify:local` additionally resets
-and seeds its test DB, then runs mobile, main and legal browser suites. Neither command
-runs root frontend unit tests, architecture checks or the dedicated notification/catalog-ops
-E2E lanes. Run `npm test` separately; use [the testing policy](./docs/testing-policy.md) for
-the remaining checks. Local E2E is available for diagnosis; final CI/E2E runs in GitHub
-Actions on the delivered code. A successful local subset does not replace `CI OK`.
-Stop development API servers before database-backed local E2E: Playwright can reuse
-an existing server, so changing the command's database URL would not reconfigure it.
+CI and deployment workflows live under [`.github/workflows/`](./.github/workflows/).
 
-CI and deployment workflows live under [`.github/workflows/`](./.github/workflows/) (`ci.yml`, `docker-publish.yml`, `compose-production-deploy.yml`, legacy `deploy.yml`, backup & alert jobs).
-
----
+</details>
 
 ## Production
 
-There are **three Compose paths (A–C)** plus a legacy non-Docker fallback (D). Prefer **Path A** when GitHub Actions can publish images to GHCR. Full procedures live in the operations docs (linked below).
+Three Docker Compose paths plus a legacy non-Docker fallback. Prefer **Path A** whenever GitHub Actions can publish images to GHCR.
 
-### Prerequisites (all paths)
+| Path | When to use |
+| :--- | :--- |
+| **A — Approved GitHub Actions deploy** (recommended) | Verifies the exact `master` SHA's CI and multi-arch images, waits for `production` Environment approval, then runs Compose health checks |
+| **B — Manual GHCR / Compose** | First bootstrap or recovery on a host |
+| **C — Build images on the host** | GHCR unavailable or offline rehearsal |
+| **D — Non-Docker artifacts** (legacy) | nginx + systemd hosts via SSH |
 
-1. Copy [`.env.example`](./.env.example) → `.env` and fill real secrets (JWT ≥ 32 chars, Postgres, SMTP, object storage, metrics token, etc.).
-2. Validate: `npm run prod:env`
-3. Optional daily backup: set `DATABASE_URL` and run `bash scripts/backup.sh`
+All paths start the same way: copy [`.env.example`](./.env.example) to `.env`, fill real secrets (JWT ≥ 32 chars, Postgres, SMTP, object storage, metrics token…), then `npm run prod:env`.
 
-### Images (GHCR)
+<details>
+<summary><b>Images and tags (GHCR)</b></summary>
 
-CI workflow [`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml) builds and (on non-PR events) pushes:
+[`docker-publish.yml`](./.github/workflows/docker-publish.yml) builds and, on non-PR events, pushes:
 
 | Image | Registry path | Dockerfile |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | Server API | `ghcr.io/amo0114/monexus-server` | `server/Dockerfile` |
 | Web (nginx SPA) | `ghcr.io/amo0114/monexus-web` | root `Dockerfile` |
 
-Release tags are multi-architecture (`linux/amd64` and `linux/arm64`), so the
-same tag works on standard and ARM VPS hosts.
-
-**Tag strategy** (via `docker/metadata-action`):
+Release tags are multi-architecture (`linux/amd64`, `linux/arm64`).
 
 | Trigger | Tags |
-| --- | --- |
+| :--- | :--- |
 | Push to `master` | `:master`, `:sha-<short>`, `:latest` |
 | Git tag `v1.2.3` | `:1.2.3`, `:1.2`, `:latest` |
 | Pull request | build only (no push), smoke validation |
 
-`docker-compose.prod.yml` selects images with:
+`docker-compose.prod.yml` selects images with `MONEXUS_IMAGE_TAG` (default `latest`) and `MONEXUS_PULL_POLICY` (`missing` · `always` · `never`). Use an immutable tag in real deploys (e.g. `sha-abc1234`); if you track `latest`, set `MONEXUS_PULL_POLICY=always`.
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `MONEXUS_IMAGE_TAG` | `latest` | Tag for both server and web |
-| `MONEXUS_PULL_POLICY` | `missing` | `missing` \| `always` \| `never` |
+</details>
 
-Use an immutable tag in real deploys (e.g. `sha-abc1234` or `1.2.3`). If you track `latest`, set `MONEXUS_PULL_POLICY=always` so hosts do not reuse a stale local layer.
+<details>
+<summary><b>Path A — approved GitHub Actions deploy</b></summary>
 
-### Path A — Approved GitHub Actions Compose deploy (recommended)
+After the one-time VPS bootstrap, deploy through [`Compose Production Deploy`](./.github/workflows/compose-production-deploy.yml). Start with `workflow_dispatch` + `dry_run=true`; do not enable automatic deploys until the manual rehearsal succeeds. See [`compose-production-deploy.md`](./docs/operations/compose-production-deploy.md).
 
-After the one-time VPS bootstrap, deploy through
-[`Compose Production Deploy`](./.github/workflows/compose-production-deploy.yml): it verifies
-the exact `master` SHA's CI and multi-architecture images, waits for the
-protected `production` Environment approval, then performs Compose health
-checks. Start with `workflow_dispatch` + `dry_run=true`; do not set the
-automatic-deploy opt-in until the manual rehearsal succeeds. See
-[`compose-production-deploy.md`](./docs/operations/compose-production-deploy.md).
+</details>
 
-### Path B — Manual GHCR/Compose bootstrap or recovery
+<details>
+<summary><b>Path B — manual GHCR / Compose</b></summary>
 
 ```bash
-# One-time: authenticate to GHCR (needs read access to the packages)
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin   # one-time
 
 cp .env.example .env   # fill secrets; set MONEXUS_IMAGE_TAG / MONEXUS_PULL_POLICY
 npm run prod:env
 
 export MONEXUS_IMAGE_TAG=sha-<short>   # or latest / 1.2.3
-export MONEXUS_PULL_POLICY=always      # recommended when using :latest
-npm run prod:up                        # compose pulls images when needed
+export MONEXUS_PULL_POLICY=always      # recommended with :latest
+npm run prod:up
 npm run prod:ps
 npm run prod:smoke
 ```
 
-No local application build is required on the host; only Docker Compose, Postgres data volumes, and a valid `.env`.
+No application build is needed on the host — only Docker Compose, Postgres volumes and a valid `.env`.
 
-### Path C — Build images on the host
+</details>
 
-Use when GHCR is unavailable or you are rehearsing offline:
+<details>
+<summary><b>Path C — build on the host</b></summary>
 
 ```bash
 npm run prod:env
@@ -378,77 +365,46 @@ npm run prod:build    # docker compose -f docker-compose.prod.yml build
 npm run prod:up
 npm run prod:smoke
 
-# Or full gate (env + config + build + up + smoke):
+# Or the full gate (env + config + build + up + smoke):
 npm run prod:gate
 ```
 
-Compose still defines `build:` contexts for `server` and `web`, so local builds work alongside `image:` references.
+</details>
 
-### Path D — Non-Docker artifact deploy (legacy fallback)
+<details>
+<summary><b>Path D — non-Docker artifacts (legacy)</b></summary>
 
-GitHub Actions can still produce tar artifacts and deploy over SSH to a host running **nginx + systemd** (or PM2), with release trees under `/opt/monexus/`:
+GitHub Actions can still build tar artifacts ([`cd.yml`](./.github/workflows/cd.yml)) and deploy over SSH ([`deploy.yml`](./.github/workflows/deploy.yml)) to an **nginx + systemd** (or PM2) host under `/opt/monexus/`. See [`deployment-target.md`](./docs/operations/deployment-target.md).
 
-- Build artifacts: [`.github/workflows/cd.yml`](./.github/workflows/cd.yml)
-- SSH deploy: [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml)
+</details>
 
-Details: [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md).
-
-### Ops references
-
-- [`docs/operations/runbook.md`](./docs/operations/runbook.md) — start/stop, health, backup, staging compose
-- [`docs/operations/vps-1panel-openresty-deployment.md`](./docs/operations/vps-1panel-openresty-deployment.md) — detailed Docker deployment on a 1Panel/OpenResty VPS, including ARM64 and troubleshooting
-- [`docs/operations/vps-compose-deployment.md`](./docs/operations/vps-compose-deployment.md) — standalone host Caddy deployment
-- [`docs/operations/compose-production-deploy.md`](./docs/operations/compose-production-deploy.md) — protected GitHub Actions deployment for the Docker Compose VPS
-- [`docs/operations/deployment-target.md`](./docs/operations/deployment-target.md) — host model choices
-- [`docs/operations/rollback-runbook.md`](./docs/operations/rollback-runbook.md)
-- [`docs/operations/secrets-management.md`](./docs/operations/secrets-management.md)
-
----
+**Operations docs:** [runbook](./docs/operations/runbook.md) · [1Panel/OpenResty VPS](./docs/operations/vps-1panel-openresty-deployment.md) · [Caddy VPS](./docs/operations/vps-compose-deployment.md) · [protected deploy](./docs/operations/compose-production-deploy.md) · [deployment targets](./docs/operations/deployment-target.md) · [rollback](./docs/operations/rollback-runbook.md) · [secrets](./docs/operations/secrets-management.md)
 
 ## Documentation
 
 | Document | Description |
-| --- | --- |
-| [`docs/superpowers/specs/2026-04-30-monexus-product-prd.md`](./docs/superpowers/specs/2026-04-30-monexus-product-prd.md) | Product PRD & milestones |
-| [`docs/specs/recharge-payment-platform-v1.md`](./docs/specs/recharge-payment-platform-v1.md) | Recharge & payment platform V1 (live providers stay disabled without credentials) |
-| [`docs/superpowers/specs/2026-04-29-monexus-merchant-settlement-contract.md`](./docs/superpowers/specs/2026-04-29-monexus-merchant-settlement-contract.md) | Merchant settlement contract |
-| [`docs/superpowers/specs/monexus-api-openapi.json`](./docs/superpowers/specs/monexus-api-openapi.json) | OpenAPI surface |
+| :--- | :--- |
+| [Product PRD](./docs/superpowers/specs/2026-04-30-monexus-product-prd.md) | Product scope and milestones |
+| [Recharge & payment V1](./docs/specs/recharge-payment-platform-v1.md) | Recharge platform; live providers stay disabled without credentials |
+| [Merchant settlement contract](./docs/superpowers/specs/2026-04-29-monexus-merchant-settlement-contract.md) | Settlement rules |
+| [OpenAPI](./docs/superpowers/specs/monexus-api-openapi.json) | API surface |
 | [`docs/operations/`](./docs/operations/) | Runbooks, gray release, alerts |
 | [`docs/archive/`](./docs/archive/) | Historical plans, MVP prototype, design handoffs (read-only) |
-| [`design-system/monexus/MASTER.md`](./design-system/monexus/MASTER.md) | UI design system |
-
----
+| [Design system](./design-system/monexus/MASTER.md) | UI tokens and components |
 
 ## Contributing
 
-This repository is primarily an **internal product**. If you have access and want to contribute:
+This repository is primarily an **internal product**. If you have access:
 
-1. Create a feature branch from `develop` (e.g. `feat/short-description`) and open the PR into `develop`. `master` accepts release and hotfix PRs; see [branching and CI](./docs/branching-and-ci.md).
-2. Keep changes focused; follow existing module boundaries under `server/src/modules/` and `src/pages/`.
-3. Run affected tests and builds; use `npm run verify:quick` for targeted checks. For broader local validation, run `npm test` and `npm run verify:local:no-e2e` (or `verify:local` for its browser suites).
-4. Prefer small PRs with clear motivation; update docs under `docs/` when behavior or ops procedures change.
-5. Never commit `.env`, secrets, or production dumps.
-
-For large design changes, start from the PRD / design specs in `docs/superpowers/`.
-
----
+1. Branch from `develop` (e.g. `feat/short-description`) and open the PR into `develop`; `master` takes release and hotfix PRs only. See [branching and CI](./docs/branching-and-ci.md).
+2. Keep changes focused and follow existing module boundaries under `server/src/modules/` and `src/pages/`.
+3. Run affected tests and builds (`npm run verify:quick` for targeted checks; `npm test` and `npm run verify:local:no-e2e` for broader validation).
+4. Update `docs/` when behavior or operations change. Never commit `.env`, secrets or production dumps.
 
 ## License
 
-**Private / proprietary.** All rights reserved by the project owners.
+**Private / proprietary.** All rights reserved by the project owners. This codebase is intended for authorized internal use; redistribution or commercial use outside the owning organization requires a separate written license.
 
-This codebase is intended for authorized internal use. Redistribution or commercial use outside the owning organization is not permitted unless a separate license is granted in writing.
+<br>
 
----
-
-## Acknowledgments
-
-- Product & engineering milestones M1–M9 (MVP → fulfillment state machine → reviews → production ops)
-- Design system tokens and UI redesign handoff under `design-system/monexus/`
-- Open-source dependencies: React, Express, Prisma, Vite, Tailwind, Playwright, Vitest, and the broader ecosystem
-
----
-
-<p align="center">
-  <sub>MoNexus — points in, digital value out. Built for internal welfare at scale (100–10,000 users gray launch).</sub>
-</p>
+<p align="center"><sub>MoNexus — points in, digital value out.</sub></p>
