@@ -99,9 +99,12 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
   const state = product?.guestReview?.state
   const approvedCurrent =
     view?.decision === 'approved' && view.reviewedRevision === view.publicContentRevision
+  // §4.4: switching to public bumps the content revision, so approving a
+  // members_only product would be invalidated by the very change that publishes it.
+  const membersOnly = state === 'members_only'
   const gateHint =
-    state === 'members_only'
-      ? '商品当前为仅登录可见；批准后仍需商家改为游客可见才会展示。'
+    membersOnly
+      ? '商品当前为仅登录可见，暂不能审核。先将商品改为游客可浏览（平台商品在编辑页修改，商家商品由商家修改），保存后会进入待公开审核，再在此批准。'
       : state === 'category_restricted'
         ? '商品所在分类仅登录可见；批准后仍需分类放开才会展示。'
         : null
@@ -184,7 +187,7 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-5">
-            {!view ? (
+            {membersOnly && !approvedCurrent ? null : !view ? (
               !loadError && <Loader2 className="w-4 h-4 animate-spin text-[var(--color-text-muted)]" />
             ) : approvedCurrent ? (
               <button
