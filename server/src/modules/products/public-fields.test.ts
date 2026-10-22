@@ -14,6 +14,9 @@ describe('public product endpoints with instant_fixed', () => {
         fixedContent: 'SECRET-PAID-CONTENT', fixedContentType: 'url',
       },
     })
+    await prisma.productGuestEligibility.create({
+      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+    })
 
     const detail = await api.get(`/api/products/${product.id}`).expect(200)
     expect(JSON.stringify(detail.body)).not.toContain('SECRET-PAID-CONTENT')
@@ -32,6 +35,9 @@ describe('public product endpoints with instant_fixed', () => {
         categoryId: await getActiveCategoryIdByLabel('充值卡密'),
         deliveryMode: 'instant_inventory', stockMode: 'limited',
       },
+    })
+    await prisma.productGuestEligibility.create({
+      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
     })
     const offer = await prisma.offer.create({
       data: { productId: product.id, name: '默认规格', isDefault: true, price: 100, stock: 99 },
@@ -85,6 +91,9 @@ describe('public product endpoints with instant_fixed', () => {
         fixedContent: 'SECRET-PAID-CONTENT',
         fixedContentType: 'url',
       },
+    })
+    await prisma.productGuestEligibility.create({
+      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
     })
     await prisma.offer.create({
       data: {
@@ -186,6 +195,9 @@ describe('public product endpoints with instant_fixed', () => {
         fixedContent: 'SECRET-UNKNOWN-TEMPLATE',
       },
     })
+    await prisma.productGuestEligibility.create({
+      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+    })
     await prisma.offer.create({
       data: {
         productId: product.id,
@@ -211,12 +223,19 @@ describe('public product endpoints with instant_fixed', () => {
 
   it('projects one availability status per product and per offer, list and detail agreeing, without new secrets', async () => {
     const categoryId = await getActiveCategoryIdByLabel('充值卡密')
-    const make = (name: string) => prisma.product.create({
-      data: {
-        name, type: '充值卡密', price: 100, stock: 99, status: 'active', visibility: 'public', categoryId,
-        deliveryMode: 'instant_inventory', stockMode: 'limited',
-      },
-    })
+    // §4.2：造商品时同步建已批准记录（游客可见还要求准入）。
+    const make = async (name: string) => {
+      const created = await prisma.product.create({
+        data: {
+          name, type: '充值卡密', price: 100, stock: 99, status: 'active', visibility: 'public', categoryId,
+          deliveryMode: 'instant_inventory', stockMode: 'limited',
+        },
+      })
+      await prisma.productGuestEligibility.create({
+        data: { productId: created.id, decision: 'approved', reviewedRevision: 1 },
+      })
+      return created
+    }
     // Mixed local offers: real inventory sold out + a valid fixed-content offer.
     const mixed = await make('混合本地套餐')
     const soldOut = await prisma.offer.create({

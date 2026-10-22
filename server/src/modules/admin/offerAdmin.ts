@@ -14,6 +14,7 @@ import {
   normalizeFixedStructuredContent,
 } from '../catalog/structuredFixedContent.js'
 import { lockProductRow } from '../catalog/productLock.js'
+import { invalidateGuestEligibility } from '../catalog/guestEligibility.js'
 import { assertOwnedActiveDeliveryFile } from '../catalog/deliveryFileOwnership.js'
 
 type Tx = Prisma.TransactionClient
@@ -148,6 +149,9 @@ export async function patchAdminOffer(
       }
     }
 
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A）：套餐名称/说明属于展示内容，
+    // 改动它们必须让商品旧批准失效。此处只判展示字段；价格/库存不触发。
+    const touchesOfferPresentation = input.name != null || input.attributes != null
     const next = await tx.offer.update({
       where: { id: offer.id },
       data: {
@@ -176,6 +180,9 @@ export async function patchAdminOffer(
         } : {}),
       },
     })
+    if (touchesOfferPresentation) {
+      await invalidateGuestEligibility(tx, productId)
+    }
     await syncProductProjection(tx, productId)
     await tx.adminLog.create({
       data: {
@@ -238,6 +245,8 @@ export async function createPlatformOffer(
     if (input.fixedFileId != null) {
       await assertOwnedActiveDeliveryFile(tx, { kind: 'admin' }, input.fixedFileId)
     }
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A）：新建的套餐若直接启用，
+    // 属于「新增或启用未审核套餐」，必须让商品旧批准失效。
     const maxSort = await tx.offer.aggregate({ where: { productId }, _max: { sortOrder: true } })
     const offer = await tx.offer.create({
       data: {
@@ -265,6 +274,8 @@ export async function createPlatformOffer(
           : {}),
       },
     })
+    // 新套餐以 status='active' 创建 → 「新增或启用未审核套餐」。
+    await invalidateGuestEligibility(tx, productId)
     await syncProductProjection(tx, productId)
     await tx.adminLog.create({
       data: {

@@ -46,6 +46,9 @@ export async function listEditorialShelf(
           // SPEC-CATALOG-VIS-001 §3.3：访问判定需要分类可见性，
           // 缺字段会让 PublicProductAccessRow 类型检查失败（不默认公开）。
           category: { select: { guestVisibility: true } },
+          // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定需要当前版本 + 准入记录。
+          publicContentRevision: true,
+          guestEligibility: { select: { decision: true, reviewedRevision: true } },
         },
       },
     },

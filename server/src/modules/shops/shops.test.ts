@@ -43,6 +43,11 @@ async function product(name: string, merchantId: number | null, data: {
       deliveryMode: 'manual_service', stockMode: 'unlimited',
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见还要求当前内容版本已批准。
+  // 需要"未批准"语义的用例应显式删除这条记录。
+  await prisma.productGuestEligibility.create({
+    data: { productId: created.id, decision: 'approved', reviewedRevision: 1 },
+  })
   await prisma.offer.create({
     data: {
       productId: created.id, name: '默认', isDefault: true, price: 100, stock: 0,

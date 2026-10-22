@@ -115,6 +115,7 @@ model User {
   categoryApplicationsReviewed CategoryApplication[]
   importedCatalogLinks         ExternalCatalogLink[]
   productsArchived             Product[]             @relation("ProductArchivedBy")
+  guestEligibilityReviews      ProductGuestEligibility[] @relation("GuestEligibilityReviewedBy")
 
   // ── FND-CMI-001 Merchandising foundation back-relations ──
   promotionPackagesCreated PromotionPackage[]    @relation("PromotionPackageCreatedBy")
@@ -575,6 +576,10 @@ model Product {
   details         Json    @default("{\"highlights\":[],\"usageInstructions\":\"\",\"purchaseNotes\":\"\",\"afterSalesInstructions\":\"\",\"faq\":[]}")
   visibility      String  @default("members_only") // public | members_only
   contentVersion  Int     @default(1)
+  // SPEC-CATALOG-VIS-001 §4.3（P1.5）：公开审核内容的专用版本，初始 1。
+  // 与 contentVersion 分开：contentVersion 的范围包含价格/库存等交易字段，
+  // 拿它做「批准是否仍有效」会让纯价格修改也撤销批准（§4.4 明确不触发）。
+  publicContentRevision Int @default(1)
 
   merchant      Merchant?       @relation(fields: [merchantId], references: [id])
   reviews       Review[]
@@ -585,6 +590,7 @@ model Product {
 
   category               ProductCategory                @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   archivedByUser         User?                          @relation("ProductArchivedBy", fields: [archivedByUserId], references: [id], onDelete: SetNull)
+  guestEligibility       ProductGuestEligibility?
   externalCatalogLink    ExternalCatalogLink?
   catalogSyncIdempotency ExternalCatalogSyncIdempotency[]
   merchandisingSnapshots ProductMerchandisingSnapshot[]
@@ -1450,6 +1456,36 @@ model ExternalCatalogSyncIdempotency {
 
 // SPEC-PRODUCT-COMMERCE-002 §6.5 — one canonical short link per product.
 // CHECKs (ready requires url; creating requires lease+attempt) live in SQL.
+// ── SPEC-CATALOG-VIS-001 §4.3（P1.5）：商品游客公开准入 ──────────────────
+// 每件商品最多一条**当前**记录（productId 唯一）。不建评估历史表、任务表、
+// 模型字段、人工到期时间或申诉表——首版只需要「现在这一件能不能向游客展示」。
+//
+// 门禁语义（products/visibility.ts 的第四条判定）：
+//   游客可见 = 生命周期允许 + 商品 public + 分类 public
+//              + decision='approved' 且 reviewedRevision === Product.publicContentRevision
+//
+// 无记录 / pending / denied / 版本不匹配，一律不对游客展示。
+// 撤销写为 denied + reasonCode='revoked'，不新增状态值（§4.3）。
+model ProductGuestEligibility {
+  id        Int    @id @default(autoincrement())
+  productId Int    @unique
+  decision  String @default("pending") // pending | approved | denied; CHECK constrained
+  // 批准/拒绝时对应的公开内容版本。与当前 publicContentRevision 不一致即失效。
+  reviewedRevision Int?
+  // 审批操作自身的 CAS：两个管理员并发操作时用它排序，防晚到的旧批准覆盖撤销。
+  version   Int    @default(1)
+  reviewedByUserId Int?
+  reviewedAt       DateTime?
+  reasonCode       String?  // revoked | content_changed | rejected | ...
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product  Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  reviewedByUser User? @relation("GuestEligibilityReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([decision])
+}
+
 model ProductShareLink {
   productId    Int       @id
   status       String

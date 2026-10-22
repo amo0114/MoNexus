@@ -51,6 +51,21 @@ export type PublicProductAccessRow = {
     id?: number
     guestVisibility: string | null
   } | null
+  /**
+   * SPEC-CATALOG-VIS-001 §4.2/§4.3（P1.5）：公开准入记录。
+   *
+   * 同样是**必填**：漏查准入记录必须编译失败，而不是运行时默认放行。
+   * `null` 表示「无记录」——按 §4.3 一律不对游客展示。
+   */
+  guestEligibility: {
+    decision: string | null
+    reviewedRevision: number | null
+  } | null
+  /**
+   * 商品当前的公开内容版本。与 guestEligibility.reviewedRevision 相等才表示
+   * 「这批内容已被批准」。缺字段按「不匹配」处理（最严）。
+   */
+  publicContentRevision?: number | null
 }
 
 export function resolveProductAudience(user: AuthPayload | undefined): ProductAudience {
@@ -79,10 +94,33 @@ function readCategoryGuestVisibility(
   return CATEGORY_GUEST_VISIBILITY.MEMBERS_ONLY
 }
 
-/** 游客视角是否要求该商品向游客公开（商品自身 + 分类两道门）。 */
+/**
+ * 准入记录是否有效（§4.2「当前公开内容版本获管理员批准」）。
+ *
+ * 只有 decision='approved' **且** reviewedRevision === publicContentRevision
+ * 才算通过。任何一项不满足——无记录、pending、denied、版本不匹配、字段缺失
+ * ——都返回 false。缺字段按不通过处理，与 P1-A 的「缺失不默认公开」一致。
+ */
+function hasValidGuestApproval(product: PublicProductAccessRow): boolean {
+  const eligibility = product.guestEligibility
+  if (!eligibility) return false
+  if (eligibility.decision !== 'approved') return false
+  const reviewed = eligibility.reviewedRevision
+  const current = product.publicContentRevision
+  if (typeof reviewed !== 'number' || typeof current !== 'number') return false
+  return reviewed === current
+}
+
+/**
+ * 游客视角是否要求该商品向游客公开。
+ *
+ * 三道门依次是：商品自身 public → 分类 public → 当前内容版本已获批准。
+ * 前两道由 P1-A 引入；第三道是 P1.5 的人工准入。
+ */
 function guestRequiresLogin(product: PublicProductAccessRow): boolean {
   if (readProductVisibility(product) !== 'public') return true
   if (readCategoryGuestVisibility(product.category) !== CATEGORY_GUEST_VISIBILITY.PUBLIC) return true
+  if (!hasValidGuestApproval(product)) return true
   return false
 }
 
@@ -100,9 +138,18 @@ export function publicVisibilityWhere(audience: ProductAudience): Prisma.Product
     return {
       ...base,
       visibility: 'public',
-      // 分类 restriction 与商品 restriction 是 AND 关系：两者都要满足。
+      // 三道门全部是 AND：商品 public → 分类 public → 当前内容版本已获批。
       // 分类缺失（不可能，categoryId NOT NULL 且关联存在）也在此被排除。
       category: { is: { guestVisibility: CATEGORY_GUEST_VISIBILITY.PUBLIC } },
+      // 准入（§4.2）：查询阶段只做**粗筛**——要求存在 approved 记录。
+      //
+      // ⚠️ 版本比对（reviewedRevision === publicContentRevision）不在这里做：
+      // Prisma 无法在 where 中跨表比较「关联表字段 == 本表字段」（需要
+      // fieldReference + relationJoins preview feature，本项目未启用）。
+      // 因此调用方必须再走一次 isCurrentlyPubliclyVisible / assertPublicProductAccess
+      // 做精判。只依赖本函数而不做精判的调用点会放行「已批准但内容已改」的
+      // 商品——这是本模块最容易漏的地方，新增调用点务必检查。
+      guestEligibility: { is: { decision: 'approved' } },
     }
   }
   return base
@@ -112,11 +159,47 @@ export function publicVisibilityWhere(audience: ProductAudience): Prisma.Product
  * 路径 2：raw SQL 片段（商品列表的 ranked 查询）
  * ------------------------------------------------------------------------- */
 
+/**
+ * SPEC-CATALOG-VIS-001 §4.2（P1.5）——**精确**的游客可见商品 id 集合查询。
+ *
+ * 为什么需要它：`publicVisibilityWhere` 对游客只能表达「存在 approved 记录」
+ * 这层粗筛，无法在 Prisma where 里比较「关联表 reviewedRevision == 本表
+ * publicContentRevision」（需要 fieldReference + relationJoins preview，
+ * 本项目未启用）。raw SQL 可以直接比较，因此这里提供精确版本。
+ *
+ * 调用方约定：
+ * - 需要**精确**判定且能接受一次 id 查询 → 用本函数；
+ * - 需要一次性拿到整行（列表/补水）→ 沿用 publicVisibilityWhere 取行，
+ *   再对每行调用 isCurrentlyPubliclyVisible 精判（见 service.ts hydrate）。
+ *
+ * 等价性测试会同时驱动两条路径，任何一条漏掉版本比对都会失败。
+ */
+export function guestVisibleProductIdsSql(extraWhere?: Prisma.Sql): Prisma.Sql {
+  const extra = extraWhere ? Prisma.sql` AND ${extraWhere}` : Prisma.empty
+  return Prisma.sql`(
+    SELECT p."id" FROM "Product" p
+    INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
+    WHERE p."status" = 'active' AND p."archivedAt" IS NULL
+      AND ${merchantVisibleSql()}
+      AND ${guestVisibilitySql()}${extra}
+  )`
+}
+
 export function guestVisibilitySql(): Prisma.Sql {
-  // 商品自身 + 分类两道门。别名 p = Product，c = ProductCategory
+  // 三道门。别名 p = Product，c = ProductCategory
   // （由调用方的 INNER JOIN 提供；调用方必须 JOIN 分类，见 listRankedProductRows）。
+  //
+  // 与 publicVisibilityWhere 不同，这里能**精确**表达版本比对——
+  // raw SQL 可以直接比较 e."reviewedRevision" 与 p."publicContentRevision"，
+  // 不受 Prisma where 的跨表限制。调用方无需再补精判。
   return Prisma.sql`(p."visibility" = 'public'
-    AND c."guestVisibility" = ${CATEGORY_GUEST_VISIBILITY.PUBLIC})`
+    AND c."guestVisibility" = ${CATEGORY_GUEST_VISIBILITY.PUBLIC}
+    AND EXISTS (
+      SELECT 1 FROM "ProductGuestEligibility" e
+      WHERE e."productId" = p."id"
+        AND e."decision" = 'approved'
+        AND e."reviewedRevision" = p."publicContentRevision"
+    ))`
 }
 
 export function merchantVisibleSql(): Prisma.Sql {

@@ -102,6 +102,10 @@ async function setupFixture(): Promise<Fixture> {
       categoryId: category.id, merchantId: merchant.id,
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见还要求准入已批准。
+  await prisma.productGuestEligibility.create({
+    data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+  })
   const draftProduct = await prisma.product.create({
     data: {
       name: uniq('草稿'), type: '网络节点', price: 100, status: 'draft',

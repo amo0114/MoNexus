@@ -1,6 +1,8 @@
 import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { lockProductRow } from '../catalog/productLock.js'
+import { invalidateGuestEligibilityIfNeeded } from '../catalog/guestEligibility.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { createDefaultOffer, getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
 import {
@@ -247,6 +249,9 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
         )
       : null
 
+    // SPEC-CATALOG-VIS-001 §4.5（P1.5-A）：与商家编辑同一把商品行锁，
+    // 保证「写商品 + 递增公开版本 + 重置准入」原子且串行。
+    await lockProductRow(tx, id)
     const next = await tx.product.update({
       where: { id },
       data: {
@@ -289,6 +294,11 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
           : {}),
       },
     })
+    // §4.4：管理员编辑的展示字段同样让旧批准失效（不能只改新编辑器）。
+    const invalidation = await invalidateGuestEligibilityIfNeeded(tx, id, {
+      ...data,
+      ...(categoryPatch ? { categoryId: categoryPatch.categoryId } : {}),
+    })
     await syncProductProjection(tx, id)
     await tx.adminLog.create({
       data: {
@@ -303,11 +313,14 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
         }),
       },
     })
-    return next
+    return { next, guestEligibilityInvalidated: invalidation !== null }
   })
-  await invalidateProductPublicCache(updated.id, { detail: true, list: true })
+  await invalidateProductPublicCache(updated.next.id, { detail: true, list: true })
   // 返回边界最小剥离：wire DTO 不携带遗留 Product.isHot（D-MERCH-01）。
-  return stripLegacyIsHot(updated)
+  return {
+    ...stripLegacyIsHot(updated.next),
+    guestEligibilityInvalidated: updated.guestEligibilityInvalidated,
+  }
 }
 
 export async function listAdminProducts(

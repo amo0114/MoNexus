@@ -37,6 +37,8 @@ type Case = {
   archived: boolean
   merchantStatus: 'active' | 'suspended' | null
   audience: ProductAudience
+  /** SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入状态维度。 */
+  eligibility: 'none' | 'pending' | 'approved_matching' | 'approved_stale' | 'denied'
   /** 期望：该样例对游客/该 audience 是否可见。 */
   expectedVisible: boolean
 }
@@ -46,6 +48,18 @@ const LIFECYCLES = [
   { status: 'draft', archived: false, label: 'draft' },
   { status: 'inactive', archived: false, label: 'inactive' },
   { status: 'active', archived: true, label: 'archived' },
+] as const
+
+/**
+ * SPEC-CATALOG-VIS-001 §4.3/§4.5.1 准入状态维度。
+ * approved_stale 模拟「批准了 v1、内容已改到 v2」——必须失效。
+ */
+const ELIGIBILITY_STATES = [
+  'none',
+  'pending',
+  'approved_matching',
+  'approved_stale',
+  'denied',
 ] as const
 
 const MERCHANT_STATES = [
@@ -65,9 +79,12 @@ function computeExpected(c: Omit<Case, 'expectedVisible'>): boolean {
   if (c.merchantStatus === 'suspended') return false
   // member 视角不看 visibility / 分类可见性（沿用既有规则）。
   if (c.audience === 'member') return true
-  // guest：商品必须 public 且分类必须 public。缺分类不默认公开。
+  // guest：商品必须 public、分类必须 public、且当前内容版本已获批准。
   if (c.visibility !== 'public') return false
   if (c.categoryVisibility !== CATEGORY_GUEST_VISIBILITY.PUBLIC) return false
+  // 准入：只有 approved + 版本匹配才放行（§4.2）。
+  // pending / denied / 无记录 / 已批准但内容已改，一律不对游客展示。
+  if (c.eligibility !== 'approved_matching') return false
   return true
 }
 
@@ -78,16 +95,22 @@ function buildCases(): Case[] {
       for (const lifecycle of LIFECYCLES) {
         for (const merchant of MERCHANT_STATES) {
           for (const audience of ['guest', 'member'] as ProductAudience[]) {
-            const base = {
-              name: `${visibility}/${categoryVisibility}/${lifecycle.label}/${merchant.label}/${audience}`,
-              visibility,
-              categoryVisibility,
-              status: lifecycle.status,
-              archived: lifecycle.archived,
-              merchantStatus: merchant.merchantStatus,
-              audience,
+            // 准入维度只在 audience=guest 时影响结果（member 不看准入），
+            // 但仍全部枚举——这样若有人误把准入判断加进 member 分支，
+            // 等价性测试会立刻发现。
+            for (const eligibility of ELIGIBILITY_STATES) {
+              const base = {
+                name: `${visibility}/${categoryVisibility}/${lifecycle.label}/${merchant.label}/${audience}/${eligibility}`,
+                visibility,
+                categoryVisibility,
+                status: lifecycle.status,
+                archived: lifecycle.archived,
+                merchantStatus: merchant.merchantStatus,
+                audience,
+                eligibility,
+              }
+              cases.push({ ...base, expectedVisible: computeExpected(base) })
             }
-            cases.push({ ...base, expectedVisible: computeExpected(base) })
           }
         }
       }
@@ -97,6 +120,9 @@ function buildCases(): Case[] {
 }
 
 const CASES = buildCases()
+
+/** 已批准且版本匹配的准入快照，供手工构造用例复用（其他维度默认通过）。 */
+const APPROVED_ELIGIBILITY = { decision: 'approved', reviewedRevision: 1 } as const
 
 /**
  * 分类行的 createdByUserId/updatedByUserId 是 Restrict 外键，必须指向真实用户。
@@ -186,6 +212,41 @@ async function seedCase(
     },
   })
 
+  // SPEC-CATALOG-VIS-001 §4.2/§4.5.1：按维度播种准入记录。
+  //   none             → 不建记录（§4.3「无记录一律不展示」）
+  //   pending/denied   → 有记录但不是 approved
+  //   approved_matching→ approved 且 reviewedRevision == 当前版本
+  //   approved_stale   → approved 但版本落后（内容已改，批准失效）
+  let eligibilityRow: { decision: string; reviewedRevision: number | null } | null = null
+  if (c.eligibility !== 'none') {
+    const decision = c.eligibility === 'pending'
+      ? 'pending'
+      : c.eligibility === 'denied'
+        ? 'denied'
+        : 'approved'
+    // approved_stale：把商品版本推到 2，但记录仍指 1。
+    if (c.eligibility === 'approved_stale') {
+      await prisma.product.update({
+        where: { id: product.id },
+        data: { publicContentRevision: 2 },
+      })
+    }
+    await prisma.productGuestEligibility.create({
+      data: {
+        productId: product.id,
+        decision,
+        reviewedRevision: decision === 'approved' ? 1 : null,
+        reasonCode: c.eligibility === 'denied' ? 'rejected' : null,
+      },
+    })
+    eligibilityRow = {
+      decision,
+      reviewedRevision: decision === 'approved' ? 1 : null,
+    }
+  }
+
+  const currentRevision = c.eligibility === 'approved_stale' ? 2 : 1
+
   const row: PublicProductAccessRow = {
     status: c.status,
     archivedAt: c.archived ? new Date() : null,
@@ -193,6 +254,8 @@ async function seedCase(
     merchantId,
     merchant: c.merchantStatus ? { status: c.merchantStatus } : null,
     category: { id: category.id, guestVisibility: c.categoryVisibility },
+    publicContentRevision: currentRevision,
+    guestEligibility: eligibilityRow,
   }
 
   return { productId: product.id, row }
@@ -205,6 +268,8 @@ describe('SPEC-CATALOG-VIS-001 §3.3 四条路径等价性', () => {
     const rows = await Promise.all(CASES.map((c, i) => seedCase(i, c)))
 
     const mismatches: string[] = []
+    // Prisma where 只做粗筛，只校验「不遗漏应可见商品」这一侧。
+    const supersetViolations: string[] = []
     for (const [i, c] of CASES.entries()) {
       const { productId, row } = rows[i]
 
@@ -239,16 +304,27 @@ describe('SPEC-CATALOG-VIS-001 §3.3 四条路径等价性', () => {
       // 路径 4：内存过滤
       const byMemory = isCurrentlyPubliclyVisible(row, c.audience)
 
-      const four = { byPrisma, bySql, byAssert, byMemory }
-      const allSame = new Set(Object.values(four)).size === 1
+      // 三条**精确**路径必须互相一致，且等于期望值。
+      // 路径 1（Prisma where）刻意不参与这个等式：它只能表达「存在 approved
+      // 记录」这层粗筛，无法比较 reviewedRevision 与 publicContentRevision
+      // （上面已说明原因）。把它算进去等于假装它精确。
+      const exact = { bySql, byAssert, byMemory }
+      const allSame = new Set(Object.values(exact)).size === 1
       if (!allSame || byMemory !== c.expectedVisible) {
         mismatches.push(
-          `${c.name}: expected=${c.expectedVisible} prisma=${byPrisma} sql=${bySql} assert=${byAssert} memory=${byMemory}`,
+          `${c.name}: expected=${c.expectedVisible} sql=${bySql} assert=${byAssert} memory=${byMemory} (prisma-coarse=${byPrisma})`,
         )
+      }
+
+      // 路径 1 的不变式：它只能是**超集**——不允许出现「Prisma 说没有、
+      // 精确路径说有」的情况（那意味着 where 比规则更严，会漏掉合法商品）。
+      if (!byPrisma && c.expectedVisible) {
+        supersetViolations.push(`${c.name}: prisma 漏掉了应可见商品（where 过严）`)
       }
     }
 
     expect(mismatches).toEqual([])
+    expect(supersetViolations).toEqual([])
   })
 
   it('分类受限时，商品自身 public 也不对游客可见（双向都要拦）', async () => {
@@ -319,6 +395,8 @@ describe('SPEC-CATALOG-VIS-001 §3.3 四条路径等价性', () => {
       const row: PublicProductAccessRow = {
         ...base,
         category: { guestVisibility: value },
+        publicContentRevision: 1,
+        guestEligibility: APPROVED_ELIGIBILITY,
       }
       expect(isCurrentlyPubliclyVisible(row, 'guest'), `value=${String(value)}`).toBe(false)
     }
@@ -332,6 +410,8 @@ describe('SPEC-CATALOG-VIS-001 §3.3 四条路径等价性', () => {
       merchantId: null,
       merchant: null,
       category: { guestVisibility: CATEGORY_GUEST_VISIBILITY.PUBLIC },
+      publicContentRevision: 1,
+      guestEligibility: APPROVED_ELIGIBILITY,
     }
     expect(isCurrentlyPubliclyVisible(row, 'guest')).toBe(false)
   })
@@ -358,6 +438,8 @@ describe('SPEC-CATALOG-VIS-001 §3.3 四条路径等价性', () => {
       merchantId: null,
       merchant: null,
       category: { guestVisibility: CATEGORY_GUEST_VISIBILITY.PUBLIC },
+      publicContentRevision: 1,
+      guestEligibility: APPROVED_ELIGIBILITY,
     }, 'guest')).toBe(false)
 
     const guestList = await prisma.product.findMany({

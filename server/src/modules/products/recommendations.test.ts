@@ -54,6 +54,10 @@ async function makeProduct(input: ProductInput) {
       fixedContent: input.fixedContent,
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见还要求当前内容版本已批准。
+  await prisma.productGuestEligibility.create({
+    data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+  })
   const offers = input.offers ?? [{}]
   for (const [index, spec] of offers.entries()) {
     const offer = await prisma.offer.create({
@@ -200,6 +204,12 @@ describe('GET /api/products/:id/recommendations', () => {
         visibility: 'public', deliveryMode: 'manual_service', stockMode: 'unlimited',
       })),
       select: { id: true },
+    })
+    // §4.2：候选商品同样需要已批准才可能被推荐给游客。
+    await prisma.productGuestEligibility.createMany({
+      data: created.map(row => ({
+        productId: row.id, decision: 'approved', reviewedRevision: 1,
+      })),
     })
     await prisma.offer.createMany({
       data: created.map(row => ({

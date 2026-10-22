@@ -10,7 +10,7 @@ async function createProduct(
   type: string,
   data: { isHot?: boolean; sales?: number; merchantId?: number | null } = {},
 ) {
-  return prisma.product.create({
+  const created = await prisma.product.create({
     data: {
       name,
       categoryId,
@@ -23,6 +23,11 @@ async function createProduct(
       merchantId: data.merchantId,
     },
   })
+  // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客可见还要求当前内容版本已批准。
+  await prisma.productGuestEligibility.create({
+    data: { productId: created.id, decision: 'approved', reviewedRevision: 1 },
+  })
+  return created
 }
 
 async function createCompletedRun(
