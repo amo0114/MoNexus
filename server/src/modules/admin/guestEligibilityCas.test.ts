@@ -31,10 +31,23 @@ async function seedProduct(name = '审批测试商品') {
   return product
 }
 
+/**
+ * 造一件「无准入记录」的商品。
+ *
+ * helpers.createTestProduct 现在自带一条 approved 记录（P1.5 语义下"正常
+ * 在售商品"应当可被游客看到）。本文件的多数用例需要从**无记录**开始，
+ * 因此显式删掉它，而不是让断言建立在 helper 的默认值上。
+ */
+async function seedProductWithoutEligibility(name: string) {
+  const product = await seedProduct(name)
+  await prisma.productGuestEligibility.delete({ where: { productId: product.id } })
+  return product
+}
+
 describe('SPEC-CATALOG-VIS-001 §4.5.1 状态流转', () => {
   it('无记录 + approve → approved，reviewedRevision = 当前版本', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct()
+    const product = await seedProductWithoutEligibility('审批测试商品')
 
     const view = await applyGuestEligibilityAction(adminId, product.id, {
       action: 'approve',
@@ -59,7 +72,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5.1 状态流转', () => {
 
   it('pending + reject（带原因）→ denied', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct('待拒商品')
+    const product = await seedProductWithoutEligibility('待拒商品')
     await prisma.productGuestEligibility.create({
       data: { productId: product.id, decision: 'pending' },
     })
@@ -77,7 +90,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5.1 状态流转', () => {
 
   it('approved + revoke → denied，reasonCode=revoked，游客立即不可见', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct('待撤商品')
+    const product = await seedProductWithoutEligibility('待撤商品')
     await applyGuestEligibilityAction(adminId, product.id, {
       action: 'approve',
       expectedPublicContentRevision: 1,
@@ -98,7 +111,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5.1 状态流转', () => {
 
   it('内容变化后批准失效：pending 且 guestVisible=false', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct('内容变更商品')
+    const product = await seedProductWithoutEligibility('内容变更商品')
     await applyGuestEligibilityAction(adminId, product.id, {
       action: 'approve',
       expectedPublicContentRevision: 1,
@@ -125,7 +138,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5.1 状态流转', () => {
 describe('SPEC-CATALOG-VIS-001 §4.5 审批 CAS', () => {
   it('批准 v1 时商品已改成 v2 → 409，且不写入批准', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct('版本已变商品')
+    const product = await seedProductWithoutEligibility('版本已变商品')
 
     // 管理员读到的是 revision=1，但期间商品被改到 2。
     await prisma.product.update({
@@ -152,7 +165,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5 审批 CAS', () => {
       create: { email: 'p15-admin-b@test.local', password: 'x', role: 'admin' },
       select: { id: true },
     })
-    const product = await seedProduct('并发审批商品')
+    const product = await seedProductWithoutEligibility('并发审批商品')
 
     // A 批准（version 1）。
     await applyGuestEligibilityAction(adminA, product.id, {
@@ -185,7 +198,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5 审批 CAS', () => {
 
   it('并发首次批准：两个请求都以 version=0 提交，只有一个成功', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct('并发首批准商品')
+    const product = await seedProductWithoutEligibility('并发首批准商品')
 
     const results = await Promise.allSettled([
       applyGuestEligibilityAction(adminId, product.id, {
@@ -211,7 +224,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5 审批 CAS', () => {
 
   it('拒绝必须带 reasonCode', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct('缺原因拒绝商品')
+    const product = await seedProductWithoutEligibility('缺原因拒绝商品')
     await prisma.productGuestEligibility.create({
       data: { productId: product.id, decision: 'pending' },
     })
@@ -225,7 +238,7 @@ describe('SPEC-CATALOG-VIS-001 §4.5 审批 CAS', () => {
 
   it('未批准的商品即使 visibility=public + 分类 public 也对游客不可见', async () => {
     const { id: adminId } = await admin()
-    const product = await seedProduct('未批准公开商品')
+    const product = await seedProductWithoutEligibility('未批准公开商品')
     // 分类默认 public，商品 public，但无准入记录。
     const view = await getGuestEligibility(product.id)
     expect(view.decision).toBeNull()

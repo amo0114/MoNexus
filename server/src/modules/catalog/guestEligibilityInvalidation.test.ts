@@ -28,12 +28,11 @@ async function seedApprovedProduct(name = '已批准商品') {
     where: { id: product.id },
     data: { visibility: 'public', publicContentRevision: 1 },
   })
-  await prisma.productGuestEligibility.create({
-    data: {
-      productId: product.id,
-      decision: 'approved',
-      reviewedRevision: 1,
-    },
+  // helpers.createTestProduct 现在自带一条 approved 记录（见该函数注释），
+  // 这里把它对齐到 revision=1，而不是再插一条（productId 唯一）。
+  await prisma.productGuestEligibility.update({
+    where: { productId: product.id },
+    data: { decision: 'approved', reviewedRevision: 1, version: 1 },
   })
   return product
 }
@@ -67,6 +66,9 @@ describe('SPEC-CATALOG-VIS-001 §4.4 展示字段判定', () => {
 describe('SPEC-CATALOG-VIS-001 §4.5 失效原子性', () => {
   it('无记录的商品被失效时创建 pending，reviewedRevision 为空', async () => {
     const product = await createTestProduct('无准入记录商品', 10, 1, ['N-1'])
+    // helper 自带一条 approved；本用例要验证"无记录 → 创建 pending"，
+    // 因此先删掉它。
+    await prisma.productGuestEligibility.delete({ where: { productId: product.id } })
 
     await prisma.$transaction(async tx => {
       await lockProductRow(tx, product.id)
@@ -134,8 +136,9 @@ describe('SPEC-CATALOG-VIS-001 §4.4 真实写入口', () => {
       where: { id: product.id },
       data: { visibility: 'public', publicContentRevision: 1 },
     })
-    await prisma.productGuestEligibility.create({
-      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+    await prisma.productGuestEligibility.update({
+      where: { productId: product.id },
+      data: { decision: 'approved', reviewedRevision: 1, version: 1 },
     })
 
     const { accessToken } = await loginAs('p15-merchant@test.local', 'pass123')
@@ -162,8 +165,9 @@ describe('SPEC-CATALOG-VIS-001 §4.4 真实写入口', () => {
       where: { id: product.id },
       data: { visibility: 'public', publicContentRevision: 1 },
     })
-    await prisma.productGuestEligibility.create({
-      data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+    await prisma.productGuestEligibility.update({
+      where: { productId: product.id },
+      data: { decision: 'approved', reviewedRevision: 1, version: 1 },
     })
 
     const { accessToken } = await loginAs('p15-price@test.local', 'pass123')

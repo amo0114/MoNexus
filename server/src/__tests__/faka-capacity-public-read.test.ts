@@ -202,6 +202,10 @@ describe('Faka capacity public-read cache', () => {
           deliveryMode: 'manual_service', stockMode: 'unlimited',
         },
       })
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客读取还要求准入已批准。
+      await prisma.productGuestEligibility.create({
+        data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
+      })
       for (const [name, externalSku] of [['月付', 'plan-77-month'], ['年付', 'plan-77-year']]) {
         await prisma.offer.create({
           data: {
@@ -251,6 +255,10 @@ describe('Faka capacity public-read cache', () => {
           deliveryMode: 'manual_service',
           stockMode: 'unlimited',
         },
+      })
+      // SPEC-CATALOG-VIS-001 §4.2（P1.5）：游客读取还要求准入已批准。
+      await prisma.productGuestEligibility.create({
+        data: { productId: product.id, decision: 'approved', reviewedRevision: 1 },
       })
       const offer = await prisma.offer.create({
         data: {
