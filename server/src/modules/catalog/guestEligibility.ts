@@ -36,6 +36,7 @@ export const PUBLIC_CONTENT_PRODUCT_FIELDS = [
   'icon',
   'imageUrl',
   'images',
+  'promoVideoAssetId',
   'templateKey',
   'templateVersion',
   // visibility 单独处理（§4.4 第二段），见 PUBLIC_CONTENT_VISIBILITY_FIELD。

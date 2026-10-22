@@ -1648,6 +1648,15 @@
                 "type": "integer"
               }
             }
+          },
+          "promoVideo": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProductVideoSummary"
+              }
+            ],
+            "nullable": true,
+            "description": "仅详情和编辑DTO返回；不含永久URL或对象键"
           }
         }
       },
@@ -3845,6 +3854,80 @@
             "items": {
               "$ref": "#/components/schemas/ProductTemplateDefinition"
             }
+          }
+        }
+      },
+      "ProductVideoSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assetId",
+          "durationMs",
+          "width",
+          "height",
+          "hasAudio"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 60000
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "hasAudio": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProductVideoTicket": {
+        "type": "object",
+        "required": [
+          "videoAssetId",
+          "playbackUrl",
+          "posterUrl",
+          "expiresAt"
+        ],
+        "properties": {
+          "videoAssetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "playbackUrl": {
+            "type": "string"
+          },
+          "posterUrl": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProductVideoContentPatch": {
+        "type": "object",
+        "required": [
+          "expectedContentVersion"
+        ],
+        "properties": {
+          "expectedContentVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "promoVideoAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "省略保留，null移除；变化递增公开内容版本并重置审核pending"
           }
         }
       }
@@ -8400,6 +8483,222 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/uploads/product-video": {
+      "post": {
+        "tags": [
+          "Uploads"
+        ],
+        "summary": "上传私有商品展示视频；单文件40MiB/60秒H.264 MP4",
+        "description": "需要有效、已验证邮箱的商家，或通过MFA的管理员。仅生成待关联ready资产，不修改商品。每进程1请求，主体1处理中/5未关联资产。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "merchantId",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "仅管理员可指定，省略为平台资产"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "成功；Cache-Control: private, no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductVideoSummary"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "VIDEO_TOO_LARGE"
+          },
+          "422": {
+            "description": "VIDEO_INVALID / VIDEO_FORMAT_UNSUPPORTED / VIDEO_DURATION_EXCEEDED"
+          },
+          "429": {
+            "description": "VIDEO_UPLOAD_BUSY / VIDEO_ASSET_QUOTA"
+          },
+          "503": {
+            "description": "VIDEO_PROCESSING_UNAVAILABLE / VIDEO_STORAGE_UNAVAILABLE"
+          }
+        }
+      }
+    },
+    "/api/merchant/product-videos/{assetId}/preview": {
+      "get": {
+        "tags": [
+          "Merchant"
+        ],
+        "summary": "授权预览商品视频；商家限自身归属，管理员需MFA",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；Cache-Control: private, no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductVideoTicket"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资产不存在或无权访问"
+          }
+        }
+      }
+    },
+    "/api/admin/product-videos/{assetId}/preview": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "授权预览商品视频；商家限自身归属，管理员需MFA",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；Cache-Control: private, no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductVideoTicket"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资产不存在或无权访问"
+          }
+        }
+      }
+    },
+    "/api/products/{id}/video-playback": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "签发商品当前视频180秒凭证；重新检查统一商品门禁",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "expectedVideoAssetId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功；Cache-Control: private, no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductVideoTicket"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "PRODUCT_LOGIN_REQUIRED；不含商品和视频信息"
+          },
+          "404": {
+            "description": "商品或视频不可用"
+          },
+          "409": {
+            "description": "PRODUCT_MEDIA_CHANGED"
+          },
+          "503": {
+            "description": "视频签发已暂停或存储不可用"
+          }
+        }
+      }
+    },
+    "/api/admin/product-videos/health": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "视频子系统诊断；工具缺失不影响整站健康",
+        "responses": {
+          "200": {
+            "description": "uploadEnabled / playbackEnabled / toolsAvailable / busy"
           }
         }
       }

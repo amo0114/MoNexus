@@ -1,3 +1,5 @@
+import { cleanupProductVideos } from './productVideoCleanup.js'
+import { DELIVERY_FINAL_KEY } from './storage/videoKeys.js'
 import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
@@ -242,7 +244,7 @@ export async function cleanupUnreferencedObjects(now = new Date()): Promise<numb
     }
     let staleKeys: string[]
     try {
-      staleKeys = await storage.listFinalKeysOlderThan(cutoff)
+      staleKeys = (await storage.listFinalKeysOlderThan(cutoff)).filter(key => DELIVERY_FINAL_KEY.test(key))
     } catch (err) {
       logger.warn({ err, providerId }, 'unreferenced scan: list failed')
       continue
@@ -298,6 +300,7 @@ export async function runFileCleanupBatch() {
     const tmp = await cleanupStaleTmpObjects()
     const refunded = await cleanupRefundedFiles()
     const unreferenced = await cleanupUnreferencedObjects()
+    await cleanupProductVideos()
     if (orphans + tmp + refunded + unreferenced > 0) {
       logger.info({ orphans, tmp, refunded, unreferenced }, 'delivery file cleanup batch done')
     }

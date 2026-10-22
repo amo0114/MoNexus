@@ -812,3 +812,11 @@ describe('editor DTO + content PATCH (SPEC-PRODUCT-COMMERCE-002 §9.2)', () => {
     }])
   })
 })
+
+describe('product video write field', () => {
+  it('distinguishes omitted video, null removal and UUID replacement', () => {
+    expect(buildPatchProductContentRequest({ expectedContentVersion: 1 })).not.toHaveProperty('promoVideoAssetId')
+    expect(buildPatchProductContentRequest({ expectedContentVersion: 1, promoVideoAssetId: null })).toHaveProperty('promoVideoAssetId', null)
+    expect(buildPatchProductContentRequest({ expectedContentVersion: 1, promoVideoAssetId: 'video-id' })).toHaveProperty('promoVideoAssetId', 'video-id')
+  })
+})

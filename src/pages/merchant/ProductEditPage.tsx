@@ -79,6 +79,8 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(!validId)
   const [loadError, setLoadError] = useState(false)
+  const [videoBusy, setVideoBusy] = useState(false)
+  const [videoMerchantId, setVideoMerchantId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
   const savingRef = useRef(false)
   const bindingRef = useRef(false)
@@ -169,6 +171,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   }, [form.name, form.description, form.richDescription, form.images, selectedCategory, selectedTemplate, offers, previewOffers, form.details])
 
   function applyEditor(dto: ProductEditorDto) {
+    setVideoMerchantId(dto.product.merchantId)
     const next = formFromEditor(dto)
     setForm(next)
     setBaseline(JSON.stringify(next))
@@ -378,7 +381,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
   async function handleSave() {
     // Never write one product's form to another product's route.
-    if (!validId || savingRef.current || !canEdit || editorProductId !== productId) return
+    if (!validId || savingRef.current || videoBusy || !canEdit || editorProductId !== productId) return
     const input = {
       adapter, actor, productId, form, contentVersion, baseline, templateKey, savedTemplateKey,
       selectedTemplate, imageKeys, descriptionImages, descriptionImagesTouched, offers,
@@ -489,7 +492,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
     )
   }
 
-  const busy = saving || bindingOfferId != null || !canEdit
+  const busy = saving || videoBusy || bindingOfferId != null || !canEdit
 
   return (
     <div className="max-w-[1180px] mx-auto px-4 pb-24 sm:pb-16 fade-in" data-testid="product-edit-page">
@@ -573,6 +576,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8 lg:items-start">
         <div className={`space-y-6 ${activeViewTab === 'preview' ? 'hidden lg:block' : 'block'}`}>
           <ProductInformationSection
+            video={{ value: form.promoVideo, onChange: promoVideo => setForm(prev => ({ ...prev, promoVideo })), onBusyChange: setVideoBusy, actor, merchantId: videoMerchantId, disabled: saving || !canEdit }}
             images={form.images.map(image => image.url)}
             imageKeys={imageKeys}
             onImagesChange={(next) => {

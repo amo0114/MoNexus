@@ -1,3 +1,5 @@
+import type { ProductVideoSummary } from '../../types/product'
+import ProductVideoUploader from '../merchant/ProductVideoUploader'
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 import {
@@ -89,6 +91,8 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
   const [templateKey, setTemplateKey] = useState<TemplateKey>('redemption_code')
   const [form, setForm] = useState(EMPTY_FORM)
+  const [promoVideo, setPromoVideo] = useState<ProductVideoSummary | null>(null)
+  const [videoBusy, setVideoBusy] = useState(false)
   const [images, setImages] = useState<string[]>([])
   const [imageKeys, setImageKeys] = useState<Record<string, string>>({})
   const [descriptionImages, setDescriptionImages] = useState<DescriptionImageWriteRef[]>([])
@@ -108,6 +112,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
     setForm(EMPTY_FORM)
     setAssistantActive(false)
     setAssistantBusy(false)
+    setPromoVideo(null)
     setImages([])
     setImageKeys({})
     setDescriptionImages([])
@@ -218,7 +223,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
 
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (submitLock.current) return
+    if (videoBusy || submitLock.current) return
     const name = form.name.trim()
     const price = Number(form.price)
     const originalPrice = form.originalPrice.trim() === '' ? undefined : Number(form.originalPrice)
@@ -268,6 +273,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
         categoryId: form.categoryId,
         description: form.description.trim(),
         richDescription: form.richDescription,
+        promoVideoAssetId: promoVideo?.assetId ?? null,
         images,
         imageKeys,
         descriptionImages,
@@ -307,14 +313,14 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
     : ['text', 'url', 'file']
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next && !submitting && !assistantBusy) onClose() }}>
+    <Dialog open={open} onOpenChange={(next) => { if (!next && !submitting && !videoBusy && !assistantBusy) onClose() }}>
       <DialogContent className={`${assistantActive ? 'max-w-6xl' : 'max-w-3xl'} max-h-[90dvh] overflow-y-auto`} data-testid="admin-platform-product-wizard">
         <DialogTitle>新建平台商品</DialogTitle>
         <DialogDescription>
           创建结果固定为平台自营草稿；可售量和发布需在后续独立完成。
         </DialogDescription>
         {open && <div className="mt-5"><ProductDraftAssistant actor="admin" templates={templates} categories={categories} onCategoriesChange={setCategories}
-          createDraft={createAdminPlatformProductV2} disabled={submitting}
+          createDraft={createAdminPlatformProductV2} disabled={submitting || videoBusy}
           onActiveChange={setAssistantActive} onBusyChange={setAssistantBusy}
           onCreated={id => {
             showToast(`平台商品草稿 #${id} 已创建`)
@@ -330,7 +336,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
               value={templateKey}
               onChange={(event) => applyTemplate(event.target.value as TemplateKey)}
               data-testid="admin-platform-template"
-              disabled={submitting}
+              disabled={submitting || videoBusy}
             >
               {templateOptions.map(template => (
                 <option key={template.key} value={template.key}>
@@ -344,25 +350,26 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
             <label htmlFor="admin-platform-name" className="block text-sm font-bold mb-1.5">商品名称 *</label>
             <input id="admin-platform-name" className="input" value={form.name}
               onChange={(event) => setForm({ ...form, name: event.target.value })}
-              data-testid="admin-platform-name" disabled={submitting} />
+              data-testid="admin-platform-name" disabled={submitting || videoBusy} />
           </div>
           <ProductCategorySelect
             categories={categories}
             value={form.categoryId}
             onChange={(categoryId) => setForm({ ...form, categoryId })}
-            disabled={submitting}
+            disabled={submitting || videoBusy}
           />
+          <ProductVideoUploader value={promoVideo} onChange={setPromoVideo} onBusyChange={setVideoBusy} actor="admin" disabled={submitting || videoBusy} />
           <ProductImageUploader
             images={images}
             imageKeys={imageKeys}
             onChange={setImages}
             onImageKeysChange={setImageKeys}
-            disabled={submitting}
+            disabled={submitting || videoBusy}
           />
           <div>
             <label htmlFor="admin-platform-description" className="block text-sm font-bold mb-1.5">一句话简介</label>
             <textarea id="admin-platform-description" className="input min-h-20" value={form.description}
-              onChange={(event) => setForm({ ...form, description: event.target.value })} disabled={submitting} />
+              onChange={(event) => setForm({ ...form, description: event.target.value })} disabled={submitting || videoBusy} />
           </div>
           <div data-testid="admin-platform-visibility">
             <p className="block text-sm font-bold mb-1.5">浏览可见性 *</p>
@@ -375,7 +382,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 <input type="radio" name="adminPlatformVisibility" value={PRODUCT_VISIBILITY.PUBLIC}
                   checked={form.visibility === PRODUCT_VISIBILITY.PUBLIC}
                   onChange={() => setForm({ ...form, visibility: PRODUCT_VISIBILITY.PUBLIC })}
-                  className="w-4 h-4 mt-0.5" disabled={submitting}
+                  className="w-4 h-4 mt-0.5" disabled={submitting || videoBusy}
                   data-testid="admin-platform-visibility-public" />
                 <span>游客可浏览商品信息</span>
               </label>
@@ -387,7 +394,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 <input type="radio" name="adminPlatformVisibility" value={PRODUCT_VISIBILITY.MEMBERS_ONLY}
                   checked={form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY}
                   onChange={() => setForm({ ...form, visibility: PRODUCT_VISIBILITY.MEMBERS_ONLY })}
-                  className="w-4 h-4 mt-0.5" disabled={submitting}
+                  className="w-4 h-4 mt-0.5" disabled={submitting || videoBusy}
                   data-testid="admin-platform-visibility-members_only" />
                 <span>仅登录后可浏览</span>
               </label>
@@ -407,7 +414,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 onChange={(html) => setForm(prev => ({ ...prev, richDescription: html }))}
                 onInsertImage={handleInsertDescriptionImage}
                 placeholder="详细描述商品特性、使用教程、售后承诺等..."
-                disabled={submitting}
+                disabled={submitting || videoBusy}
               />
             </Suspense>
           </div>
@@ -419,7 +426,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 target="product"
                 value={productAttributes}
                 onChange={setProductAttributes}
-                disabled={submitting}
+                disabled={submitting || videoBusy}
                 mode="draft"
               />
             </div>
@@ -427,14 +434,14 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
           <ProductDetailsFields
             value={productDetails}
             onChange={setProductDetails}
-            disabled={submitting}
+            disabled={submitting || videoBusy}
             mode="draft"
           />
           <div>
             <label htmlFor="admin-platform-offer-name" className="block text-sm font-bold mb-1.5">主规格名称 *</label>
             <input id="admin-platform-offer-name" className="input" maxLength={50} value={form.offerName}
               onChange={(event) => setForm({ ...form, offerName: event.target.value })}
-              data-testid="admin-platform-offer-name" disabled={submitting} />
+              data-testid="admin-platform-offer-name" disabled={submitting || videoBusy} />
             <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
               单规格商品保持「{DEFAULT_OFFER_NAME}」即可。
             </p>
@@ -444,27 +451,27 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
               <label htmlFor="admin-platform-price" className="block text-sm font-bold mb-1.5">售价（积分）*</label>
               <input id="admin-platform-price" type="number" min="1" step="1" className="input font-mono"
                 value={form.price} onChange={(event) => setForm({ ...form, price: event.target.value })}
-                data-testid="admin-platform-price" disabled={submitting} />
+                data-testid="admin-platform-price" disabled={submitting || videoBusy} />
             </div>
             <div>
               <label htmlFor="admin-platform-original-price" className="block text-sm font-bold mb-1.5">划线原价（积分）</label>
               <input id="admin-platform-original-price" type="number" min="1" step="1" className="input font-mono"
                 value={form.originalPrice} onChange={(event) => setForm({ ...form, originalPrice: event.target.value })}
-                disabled={submitting} />
+                disabled={submitting || videoBusy} />
             </div>
           </div>
           <div>
             <label htmlFor="admin-platform-validity" className="block text-sm font-bold mb-1.5">有效期（天）</label>
             <input id="admin-platform-validity" type="number" min="1" max="3650" step="1" className="input font-mono"
               value={form.validityDays} onChange={(event) => setForm({ ...form, validityDays: event.target.value })}
-              placeholder="留空为永久" disabled={submitting} />
+              placeholder="留空为永久" disabled={submitting || videoBusy} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="admin-platform-delivery" className="block text-sm font-bold mb-1.5">交付方式 *</label>
               <select id="admin-platform-delivery" className="input" value={form.deliveryMode}
                 onChange={(event) => setDeliveryMode(event.target.value as DeliveryMode)}
-                data-testid="admin-platform-delivery" disabled={submitting}>
+                data-testid="admin-platform-delivery" disabled={submitting || videoBusy}>
                 <option value="instant_inventory">交付库存（创建后另行导入）</option>
                 <option value="instant_fixed">固定内容</option>
                 <option value="manual_service">人工服务</option>
@@ -475,7 +482,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 <label htmlFor="admin-platform-stock-mode" className="block text-sm font-bold mb-1.5">可售量模式 *</label>
                 <select id="admin-platform-stock-mode" className="input" value={form.stockMode}
                   onChange={(event) => setForm({ ...form, stockMode: event.target.value as StockMode })}
-                  disabled={submitting}>
+                  disabled={submitting || videoBusy}>
                   <option value="unlimited">不限量</option>
                   <option value="limited">限量（创建后另行调整）</option>
                 </select>
@@ -487,7 +494,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
               <label htmlFor="admin-platform-fixed" className="block text-sm font-bold">固定交付内容 *</label>
               <select className="input" value={form.fixedContentType}
                 onChange={(event) => setFixedContentType(event.target.value as FixedContentType)}
-                disabled={submitting} data-testid="admin-platform-fixed-type">
+                disabled={submitting || videoBusy} data-testid="admin-platform-fixed-type">
                 {visibleFixedTypes.map(type => (
                   <option key={type} value={type}>
                     {type === 'url' ? '链接' : type === 'file' ? '文件' : '文本'}
@@ -500,7 +507,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 </p>
               ) : (
                 <textarea id="admin-platform-fixed" className="input min-h-24" value={form.fixedContent}
-                  onChange={(event) => setForm({ ...form, fixedContent: event.target.value })} disabled={submitting} />
+                  onChange={(event) => setForm({ ...form, fixedContent: event.target.value })} disabled={submitting || videoBusy} />
               )}
             </div>
           )}
@@ -512,7 +519,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
                 target="offer"
                 value={offerAttributes}
                 onChange={setOfferAttributes}
-                disabled={submitting}
+                disabled={submitting || videoBusy}
                 mode="draft"
               />
             </div>
@@ -532,8 +539,8 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
             data-testid="admin-platform-description-image-input"
           />
           <div className="flex justify-end gap-3">
-            <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting}>取消</button>
-            <button type="submit" className="btn-primary" disabled={submitting} data-testid="admin-platform-submit">
+            <button type="button" className="btn-secondary" onClick={onClose} disabled={submitting || videoBusy}>取消</button>
+            <button type="submit" className="btn-primary" disabled={submitting || videoBusy} data-testid="admin-platform-submit">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : '创建平台商品草稿'}
             </button>
           </div>

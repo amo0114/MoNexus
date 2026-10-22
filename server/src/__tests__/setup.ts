@@ -87,6 +87,7 @@ beforeEach(async ({ task }) => {
     "ProductAssuranceGrant",
     "ProductAssuranceApplication",
     "Product",
+    "ProductVideoAsset",
     "Offer",
     "MerchantWebhookConfig",
     "Merchant",

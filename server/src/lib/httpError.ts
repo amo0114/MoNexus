@@ -23,6 +23,16 @@ export type ErrorCode =
   | 'TOO_MANY_ATTEMPTS'
   // Upload-specific (P0-C) — let the frontend distinguish failure modes
   // for a precise error toast instead of a generic "bad request".
+  | 'VIDEO_TOO_LARGE'
+  | 'VIDEO_INVALID'
+  | 'VIDEO_FORMAT_UNSUPPORTED'
+  | 'VIDEO_DURATION_EXCEEDED'
+  | 'VIDEO_UPLOAD_BUSY'
+  | 'VIDEO_ASSET_QUOTA'
+  | 'VIDEO_ASSET_UNAVAILABLE'
+  | 'VIDEO_PROCESSING_UNAVAILABLE'
+  | 'VIDEO_STORAGE_UNAVAILABLE'
+  | 'PRODUCT_MEDIA_CHANGED'
   | 'NO_FILE'
   | 'FILE_TOO_LARGE'
   | 'UNSUPPORTED_MEDIA_TYPE'
