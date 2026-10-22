@@ -66,7 +66,12 @@ describe('real bounded MP4 processing', () => {
   it('preserves real quarter-turn rotation, portrait AAC audio and variable frame timing', async () => {
     const rotatedDir = await mkdtemp(path.join(root, 'rotated-'))
     const rotated = path.join(rotatedDir, 'input.mp4')
-    execFileSync('ffmpeg', ['-v', 'error', '-i', path.join(root, 'source.mp4'), '-c', 'copy', '-metadata:s:v:0', 'rotate=90', rotated])
+    // Newer FFmpeg versions expose rotation as an input display transform;
+    // the legacy rotate metadata option does not reliably create that fixture.
+    const displayRotation = execFileSync('ffmpeg', ['-hide_banner', '-h', 'full'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 4 * 1024 * 1024 }).includes('-display_rotation')
+    execFileSync('ffmpeg', ['-v', 'error', ...(displayRotation ? ['-display_rotation', '90'] : []), '-i', path.join(root, 'source.mp4'), '-c', 'copy', ...(!displayRotation ? ['-metadata:s:v:0', 'rotate=90'] : []), rotated])
+    const inputProbe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', rotated], { encoding: 'utf8' }))
+    expect(validateVideoProbe(inputProbe)).toMatchObject({ width: 240, height: 320 })
     const result = await processVideo(rotated, rotatedDir, AbortSignal.timeout(60_000))
     expect(result.metadata).toMatchObject({ width: 240, height: 320, hasAudio: false })
     const poster = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-of', 'json', result.poster], { encoding: 'utf8' }))

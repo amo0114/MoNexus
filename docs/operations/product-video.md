@@ -78,5 +78,6 @@ npm test -- src/components/catalog/ProductVideoPlayer.test.tsx src/components/me
 - 独立 PostgreSQL 全新105个迁移通过；视频、审批 CAS、待审队列及套餐写入失效回归4文件33用例通过，1项真实 Redis 专项在本轮未启用 Redis 时跳过。缓存路径的真实 Redis 验证见上方初始实现记录，本轮不将跳过计为通过。
 - Chromium 真实流程3项通过：P1.5 公开审核及分类收紧旅程，以及商家上传保存 → 审核台完整播放含 AAC-LC 音轨样片（取消静音）→ UI 批准 → 游客三种布局播放。视频旅程不再通过 helper 代替审核台批准。自动化取消静音不等于实际设备扬声器听感验收。
 - 前后端构建、架构与 OpenAPI 引用、架构测试、Nginx 静态检查通过；后端与前端独立代码复核未发现阻塞项。
+- 首轮远程 CI 暴露旋转样片生成命令的跨版本差异：FFmpeg 6.1/8.1 不再通过旧 `rotate` 元数据命令生成旋转信息。样片按工具能力使用 `display_rotation`，并先断言输入方向；封装显式关闭隐式旋转且复核方向、显示尺寸和音轨不变。FFmpeg 4.4 与 Ubuntu 24.04/FFmpeg 6.1 的视频后端用例各15项通过（各1项 Redis 专项跳过），8.1 镜像内真实旋转文件的解码、封装、海报和尺寸验证通过；独立复核无阻塞项。
 
 上线还需要最终远程 CI、生产实际 provider/完整反代链、目标服务器容量及 iOS Safari/Android Chrome/桌面 Firefox 的真实兼容验证。Chromium 视口不能替代 iOS Safari；本地通过不等于已发布。生产 Compose 视频上传/播放继续默认关闭，完成上线验收后再启用。
