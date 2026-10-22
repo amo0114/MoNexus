@@ -181,6 +181,7 @@ export const listAdminProductsQuerySchema = z
     archived: z.enum(['exclude', 'only', 'all']).default('exclude'),
     status: z.enum(['draft', 'active', 'inactive']).optional(),
     q: z.string().trim().min(1).max(100).optional(),
+    guestReview: z.enum(['pending']).optional(),
   })
   .strict()
 export type ListAdminProductsQuery = z.infer<typeof listAdminProductsQuerySchema>

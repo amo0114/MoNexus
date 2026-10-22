@@ -2,7 +2,11 @@ import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { lockProductRow } from '../catalog/productLock.js'
-import { invalidateGuestEligibilityIfNeeded } from '../catalog/guestEligibility.js'
+import {
+  guestReviewInclude,
+  guestReviewState,
+  invalidateGuestEligibilityIfNeeded,
+} from '../catalog/guestEligibility.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import {
@@ -26,6 +30,7 @@ import { insertOffer, type OfferWriteInput } from './offerService.js'
 // ---- Products ----
 
 const productListInclude = {
+  ...guestReviewInclude,
   _count: { select: { inventory: { where: { status: 'available' } } } },
   offers: {
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
@@ -88,6 +93,14 @@ function serializeMerchantProduct(product: ProductWithAvailableStock, lowStockTh
     availableStock,
     sales: product.sales,
     status: product.status,
+    visibility: product.visibility,
+    // SPEC-CATALOG-VIS-001 §4.6：商家只看结论（固定文案由前端映射），不暴露审批版本。
+    guestReview: guestReviewState({
+      visibility: product.visibility,
+      publicContentRevision: product.publicContentRevision,
+      categoryGuestVisibility: product.category?.guestVisibility,
+      eligibility: product.guestEligibility,
+    }),
     deliveryMode: product.deliveryMode,
     stockMode: product.stockMode,
     fixedContent: product.fixedContent,
