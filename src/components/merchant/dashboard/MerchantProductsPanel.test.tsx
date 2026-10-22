@@ -171,4 +171,19 @@ describe('MerchantProductsPanel', () => {
     setup({ products: [] })
     expect(screen.getByText('暂无商品')).toBeInTheDocument()
   })
+
+  it('展示游客公开审核结论的固定文案（SPEC-CATALOG-VIS-001 §4.6）', () => {
+    setup({
+      products: [
+        makeProduct({ id: 11, guestReview: 'pending' }),
+        makeProduct({ id: 12, guestReview: 'rejected' }),
+        makeProduct({ id: 13, guestReview: 'revoked' }),
+        makeProduct({ id: 14, guestReview: 'members_only' }),
+      ],
+    })
+    expect(screen.getByTestId('merchant-product-guest-review-11')).toHaveTextContent('待公开审核')
+    expect(screen.getByTestId('merchant-product-guest-review-12')).toHaveTextContent('未获批准，修改内容后可重新提交')
+    expect(screen.getByTestId('merchant-product-guest-review-13')).toHaveTextContent('公开资格已被撤销')
+    expect(screen.getByTestId('merchant-product-guest-review-14')).toHaveTextContent('仅登录可见')
+  })
 })

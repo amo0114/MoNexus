@@ -5,6 +5,7 @@ import {
   CreateAnnouncementRequest,
   UpdateAnnouncementRequest,
 } from '../types/admin'
+import type { GuestReviewState, ProductVisibility } from '../types/catalog'
 
 export interface PaginatedResult<T> {
   items: T[]
@@ -434,6 +435,27 @@ export interface AdminProductListItem {
   fakaCapacity?: AdminFakaCapacity | null
   offers: AdminProductOffer[]
   _count?: { inventory?: number }
+  visibility?: ProductVisibility
+  guestReview?: AdminGuestReview
+}
+
+export interface AdminGuestReview {
+  state: GuestReviewState
+  publicContentRevision: number
+  eligibilityVersion: number
+  reasonCode: string | null
+}
+
+export type GuestEligibilityAction = 'approve' | 'reject' | 'revoke'
+
+export interface GuestEligibilityView {
+  productId: number
+  publicContentRevision: number
+  decision: 'pending' | 'approved' | 'denied' | null
+  reviewedRevision: number | null
+  version: number
+  reasonCode: string | null
+  guestVisible: boolean
 }
 
 export interface AdminProductReadiness {
@@ -465,6 +487,7 @@ export interface ListAdminProductsParams {
   archived?: 'exclude' | 'only' | 'all'
   status?: 'draft' | 'active' | 'inactive'
   q?: string
+  guestReview?: 'pending'
 }
 
 export function isValidAdminFakaCapacity(cap: unknown): cap is AdminFakaCapacity {
@@ -682,6 +705,30 @@ export async function getAdminProducts(
     ? await api.get<AdminProductsPaged>('/admin/products', { params })
     : await api.get<AdminProductsPaged>('/admin/products')
   return parseAdminProductsResponse(data)
+}
+
+export async function getAdminGuestEligibility(productId: number): Promise<GuestEligibilityView> {
+  const { data } = await api.get<GuestEligibilityView>(`/admin/products/${productId}/guest-eligibility`)
+  return data
+}
+
+/**
+ * §4.5：两个 expected 值都必带；任一过期服务端返回 409，调用方刷新后重试。
+ */
+export async function applyAdminGuestEligibility(
+  productId: number,
+  input: {
+    action: GuestEligibilityAction
+    expectedPublicContentRevision: number
+    expectedEligibilityVersion: number
+    reasonCode?: 'rejected'
+  },
+): Promise<GuestEligibilityView> {
+  const { data } = await api.post<GuestEligibilityView>(
+    `/admin/products/${productId}/guest-eligibility`,
+    input,
+  )
+  return data
 }
 
 export async function getAdminProductReadiness(

@@ -1,4 +1,5 @@
 import type { PublicAvailability } from './productAvailability'
+import type { GuestReviewState, ProductVisibility } from './catalog'
 
 export type UserRole = 'user' | 'admin' | 'merchant'
 export type MerchantStatus = 'pending' | 'active' | 'suspended' | 'rejected'
@@ -198,6 +199,8 @@ export interface MerchantProduct {
   purchaseForm?: PurchaseFormField[]
   /** SKU 列表(P4a);商家端含完整字段。单 SKU 商品为一条默认规格。 */
   offers?: Offer[]
+  visibility?: ProductVisibility
+  guestReview?: GuestReviewState
 }
 
 /** 购买前信息收集字段定义；与后端 server/src/lib/purchaseForm.ts 契约一致。 */

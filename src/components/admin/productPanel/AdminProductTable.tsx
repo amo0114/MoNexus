@@ -17,6 +17,7 @@ import EmptyState from '../../ui/EmptyState'
 import type { AdminInventoryTarget } from '../../catalog/AdminInventoryImportPreview'
 import type { AdminPublicationTarget } from '../../catalog/AdminProductPublicationDialog'
 import AdminActionMenu, { type AdminActionMenuItem } from '../AdminActionMenu'
+import { ADMIN_GUEST_REVIEW_LABELS } from '../../catalog/guestReview'
 import type { ReleaseGate } from './types'
 
 function adminProductStatusLabel(status: string): string {
@@ -52,6 +53,7 @@ export interface AdminProductTableProps {
   onOpenFakaCapacity: (product: AdminProductListItem) => void
   onOpenFakaSync: (product: AdminProductListItem) => void
   onOpenSourceDescription: (product: AdminProductListItem) => void
+  onOpenGuestReview: (product: AdminProductListItem) => void
   /** 行内状态变更（恢复）成功后，请求父层按当前生效筛选安全刷新 */
   onMutationSettled: () => void
   /** 空态「清空筛选条件」：等价原 handleReset */
@@ -72,6 +74,7 @@ export default function AdminProductTable({
   onOpenFakaCapacity,
   onOpenFakaSync,
   onOpenSourceDescription,
+  onOpenGuestReview,
   onMutationSettled,
   onResetFilters,
 }: AdminProductTableProps) {
@@ -142,6 +145,18 @@ export default function AdminProductTable({
                     >
                       {p.archivedAt ? '已归档' : adminProductStatusLabel(p.status)}
                     </span>
+                    {p.guestReview && (
+                      <div
+                        className={`mt-1 text-xs ${
+                          p.guestReview.state === 'pending'
+                            ? 'font-bold text-[var(--color-cta)]'
+                            : 'text-[var(--color-text-muted)]'
+                        }`}
+                        data-testid={`admin-product-guest-review-${p.id}`}
+                      >
+                        {ADMIN_GUEST_REVIEW_LABELS[p.guestReview.state]}
+                      </div>
+                    )}
                   </td>
                   <td data-label="分类">
                     <span className="bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text-muted)] px-2 py-1 rounded text-xs font-bold">
@@ -200,6 +215,16 @@ export default function AdminProductTable({
                         >
                           <Archive className="w-3.5 h-3.5" />
                           {releaseGate.pendingIds.has(p.id) ? '下架中…' : '下架'}
+                        </button>
+                      )}
+                      {p.guestReview?.state === 'pending' && !p.archivedAt && (
+                        <button
+                          type="button"
+                          data-testid={`admin-guest-review-open-${p.id}`}
+                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                          onClick={() => onOpenGuestReview(p)}
+                        >
+                          审核公开
                         </button>
                       )}
                       {!isPlatformOwned && (
@@ -300,6 +325,14 @@ export default function AdminProductTable({
                             label: '同步 Xboard',
                             onClick: () => onOpenFakaSync(p),
                             testId: `admin-faka-sync-${p.id}`,
+                          })
+                        }
+                        if (p.guestReview) {
+                          menuItems.push({
+                            id: `guest-review-${p.id}`,
+                            label: '游客公开审核',
+                            onClick: () => onOpenGuestReview(p),
+                            testId: `admin-guest-review-menu-${p.id}`,
                           })
                         }
                         if (shouldShowSourceDescriptionAction(p)) {

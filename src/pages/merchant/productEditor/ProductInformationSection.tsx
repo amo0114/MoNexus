@@ -4,6 +4,7 @@ import TemplateAttributeFields from '../../../components/catalog/TemplateAttribu
 import ProductDetailsFields from '../../../components/catalog/ProductDetailsFields'
 import ProductImageUploader from '../../../components/merchant/ProductImageUploader'
 import FieldLabel from '../../../components/catalog/wizard/FieldLabel'
+import { PUBLIC_VISIBILITY_REVIEW_HINT } from '../../../components/catalog/guestReview'
 import type { RichTextInsertedImage } from '../../../components/catalog/RichTextEditor'
 import {
   PRODUCT_VISIBILITY,
@@ -220,7 +221,9 @@ export default function ProductInformationSection({
             <span>仅登录后可浏览</span>
           </label>
         </div>
-        <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">兑换始终需要登录</p>
+        <p className="mt-1.5 text-xs text-[var(--color-text-muted)]" data-testid="visibility-review-hint">
+          {visibility === PRODUCT_VISIBILITY.PUBLIC ? PUBLIC_VISIBILITY_REVIEW_HINT : '兑换始终需要登录'}
+        </p>
       </div>
     </section>
   )

@@ -27,6 +27,7 @@ import AdminPanelHeader from './AdminPanelHeader'
 import AdminAssurancePanel from '../catalog/AdminAssurancePanel'
 import AdminProductTable from './productPanel/AdminProductTable'
 import ProductCapacityDialog from './productPanel/ProductCapacityDialog'
+import AdminGuestReviewDialog from './productPanel/AdminGuestReviewDialog'
 
 interface Props {
   active?: boolean
@@ -47,16 +48,19 @@ export default function AdminProductPanel({ active = true }: Props) {
   const [qInput, setQInput] = useState('')
   const [statusInput, setStatusInput] = useState<'' | 'draft' | 'active' | 'inactive'>('')
   const [archivedInput, setArchivedInput] = useState<'exclude' | 'only' | 'all'>('exclude')
+  const [guestReviewInput, setGuestReviewInput] = useState<'' | 'pending'>('')
 
   // Applied filter snapshot
   const [appliedFilter, setAppliedFilter] = useState<{
     q: string
     status: '' | 'draft' | 'active' | 'inactive'
     archived: 'exclude' | 'only' | 'all'
+    guestReview: '' | 'pending'
   }>({
     q: '',
     status: '',
     archived: 'exclude',
+    guestReview: '',
   })
 
   const [inventoryTarget, setInventoryTarget] = useState<AdminInventoryTarget | null>(null)
@@ -71,6 +75,7 @@ export default function AdminProductPanel({ active = true }: Props) {
   const [offerProduct, setOfferProduct] = useState<AdminProductListItem | null>(null)
   const [syncProduct, setSyncProduct] = useState<AdminProductListItem | null>(null)
   const [sourceDescriptionProduct, setSourceDescriptionProduct] = useState<AdminProductListItem | null>(null)
+  const [guestReviewProduct, setGuestReviewProduct] = useState<AdminProductListItem | null>(null)
 
   // ConfirmDialog states
   const [unpublishTarget, setUnpublishTarget] = useState<AdminProductListItem | null>(null)
@@ -98,6 +103,9 @@ export default function AdminProductPanel({ active = true }: Props) {
       }
       if (targetFilter.q.trim()) {
         params.q = targetFilter.q.trim()
+      }
+      if (targetFilter.guestReview) {
+        params.guestReview = targetFilter.guestReview
       }
 
       const data = await getAdminProducts(params)
@@ -161,6 +169,7 @@ export default function AdminProductPanel({ active = true }: Props) {
       q: qInput.trim(),
       status: statusInput,
       archived: archivedInput,
+      guestReview: guestReviewInput,
     }
     setAppliedFilter(nextFilter)
     setPage(1)
@@ -175,10 +184,12 @@ export default function AdminProductPanel({ active = true }: Props) {
     setQInput('')
     setStatusInput('')
     setArchivedInput('exclude')
+    setGuestReviewInput('')
     const defaultFilter = {
       q: '',
       status: '' as const,
       archived: 'exclude' as const,
+      guestReview: '' as const,
     }
     setAppliedFilter(defaultFilter)
     setPage(1)
@@ -401,6 +412,22 @@ export default function AdminProductPanel({ active = true }: Props) {
           </select>
         </div>
 
+        <div className="flex items-center gap-2">
+          <label htmlFor="admin-products-guest-review-filter" className="text-xs font-medium text-[var(--color-text-muted)] shrink-0">
+            游客公开:
+          </label>
+          <select
+            id="admin-products-guest-review-filter"
+            value={guestReviewInput}
+            onChange={(e) => setGuestReviewInput(e.target.value as '' | 'pending')}
+            className="input py-1.5 text-xs"
+            data-testid="admin-products-guest-review-filter"
+          >
+            <option value="">全部</option>
+            <option value="pending">待公开审核</option>
+          </select>
+        </div>
+
         <div className="flex items-center gap-2 ml-auto">
           <button
             type="submit"
@@ -428,7 +455,10 @@ export default function AdminProductPanel({ active = true }: Props) {
         products={products}
         loading={loading}
         hasActiveFilter={Boolean(
-          appliedFilter.q || appliedFilter.status || appliedFilter.archived !== 'exclude',
+          appliedFilter.q ||
+            appliedFilter.status ||
+            appliedFilter.archived !== 'exclude' ||
+            appliedFilter.guestReview,
         )}
         releaseGate={{
           blocked: productsRefreshError,
@@ -443,6 +473,7 @@ export default function AdminProductPanel({ active = true }: Props) {
         onOpenFakaCapacity={setFakaCapProduct}
         onOpenFakaSync={setSyncProduct}
         onOpenSourceDescription={setSourceDescriptionProduct}
+        onOpenGuestReview={setGuestReviewProduct}
         onMutationSettled={() => triggerSafeReload()}
         onResetFilters={handleReset}
       />
@@ -502,6 +533,11 @@ export default function AdminProductPanel({ active = true }: Props) {
         product={syncProduct}
         onClose={() => setSyncProduct(null)}
         onSynced={triggerSafeReload}
+      />
+      <AdminGuestReviewDialog
+        product={guestReviewProduct}
+        onClose={() => setGuestReviewProduct(null)}
+        onChanged={triggerSafeReload}
       />
       <AdminSourceDescriptionDialog
         product={sourceDescriptionProduct}
