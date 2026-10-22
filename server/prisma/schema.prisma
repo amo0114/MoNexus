@@ -1456,6 +1456,20 @@ model ExternalCatalogSyncIdempotency {
 
 // SPEC-PRODUCT-COMMERCE-002 §6.5 — one canonical short link per product.
 // CHECKs (ready requires url; creating requires lease+attempt) live in SQL.
+
+model ProductShareLink {
+  productId    Int       @id
+  status       String
+  attemptToken String?   @db.Uuid
+  leaseUntil   DateTime?
+  url          String?
+  targetUrl    String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
 // ── SPEC-CATALOG-VIS-001 §4.3（P1.5）：商品游客公开准入 ──────────────────
 // 每件商品最多一条**当前**记录（productId 唯一）。不建评估历史表、任务表、
 // 模型字段、人工到期时间或申诉表——首版只需要「现在这一件能不能向游客展示」。
@@ -1484,19 +1498,6 @@ model ProductGuestEligibility {
   reviewedByUser User? @relation("GuestEligibilityReviewedBy", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
 
   @@index([decision])
-}
-
-model ProductShareLink {
-  productId    Int       @id
-  status       String
-  attemptToken String?   @db.Uuid
-  leaseUntil   DateTime?
-  url          String?
-  targetUrl    String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 // SPEC-PRODUCT-COMMERCE-002 §7.1 — merchant application for platform assurance.

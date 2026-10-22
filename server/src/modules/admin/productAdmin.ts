@@ -252,6 +252,14 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     // SPEC-CATALOG-VIS-001 §4.5（P1.5-A）：与商家编辑同一把商品行锁，
     // 保证「写商品 + 递增公开版本 + 重置准入」原子且串行。
     await lockProductRow(tx, id)
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：**写前**判定（写入后比较
+    // 读到的是新值）。分类变更走局部变量 categoryPatch，显式并入。
+    const adminProductWriteData: Record<string, unknown> = {
+      ...productUpdateFields,
+      ...(categoryPatch ? { categoryId: categoryPatch.categoryId } : {}),
+    }
+    const invalidation = await invalidateGuestEligibilityIfNeeded(tx, id, adminProductWriteData)
+
     const next = await tx.product.update({
       where: { id },
       data: {
@@ -293,11 +301,6 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
           ? { stock: 0 }
           : {}),
       },
-    })
-    // §4.4：管理员编辑的展示字段同样让旧批准失效（不能只改新编辑器）。
-    const invalidation = await invalidateGuestEligibilityIfNeeded(tx, id, {
-      ...data,
-      ...(categoryPatch ? { categoryId: categoryPatch.categoryId } : {}),
     })
     await syncProductProjection(tx, id)
     await tx.adminLog.create({

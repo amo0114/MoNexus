@@ -9,7 +9,12 @@ import {
   authHeader,
 } from '../../__tests__/helpers.js'
 import { lockProductRow } from '../catalog/productLock.js'
-import { invalidateGuestEligibility, touchesPublicContent } from '../catalog/guestEligibility.js'
+import {
+  invalidateGuestEligibility,
+  offerPublicContentChanged,
+  productPublicContentChanged,
+  publicContentValuesEqual,
+} from '../catalog/guestEligibility.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §4.4 / §4.5 / §4.8.2（P1.5-A）——写入口失效。
@@ -49,17 +54,130 @@ async function readState(productId: number) {
   return { revision: product.publicContentRevision, eligibility }
 }
 
-describe('SPEC-CATALOG-VIS-001 §4.4 展示字段判定', () => {
-  it('名称/描述/details/分类/图片/visibility 触发；价格/库存/销量不触发', () => {
-    for (const field of ['name', 'description', 'richDescription', 'details', 'attributes',
-      'categoryId', 'type', 'icon', 'imageUrl', 'images', 'templateKey', 'templateVersion',
-      'visibility']) {
-      expect(touchesPublicContent({ [field]: 'x' }), field).toBe(true)
-    }
-    for (const field of ['price', 'stock', 'sales', 'ratingAvg', 'ratingCount', 'internalNote',
-      'deliveryMode', 'stockMode']) {
-      expect(touchesPublicContent({ [field]: 1 }), field).toBe(false)
-    }
+describe('SPEC-CATALOG-VIS-001 §4.4 展示字段判定（按值，不按键存在）', () => {
+  it('JSON 字段按归一化内容比较：键顺序不同视为未变', () => {
+    expect(publicContentValuesEqual('details', { a: 1, b: { c: 2, d: 3 } }, { b: { d: 3, c: 2 }, a: 1 })).toBe(true)
+    expect(publicContentValuesEqual('attributes', [{ x: 1, y: 2 }], [{ y: 2, x: 1 }])).toBe(true)
+    // 内容确实不同则判为变了。
+    expect(publicContentValuesEqual('details', { a: 1 }, { a: 2 })).toBe(false)
+    expect(publicContentValuesEqual('images', ['a', 'b'], ['b', 'a'])).toBe(false)
+  })
+
+  it('null 与 undefined 视为等价，避免"清空 vs 未设"误判为变更', () => {
+    expect(publicContentValuesEqual('name', null, undefined)).toBe(true)
+    expect(publicContentValuesEqual('description', null, 'x')).toBe(false)
+    expect(publicContentValuesEqual('description', 'x', null)).toBe(false)
+  })
+
+  it('Date 按时间戳比较', () => {
+    const t = new Date('2026-01-01T00:00:00Z')
+    expect(publicContentValuesEqual('x', t, new Date(t.getTime()))).toBe(true)
+    expect(publicContentValuesEqual('x', t, new Date(t.getTime() + 1))).toBe(false)
+  })
+})
+
+describe('SPEC-CATALOG-VIS-001 §4.4 无改动保存不失效（复审阻塞项 2）', () => {
+  it('提交与现状相同的值 → 不失效，revision 与批准都不变', async () => {
+    const product = await seedApprovedProduct('同值提交商品')
+    const before = await readState(product.id)
+
+    // 模拟"编辑表单整包提交但什么都没改"：键都在，值都与现状一致。
+    await prisma.$transaction(async tx => {
+      await lockProductRow(tx, product.id)
+      const changed = await productPublicContentChanged(tx, product.id, {
+        name: '同值提交商品',
+        visibility: 'public',
+      })
+      expect(changed).toBe(false)
+    })
+
+    const after = await readState(product.id)
+    expect(after.revision).toBe(before.revision)
+    expect(after.eligibility!.decision).toBe('approved')
+  })
+
+  it('JSON 字段只有键顺序不同 → 不失效', async () => {
+    const product = await seedApprovedProduct('JSON顺序商品')
+    await prisma.product.update({
+      where: { id: product.id },
+      data: { details: { highlights: ['a'], usageInstructions: 'x', purchaseNotes: '', afterSalesInstructions: '', faq: [] } },
+    })
+    // 把 revision 与批准对齐到当前版本，作为"已批准"基线。
+    await prisma.product.update({ where: { id: product.id }, data: { publicContentRevision: 2 } })
+    await prisma.productGuestEligibility.update({
+      where: { productId: product.id },
+      data: { decision: 'approved', reviewedRevision: 2 },
+    })
+
+    await prisma.$transaction(async tx => {
+      await lockProductRow(tx, product.id)
+      const changed = await productPublicContentChanged(tx, product.id, {
+        // 键顺序不同、内容相同。
+        details: { faq: [], afterSalesInstructions: '', purchaseNotes: '', usageInstructions: 'x', highlights: ['a'] },
+      })
+      expect(changed).toBe(false)
+    })
+
+    const state = await readState(product.id)
+    expect(state.revision).toBe(2)
+    expect(state.eligibility!.decision).toBe('approved')
+  })
+
+  it('真实修改 → 失效', async () => {
+    const product = await seedApprovedProduct('真实修改商品')
+    await prisma.$transaction(async tx => {
+      await lockProductRow(tx, product.id)
+      const changed = await productPublicContentChanged(tx, product.id, { name: '改过的名字' })
+      expect(changed).toBe(true)
+      await invalidateGuestEligibility(tx, product.id)
+    })
+    const state = await readState(product.id)
+    expect(state.revision).toBe(2)
+    expect(state.eligibility!.decision).toBe('pending')
+  })
+
+  it('价格/库存字段即使提交也不失效', async () => {
+    const product = await seedApprovedProduct('价格提交商品')
+    await prisma.$transaction(async tx => {
+      await lockProductRow(tx, product.id)
+      const changed = await productPublicContentChanged(tx, product.id, {
+        price: 999, stock: 42, sales: 7, ratingAvg: 5, deliveryMode: 'manual_service',
+      })
+      expect(changed).toBe(false)
+    })
+    const state = await readState(product.id)
+    expect(state.revision).toBe(1)
+    expect(state.eligibility!.decision).toBe('approved')
+  })
+})
+
+describe('SPEC-CATALOG-VIS-001 §4.4 套餐侧按值判定', () => {
+  it('套餐名称未变 → 不失效；名称变了 → 失效；启用 → 失效', async () => {
+    const product = await seedApprovedProduct('套餐值判定商品')
+    const offer = await prisma.offer.findFirstOrThrow({
+      where: { productId: product.id, isDefault: true },
+      select: { id: true, name: true, status: true },
+    })
+
+    // 同值：不改。
+    expect(await offerPublicContentChanged(prisma, offer.id, { name: offer.name })).toBe(false)
+    // 名称变化：改。
+    expect(await offerPublicContentChanged(prisma, offer.id, { name: '新套餐名' })).toBe(true)
+    // 纯价格：不改。
+    expect(await offerPublicContentChanged(prisma, offer.id, { price: 123 })).toBe(false)
+    // 状态变 active（已是 active）：不改。
+    expect(await offerPublicContentChanged(prisma, offer.id, { status: 'active' })).toBe(false)
+  })
+
+  it('inactive 套餐启用 → 失效（复审阻塞项 1 的漏洞链）', async () => {
+    const product = await seedApprovedProduct('启用套餐商品')
+    const offer = await prisma.offer.findFirstOrThrow({
+      where: { productId: product.id, isDefault: true },
+      select: { id: true },
+    })
+    await prisma.offer.update({ where: { id: offer.id }, data: { status: 'inactive' } })
+
+    expect(await offerPublicContentChanged(prisma, offer.id, { status: 'active' })).toBe(true)
   })
 })
 

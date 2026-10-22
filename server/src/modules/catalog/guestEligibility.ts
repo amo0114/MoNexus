@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client'
+import { canonicalJson } from './externalCatalog.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §4.4 / §4.5（P1.5-A）——公开内容变更后的准入失效。
@@ -7,23 +8,24 @@ import type { Prisma } from '@prisma/client'
  *
  *   | 当前状态 | 触发 | 结果 |
  *   | 无记录   | 商品首次以 public 保存 | 创建 pending，reviewedRevision 为空 |
- *   | 任意状态 | 展示字段或 visibility 变化 | pending，reviewedRevision 保持原值 |
+ *   | 任意状态 | 展示内容**确实变了** | pending，reviewedRevision 保持原值 |
  *
- * 注意第二行：**不删除记录、不清空 reviewedRevision**，只把 decision 改回
- * pending 并递增 version。保留 reviewedRevision 是为了让「版本不匹配」这一
- * 事实在数据里可查（reviewedRevision 仍指向旧版本）；门禁只看
- * decision='approved' 且 reviewedRevision === publicContentRevision，
- * 因此 pending 一律不放行。
+ * ⚠️ 判定依据是**值有没有变**，不是「字段有没有提交」（P1.5-A 复审修正）：
+ * 商家/管理员的编辑表单通常整包提交，若按键存在判定，则「什么都没改就保存」
+ * 也会把已批准商品打回待审核、对游客消失。§4.4 的原话是「哪些变化使批准失效」。
+ * JSON 字段（details / attributes / images）按归一化后的内容比较，
+ * 用仓库既有的 canonicalJson（键顺序无关）。
  *
- * 为什么必须与写入同事务：若 revision 递增成功而准入重置失败，商品会保持
- * 「旧批准仍匹配新内容的旧版本号」这种错误状态——实际上 revision 已变，
- * 匹配自然失效，但记录仍是 approved，会造成审批列表与实际不一致。
- * 反向（重置成功、revision 未增）会让旧批准继续放行新内容，是真正的泄露。
- * 两者都必须原子。
+ * ⚠️ 本模块是全部门禁安全性的**前提**：Prisma where 对游客只做粗筛
+ * （存在 decision='approved' 的记录，无法跨表比较版本）。粗筛成立的条件是
+ * **每一个展示类写入口都会把 decision 重置为 pending**——这样
+ * `decision='approved'` 就等价于「版本匹配」。新增写入口时若漏接本模块，
+ * 粗筛会放行「已批准但内容已改」的商品。新增 offer / product 写入前先 grep
+ * 本文件的调用点，逐条判定是否属于展示类。
  */
 
-/** 触发失效的展示字段集合（§4.4 第一段）。价格、库存、销量、评分不在其中。 */
-export const PUBLIC_CONTENT_FIELDS = [
+/** 商品侧触发失效的展示字段（§4.4 第一段）。价格、库存、销量、评分不在其中。 */
+export const PUBLIC_CONTENT_PRODUCT_FIELDS = [
   'name',
   'description',
   'richDescription',
@@ -36,37 +38,162 @@ export const PUBLIC_CONTENT_FIELDS = [
   'images',
   'templateKey',
   'templateVersion',
+  // visibility 单独处理（§4.4 第二段），见 PUBLIC_CONTENT_VISIBILITY_FIELD。
 ] as const
 
-export type PublicContentField = (typeof PUBLIC_CONTENT_FIELDS)[number]
+/**
+ * 套餐侧触发失效的展示字段（§4.4「套餐名称/说明，以及新增或启用未审核套餐」）。
+ *
+ * 刻意**不含** price / stock / stockMode / deliveryMode / fixedContent*：
+ * 它们是交易或履约配置，§4.4 明确价格与库存不触发；交付内容也不是游客看到的
+ * 展示文案。含 status 是因为「启用未审核套餐」必须失效。
+ */
+export const PUBLIC_CONTENT_OFFER_FIELDS = [
+  'name',
+  // Offer 模型没有独立的 description 列（见 schema.prisma）：套餐的说明性
+  // 文案承载在 attributes（P4b 交付字段模板的 label 等）里，因此这里列
+  // attributes 而不是 description。
+  'attributes',
+  'status',
+] as const
+
+const VISIBILITY_FIELD = 'visibility'
+
+/** JSON 字段按归一化内容比较，避免键顺序不同被误判为变更。 */
+const JSON_FIELDS = new Set(['details', 'attributes', 'images'])
+
+export type PublicContentField =
+  | (typeof PUBLIC_CONTENT_PRODUCT_FIELDS)[number]
+  | (typeof PUBLIC_CONTENT_OFFER_FIELDS)[number]
+  | typeof VISIBILITY_FIELD
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 /**
- * 给定一次商品更新要写入的 data，判断它是否触及公开展示内容。
+ * 两个值在「展示内容」意义上是否等价。
  *
- * visibility 单独判断（§4.4 第二段要求它同样递增并重置），
- * 因为它不是"展示内容"而是"可见性开关"，但失效语义相同。
+ * - JSON 字段：用 canonicalJson 归一化后比较（键顺序无关）；
+ * - Date：按时间戳比较（Prisma 可能给出 Date 或 ISO 串）；
+ * - 其余：严格相等（null 与 undefined 视为等价，避免「清空 vs 未设」误判）。
  */
-export function touchesPublicContent(data: Record<string, unknown>): boolean {
-  for (const field of PUBLIC_CONTENT_FIELDS) {
-    if (Object.prototype.hasOwnProperty.call(data, field)) return true
+export function publicContentValuesEqual(field: string, left: unknown, right: unknown): boolean {
+  const leftEmpty = left === null || left === undefined
+  const rightEmpty = right === null || right === undefined
+  if (leftEmpty || rightEmpty) return leftEmpty && rightEmpty
+
+  if (JSON_FIELDS.has(field)) {
+    try {
+      return canonicalJson(left) === canonicalJson(right)
+    } catch {
+      // 不可序列化的值（理论上不该出现）：保守判为「变了」，宁可多失效一次。
+      return false
+    }
   }
-  return Object.prototype.hasOwnProperty.call(data, 'visibility')
+
+  if (left instanceof Date || right instanceof Date) {
+    const l = left instanceof Date ? left.getTime() : new Date(String(left)).getTime()
+    const r = right instanceof Date ? right.getTime() : new Date(String(right)).getTime()
+    return l === r
+  }
+
+  return left === right
+}
+
+/**
+ * 在**已持有商品行锁**的事务内，判断这次写入是否真的改变了商品的公开展示内容。
+ *
+ * 与旧版 `touchesPublicContent(data)` 的区别：那个只看 `data` 里有没有这个键，
+ * 整包提交时无改动保存也会返回 true。这里读出当前行逐字段比较。
+ *
+ * @param data 即将写入的字段（Prisma update 的 data）
+ */
+export async function productPublicContentChanged(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  const candidateFields = [
+    ...PUBLIC_CONTENT_PRODUCT_FIELDS,
+    VISIBILITY_FIELD,
+  ].filter(field => Object.prototype.hasOwnProperty.call(data, field))
+
+  if (candidateFields.length === 0) return false
+
+  // 只取需要的列；用 select 逐字段列出，避免把整行读进内存。
+  const select: Record<string, true> = {}
+  for (const field of candidateFields) select[field] = true
+
+  const current = await tx.product.findUnique({
+    where: { id: productId },
+    select: select as Prisma.ProductSelect,
+  })
+  if (!current) return false
+
+  for (const field of candidateFields) {
+    const currentValue = (current as Record<string, unknown>)[field]
+    const nextValue = data[field]
+    // Prisma 的原子操作（如 { increment: 1 }）不是字面值：视为「变了」，
+    // 因为无法在不执行的情况下得知结果。当前展示字段不会用这种写法，
+    // 出现即为新调用方的信号。
+    if (isPlainObject(nextValue) && !JSON_FIELDS.has(field)) {
+      const keys = Object.keys(nextValue)
+      if (keys.some(key => ['increment', 'decrement', 'multiply', 'divide', 'set'].includes(key))) {
+        return true
+      }
+    }
+    if (!publicContentValuesEqual(field, currentValue, nextValue)) return true
+  }
+  return false
+}
+
+/**
+ * 在**已持有商品行锁**的事务内，判断这次套餐写入是否真的改变了公开展示内容。
+ *
+ * 覆盖 §4.4 的「套餐名称/说明，以及新增或启用未审核套餐」：
+ * - `name` / `description` / `attributes` 变化 → 失效；
+ * - `status` 由非 active 变为 active（启用未审核套餐）→ 失效；
+ * - 纯价格/库存/交付配置 → 不失效。
+ */
+export async function offerPublicContentChanged(
+  tx: Prisma.TransactionClient,
+  offerId: number,
+  data: Record<string, unknown>,
+): Promise<boolean> {
+  const candidateFields = PUBLIC_CONTENT_OFFER_FIELDS
+    .filter(field => Object.prototype.hasOwnProperty.call(data, field))
+
+  if (candidateFields.length === 0) return false
+
+  const current = await tx.offer.findUnique({
+    where: { id: offerId },
+    select: { name: true, attributes: true, status: true },
+  })
+  if (!current) return false
+
+  for (const field of candidateFields) {
+    const currentValue = (current as Record<string, unknown>)[field]
+    const nextValue = data[field]
+    if (!publicContentValuesEqual(field, currentValue, nextValue)) return true
+  }
+  return false
+}
+
+/** 新建套餐时是否属于「新增未审核套餐」：只有直接启用才需要失效。 */
+export function newOfferNeedsInvalidation(data: { status?: unknown }): boolean {
+  return data.status === 'active'
 }
 
 export interface GuestEligibilityInvalidation {
-  /** 商品新版本号（旧值 + 1）。 */
   publicContentRevision: number
-  /** 失效后的准入状态，供调用方断言或记录审计。 */
   decision: 'pending'
-  /** 是否新建了记录（原本无记录）。 */
   created: boolean
 }
 
 /**
  * 递增商品公开内容版本，并把准入记录重置为 pending。**必须在调用方已持有
  * 商品行锁（lockProductRow）的事务内调用。**
- *
- * 返回失效结果；无记录时创建一条 pending（§4.5.1 第一行）。
  */
 export async function invalidateGuestEligibility(
   tx: Prisma.TransactionClient,
@@ -85,12 +212,7 @@ export async function invalidateGuestEligibility(
 
   if (!existing) {
     await tx.productGuestEligibility.create({
-      data: {
-        productId,
-        decision: 'pending',
-        // 新记录尚未被审核过，reviewedRevision 为空（§4.5.1 第一行）。
-        reviewedRevision: null,
-      },
+      data: { productId, decision: 'pending', reviewedRevision: null },
     })
     return { publicContentRevision: updated.publicContentRevision, decision: 'pending', created: true }
   }
@@ -99,27 +221,50 @@ export async function invalidateGuestEligibility(
     where: { productId },
     data: {
       decision: 'pending',
-      // version 递增：审批 CAS 用它排序，展示变更也是一次状态迁移，
-      // 必须让持有旧 version 的审批操作失效（§4.5）。
       version: { increment: 1 },
       reasonCode: 'content_changed',
-      // reviewedRevision 刻意保留原值——它记录"上次审的是哪一版"。
+      // reviewedRevision 保留原值——它记录"上次审的是哪一版"。
     },
   })
   return { publicContentRevision: updated.publicContentRevision, decision: 'pending', created: false }
 }
 
 /**
- * 便捷封装：只在 data 确实触及公开内容时才失效。
+ * 商品写入的便捷封装：**值确实变了**才失效。
  *
- * 调用方在**同一事务、同一行锁**内完成"写商品 + 失效"。返回 null 表示本次
- * 写入不影响公开审核状态（价格/库存/销量等），不递增 revision。
+ * 返回 null 表示本次写入不影响公开审核状态（价格/库存/销量，或整包提交但
+ * 内容与现状一致）。
  */
 export async function invalidateGuestEligibilityIfNeeded(
   tx: Prisma.TransactionClient,
   productId: number,
   data: Record<string, unknown>,
 ): Promise<GuestEligibilityInvalidation | null> {
-  if (!touchesPublicContent(data)) return null
+  if (!(await productPublicContentChanged(tx, productId, data))) return null
+  return invalidateGuestEligibility(tx, productId)
+}
+
+/**
+ * 套餐写入的便捷封装：展示字段变化或**启用**时失效。
+ *
+ * 调用方必须已持有该套餐所属商品的商品行锁（§4.5 统一锁顺序：先商品）。
+ */
+export async function invalidateGuestEligibilityForOfferChange(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  offerId: number,
+  data: Record<string, unknown>,
+): Promise<GuestEligibilityInvalidation | null> {
+  if (!(await offerPublicContentChanged(tx, offerId, data))) return null
+  return invalidateGuestEligibility(tx, productId)
+}
+
+/** 新建套餐：仅当直接启用时失效。 */
+export async function invalidateGuestEligibilityForNewOffer(
+  tx: Prisma.TransactionClient,
+  productId: number,
+  offer: { status?: unknown },
+): Promise<GuestEligibilityInvalidation | null> {
+  if (!newOfferNeedsInvalidation(offer)) return null
   return invalidateGuestEligibility(tx, productId)
 }

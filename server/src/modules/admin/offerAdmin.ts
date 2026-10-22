@@ -14,7 +14,11 @@ import {
   normalizeFixedStructuredContent,
 } from '../catalog/structuredFixedContent.js'
 import { lockProductRow } from '../catalog/productLock.js'
-import { invalidateGuestEligibility } from '../catalog/guestEligibility.js'
+import {
+  invalidateGuestEligibility,
+  invalidateGuestEligibilityForNewOffer,
+  invalidateGuestEligibilityForOfferChange,
+} from '../catalog/guestEligibility.js'
 import { assertOwnedActiveDeliveryFile } from '../catalog/deliveryFileOwnership.js'
 
 type Tx = Prisma.TransactionClient
@@ -149,18 +153,13 @@ export async function patchAdminOffer(
       }
     }
 
-    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A）：套餐名称/说明属于展示内容，
-    // 改动它们必须让商品旧批准失效。此处只判展示字段；价格/库存不触发。
-    const touchesOfferPresentation = input.name != null || input.attributes != null
-    const next = await tx.offer.update({
-      where: { id: offer.id },
-      data: {
-        ...(input.name != null ? { name: input.name } : {}),
-        ...(input.price != null ? { price: input.price } : {}),
-        ...('originalPrice' in input ? { originalPrice: input.originalPrice ?? null } : {}),
-        ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
-        ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
-        ...(input.attributes != null ? { attributes: input.attributes as Prisma.InputJsonValue } : {}),
+    const offerWriteData: Record<string, unknown> = {
+      ...(input.name != null ? { name: input.name } : {}),
+      ...(input.price != null ? { price: input.price } : {}),
+      ...('originalPrice' in input ? { originalPrice: input.originalPrice ?? null } : {}),
+      ...('validityDays' in input ? { validityDays: input.validityDays ?? null } : {}),
+      ...(input.sortOrder != null ? { sortOrder: input.sortOrder } : {}),
+      ...(input.attributes != null ? { attributes: input.attributes as Prisma.InputJsonValue } : {}),
         ...(touchingDelivery ? {
           deliveryMode: nextDeliveryMode,
           stockMode: nextStockMode,
@@ -178,11 +177,16 @@ export async function patchAdminOffer(
             ? { stock: 0 }
             : {}),
         } : {}),
-      },
-    })
-    if (touchesOfferPresentation) {
-      await invalidateGuestEligibility(tx, productId)
     }
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：**写前**判定——按值是否真的变了，
+    // 不是按字段有没有提交。整包提交但内容一致时不失效。
+    // 覆盖 name / attributes / status（启用未审核套餐）。
+    await invalidateGuestEligibilityForOfferChange(tx, productId, offer.id, offerWriteData)
+
+    const next = await tx.offer.update({
+      where: { id: offer.id },
+      data: offerWriteData as Prisma.OfferUpdateInput,
+    })
     await syncProductProjection(tx, productId)
     await tx.adminLog.create({
       data: {
@@ -274,8 +278,9 @@ export async function createPlatformOffer(
           : {}),
       },
     })
-    // 新套餐以 status='active' 创建 → 「新增或启用未审核套餐」。
-    await invalidateGuestEligibility(tx, productId)
+    // 新套餐以 status='active' 创建 → 「新增或启用未审核套餐」；
+    // inactive 创建不算（启用时会在 restoreAdminOffer 再判一次）。
+    await invalidateGuestEligibilityForNewOffer(tx, productId, offer)
     await syncProductProjection(tx, productId)
     await tx.adminLog.create({
       data: {
@@ -359,6 +364,11 @@ export async function restoreAdminOffer(
       where: { id: offer.id },
       data: { status: 'active' },
     })
+    // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审阻塞项）：**启用**未审核套餐
+    // 必须让旧批准失效。此前这里漏接，形成真实漏洞链：
+    // 上游同步一个 inactive 套餐 → 管理员启用 → 未经审核的套餐名称出现在
+    // 已批准的公开商品上，游客可见。
+    await invalidateGuestEligibility(tx, productId)
     await syncProductProjection(tx, productId)
     await tx.adminLog.create({
       data: {
