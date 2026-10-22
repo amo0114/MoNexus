@@ -2,6 +2,7 @@ import { prisma } from '../../lib/prisma.js'
 import { HttpError, badRequest, notFound, type ErrorCode } from '../../lib/httpError.js'
 import { lockProductRow } from '../catalog/productLock.js'
 import type { GuestEligibilityActionInput } from './guestEligibilitySchema.js'
+import { videoSummary } from '../productVideos/service.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §4.5 / §4.5.1（P1.5-A）——游客公开准入的人工审批。
@@ -41,6 +42,8 @@ export interface GuestEligibilityView {
   reasonCode: string | null
   /** 是否对游客可见（决定权在门禁，这里只是给管理员的一致性提示）。 */
   guestVisible: boolean
+  /** Immutable video referenced by this exact public content revision; no signed URLs. */
+  promoVideo: ReturnType<typeof videoSummary>
 }
 
 function toView(
@@ -56,6 +59,7 @@ function toView(
   } | null,
   productVisibility: string,
   categoryGuestVisibility: string,
+  promoVideo: ReturnType<typeof videoSummary>,
 ): GuestEligibilityView {
   const decision = (row?.decision ?? null) as GuestEligibilityView['decision']
   return {
@@ -67,6 +71,7 @@ function toView(
     reviewedByUserId: row?.reviewedByUserId ?? null,
     reviewedAt: row?.reviewedAt?.toISOString() ?? null,
     reasonCode: row?.reasonCode ?? null,
+    promoVideo,
     // 门禁是四道门的 AND；这里只做一致性提示，不参与授权。
     guestVisible:
       productVisibility === 'public'
@@ -83,6 +88,7 @@ async function loadState(tx: typeof prisma | Parameters<Parameters<typeof prisma
       id: true,
       visibility: true,
       publicContentRevision: true,
+      promoVideoAsset: true,
       category: { select: { guestVisibility: true } },
     },
   })
@@ -109,6 +115,7 @@ export async function getGuestEligibility(productId: number): Promise<GuestEligi
     row,
     product.visibility,
     product.category?.guestVisibility ?? 'members_only',
+    videoSummary(product.promoVideoAsset),
   )
 }
 
@@ -226,6 +233,7 @@ export async function applyGuestEligibilityAction(
       after.row,
       after.product.visibility,
       after.product.category?.guestVisibility ?? 'members_only',
+      videoSummary(after.product.promoVideoAsset),
     )
   })
 }

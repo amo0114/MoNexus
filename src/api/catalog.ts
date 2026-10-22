@@ -1,3 +1,4 @@
+import type { ProductVideoSummary } from '../types/product'
 /**
  * Catalog merchant adapter (T-CAT-FE-001A).
  *
@@ -316,6 +317,7 @@ export type CreateProductV2Request = {
   description: string
   richDescription: string | null
   descriptionImages: DescriptionImageWriteRef[]
+  promoVideoAssetId?: string | null
   images: PlatformMediaRef[]
   visibility: ProductVisibility
   attributes: TemplateAttributes
@@ -396,6 +398,7 @@ export type ProductEditorProduct = {
   description: string | null
   richDescription: string | null
   descriptionImages: DescriptionImageWriteRef[]
+  promoVideo?: ProductVideoSummary | null
   images: ProductEditorImage[]
   visibility: ProductVisibility
   attributes: TemplateAttributes
@@ -418,6 +421,7 @@ export type PatchProductContentRequest = {
   description?: string
   richDescription?: string | null
   descriptionImages?: DescriptionImageWriteRef[]
+  promoVideoAssetId?: string | null
   images?: PlatformMediaRef[]
   visibility?: ProductVisibility
   attributes?: TemplateAttributes
@@ -460,6 +464,7 @@ export type CreateProductV2OfferInput = {
  * isHot, stock, inventoryItems, content) are accepted so they can be stripped.
  */
 export type CreateProductV2Input = {
+  promoVideoAssetId?: string | null
   templateKey: TemplateKey
   name: string
   categoryId: number
@@ -580,6 +585,7 @@ export function buildPatchProductContentRequest(input: PatchProductContentReques
   }
   if (Array.isArray(input.descriptionImages)) payload.descriptionImages = sanitizeDescriptionImages(input.descriptionImages)
   if (Array.isArray(input.images)) payload.images = input.images
+  if (input.promoVideoAssetId === null || typeof input.promoVideoAssetId === 'string') payload.promoVideoAssetId = input.promoVideoAssetId
   if (input.visibility === 'public' || input.visibility === 'members_only') {
     payload.visibility = input.visibility
   }
@@ -708,6 +714,7 @@ export function buildCreateProductV2Request(input: CreateProductV2Input): Create
 
   const rich = typeof input.richDescription === 'string' ? input.richDescription.trim() : ''
   return {
+    ...(input.promoVideoAssetId !== undefined ? { promoVideoAssetId: input.promoVideoAssetId } : {}),
     editorVersion: 2,
     templateKey: input.templateKey,
     templateVersion: 1,

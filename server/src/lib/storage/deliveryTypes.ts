@@ -1,3 +1,4 @@
+import type { VideoMime } from './videoKeys.js'
 import type { Readable } from 'node:stream'
 
 /**
@@ -28,19 +29,22 @@ export interface DeliveryStorage {
    * 流式写入临时对象键（恒定内存），边写边算 SHA-256 与字节数。
    * 超过 maxBytes 时中止上传、清掉已写入的临时对象并抛 FileTooLargeError。
    */
-  putStream(tmpKey: string, stream: Readable, maxBytes: number): Promise<StreamPutResult>
+  putStream(tmpKey: string, stream: Readable, maxBytes: number, options?: { contentType?: VideoMime; signal?: AbortSignal }): Promise<StreamPutResult>
   /**
    * 把临时对象晋升为最终键（server-side copy + 删临时对象）。
    * 最终键已存在（内容寻址去重命中）时只删临时对象。
    */
   promote(tmpKey: string, finalKey: string): Promise<void>
   /** 尽力删除；对象不存在不报错（GC 幂等重试依赖这一点）。 */
-  delete(key: string): Promise<void>
+  delete(key: string, signal?: AbortSignal): Promise<void>
   /**
    * 签发短时下载 URL。强制 attachment + application/octet-stream——
    * MIME 不受信任，绝不允许浏览器内联渲染付费文件。
    */
   presignDownload(key: string, fileName: string, ttlSeconds: number): Promise<PresignedDownload>
+  presignInlineVideo(key: string, mimeType: VideoMime, ttlSeconds: number): Promise<PresignedDownload>
+  getObjectStream(key: string, signal?: AbortSignal): Promise<Readable | null>
+  objectExists(key: string, signal?: AbortSignal): Promise<boolean>
   /** tmp/ 前缀里早于 before 的遗留对象（上传失败未清干净时由 GC 兜底）。 */
   listTmpKeysOlderThan(before: Date): Promise<string[]>
   /**

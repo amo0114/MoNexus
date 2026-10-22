@@ -1,3 +1,6 @@
+import { logger } from '../../lib/logger.js'
+import { exportVideoObjects, restoreVideoObjects, rebindRestoredVideos, validateVideoManifest, videoRestoreSql, type VideoBackupObject } from '../productVideos/backup.js'
+import { getDeliveryStorageForProvider } from '../../lib/storage/delivery.js'
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
@@ -112,6 +115,7 @@ export async function importPortableBackup(
   let deliveryStorage: Awaited<ReturnType<typeof getDeliveryStorage>> | undefined
   const restoredObjectKeys: string[] = []
   const restoredDeliveryKeys: string[] = []
+  const restoredVideoKeys: string[] = []
   const restoredObjectUrls = new Map<string, string>()
   // pg_restore is executed in one PostgreSQL transaction. Keep this separate
   // from "started": when it fails, the database is still the untouched empty
@@ -187,12 +191,14 @@ export async function importPortableBackup(
       await deliveryStorage.putObjectAt(object.key, content)
     }
 
+    await restoreVideoObjects(manifest.videoObjects ?? [], extracted, restoredVideoKeys)
+
     const databaseDump = path.join(extracted, manifest.database.archivePath)
     if (await sha256File(databaseDump) !== manifest.database.sha256) {
       throw new Error('数据库转储校验失败')
     }
 
-    await restoreDatabase(databaseDump)
+    await restoreDatabase(databaseDump, manifest.formatVersion === 3 ? manifest.videoObjects ?? [] : undefined)
     databaseRestoreCommitted = true
     await runDatabaseMigrations()
     await prisma.$disconnect()
@@ -218,6 +224,7 @@ export async function importPortableBackup(
         status: '正常',
       },
     })
+    if (manifest.formatVersion !== 3) await rebindRestoredVideos([])
     const rewrittenProductImages = await rewriteRestoredProductImageUrls(restoredObjectUrls)
     await prisma.$transaction([
       prisma.refreshToken.deleteMany(),
@@ -228,7 +235,7 @@ export async function importPortableBackup(
           adminUserId: restoredOperator.id,
           action: '导入可移植备份',
           targetType: 'portable_backup',
-          detail: `已恢复 ${manifest.objects.length} 个公开对象、${(manifest.deliveryObjects ?? []).length} 个交付文件对象、改写 ${rewrittenProductImages} 个商品图片地址；所有旧会话已撤销`,
+          detail: `已恢复 ${manifest.objects.length} 个公开对象、${(manifest.deliveryObjects ?? []).length} 个交付文件对象、${(manifest.videoObjects ?? []).length} 个视频对象、改写 ${rewrittenProductImages} 个商品图片地址；所有旧会话已撤销`,
         },
       }),
     ])
@@ -246,6 +253,12 @@ export async function importPortableBackup(
     if (!databaseRestoreCommitted && deliveryStorage && restoredDeliveryKeys.length > 0) {
       await Promise.allSettled(restoredDeliveryKeys.map(key => deliveryStorage!.delete(key)))
     }
+    if (!databaseRestoreCommitted && restoredVideoKeys.length) {
+      const videoStorage = await getDeliveryStorageForProvider(null)
+      const cleanup = await Promise.allSettled(restoredVideoKeys.map(key => videoStorage.delete(key, AbortSignal.timeout(5000))))
+      const failures = cleanup.filter(result => result.status === 'rejected').length
+      if (failures) logger.warn({ failedObjects: failures }, 'video restore compensation incomplete; orphan cleanup or operator retry required')
+    }
     if (err instanceof HttpError) throw err
     throw badRequest('导入失败：备份文件、口令或目标实例状态无效')
   } finally {
@@ -262,7 +275,12 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
     const databaseDump = path.join(staging, 'database.dump')
     await fsp.mkdir(objectDirectory, { recursive: true, mode: 0o700 })
 
-    await dumpDatabase(databaseDump)
+    await fsp.mkdir(path.join(staging, 'video-objects'), { recursive: true, mode: 0o700 })
+    const videoObjects = await prisma.$transaction(async tx => {
+      const [snapshot] = await tx.$queryRaw<Array<{ snapshot: string }>>`SELECT pg_export_snapshot() AS snapshot`
+      await dumpDatabase(databaseDump, snapshot.snapshot)
+      return exportVideoObjects(tx, staging)
+    }, { isolationLevel: 'RepeatableRead', timeout: 60 * 60 * 1000 })
     const storage = await getStorage()
     const objectManifest: PortableObjectManifest[] = []
     const listedObjects = (await storage.list()).filter(object => isPortableObjectKey(object.key))
@@ -307,7 +325,7 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
 
     const databaseStat = await fsp.stat(databaseDump)
     const manifest: PortableBackupManifest = {
-      formatVersion: 2,
+      formatVersion: 3,
       createdAt: job.createdAt.toISOString(),
       applicationVersion: process.env.npm_package_version ?? '1.0.0',
       database: {
@@ -317,6 +335,7 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
       },
       objects: objectManifest,
       deliveryObjects: deliveryObjectManifest,
+      videoObjects,
     }
     await fsp.writeFile(path.join(staging, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, {
       mode: 0o600,
@@ -336,13 +355,13 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
     job.filePath = bundle
     job.fileName = fileName
     job.byteSize = bundleStat.size
-    job.objectCount = objectManifest.length + deliveryObjectManifest.length
+    job.objectCount = objectManifest.length + deliveryObjectManifest.length + videoObjects.length
     await prisma.adminLog.create({
       data: {
         adminUserId: job.adminUserId,
         action: '创建可移植备份',
         targetType: 'portable_backup',
-        detail: `包含数据库、${objectManifest.length} 个公开对象与 ${deliveryObjectManifest.length} 个交付文件对象；不含环境密钥`,
+        detail: `包含数据库、${objectManifest.length} 个公开对象与 ${deliveryObjectManifest.length} 个交付文件对象、${videoObjects.length} 个视频对象；不含环境密钥`,
       },
     })
     scheduleJobCleanup(job)
@@ -357,10 +376,11 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
   }
 }
 
-async function dumpDatabase(destination: string) {
+async function dumpDatabase(destination: string, snapshot?: string) {
   const { url, env } = databaseProcessOptions()
   await runProgram('pg_dump', [
     '--format=custom',
+    ...(snapshot ? ['--snapshot', snapshot] : []),
     '--no-owner',
     '--no-privileges',
     '--file', destination,
@@ -368,8 +388,15 @@ async function dumpDatabase(destination: string) {
   ], { env })
 }
 
-async function restoreDatabase(source: string) {
+async function restoreDatabase(source: string, videoObjects?: VideoBackupObject[]) {
   const { url, env } = databaseProcessOptions()
+  if (videoObjects !== undefined) {
+    const sqlFile = path.join(path.dirname(source), 'restore.sql')
+    await runProgram('pg_restore', ['--clean', '--if-exists', '--no-owner', '--no-privileges', '--file', sqlFile, source], { env })
+    await fsp.appendFile(sqlFile, videoRestoreSql(videoObjects))
+    await runProgram('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '--dbname', url.toString(), '--file', sqlFile], { env })
+    return
+  }
   await runProgram('pg_restore', [
     '--clean',
     '--if-exists',
@@ -403,7 +430,7 @@ async function readAndValidateManifest(extractedDirectory: string) {
   if (!parsed || typeof parsed !== 'object') throw new Error('备份清单无效')
   const manifest = parsed as PortableBackupManifest
   if (
-    (manifest.formatVersion !== 1 && manifest.formatVersion !== 2) ||
+    (manifest.formatVersion !== 1 && manifest.formatVersion !== 2 && manifest.formatVersion !== 3) ||
     !manifest.database ||
     manifest.database.archivePath !== 'database.dump' ||
     !isSha256(manifest.database.sha256) ||
@@ -452,6 +479,10 @@ async function readAndValidateManifest(extractedDirectory: string) {
       seenPaths.add(object.archivePath)
     }
   }
+  if (manifest.videoObjects !== undefined) {
+    if (manifest.formatVersion !== 3) throw new Error('备份格式不受支持')
+    validateVideoManifest(manifest.videoObjects)
+  } else if (manifest.formatVersion === 3) throw new Error('视频备份清单缺失')
   return manifest
 }
 
@@ -460,7 +491,7 @@ async function assertTargetIsFresh(
   incomingObjectKeys: string[],
   incomingDeliveryKeys: string[] = []
 ) {
-  const [otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements, deliveryFiles, fileGrants] = await Promise.all([
+  const [otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements, deliveryFiles, fileGrants, videoAssets] = await Promise.all([
     prisma.user.count({ where: { id: { not: operatorId } } }),
     prisma.product.count(),
     prisma.merchant.count(),
@@ -477,8 +508,9 @@ async function assertTargetIsFresh(
     prisma.announcement.count(),
     prisma.deliveryFile.count(),
     prisma.fileGrantLog.count(),
+    prisma.productVideoAsset.count(),
   ])
-  if ([otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements, deliveryFiles, fileGrants].some(count => count > 0)) {
+  if ([otherUsers, products, merchants, orders, inventory, inventoryLogs, pointLogs, checkins, invites, reviews, settlements, deliveries, events, announcements, deliveryFiles, fileGrants, videoAssets].some(count => count > 0)) {
     throw conflict('仅允许向空实例导入备份')
   }
 

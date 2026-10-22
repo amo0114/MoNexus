@@ -18,6 +18,8 @@ chore/xxx ┘                                        ▲
 | `feat/*` `fix/*` `chore/*` | 短生命周期工作分支 | 从 `develop` 切出 |
 | `hotfix/*` | 生产紧急修复 | 从 `master` 切出，合并后**必须**回并 `develop` |
 
+日常功能/修复 PR 使用 squash；长期分支之间的 release（`develop` → `master`）与历史同步 PR 使用 merge commit，保留共同祖先。不要对这类同步使用 squash，否则下一次 release 可能重复列出已发布提交并产生冲突。
+
 ## CI 矩阵（`.github/workflows/ci.yml`）
 
 | 事件 | backend | frontend | e2e |
@@ -33,6 +35,7 @@ chore/xxx ┘                                        ▲
 - **分片与耗时**：Vitest 按测试文件相对路径的 SHA-1 排序后均分文件数，不按耗时均衡。增删或重命名测试文件可能改变分片归属，因此每个 shard 都安装 pandoc。分片收益以真实 CI 时间戳为准，不把单个 job 耗时当作整条流水线耗时。
 - **后端测试数据库**：每个 backend shard 的 PostgreSQL 数据目录使用上限 2 GiB 的 `tmpfs`，随 job 销毁。保留每个测试前完整清表，`fsync`、`synchronous_commit`、`full_page_writes` 维持 PostgreSQL 默认设置；该存储配置仅用于一次性 CI 数据库。
 - **frontend job**：执行前端单元测试（根目录 `npm test`）、类型检查、构建，以及 `npm run e2e:mobile-island`。移动浏览器套件使用独立 Vite 5192 和全量 API 测试桩，不连接数据库；其三个 spec 从主 E2E 排除，避免重复运行。相关 spec、专用配置和共享 `e2e/auth-fixtures.ts` 变更都会触发 frontend job。
+- **frontend 浏览器安装与时限**：沿用 notification-realtime job 的做法，利用 GitHub 托管镜像已有的 Chromium 运行库，只执行 `playwright install chromium`，避免重复 apt 安装占满任务时限。frontend job 上限为 20 分钟，保留全部单测、构建与移动浏览器检查；缺失运行库仍会使浏览器检查失败。
 - `.github/workflows/ci.yml` 变更会**自动**触发全部 E2E 检查（已加入 e2e 路径过滤器）。
 - **不要在 PR 分支上用 `[skip ci]`**：它会抑制整个 workflow，required 的 `CI OK` 将永远 Pending，受保护分支的 PR 无法合并；纯文档 PR 靠路径过滤即可快速出绿，无需手动跳过。
 - **强制跑 e2e**：给 PR 打 `run-e2e` 标签；何时必须打、何时新增 e2e spec 见 [`testing-policy.md`](./testing-policy.md)。

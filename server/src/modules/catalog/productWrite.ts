@@ -1,3 +1,4 @@
+import { prepareVideoChange, videoSummary } from '../productVideos/service.js'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { HttpError, notFound, type ErrorCode, type ErrorDetail } from '../../lib/httpError.js'
@@ -249,6 +250,11 @@ export async function createProductFromV2(
       },
     })
 
+    if (input.promoVideoAssetId) {
+      await prepareVideoChange(tx, created.id, merchantId, null, input.promoVideoAssetId)
+      await tx.product.update({ where: { id: created.id }, data: { promoVideoAssetId: input.promoVideoAssetId } })
+    }
+
     for (const [index, offerInput] of input.offers.entries()) {
       const offerAttributes = validateTemplateAttributes({
         templateKey: input.templateKey,
@@ -373,6 +379,10 @@ export async function patchProductContent(
   const updatedFields: string[] = []
   const data: Prisma.ProductUncheckedUpdateInput = {}
 
+  if (input.promoVideoAssetId !== undefined) {
+    data.promoVideoAssetId = input.promoVideoAssetId
+    updatedFields.push('promoVideoAssetId')
+  }
   if (input.name !== undefined) {
     data.name = input.name
     updatedFields.push('name')
@@ -519,6 +529,9 @@ export async function patchProductContent(
         }
       }
     }
+    if (input.promoVideoAssetId !== undefined) {
+      await prepareVideoChange(tx, productId, current.merchantId, current.promoVideoAssetId, input.promoVideoAssetId)
+    }
     // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：**写前**判定——写入后再比较
     // 读到的是新值，必然判为"未变"。分类变更走局部变量 categoryId，
     // 因此显式并入（§4.4 明确分类选择属于展示内容）。
@@ -566,6 +579,7 @@ export async function getProductEditor(actor: ProductWriteActor, productId: numb
       ? { id: productId, merchantId: actor.merchantId }
       : { id: productId },
     include: {
+      promoVideoAsset: true,
       offers: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
       externalCatalogLink: {
         select: {
@@ -630,6 +644,7 @@ export async function getProductEditor(actor: ProductWriteActor, productId: numb
       richDescription: product.richDescription,
       descriptionImages: await listPersistedDescriptionImages(product.richDescription),
       images: product.images.map(url => ({ url, ref: null })),
+      promoVideo: videoSummary(product.promoVideoAsset),
       visibility: product.visibility,
       attributes: product.attributes,
       details: product.details,

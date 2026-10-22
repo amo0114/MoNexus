@@ -1,3 +1,4 @@
+import { productVideoRoutes } from './modules/productVideos/routes.js'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
@@ -149,6 +150,7 @@ app.use('/api/shops', shopRoutes)
 app.use('/api/products', publicSponsoredRouter)
 app.use('/api/products', publicEditorialRouter)
 app.use('/api/products', shareLinkRoutes)
+app.use('/api', productVideoRoutes)
 app.use('/api/products', productRoutes)
 app.use('/api/points', pointRoutes)
 app.use('/api/leaderboard', leaderboardRoutes)

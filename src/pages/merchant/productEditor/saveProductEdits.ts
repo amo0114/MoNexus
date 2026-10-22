@@ -133,6 +133,7 @@ export async function saveProductEdits(
       const assigningTemplate = savedTemplateKey == null && templateKey != null
       const result = await adapter.patchContent(actor, productId, {
         expectedContentVersion: contentVersion,
+        ...(form.promoVideo !== undefined ? { promoVideoAssetId: form.promoVideo?.assetId ?? null } : {}),
         name: form.name.trim(),
         categoryId: form.categoryId!,
         description: form.description,

@@ -534,6 +534,8 @@ model Product {
   icon             String   @default("package")
   imageUrl         String?
   images           String[] @default([])
+  promoVideoAssetId String? @unique
+  promoVideoAsset ProductVideoAsset? @relation(fields: [promoVideoAssetId], references: [id], onDelete: Restrict)
   // PostgreSQL CHECK constraints (20260724120000) keep commercial values valid
   // even when data is changed outside the API.
   price            Int // > 0
@@ -1335,6 +1337,9 @@ model StoredObject {
   updatedAt        DateTime @default(now()) @updatedAt
 
   provider StorageProviderConfig? @relation(fields: [providerConfigId], references: [id], onDelete: SetNull)
+
+  videoAssets ProductVideoAsset[] @relation("VideoObject")
+  posterAssets ProductVideoAsset[] @relation("VideoPoster")
 
   @@unique([bucketRole, objectKey, providerRef])
   @@index([objectKey])
@@ -2446,4 +2451,26 @@ model RecommendationClick {
   @@id([listId, productId])
   @@index([receivedAt])
   @@index([userId, productId, receivedAt])
+}
+
+// Immutable promotional media; storage ownership is independent of guest approval.
+model ProductVideoAsset {
+  id String @id
+  merchantId Int?
+  createdById Int
+  providerConfigId Int?
+  videoStoredObjectId Int? @unique
+  posterStoredObjectId Int? @unique
+  status String @default("uploading")
+  durationMs Int @default(0)
+  width Int @default(0)
+  height Int @default(0)
+  hasAudio Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  product Product?
+  videoStoredObject StoredObject? @relation("VideoObject", fields: [videoStoredObjectId], references: [id], onDelete: Restrict)
+  posterStoredObject StoredObject? @relation("VideoPoster", fields: [posterStoredObjectId], references: [id], onDelete: Restrict)
+  @@index([merchantId, status])
+  @@index([status, updatedAt])
 }

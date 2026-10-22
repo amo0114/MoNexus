@@ -60,6 +60,7 @@ export interface ProductCreationDraft {
   primaryOfferName: string
   primaryOfferAttributes: TemplateAttributes
   extraOffers: ExtraOffer[]
+  promoVideoAssetId?: string | null
   images: string[]
   imageKeys: Record<string, string>
   descriptionImages: DescriptionImageWriteRef[]
@@ -156,7 +157,7 @@ export function validateCreationStep(current: number, input: ProductCreationDraf
 
 export function buildProductDraftRequest(input: ProductCreationDraft & { templateKey: TemplateKey }) {
   const {
-    templateKey, selectedTemplate, form, images, imageKeys, descriptionImages, productAttributes,
+    templateKey, selectedTemplate, form, promoVideoAssetId, images, imageKeys, descriptionImages, productAttributes,
     productDetails, purchaseForm, primaryOfferName, primaryOfferAttributes, extraOffers,
   } = input
   function buildOfferInput(input: {
@@ -200,6 +201,7 @@ export function buildProductDraftRequest(input: ProductCreationDraft & { templat
 
   return buildCreateProductV2Request({
     templateKey,
+    ...(promoVideoAssetId !== undefined ? { promoVideoAssetId } : {}),
     name: form.name.trim(),
     categoryId: form.categoryId ?? 0,
     description: form.description.trim(),

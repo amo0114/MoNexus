@@ -1,3 +1,4 @@
+import { videoSummary } from '../productVideos/service.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
@@ -113,6 +114,7 @@ const productDetailSelect = {
   icon: true,
   imageUrl: true,
   images: true,
+  promoVideoAsset: true,
   price: true,
   originalPrice: true,
   stock: true,
@@ -486,6 +488,7 @@ function serializePublicProductDetail(
   const {
     _count,
     offers,
+    promoVideoAsset,
     archivedAt: _archivedAt,
     merchant,
     category,
@@ -502,6 +505,7 @@ function serializePublicProductDetail(
 
   return {
     ...publicProduct,
+    promoVideo: videoSummary(promoVideoAsset),
     merchant: publicMerchant(merchant),
     // 同列表：分类只输出公开三件套，guestVisibility 不对外。
     category: publicCategory(category),
@@ -703,6 +707,7 @@ export async function listProducts(params: ProductListParams = {}) {
       // 不能信任缓存里那份可能已过期的判定结果。
       category: { select: { guestVisibility: true } },
       // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。
+      contentVersion: true,
       publicContentRevision: true,
       guestEligibility: { select: { decision: true, reviewedRevision: true } },
     },
@@ -802,7 +807,7 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
 
 export async function getProductDetail(id: number, audience: ProductAudience = 'guest') {
   const cacheKey = await buildProductDetailCacheKey(id, audience)
-  const baseProduct = cacheKey
+  let baseProduct = cacheKey
     ? await wrapCache('product-detail', cacheKey, 60, () => getProductDetailFromDb(id, audience), {
         negativeTtlSec: 20,
         negativeErrorPredicate: err => err instanceof HttpError && err.status === 404,
@@ -816,6 +821,7 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
     where: { id },
     select: {
       status: true,
+      contentVersion: true,
       archivedAt: true,
       visibility: true,
       merchantId: true,
@@ -828,6 +834,9 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
   })
   if (!live) throw notFound('商品暂不可用')
   assertPublicProductAccess(live, audience)
+  if (live.contentVersion !== baseProduct.contentVersion) {
+    baseProduct = await getProductDetailFromDb(id, audience)
+  }
 
   const pinned = await resolveCursorForRequest(null)
   const run = pinned.mode === 'run' ? pinned.run : null

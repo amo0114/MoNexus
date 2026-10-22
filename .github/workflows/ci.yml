@@ -191,8 +191,8 @@ jobs:
       - name: Build backend
         run: npm --prefix server run build
 
-      - name: Install pandoc for spec DOCX checks
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+      - name: Install spec and bounded media test tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc ffmpeg util-linux
 
       - name: Test backend (shard ${{ matrix.shard }}/6)
         run: npm --prefix server test -- --shard=${{ matrix.shard }}/6
@@ -206,7 +206,8 @@ jobs:
         needs.changes.outputs.frontend == 'true'
       )
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Bound runner/download variance while retaining all unit/build/mobile gates.
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -229,7 +230,10 @@ jobs:
         run: npm run build
 
       - name: Install browser for isolated mobile UI checks
-        run: npx playwright install --with-deps chromium
+        # As in notification-realtime-e2e, the hosted image already supplies
+        # Chromium runtime libraries. Avoid a redundant apt install-deps pass:
+        # its package mirrors consumed over 10 minutes in develop CI run 723.
+        run: npx playwright install chromium
 
       - name: Check mobile island behavior and accessibility
         run: npm run e2e:mobile-island
@@ -367,6 +371,9 @@ jobs:
       - name: Install Playwright system dependencies
         if: steps.playwright-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
+
+      - name: Install bounded media tools for real upload E2E
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg util-linux
 
       - name: Build backend
         run: npm --prefix server run build
