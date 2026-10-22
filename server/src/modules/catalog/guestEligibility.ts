@@ -172,7 +172,16 @@ export async function offerPublicContentChanged(
   })
   if (!current) return false
 
+  const nextStatus = Object.prototype.hasOwnProperty.call(data, 'status') ? data.status : current.status
+  // Only enabling counts: taking an offer offline removes content guests could see,
+  // so it must not revoke the product's approval.
+  if (current.status !== 'active' && nextStatus === 'active') return true
+  // Edits to an offer that stays offline are not visible to guests; enabling it later
+  // is what triggers review.
+  if (nextStatus !== 'active') return false
+
   for (const field of candidateFields) {
+    if (field === 'status') continue
     const currentValue = (current as Record<string, unknown>)[field]
     const nextValue = data[field]
     if (!publicContentValuesEqual(field, currentValue, nextValue)) return true

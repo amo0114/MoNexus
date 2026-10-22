@@ -122,6 +122,40 @@ describe('SPEC-CATALOG-VIS-001 §4.4 商家套餐写入口', () => {
     expect(changed.revision).toBe(2)
     expect(changed.eligibility.decision).toBe('pending')
   })
+
+  it('商家下架套餐不失效；重新上架才失效', async () => {
+    const { product } = await seedApprovedProductForMerchant('商家下架套餐商品')
+    const extra = await prisma.offer.create({
+      data: {
+        productId: product.id, name: '可下架套餐', price: 70, status: 'active',
+        deliveryMode: 'manual_service', stockMode: 'unlimited', stock: 0,
+      },
+      select: { id: true },
+    })
+    const email = (await prisma.merchant.findUniqueOrThrow({
+      where: { id: product.merchantId! },
+      select: { user: { select: { email: true } } },
+    })).user.email
+    const { accessToken } = await loginAs(email, 'pass123')
+
+    const disabled = await api
+      .put(`/api/merchant/products/${product.id}/offers/${extra.id}`)
+      .set(authHeader(accessToken))
+      .send({ status: 'inactive', name: '下架期间改名' })
+    expect(disabled.status).toBe(200)
+    const afterDisable = await readState(product.id)
+    expect(afterDisable.revision).toBe(1)
+    expect(afterDisable.eligibility.decision).toBe('approved')
+
+    const enabled = await api
+      .put(`/api/merchant/products/${product.id}/offers/${extra.id}`)
+      .set(authHeader(accessToken))
+      .send({ status: 'active' })
+    expect(enabled.status).toBe(200)
+    const afterEnable = await readState(product.id)
+    expect(afterEnable.revision).toBe(2)
+    expect(afterEnable.eligibility.decision).toBe('pending')
+  })
 })
 
 describe('SPEC-CATALOG-VIS-001 §4.4 管理员启用套餐（复审指出的漏洞链）', () => {
