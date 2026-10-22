@@ -18,6 +18,8 @@ chore/xxx ┘                                        ▲
 | `feat/*` `fix/*` `chore/*` | 短生命周期工作分支 | 从 `develop` 切出 |
 | `hotfix/*` | 生产紧急修复 | 从 `master` 切出，合并后**必须**回并 `develop` |
 
+日常功能/修复 PR 使用 squash；长期分支之间的 release（`develop` → `master`）与历史同步 PR 使用 merge commit，保留共同祖先。不要对这类同步使用 squash，否则下一次 release 可能重复列出已发布提交并产生冲突。
+
 ## CI 矩阵（`.github/workflows/ci.yml`）
 
 | 事件 | backend | frontend | e2e |
