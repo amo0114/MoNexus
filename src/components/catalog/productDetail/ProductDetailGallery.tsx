@@ -1,7 +1,7 @@
 import type { ProductVideoSummary } from '../../../types/product'
 import ProductVideoPlayer from '../ProductVideoPlayer'
 import {
-  useRef, useState, useEffect,
+  useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -15,6 +15,8 @@ interface ProductDetailGalleryProps {
   productName: string
   images: string[]
   activeImage: number
+  videoActive: boolean
+  onVideoActiveChange: (active: boolean) => void
   preview: boolean
   isDesktopViewport: boolean
   onShowImage: (index: number) => void
@@ -32,17 +34,17 @@ export default function ProductDetailGallery({
   productName,
   images,
   activeImage,
+  videoActive,
+  onVideoActiveChange,
   preview,
   isDesktopViewport,
   onShowImage,
   onMove,
   onOpenLightbox,
 }: ProductDetailGalleryProps) {
-  const [videoActive, setVideoActive] = useState(Boolean(promoVideo))
-  useEffect(() => { setVideoActive(Boolean(promoVideo)) }, [productId, promoVideo?.assetId])
   function moveMedia(direction: -1 | 1) {
-    if (videoActive && promoVideo) { setVideoActive(false); onShowImage(direction === 1 ? 0 : images.length - 1); return }
-    if (promoVideo && ((activeImage === 0 && direction === -1) || (activeImage === images.length - 1 && direction === 1))) setVideoActive(true)
+    if (videoActive && promoVideo) { onVideoActiveChange(false); onShowImage(direction === 1 ? 0 : images.length - 1); return }
+    if (promoVideo && ((activeImage === 0 && direction === -1) || (activeImage === images.length - 1 && direction === 1))) onVideoActiveChange(true)
     else onMove(direction)
   }
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -107,12 +109,12 @@ export default function ProductDetailGallery({
         {/* Thumbnails rail if multiple images */}
         {(hasMultipleImages || promoVideo) && (
           <div className="flex sm:flex-col gap-2 shrink-0 overflow-x-auto sm:overflow-y-auto max-sm:order-2">
-            {promoVideo && <button type="button" data-testid="product-gallery-thumb-video" aria-label="查看商品视频" aria-pressed={videoActive} onClick={() => setVideoActive(true)} className={`w-16 h-12 rounded-lg border-2 shrink-0 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${videoActive ? 'border-[var(--color-primary)]' : 'border-[var(--color-border)] opacity-60 hover:opacity-100'}`}>▶ 视频</button>}
+            {promoVideo && <button type="button" data-testid="product-gallery-thumb-video" aria-label="查看商品视频" aria-pressed={videoActive} onClick={() => onVideoActiveChange(true)} className={`w-16 h-12 rounded-lg border-2 shrink-0 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${videoActive ? 'border-[var(--color-primary)]' : 'border-[var(--color-border)] opacity-60 hover:opacity-100'}`}>▶ 视频</button>}
             {images.map((img, i) => (
               <button
                 key={`${img}-${i}`}
                 type="button"
-                onClick={() => { setVideoActive(false); onShowImage(i) }}
+                onClick={() => { onVideoActiveChange(false); onShowImage(i) }}
                 data-testid={`product-gallery-thumb-${i}`}
                 aria-label={`查看第 ${i + 1} 张图片`}
                 aria-pressed={!videoActive && i === activeImage}

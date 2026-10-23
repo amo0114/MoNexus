@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ProductVideoPlayer from './ProductVideoPlayer'
@@ -138,8 +139,12 @@ describe('private product video lifecycle', () => {
   it('keeps the image index separate and destroys video when switching to an image', async () => {
     vi.mocked(getProductVideoPlayback).mockResolvedValue(ticket)
     const show = vi.fn()
-    render(<ProductDetailGallery productName="示例" productId={1} promoVideo={{ assetId: 'asset', durationMs: 1000, width: 320, height: 240, hasAudio: false }}
-      images={['/image.png']} activeImage={0} preview={false} isDesktopViewport onShowImage={show} onMove={vi.fn()} onOpenLightbox={vi.fn()} />)
+    function Gallery() {
+      const [videoActive, setVideoActive] = useState(true)
+      return <ProductDetailGallery videoActive={videoActive} onVideoActiveChange={setVideoActive} productName="示例" productId={1} promoVideo={{ assetId: 'asset', durationMs: 1000, width: 320, height: 240, hasAudio: false }}
+      images={['/image.png']} activeImage={0} preview={false} isDesktopViewport onShowImage={show} onMove={vi.fn()} onOpenLightbox={vi.fn()} />
+    }
+    render(<Gallery />)
     await screen.findByLabelText('商品展示视频')
     fireEvent.click(screen.getByRole('button', { name: '查看第 1 张图片' }))
     expect(show).toHaveBeenCalledWith(0)

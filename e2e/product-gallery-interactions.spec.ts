@@ -209,6 +209,10 @@ test.describe('mobile product gallery', () => {
 // Requires a real browser: no user gesture, real MP4 decode, and native-control
 // hit area must stay separate from the mobile page's share/back/favorite tools.
 test('video starts without a click and leaves native controls accessible across layouts', async ({ page }, testInfo) => {
+  let ticketRequests = 0
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/products/4242/video-playback') ticketRequests++
+  })
   for (const width of [1280, 820, 390]) {
     await page.setViewportSize({ width, height: 900 })
     await openGallery(page, true)
@@ -230,5 +234,13 @@ test('video starts without a click and leaves native controls accessible across 
     await expect(video).toHaveCount(0)
     expect(await handle!.evaluate(element => element.getAttribute('src'))).toBeNull()
     await expect(page.getByTestId('product-gallery-main')).toBeVisible()
+    const beforeResize = ticketRequests
+    await page.setViewportSize({ width: width === 1280 ? 820 : width === 820 ? 390 : 1280, height: 900 })
+    // Let the real matchMedia + React layout branch change commit.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    await expect(page.getByTestId('product-gallery-main')).toBeVisible()
+    await expect(page.getByTestId('product-gallery')).toHaveAttribute('data-media-kind', 'image')
+    await expect(video).toHaveCount(0)
+    expect(ticketRequests).toBe(beforeResize)
   }
 })

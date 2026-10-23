@@ -98,6 +98,10 @@ export default function ProductDetailPage() {
   const [merchantName, setMerchantName] = useState('')
   const [provisionPending, setProvisionPending] = useState(false)
   const [activeImage, setActiveImage] = useState(0)
+  // Layout branches remount the gallery on rotation / breakpoint changes.
+  // Keep media selection here so choosing an image cannot restart the video.
+  const [videoActive, setVideoActive] = useState(true)
+  useEffect(() => { setVideoActive(true) }, [product?.id, product?.promoVideo?.assetId])
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [supportOpen, setSupportOpen] = useState(false)
@@ -538,6 +542,8 @@ export default function ProductDetailPage() {
       productName={product.name}
       images={galleryImages}
       activeImage={activeImage}
+      videoActive={Boolean(product.promoVideo) && videoActive}
+      onVideoActiveChange={setVideoActive}
       preview={isReferencePreview}
       isDesktopViewport={isDesktopViewport}
       onShowImage={showGalleryImage}

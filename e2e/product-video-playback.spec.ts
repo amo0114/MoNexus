@@ -76,6 +76,9 @@ test('private video autoplays muted, plays real MP4 and releases media on galler
       if (path.startsWith('/api/uploads/product-video-signed/')) bytes++
     })
     for (const width of [1280, 820, 390]) {
+      // Finish the previous visit before resizing: count only this navigation's
+      // ticket, not a request interrupted by the next document load.
+      await guest.goto('about:blank')
       await guest.setViewportSize({ width, height: 900 })
       tickets = 0; bytes = 0
       await guest.goto(`/product/${productId}`)
