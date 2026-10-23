@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { fileURLToPath } from 'node:url'
 import { createMockAccessToken } from './auth-fixtures'
 
 const profile = {
@@ -52,7 +53,7 @@ function apiPath(path: string) {
   return `/api${path}`
 }
 
-async function openGallery(page: Page) {
+async function openGallery(page: Page, withVideo = false) {
   await page.addInitScript(({ authenticatedProfile, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({
       state: {
@@ -94,8 +95,10 @@ async function openGallery(page: Page) {
       await route.fulfill({ json: [] })
     } else if (path === apiPath('/orders/attention-count')) {
       await route.fulfill({ json: { count: 0 } })
+    } else if (path === apiPath('/products/4242/video-playback')) {
+      await route.fulfill({ json: { videoAssetId: 'gallery-video', playbackUrl: '/gallery-fixture.mp4', posterUrl: images[0], expiresAt: new Date(Date.now() + 180_000).toISOString() } })
     } else if (path === apiPath('/products/4242')) {
-      await route.fulfill({ json: product })
+      await route.fulfill({ json: withVideo ? { ...product, promoVideo: { assetId: 'gallery-video', durationMs: 1000, width: 320, height: 240, hasAudio: true } } : product })
     } else if (path === apiPath('/products/4242/reviews')) {
       await route.fulfill({ json: { items: [], total: 0, page: 1, pageSize: 10 } })
     } else if (path === apiPath('/products/4242/recommendations')) {
@@ -116,8 +119,11 @@ async function openGallery(page: Page) {
     })
   })
 
+  if (withVideo) await page.route('**/gallery-fixture.mp4', route => route.fulfill({
+    path: fileURLToPath(new URL('./fixtures/product-video.mp4', import.meta.url)), contentType: 'video/mp4',
+  }))
   await page.goto('/product/4242')
-  await expect(page.getByTestId('product-gallery-main')).toBeVisible({ timeout: 10_000 })
+  await expect(withVideo ? page.getByLabel('商品展示视频') : page.getByTestId('product-gallery-main')).toBeVisible({ timeout: 10_000 })
 }
 
 test('product gallery keeps the full image in a stable frame and supports buttons, keys, and desktop drag', async ({ page }) => {
@@ -198,4 +204,31 @@ test.describe('mobile product gallery', () => {
 
     await expect(mainImage).toHaveAttribute('src', images[1])
   })
+})
+
+// Requires a real browser: no user gesture, real MP4 decode, and native-control
+// hit area must stay separate from the mobile page's share/back/favorite tools.
+test('video starts without a click and leaves native controls accessible across layouts', async ({ page }, testInfo) => {
+  for (const width of [1280, 820, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    await openGallery(page, true)
+    const video = page.getByLabel('商品展示视频')
+    await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0)
+    expect(await video.evaluate((element: HTMLVideoElement) => element.muted)).toBe(true)
+    await expect(video).toHaveCSS('object-fit', 'contain')
+    const videoBox = (await video.boundingBox())!
+    const frameBox = (await page.getByTestId('product-video-player').boundingBox())!
+    expect(Math.abs(videoBox.height - frameBox.height)).toBeLessThan(2)
+    if (width < 768) {
+      const tools = page.locator('.pm-gallery-tools')
+      const toolsBox = (await tools.boundingBox())!
+      expect(toolsBox.y + toolsBox.height).toBeLessThanOrEqual(videoBox.y + 1)
+    }
+    await page.screenshot({ path: testInfo.outputPath(`video-${width}.png`), fullPage: false })
+    const handle = await video.elementHandle()
+    await page.getByRole('button', { name: '查看下一项商品媒体' }).click()
+    await expect(video).toHaveCount(0)
+    expect(await handle!.evaluate(element => element.getAttribute('src'))).toBeNull()
+    await expect(page.getByTestId('product-gallery-main')).toBeVisible()
+  }
 })

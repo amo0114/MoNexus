@@ -4,7 +4,7 @@ import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, loginAs, loginAsApi, select
 const fixture = fileURLToPath(new URL('./fixtures/product-video.mp4', import.meta.url))
 
 /** Real upload/save → admin preview/approval → guest decode, with no API stubs. */
-test('private video waits for a click, plays real MP4 and releases media on gallery navigation across layouts', async ({ page, request, browser }) => {
+test('private video autoplays muted, plays real MP4 and releases media on gallery navigation across layouts', async ({ page, request, browser }) => {
   test.setTimeout(90_000)
   const merchant = await loginAsApi(request, SEED_ACCOUNTS.merchant)
   const name = `E2E商品视频-${Date.now()}`
@@ -40,7 +40,7 @@ test('private video waits for a click, plays real MP4 and releases media on gall
     await admin.getByRole('button', { name: '视频内容审核（含仅登录商品）' }).click()
     const videoReview = admin.getByRole('region', { name: '视频内容审核', exact: true })
     await videoReview.getByRole('button', { name: `${name} · 待审核`, exact: true }).click()
-    await videoReview.getByRole('button', { name: '▶ 播放商品视频' }).click()
+    await videoReview.getByRole('button', { name: '播放商品视频' }).click()
     const contentVideo = videoReview.locator('video')
     await contentVideo.evaluate((element: HTMLVideoElement) => { element.muted = false; return element.play() })
     await expect.poll(() => contentVideo.evaluate((element: HTMLVideoElement) => element.ended)).toBe(true)
@@ -57,7 +57,7 @@ test('private video waits for a click, plays real MP4 and releases media on gall
     const preview = dialog.getByRole('region', { name: '公开审核视频预览' })
     await expect(preview.getByTestId('admin-guest-review-video-version')).toContainText(assetId)
     await expect(preview.getByText(/此视频包含声音/)).toBeVisible()
-    await preview.getByRole('button', { name: '▶ 播放商品视频' }).click()
+    await preview.getByRole('button', { name: '播放商品视频' }).click()
     const adminVideo = preview.locator('video')
     await adminVideo.evaluate((element: HTMLVideoElement) => { element.muted = false; return element.play() })
     await expect.poll(() => adminVideo.evaluate((element: HTMLVideoElement) => element.ended)).toBe(true)
@@ -79,12 +79,10 @@ test('private video waits for a click, plays real MP4 and releases media on gall
       await guest.setViewportSize({ width, height: 900 })
       tickets = 0; bytes = 0
       await guest.goto(`/product/${productId}`)
-      await expect(guest.getByRole('button', { name: '▶ 播放商品视频' })).toBeVisible()
-      expect(tickets).toBe(0); expect(bytes).toBe(0)
-      await guest.getByRole('button', { name: '▶ 播放商品视频' }).click()
       const video = guest.locator('video')
       await expect(video).toHaveAttribute('src', /product-video-signed/)
-      await video.evaluate((element: HTMLVideoElement) => element.play())
+      expect(await video.evaluate((element: HTMLVideoElement) => element.muted)).toBe(true)
+      await expect(video).toHaveCSS('object-fit', 'contain')
       await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0)
       expect(tickets).toBe(1); expect(bytes).toBeGreaterThan(0)
       const handle = await video.elementHandle()

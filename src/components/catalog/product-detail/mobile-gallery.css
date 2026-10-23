@@ -61,6 +61,8 @@
     overflow: hidden;
   }
   .pm-gallery {
+    display: flex;
+    flex-direction: column;
     position: relative;
   }
   .pm-gallery [data-testid='product-gallery'] {
@@ -149,6 +151,16 @@
     align-items: center;
     pointer-events: none;
     z-index: 21;
+  }
+  /* Native iOS video controls also occupy the top corners. Keep page actions
+     in their own row while video is selected, with the image overlay unchanged. */
+  .pm-gallery:has([data-media-kind='video']) .pm-gallery-tools {
+    position: static;
+    inset: auto;
+    order: -1;
+    min-height: 56px;
+    padding: 8px 14px;
+    z-index: auto;
   }
   .pm-gallery-actions {
     display: flex;
