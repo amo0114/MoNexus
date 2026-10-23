@@ -4,7 +4,7 @@ import { productVideoTempRoot } from './productVideoTemp.js'
 import { prisma } from './prisma.js'
 import { logger } from './logger.js'
 import { getDeliveryStorageForProvider } from './storage/delivery.js'
-import { VIDEO_KEY, videoKey } from './storage/videoKeys.js'
+import { VIDEO_KEY, VIDEO_SOURCE_KEY, videoKey, videoSourceKey } from './storage/videoKeys.js'
 
 const GRACE_MS = 24 * 60 * 60 * 1000
 /** Claim under asset lock; never acquire a Product lock after an asset lock. */
@@ -31,12 +31,13 @@ export async function cleanupProductVideos(now = new Date()) {
       const claimed = await prisma.$transaction(async tx => {
         await tx.$queryRaw`SELECT "id" FROM "ProductVideoAsset" WHERE "id" = ${candidate.id} FOR UPDATE`
         const current = await tx.productVideoAsset.findUnique({ where: { id: candidate.id }, include: { product: { select: { id: true } } } })
-        if (!current || current.product || current.status === 'uploading' || (current.status !== 'deleting' && current.updatedAt >= cutoff)) return null
+        if (!current || current.product || ['uploading', 'queued', 'processing'].includes(current.status) || (current.status !== 'deleting' && current.updatedAt >= cutoff)) return null
         return tx.productVideoAsset.update({ where: { id: current.id }, data: { status: 'deleting' } })
       })
       if (!claimed) continue
       const storage = await getDeliveryStorageForProvider(claimed.providerConfigId)
-      await storage.delete(videoKey(claimed.id)); await storage.delete(videoKey(claimed.id, true))
+      await storage.delete(videoKey(claimed.id, false, claimed.outputGeneration)); await storage.delete(videoKey(claimed.id, true, claimed.outputGeneration))
+      await storage.delete(videoSourceKey(claimed.id))
       await prisma.$transaction(async tx => {
         await tx.productVideoAsset.delete({ where: { id: claimed.id } })
         await tx.storedObject.updateMany({ where: { id: { in: [claimed.videoStoredObjectId, claimed.posterStoredObjectId].filter((id): id is number => id !== null) } }, data: { status: 'deleted' } })
@@ -55,8 +56,13 @@ export async function cleanupProductVideos(now = new Date()) {
       const storage = await getDeliveryStorageForProvider(providerId)
       for (const key of await storage.listFinalKeysOlderThan(cutoff)) {
         const match = VIDEO_KEY.exec(key)
-        if (!match) continue
-        if (!await prisma.productVideoAsset.findUnique({ where: { id: match[1] }, select: { id: true } })) await storage.delete(key)
+        const source = VIDEO_SOURCE_KEY.exec(key)
+        if (!match && !source) continue
+        const asset = await prisma.productVideoAsset.findUnique({ where: { id: (match ?? source)![1] } })
+        const preserve = source ? asset && ['uploading', 'queued', 'processing'].includes(asset.status)
+          : asset && (key === videoKey(asset.id, false, asset.outputGeneration) || key === videoKey(asset.id, true, asset.outputGeneration)
+            || (asset.status === 'processing' && match![2] === asset.processingToken))
+        if (!preserve) await storage.delete(key)
       }
     } catch { logger.warn({ providerId }, 'promotional orphan scan failed; keeping objects') }
   }

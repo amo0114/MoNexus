@@ -23,7 +23,7 @@ export async function exportVideoObjects(tx: Prisma.TransactionClient, staging: 
   for (const asset of assets) {
     for (const [poster, object] of [[false, asset.videoStoredObject], [true, asset.posterStoredObject]] as const) {
       if (!object || object.status !== 'active' || object.source !== 'product_video' || object.bucketRole !== 'private'
-        || object.objectKey !== videoKey(asset.id, poster) || object.providerConfigId !== asset.providerConfigId || !object.checksum || object.size == null) throw new Error('视频备份引用无效')
+        || object.objectKey !== videoKey(asset.id, poster, asset.outputGeneration) || object.providerConfigId !== asset.providerConfigId || !object.checksum || object.size == null) throw new Error('视频备份引用无效')
       const adapter = await getDeliveryStorageForProvider(object.providerConfigId)
       const signal = AbortSignal.any([deadline, AbortSignal.timeout(60_000)])
       const stream = await adapter.getObjectStream(object.objectKey, signal)
@@ -85,7 +85,7 @@ export async function rebindRestoredVideos(objects: VideoBackupObject[]) {
       if (!asset.videoStoredObjectId || !asset.posterStoredObjectId || !ids.has(asset.videoStoredObjectId) || !ids.has(asset.posterStoredObjectId)) throw new Error('恢复的视频资产缺少对象')
     }
     // In-progress uploads cannot be resumed across environments.
-    await tx.productVideoAsset.updateMany({ where: { status: 'uploading' }, data: { status: 'failed' } })
+    await tx.productVideoAsset.updateMany({ where: { status: { in: ['uploading', 'queued', 'processing'] } }, data: { status: 'failed', processingToken: null, processingUntil: null, processingError: '备份恢复后请重新上传原片' } })
     await tx.productVideoAsset.updateMany({ data: { providerConfigId: null } })
   })
 }
@@ -109,14 +109,19 @@ BEGIN
       OR o."objectKey" IS DISTINCT FROM m.key OR o.checksum IS DISTINCT FROM m.sha256 OR o.size IS DISTINCT FROM m.size
   ) OR EXISTS (
     SELECT 1 FROM "ProductVideoAsset" a WHERE a.status = 'ready' AND (
-      NOT EXISTS (SELECT 1 FROM video_restore_manifest m WHERE m."storedObjectId" = a."videoStoredObjectId" AND m.key = 'product-videos/v1/' || a.id || '/video.mp4') OR
-      NOT EXISTS (SELECT 1 FROM video_restore_manifest m WHERE m."storedObjectId" = a."posterStoredObjectId" AND m.key = 'product-videos/v1/' || a.id || '/poster.jpg')
+      NOT EXISTS (SELECT 1 FROM video_restore_manifest m WHERE m."storedObjectId" = a."videoStoredObjectId" AND m.key = 'product-videos/v1/' || a.id || '/' || COALESCE((to_jsonb(a)->>'outputGeneration') || '/', '') || 'video.mp4') OR
+      NOT EXISTS (SELECT 1 FROM video_restore_manifest m WHERE m."storedObjectId" = a."posterStoredObjectId" AND m.key = 'product-videos/v1/' || a.id || '/' || COALESCE((to_jsonb(a)->>'outputGeneration') || '/', '') || 'poster.jpg')
     )
   ) THEN RAISE EXCEPTION 'video restore manifest mismatch'; END IF;
 END $video_validation$;
 UPDATE "StoredObject" SET "providerConfigId" = NULL, "providerRef" = 'env'
   WHERE id IN (SELECT "storedObjectId" FROM video_restore_manifest);
-UPDATE "ProductVideoAsset" SET status = 'failed' WHERE status = 'uploading';
+UPDATE "ProductVideoAsset" SET status = 'failed' WHERE status IN ('uploading','queued','processing');
 UPDATE "ProductVideoAsset" SET "providerConfigId" = NULL;
+DO $video_job_reset$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'ProductVideoAsset' AND column_name = 'processingToken') THEN
+    EXECUTE 'UPDATE "ProductVideoAsset" SET "processingToken" = NULL, "processingUntil" = NULL';
+  END IF;
+END $video_job_reset$;
 `
 }
