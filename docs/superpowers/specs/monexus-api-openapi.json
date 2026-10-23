@@ -3885,6 +3885,23 @@
           },
           "hasAudio": {
             "type": "boolean"
+          },
+          "moderation": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "approved",
+              "rejected"
+            ],
+            "description": "仅管理/商家编辑接口返回；普通商品接口只包含已批准视频"
+          },
+          "moderationVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "moderationReason": {
+            "type": "string",
+            "nullable": true
           }
         }
       },
@@ -3994,6 +4011,45 @@
             ],
             "description": "与 publicContentRevision 同次读取的当前不可变视频元数据；不包含签名或存储位置",
             "type": "object"
+          }
+        }
+      },
+      "ProductVideoJob": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "assetId",
+          "status",
+          "error",
+          "video"
+        ],
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "uploading",
+              "queued",
+              "processing",
+              "ready",
+              "failed",
+              "deleting"
+            ]
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "video": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProductVideoSummary"
+              }
+            ],
+            "nullable": true
           }
         }
       }
@@ -8558,8 +8614,8 @@
         "tags": [
           "Uploads"
         ],
-        "summary": "上传私有商品展示视频；单文件40MiB/60秒H.264 MP4",
-        "description": "需要有效、已验证邮箱的商家，或通过MFA的管理员。仅生成待关联ready资产，不修改商品。每进程1请求，主体1处理中/5未关联资产。",
+        "summary": "上传私有商品视频原片（MP4/MOV，90 MiB / 60 秒），后台自动转码",
+        "description": "有效商家或 MFA 管理员，原片持久保存后返回202；轮询后台状态，ready 后由商家选择保存。处理失败保留商品原视频。",
         "security": [
           {
             "bearerAuth": []
@@ -8597,16 +8653,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "成功；Cache-Control: private, no-store",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProductVideoSummary"
-                }
-              }
-            }
-          },
           "413": {
             "description": "VIDEO_TOO_LARGE"
           },
@@ -8618,6 +8664,16 @@
           },
           "503": {
             "description": "VIDEO_PROCESSING_UNAVAILABLE / VIDEO_STORAGE_UNAVAILABLE"
+          },
+          "202": {
+            "description": "成功；Cache-Control: private, no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductVideoJob"
+                }
+              }
+            }
           }
         }
       }
@@ -8903,6 +8959,263 @@
           },
           "409": {
             "description": "PRODUCT_CONTENT_CHANGED 或 CONFLICT；重新读取并审核当前内容"
+          }
+        }
+      }
+    },
+    "/api/merchant/product-videos": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "恢复未关联成品和处理中任务（最多6个）及最近24小时3条失败记录",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "私有 no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProductVideoJob"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/merchant/product-videos/{assetId}/status": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "查询视频后台处理状态（校验所有权或管理员 MFA）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "私有 no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductVideoJob"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在或无权访问"
+          }
+        }
+      }
+    },
+    "/api/admin/product-videos": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "恢复未关联成品和处理中任务（最多6个）及最近24小时3条失败记录",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "merchantId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "仅管理员恢复指定经营主体的未保存资产"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "私有 no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProductVideoJob"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/product-videos/{assetId}/status": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "查询视频后台处理状态（校验所有权或管理员 MFA）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "私有 no-store",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductVideoJob"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "不存在或无权访问"
+          }
+        }
+      }
+    },
+    "/api/admin/product-videos/reviews": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "独立视频审核列表，含 members_only；最早100条",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "moderation",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "approved",
+                "rejected"
+              ],
+              "default": "pending"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已关联成品的元数据、moderationVersion及product(id/name/visibility)；no-store"
+          }
+        }
+      }
+    },
+    "/api/admin/product-videos/{assetId}/review": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "视频内容批准、拒绝或撤销（管理员 MFA）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "assetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "productId",
+                  "expectedVersion",
+                  "action"
+                ],
+                "properties": {
+                  "productId": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject"
+                    ]
+                  },
+                  "watched": {
+                    "type": "boolean"
+                  },
+                  "listened": {
+                    "type": "boolean"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "视频审核结果，记录审核声明"
+          },
+          "400": {
+            "description": "批准须确认完整观看及有声时听完音轨；拒绝须原因"
+          },
+          "409": {
+            "description": "当前商品已更换视频，或审核版本不匹配"
           }
         }
       }

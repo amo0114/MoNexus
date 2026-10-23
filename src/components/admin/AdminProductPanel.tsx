@@ -1,3 +1,4 @@
+import AdminVideoReviewPanel from './AdminVideoReviewPanel'
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, Search } from 'lucide-react'
 import {
@@ -450,6 +451,7 @@ export default function AdminProductPanel({ active = true }: Props) {
           </button>
         </div>
       </form>
+      <AdminVideoReviewPanel />
       <AdminAssurancePanel productId={assuranceProductId} />
       <AdminProductTable
         products={products}

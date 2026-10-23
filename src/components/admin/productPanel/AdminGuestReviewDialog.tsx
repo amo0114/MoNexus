@@ -175,6 +175,7 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
                 {view && <span className="text-[var(--color-text-muted)]">（内容版本 v{view.publicContentRevision}）</span>}
               </div>
             )}
+            {view?.promoVideo && view.promoVideo.moderation !== 'approved' && <p role="status">请先在商品管理的视频内容审核中批准当前视频，再批准游客公开。</p>}
             {gateHint && <p className="text-[var(--color-text-muted)]">{gateHint}</p>}
             {conflict && (
               <p role="alert" data-testid="admin-guest-review-conflict" className="text-red-500 font-medium">
@@ -217,7 +218,7 @@ export default function AdminGuestReviewDialog({ product, onClose, onChanged }: 
                 <button
                   type="button"
                   data-testid="admin-guest-review-approve"
-                  disabled={submitting != null}
+                  disabled={submitting != null || (!!view.promoVideo && view.promoVideo.moderation !== 'approved')}
                   onClick={() => void submit('approve')}
                   className="btn btn-primary text-xs px-4 py-2 cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-50"
                 >

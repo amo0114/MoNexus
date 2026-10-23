@@ -152,6 +152,9 @@ export async function applyGuestEligibilityAction(
     const now = new Date()
 
     if (input.action === 'approve') {
+      if (product.promoVideoAsset && (product.promoVideoAsset.status !== 'ready' || product.promoVideoAsset.moderation !== 'approved')) {
+        throw new HttpError(409, 'CONFLICT', '请先在视频内容审核中批准当前视频，再批准游客公开')
+      }
       // 人工批准不修改 visibility / 分类 / 上架状态（§4.2）。
       // 它只写准入记录；商品仍可能是 members_only，那种情况下门禁照样拦住游客。
       if (row) {

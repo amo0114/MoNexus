@@ -1,3 +1,5 @@
+import { runVideoBatch, enqueueVideo } from './worker.js'
+import { reviewVideo } from './moderation.js'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, rm, writeFile, truncate } from 'node:fs/promises'
@@ -11,7 +13,7 @@ import { config } from '../../config/index.js'
 import { DeliveryMemoryStorage, verifyVideoToken, verifyDeliveryToken } from '../../lib/storage/deliveryMemory.js'
 import { __setDeliveryStorageForTesting } from '../../lib/storage/delivery.js'
 import { cleanupUnreferencedObjects } from '../../lib/fileCleanup.js'
-import { videoKey } from '../../lib/storage/videoKeys.js'
+import { videoKey, videoSourceKey } from '../../lib/storage/videoKeys.js'
 import { reserveVideo, finishVideo, productVideoPlayback } from './service.js'
 import { processVideo, validateVideoProbe } from './processing.js'
 import { cleanupProductVideos } from '../../lib/productVideoCleanup.js'
@@ -32,7 +34,8 @@ beforeEach(() => { storage = new DeliveryMemoryStorage(); __setDeliveryStorageFo
 afterEach(() => { __setDeliveryStorageForTesting(null); delete process.env.PRODUCT_VIDEO_UPLOAD_ENABLED; delete process.env.PRODUCT_VIDEO_PLAYBACK_ENABLED })
 async function asset(merchantId: number | null, userId: number) {
   const reservation = await reserveVideo(merchantId, userId)
-  return finishVideo(reservation.asset, reservation.adapter, files, AbortSignal.timeout(10_000))
+  const ready = await finishVideo(reservation.asset, reservation.adapter, files, AbortSignal.timeout(10_000))
+  return prisma.productVideoAsset.update({ where: { id: ready.id }, data: { moderation: 'approved' } })
 }
 async function merchant() {
   const data = await createTestMerchant('video-merchant@test.local', 'pass123', { role: 'merchant', status: 'active' })
@@ -93,12 +96,16 @@ describe('video routes, ownership and public approval', () => {
   it('uploads actual MP4 through multipart, exposes metadata only and preserves paid signature domain', async () => {
     const owner = await merchant()
     const upload = await api.post('/api/uploads/product-video').set(owner.headers).attach('file', path.join(root, 'source.mp4'))
-    expect(upload.status, JSON.stringify(upload.body)).toBe(201)
-    expect(Object.keys(upload.body).sort()).toEqual(['assetId', 'durationMs', 'hasAudio', 'height', 'status', 'width'])
+    expect(upload.status, JSON.stringify(upload.body)).toBe(202)
+    expect(Object.keys(upload.body).sort()).toEqual(['assetId', 'error', 'status', 'video'])
+    expect(upload.body.status).toBe('queued')
+    await runVideoBatch()
+    const processed = await prisma.productVideoAsset.findUniqueOrThrow({ where: { id: upload.body.assetId } })
+    expect(processed.status).toBe('ready')
     const preview = await api.get(`/api/merchant/product-videos/${upload.body.assetId}/preview`).set(owner.headers).expect(200)
     expect(preview.headers['cache-control']).toContain('no-store')
     const token = preview.body.playbackUrl.split('/').at(-1)
-    expect(verifyVideoToken(token)?.key).toBe(videoKey(upload.body.assetId))
+    expect(verifyVideoToken(token)?.key).toBe(videoKey(upload.body.assetId, false, processed.outputGeneration))
     expect(verifyDeliveryToken(token)).toBeNull()
     const range = await api.get(preview.body.playbackUrl).set('Range', 'bytes=0-15').expect(206)
     expect(range.headers['content-type']).toBe('video/mp4')
@@ -112,7 +119,10 @@ describe('video routes, ownership and public approval', () => {
   it('rejects unverified/nonowners and malformed multipart and recovers the upload slot', async () => {
     await api.post('/api/uploads/product-video').attach('file', path.join(root, 'source.mp4')).expect(401)
     const owner = await merchant()
-    await api.post('/api/uploads/product-video').set(owner.headers).attach('file', Buffer.from('fake'), 'fake.mp4').expect(422)
+    const fake = await api.post('/api/uploads/product-video').set(owner.headers).attach('file', Buffer.from('fake'), 'fake.mp4').expect(202)
+    await runVideoBatch()
+    expect((await prisma.productVideoAsset.findUniqueOrThrow({ where: { id: fake.body.assetId } })).status).toBe('failed')
+    expect(await storage.getObject(videoSourceKey(fake.body.assetId))).toBeNull()
     await api.post('/api/uploads/product-video').set(owner.headers).field('merchantId', '123').attach('file', path.join(root, 'source.mp4')).expect(422)
     expect(await prisma.productVideoAsset.count({ where: { status: 'uploading' } })).toBe(0)
     const a = await asset(owner.merchant.id, owner.user.id)
@@ -161,7 +171,7 @@ describe('video routes, ownership and public approval', () => {
     await api.get(url).expect(401)
     await api.get(url).set(owner.headers).expect(403)
     const reviewed = (await api.get(url).set(adminHeaders).expect(200)).body
-    expect(reviewed.promoVideo).toEqual({ assetId: a.id, durationMs: a.durationMs, width: a.width, height: a.height, hasAudio: a.hasAudio })
+    expect(reviewed.promoVideo).toMatchObject({ assetId: a.id, durationMs: a.durationMs, width: a.width, height: a.height, hasAudio: a.hasAudio })
     expect(reviewed.publicContentRevision).toBe(2)
     const b = await asset(owner.merchant.id, owner.user.id)
     await patch({ expectedContentVersion: 2, promoVideoAssetId: b.id }).expect(200)
@@ -191,13 +201,13 @@ describe('video routes, ownership and public approval', () => {
   it('rejects oversized uploads, compensates storage failure and accepts the next attempt', async () => {
     const owner = await merchant()
     const oversized = path.join(root, 'oversized.mp4')
-    await writeFile(oversized, ''); await truncate(oversized, 40 * 1024 * 1024 + 1)
+    await writeFile(oversized, ''); await truncate(oversized, 90 * 1024 * 1024 + 1)
     await api.post('/api/uploads/product-video').set(owner.headers).attach('file', oversized).expect(413)
     const fail = vi.spyOn(storage, 'putStream').mockRejectedValueOnce(new Error('storage outage'))
     await api.post('/api/uploads/product-video').set(owner.headers).attach('file', path.join(root, 'source.mp4')).expect(503)
     fail.mockRestore()
     expect(await prisma.productVideoAsset.count({ where: { status: 'uploading' } })).toBe(0)
-    await api.post('/api/uploads/product-video').set(owner.headers).attach('file', path.join(root, 'source.mp4')).expect(201)
+    await api.post('/api/uploads/product-video').set(owner.headers).attach('file', path.join(root, 'source.mp4')).expect(202)
   })
   it('serializes simultaneous claims and GC versus product binding without losing referenced objects', async () => {
     const owner = await merchant(); const a = await asset(owner.merchant.id, owner.user.id)
@@ -241,6 +251,11 @@ describe('video routes, ownership and public approval', () => {
     await prisma.product.update({ where: { id: product.id }, data: { promoVideoAssetId: second.id, contentVersion: { increment: 1 } } })
     expect((await api.get(`/api/products/${product.id}`).set(owner.headers).expect(200)).body.promoVideo.assetId).toBe(second.id)
     await api.get(`/api/products/${product.id}/video-playback?expectedVideoAssetId=${first.id}`).set(owner.headers).expect(409)
+    await prisma.productVideoAsset.update({ where: { id: second.id }, data: { moderation: 'rejected' } })
+    const revoked = await api.get(`/api/products/${product.id}`).set(owner.headers).expect(200)
+    expect(revoked.body.promoVideo).toBeNull()
+    expect(JSON.stringify(revoked.body)).not.toContain(second.id)
+    await api.get(`/api/products/${product.id}/video-playback`).set(owner.headers).expect(404)
   })
 })
 
@@ -302,5 +317,99 @@ describe('cleanup and portable video objects', () => {
     await writeFile(path.join(staging, manifest[0].archivePath), 'tampered')
     storage = new DeliveryMemoryStorage(); __setDeliveryStorageForTesting(storage)
     await expect(restoreVideoObjects(manifest, staging, [])).rejects.toThrow('校验失败')
+  })
+})
+
+describe('durable processing and independent content review', () => {
+  it('normalizes real HEVC HDR MOV and non-AAC audio without losing sound or duration', async () => {
+    const dir = await mkdtemp(path.join(root, 'phone-'))
+    const source = path.join(dir, 'phone.mov')
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=320x240:r=30', '-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000', '-t', '1',
+      '-vf', 'format=yuv420p10le', '-c:v', 'libx265', '-x265-params', 'pools=none:frame-threads=1:log-level=error', '-threads', '1', '-tag:v', 'hvc1',
+      '-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc', '-c:a', 'pcm_s16le', source], { stdio: 'pipe' })
+    const result = await processVideo(source, dir, AbortSignal.timeout(60_000))
+    expect(result.metadata).toEqual({ durationMs: 1000, width: 320, height: 240, hasAudio: true })
+    const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', result.video], { encoding: 'utf8' }))
+    expect(probe.streams[0]).toMatchObject({ codec_name: 'h264', pix_fmt: 'yuv420p', color_transfer: 'bt709' })
+    expect(probe.streams[1]).toMatchObject({ codec_name: 'aac', profile: 'LC', channels: 2 })
+    const pixels = execFileSync('ffmpeg', ['-v', 'error', '-i', result.video, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'])
+    expect(new Set(pixels).size).toBeGreaterThan(50)
+  })
+  it('recovers an expired worker, retries temporary storage errors, and fences stale completions', async () => {
+    const owner = await merchant()
+    const reservation = await reserveVideo(owner.merchant.id, owner.user.id)
+    await enqueueVideo(reservation.asset.id, path.join(root, 'source.mp4'), AbortSignal.timeout(10_000))
+    const failure = vi.spyOn(storage, 'getObjectStream').mockRejectedValueOnce(new Error('temporary outage'))
+    await runVideoBatch(); failure.mockRestore()
+    let current = await prisma.productVideoAsset.findUniqueOrThrow({ where: { id: reservation.asset.id } })
+    expect(current).toMatchObject({ status: 'queued', attempts: 1 })
+    const staleToken = randomUUID()
+    await prisma.productVideoAsset.update({ where: { id: current.id }, data: { status: 'processing', processingToken: staleToken, processingUntil: new Date(0) } })
+    await Promise.all([runVideoBatch(), runVideoBatch()])
+    current = await prisma.productVideoAsset.findUniqueOrThrow({ where: { id: current.id } })
+    expect(current).toMatchObject({ status: 'ready', attempts: 2, moderation: 'pending' })
+    expect(current.outputGeneration).not.toBe(staleToken)
+    await expect(finishVideo(reservation.asset, storage, files, AbortSignal.timeout(10_000), staleToken)).rejects.toMatchObject({ status: 409 })
+    const preview = await api.get(`/api/merchant/product-videos/${current.id}/preview`).set(owner.headers).expect(200)
+    expect(verifyVideoToken(preview.body.playbackUrl.split('/').at(-1))?.key).toBe(videoKey(current.id, false, current.outputGeneration))
+    const staging = await mkdtemp(path.join(root, 'generation-backup-')); await mkdir(path.join(staging, 'video-objects'))
+    const manifest = await exportVideoObjects(prisma, staging)
+    expect(manifest.map(o => o.key)).toContain(videoKey(current.id, false, current.outputGeneration))
+    validateVideoManifest(manifest)
+    const product = await createTestProduct('处理产物清理保护', 10, 1, ['code'], owner.merchant.id)
+    await prisma.product.update({ where: { id: product.id }, data: { promoVideoAssetId: current.id } })
+    const queued = await reserveVideo(owner.merchant.id, owner.user.id)
+    await enqueueVideo(queued.asset.id, path.join(root, 'source.mp4'), AbortSignal.timeout(10_000))
+    await cleanupProductVideos(new Date(Date.now() + 3 * 86400_000))
+    expect(await storage.getObject(videoKey(current.id, false, current.outputGeneration))).not.toBeNull()
+    expect(await storage.getObject(videoKey(current.id, false, staleToken))).toBeNull()
+    expect(await storage.getObject(videoSourceKey(queued.asset.id))).not.toBeNull()
+  })
+  it('hides pending/rejected video from members, exposes owner preview, and requires current review plus audio attestation', async () => {
+    const owner = await merchant()
+    const a = await asset(owner.merchant.id, owner.user.id)
+    await prisma.productVideoAsset.update({ where: { id: a.id }, data: { moderation: 'pending', hasAudio: true } })
+    const product = await createTestProduct('会员视频审核', 10, 1, ['code'], owner.merchant.id)
+    await prisma.product.update({ where: { id: product.id }, data: { promoVideoAssetId: a.id, visibility: 'members_only' } })
+    const admin = await createTestUser('moderator@test.local', 'pass123', 'admin')
+    const adminHeaders = authHeader((await loginAs(admin.user.email, 'pass123')).accessToken)
+    const memberView = await api.get(`/api/products/${product.id}`).set(owner.headers).expect(200)
+    expect(memberView.body.promoVideo).toBeNull()
+    expect(JSON.stringify(memberView.body)).not.toContain(a.id)
+    await api.get(`/api/products/${product.id}/video-playback`).set(owner.headers).expect(404)
+    await api.get(`/api/merchant/product-videos/${a.id}/preview`).set(owner.headers).expect(200)
+    const queue = await api.get('/api/admin/product-videos/reviews').set(adminHeaders).expect(200)
+    expect(queue.body.some((r: { assetId: string }) => r.assetId === a.id)).toBe(true)
+    await api.get('/api/admin/product-videos/reviews').set(owner.headers).expect(403)
+    const url = `/api/admin/product-videos/${a.id}/review`
+    const input = { productId: product.id, expectedVersion: 1, action: 'approve', watched: true }
+    await api.post(url).set(adminHeaders).send(input).expect(400)
+    await api.post(url).set(adminHeaders).send({ ...input, listened: true }).expect(200)
+    await api.get(`/api/products/${product.id}/video-playback`).set(owner.headers).expect(200)
+    await api.post(url).set(adminHeaders).send({ ...input, listened: true }).expect(409)
+    await api.post(url).set(adminHeaders).send({ productId: product.id, expectedVersion: 2, action: 'reject', reason: '撤销：画面不合适' }).expect(200)
+    expect((await api.get(`/api/products/${product.id}`).set(owner.headers).expect(200)).body.promoVideo).toBeNull()
+    await api.get(`/api/products/${product.id}/video-playback`).set(owner.headers).expect(404)
+    expect(await prisma.adminLog.count({ where: { action: 'product_video_review' } })).toBe(2)
+  })
+  it('keeps every quota-consuming ready upload discoverable despite newer failed attempts', async () => {
+    const owner = await merchant()
+    const ready = []
+    for (let i = 0; i < 5; i++) ready.push(await asset(owner.merchant.id, owner.user.id))
+    await prisma.productVideoAsset.createMany({ data: Array.from({ length: 8 }, () => ({ id: randomUUID(), merchantId: owner.merchant.id, createdById: owner.user.id, status: 'failed' })) })
+    const recovered = await api.get('/api/merchant/product-videos').set(owner.headers).expect(200)
+    expect(recovered.body.filter((j: { status: string }) => j.status === 'ready').map((j: { assetId: string }) => j.assetId).sort()).toEqual(ready.map(a => a.id).sort())
+  })
+  it('rejects a review after replacement and refuses guest approval before video approval', async () => {
+    const owner = await merchant(); const a = await asset(owner.merchant.id, owner.user.id)
+    await prisma.productVideoAsset.update({ where: { id: a.id }, data: { moderation: 'pending' } })
+    const product = await createTestProduct('审核隔离', 10, 1, ['code'], owner.merchant.id)
+    await prisma.product.update({ where: { id: product.id }, data: { promoVideoAssetId: a.id } })
+    const admin = await createTestUser('moderator2@test.local', 'pass123', 'admin')
+    const headers = authHeader((await loginAs(admin.user.email, 'pass123')).accessToken)
+    const state = (await api.get(`/api/admin/products/${product.id}/guest-eligibility`).set(headers).expect(200)).body
+    await api.post(`/api/admin/products/${product.id}/guest-eligibility`).set(headers).send({ action: 'approve', expectedPublicContentRevision: state.publicContentRevision, expectedEligibilityVersion: state.version }).expect(409)
+    await prisma.product.update({ where: { id: product.id }, data: { promoVideoAssetId: null } })
+    await expect(reviewVideo(admin.user.id, a.id, { action: 'approve', productId: product.id, expectedVersion: 1, watched: true })).rejects.toMatchObject({ status: 409 })
   })
 })

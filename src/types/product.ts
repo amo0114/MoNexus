@@ -49,6 +49,9 @@ export interface ProductMerchant {
 }
 
 export interface ProductVideoSummary {
+  moderation?: string
+  moderationVersion?: number
+  moderationReason?: string | null
   assetId: string
   durationMs: number
   width: number
