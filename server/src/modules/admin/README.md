@@ -24,6 +24,7 @@ Privileged surface for the platform operator: user / merchant / product / settle
 | POST | `/api/admin/products/:id/content-suggestions` | AI content copilot (SPEC-AI-PRODUCT-001); `useUpstreamDescription` only for Xboard-imported products (local `latestDescriptionText`, no remote fetch). Writes no product data. |
 | POST | `/api/admin/products/:id/content-suggestions/:generationId/applied` | Best-effort telemetry `{ appliedFieldCount }`. |
 | POST | `/api/admin/products/:id/inventory` | Bulk import inventory items; updates `Product.stock`; writes `AdminLog`. |
+| POST | `/api/admin/products/:id/offers/:offerId/capacity/adjust` | Platform-owned (`merchantId=null`) limited `instant_fixed` / `manual_service` Offers only: `{delta, reason}` adjusts remaining capacity (never below 0); writes `InventoryLog` + `AdminLog`. Merchant products stay merchant-managed (400). |
 
 ### Merchant management
 | Method | Path | Notes |
@@ -102,7 +103,7 @@ echoed, so `deliveryReady: true` with `from: null` is a legal, documented combin
 
 ### `AdminLog`
 
-**Every admin write action persists one `AdminLog` row** inside the same transaction as the state change. Required fields: `adminUserId`, `action` (Chinese verb), `targetType`, `targetId` (when applicable), `detail` (free text). Implemented for: point adjustment, ban, unban, merchant approve / reject / suspend / commission update, inventory import, settlement batch, system config update.
+**Every admin write action persists one `AdminLog` row** inside the same transaction as the state change. Required fields: `adminUserId`, `action` (Chinese verb), `targetType`, `targetId` (when applicable), `detail` (free text). Implemented for: point adjustment, ban, unban, merchant approve / reject / suspend / commission update, inventory import, platform capacity adjustment, settlement batch, system config update.
 
 **Exception — mail delivery test** (`targetType = mailDelivery`): an SMTP call must never run
 inside a database transaction, so this one action cannot be atomic with its audit. The ordering
