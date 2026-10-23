@@ -48,6 +48,7 @@ export interface AdminProductTableProps {
   onRequestUnpublish: (product: AdminProductListItem) => void
   onRequestArchive: (product: AdminProductListItem) => void
   onOpenInventoryImport: (target: AdminInventoryTarget) => void
+  onOpenCapacity: (product: AdminProductListItem) => void
   onOpenAssurance: (productId: number) => void
   onOpenOffers: (product: AdminProductListItem) => void
   onOpenFakaCapacity: (product: AdminProductListItem) => void
@@ -69,6 +70,7 @@ export default function AdminProductTable({
   onRequestUnpublish,
   onRequestArchive,
   onOpenInventoryImport,
+  onOpenCapacity,
   onOpenAssurance,
   onOpenOffers,
   onOpenFakaCapacity,
@@ -108,6 +110,9 @@ export default function AdminProductTable({
                   !(Array.isArray(o.deliveryFields) && o.deliveryFields.length > 0),
               )
               const canImport = importableOffers.length > 0
+              const canAdjustCapacity = isPlatformOwned && !isFaka && (p.offers ?? []).some(
+                (o) => o.deliveryMode !== 'instant_inventory' && o.stockMode === 'limited',
+              )
               const available = isInstantInventory ? (p._count?.inventory ?? p.stock) : p.stock
               const fakaCap = p.fakaCapacity
               const stockLabel =
@@ -254,7 +259,17 @@ export default function AdminProductTable({
                         >
                           导入交付库存
                         </button>
-                      ) : !isFaka ? (
+                      ) : null}
+                      {canAdjustCapacity ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenCapacity(p)}
+                          data-testid={`admin-adjust-capacity-${p.id}`}
+                          className="text-[var(--color-text)] hover:bg-[var(--color-background)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-border)] cursor-pointer"
+                        >
+                          调整名额
+                        </button>
+                      ) : !canImport && !isFaka ? (
                         <span className="text-xs text-[var(--color-text-muted)]">
                           {p.merchantId ? '由商家调整名额' : '名额由商品配置管理'}
                         </span>

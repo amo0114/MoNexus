@@ -6,7 +6,7 @@ import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
   adjustPointsSchema, banUserSchema, createProductSchema, updateProductSchema,
   importInventorySchema, listUsersQuerySchema, listOrdersQuerySchema,
-  previewInventorySchema, previewOfferInventorySchema, importOfferInventorySchema,
+  previewInventorySchema, previewOfferInventorySchema, importOfferInventorySchema, adjustOfferCapacitySchema,
   revokeDeliveryFileSchema,
   listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
   listAdminAuditQuerySchema, listPointLogsQuerySchema,
@@ -227,6 +227,7 @@ router.post('/products/:id/inventory/preview', validate({ params: idParamSchema,
 // T-CAT-BE-004（D-CAT-12/13）：新 Offer-first 路径，offerId 显式在 URL。
 router.post('/products/:id/offers/:offerId/inventory/preview', validate({ params: adminOfferParamSchema, body: previewOfferInventorySchema }), controller.previewOfferInventory)
 router.post('/products/:id/offers/:offerId/inventory', validate({ params: adminOfferParamSchema, body: importOfferInventorySchema }), controller.importOfferInventory)
+router.post('/products/:id/offers/:offerId/capacity/adjust', validate({ params: adminOfferParamSchema, body: adjustOfferCapacitySchema }), controller.adjustOfferCapacity)
 // FakaBridge Xboard 管理：仅平台管理员（本路由组已 requireAdmin + MFA）
 router.get('/faka/catalog', controller.fakaCatalog)
 router.post('/faka/import/preview', validate(previewFakaPlanSchema), controller.previewFakaPlan)
