@@ -11,7 +11,8 @@ import {
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
 import { parseStoredDeliveryFields, structuredContentToJson } from '../../lib/deliveryFields.js'
-import { getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
+import { getDefaultOffer } from '../../lib/offers.js'
+import { adjustOfferCapacity } from '../../lib/offerCapacity.js'
 
 import { resolvePagination } from '../../lib/pagination.js'
 
@@ -93,65 +94,6 @@ export async function previewMyOfferInventory(
     throw badRequest('仅即时库存发货商品支持库存管理')
   }
   return previewOfferInventory(productId, offer, payload)
-}
-
-/**
- * capacity 调整核心（T-CAT-BE-004）：CAS 条件 decrement 保证并发减少永不为负
- * （AC-CAT-007）。即时库存只能 import/void，非即时 limited 只能 capacity（动作互斥）。
- */
-async function adjustOfferCapacity(
-  tx: Prisma.TransactionClient,
-  productId: number,
-  offer: { id: number; deliveryMode: string; stockMode: string },
-  merchantId: number | null,
-  actorUserId: number,
-  input: { delta: number; reason: string }
-) {
-  if (offer.deliveryMode === 'instant_inventory') {
-    throw badRequest('即时库存商品请通过交付库存导入或作废管理')
-  }
-  if (offer.stockMode !== 'limited') {
-    throw badRequest('不限量商品无需调整可售名额')
-  }
-
-  if (input.delta > 0) {
-    const updated = await tx.offer.updateMany({
-      where: {
-        id: offer.id,
-        stockMode: 'limited',
-        deliveryMode: { not: 'instant_inventory' },
-      },
-      data: { stock: { increment: input.delta } },
-    })
-    if (updated.count !== 1) throw badRequest('商品库存模式已变更，请刷新后重试')
-  } else {
-    const updated = await tx.offer.updateMany({
-      where: {
-        id: offer.id,
-        stockMode: 'limited',
-        deliveryMode: { not: 'instant_inventory' },
-        stock: { gte: -input.delta },
-      },
-      data: { stock: { decrement: -input.delta } },
-    })
-    if (updated.count !== 1) throw badRequest('减少数量不能超过当前可售名额')
-  }
-
-  await syncProductProjection(tx, productId)
-  const updatedOffer = await tx.offer.findUniqueOrThrow({
-    where: { id: offer.id },
-    select: { stock: true },
-  })
-  await logInventoryChange(tx, {
-    productId,
-    offerId: offer.id,
-    merchantId,
-    actorUserId,
-    action: 'capacity_adjust',
-    delta: input.delta,
-    reason: input.reason,
-  })
-  return { stock: updatedOffer.stock }
 }
 
 /**

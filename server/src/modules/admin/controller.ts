@@ -197,6 +197,13 @@ export async function importOfferInventory(req: Request, res: Response, next: Ne
   } catch (err) { next(err) }
 }
 
+export async function adjustOfferCapacity(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
+    res.json(await inventoryAdmin.adjustPlatformOfferCapacity(id, offerId, req.body, req.user!.userId))
+  } catch (err) { next(err) }
+}
+
 export async function orders(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await orderAdmin.listAllOrders(req.query as unknown as ListOrdersQuery))

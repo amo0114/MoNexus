@@ -28,6 +28,7 @@ import AdminPanelHeader from './AdminPanelHeader'
 import AdminAssurancePanel from '../catalog/AdminAssurancePanel'
 import AdminProductTable from './productPanel/AdminProductTable'
 import ProductCapacityDialog from './productPanel/ProductCapacityDialog'
+import AdminOfferCapacityDialog from './productPanel/AdminOfferCapacityDialog'
 import AdminGuestReviewDialog from './productPanel/AdminGuestReviewDialog'
 
 interface Props {
@@ -65,6 +66,7 @@ export default function AdminProductPanel({ active = true }: Props) {
   })
 
   const [inventoryTarget, setInventoryTarget] = useState<AdminInventoryTarget | null>(null)
+  const [capacityProduct, setCapacityProduct] = useState<AdminProductListItem | null>(null)
 
   // FakaBridge capacity edit (admin only)
   const [fakaCapProduct, setFakaCapProduct] = useState<AdminProductListItem | null>(null)
@@ -470,6 +472,7 @@ export default function AdminProductPanel({ active = true }: Props) {
         onRequestUnpublish={setUnpublishTarget}
         onRequestArchive={setArchiveTarget}
         onOpenInventoryImport={setInventoryTarget}
+        onOpenCapacity={setCapacityProduct}
         onOpenAssurance={setAssuranceProductId}
         onOpenOffers={setOfferProduct}
         onOpenFakaCapacity={setFakaCapProduct}
@@ -495,6 +498,12 @@ export default function AdminProductPanel({ active = true }: Props) {
         onImported={() => {
           triggerSafeReload()
         }}
+      />
+
+      <AdminOfferCapacityDialog
+        product={capacityProduct}
+        onClose={() => setCapacityProduct(null)}
+        onAdjusted={() => triggerSafeReload()}
       />
 
       {/* FakaBridge capacity limit modal */}

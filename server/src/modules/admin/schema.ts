@@ -320,6 +320,13 @@ export const previewInventorySchema = importInventorySchema
 export const previewOfferInventorySchema = inventoryImportPayloadSchema
 export const importOfferInventorySchema = inventoryImportPayloadSchema
 
+// 平台自营非即时 limited 规格的名额调整；与商家端同一约束。
+export const adjustOfferCapacitySchema = z.object({
+  delta: z.number().int('调整数量必须是整数').min(-1_000_000).max(1_000_000)
+    .refine(value => value !== 0, '调整数量不能为 0'),
+  reason: z.string().trim().min(1, '请填写调整原因').max(500),
+}).strict()
+
 // P5：吊销交付文件。
 export const revokeDeliveryFileSchema = z.object({
   reason: z.string().trim().max(500).optional(),
