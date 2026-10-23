@@ -261,6 +261,8 @@ describe('DeliveryContent', () => {
 
     const textBox = screen.getByTestId('delivery-text-content')
     expect(textBox).toHaveTextContent('LICENSE-KEY-ABC-123-XYZ')
+    // The scratch coat is opt-in for the success dialog only.
+    expect(screen.queryByTestId('scratch-reveal')).not.toBeInTheDocument()
 
     const copyBtn = screen.getByTestId('delivery-copy-text')
     expect(copyBtn).toHaveTextContent('复制文本')

@@ -15,6 +15,7 @@ const { createOrder, getCheckoutPreview, renewOrder, disputeOrder, closeOrder } 
   closeOrder: vi.fn(),
 }))
 
+vi.mock('./purchaseConfirmArm', () => ({ CONFIRM_ARM_MS: 0 }))
 vi.mock('../api/orders', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../api/orders')>()
   return {
