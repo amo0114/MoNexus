@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { useAuthStore } from './stores/authStore'
 import { useAppStore } from './stores/appStore'
 import { fetchMeWithRoleHealing } from './api/auth'
@@ -8,31 +8,32 @@ import { getAuthSessionContext, matchesAuthSessionContext } from './auth/session
 import Layout from './components/Layout'
 import Toast from './components/Toast'
 import ScrollToTop from './components/ScrollToTop'
-import LoginPage from './pages/LoginPage'
-import ForgotPasswordPage from './pages/ForgotPasswordPage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
-import VerifyEmailPage from './pages/VerifyEmailPage'
-import InviteRedirectPage from './pages/InviteRedirectPage'
 import StorePage from './pages/StorePage'
-import ProductDetailPage from './pages/ProductDetailPage'
-import ShopPage from './pages/ShopPage'
-import ProfilePage from './pages/ProfilePage'
-import LeaderboardPage from './pages/LeaderboardPage'
-import AdminPage from './pages/AdminPage'
-import MerchantApplyPage from './pages/MerchantApplyPage'
-import MerchantDashboardPage from './pages/MerchantDashboardPage'
-import MerchantPromotionPage from './components/merchandising/MerchantPromotionPage'
-import Dashboard from './pages/merchant/Dashboard'
-import ProductCreateWizard from './pages/merchant/ProductCreateWizard'
-import ProductEditPage from './pages/merchant/ProductEditPage'
-import WorkbenchPage from './pages/merchant/WorkbenchPage'
-import ProductCreatePage from './pages/admin/ProductCreatePage'
-import PortableRestoreSetupPage from './pages/PortableRestoreSetupPage'
-import LegalDocumentPage from './pages/legal/LegalDocumentPage'
-import NotificationsPage from './pages/NotificationsPage'
-import OrdersPage from './pages/OrdersPage'
-import RechargePage from './pages/RechargePage'
+import LoginPage from './pages/LoginPage'
 import RoleGuard from './components/RoleGuard'
+
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage'))
+const InviteRedirectPage = lazy(() => import('./pages/InviteRedirectPage'))
+const ProductDetailPage = lazy(() => import('./pages/ProductDetailPage'))
+const ShopPage = lazy(() => import('./pages/ShopPage'))
+const ProfilePage = lazy(() => import('./pages/ProfilePage'))
+const LeaderboardPage = lazy(() => import('./pages/LeaderboardPage'))
+const AdminPage = lazy(() => import('./pages/AdminPage'))
+const MerchantApplyPage = lazy(() => import('./pages/MerchantApplyPage'))
+const MerchantDashboardPage = lazy(() => import('./pages/MerchantDashboardPage'))
+const MerchantPromotionPage = lazy(() => import('./components/merchandising/MerchantPromotionPage'))
+const Dashboard = lazy(() => import('./pages/merchant/Dashboard'))
+const ProductCreateWizard = lazy(() => import('./pages/merchant/ProductCreateWizard'))
+const ProductEditPage = lazy(() => import('./pages/merchant/ProductEditPage'))
+const WorkbenchPage = lazy(() => import('./pages/merchant/WorkbenchPage'))
+const ProductCreatePage = lazy(() => import('./pages/admin/ProductCreatePage'))
+const PortableRestoreSetupPage = lazy(() => import('./pages/PortableRestoreSetupPage'))
+const LegalDocumentPage = lazy(() => import('./pages/legal/LegalDocumentPage'))
+const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
+const OrdersPage = lazy(() => import('./pages/OrdersPage'))
+const RechargePage = lazy(() => import('./pages/RechargePage'))
 
 function SessionLayout({
   children,
@@ -91,131 +92,133 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-        <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
-        <Route path="/verify-email" element={<VerifyEmailPage />} />
-        <Route path="/restore-setup" element={<PortableRestoreSetupPage />} />
-        <Route path="/i/:code" element={<InviteRedirectPage />} />
-        {/* SPEC-LEGAL-001：五份公开法律文档（未登录可达——注册/下单勾选链接的落地页） */}
-        <Route path="/terms" element={<LegalDocumentPage slug="terms" />} />
-        <Route path="/privacy" element={<LegalDocumentPage slug="privacy" />} />
-        <Route path="/refund" element={<LegalDocumentPage slug="refund" />} />
-        <Route path="/points-rules" element={<LegalDocumentPage slug="points-rules" />} />
-        <Route path="/about" element={<LegalDocumentPage slug="about" />} />
-        <Route
-          path="/"
-          element={(
-            <SessionLayout>
-              <StorePage />
-            </SessionLayout>
-          )}
-        />
-        <Route
-          path="/product/:id"
-          element={(
-            <SessionLayout>
-              <ProductDetailPage />
-            </SessionLayout>
-          )}
-        />
-        <Route
-          path="/shops/:merchantId"
-          element={(
-            <SessionLayout>
-              <ShopPage />
-            </SessionLayout>
-          )}
-        />
-        <Route
-          path="/*"
-          element={
-            <SessionLayout requireAuth>
-                <Routes>
-                  <Route path="/profile" element={<ProfilePage />} />
-                  <Route path="/recharge" element={<RechargePage />} />
-                  <Route path="/orders" element={<OrdersPage />} />
-                  <Route path="/notifications" element={<NotificationsPage />} />
-                  <Route path="/leaderboard" element={<LeaderboardPage />} />
-                  <Route
-                    path="/admin"
-                    element={
-                      <RoleGuard allowedRoles={['admin']}>
-                        <AdminPage />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/admin/products/new"
-                    element={
-                      <RoleGuard allowedRoles={['admin']}>
-                        <ProductCreatePage />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/admin/products/:id/edit"
-                    element={
-                      <RoleGuard allowedRoles={['admin']}>
-                        <ProductEditPage actor="admin" />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route path="/merchant/apply" element={<MerchantApplyPage />} />
-                  <Route
-                    path="/merchant/products/new"
-                    element={
-                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                        <ProductCreateWizard />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/merchant/products/:id/edit"
-                    element={
-                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                        <ProductEditPage actor="merchant" />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/merchant/dashboard"
-                    element={
-                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                        <Dashboard />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/merchant/workbench"
-                    element={
-                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                        <WorkbenchPage />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/merchant/promotions"
-                    element={
-                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                        <MerchantPromotionPage />
-                      </RoleGuard>
-                    }
-                  />
-                  <Route
-                    path="/merchant/*"
-                    element={
-                      <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                        <MerchantDashboardPage />
-                      </RoleGuard>
-                    }
-                  />
-                </Routes>
+      <Suspense fallback={<div role="status" className="p-8 text-center text-[var(--color-text-muted)]">正在加载页面…</div>}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/reset-password/:token" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/restore-setup" element={<PortableRestoreSetupPage />} />
+          <Route path="/i/:code" element={<InviteRedirectPage />} />
+          {/* SPEC-LEGAL-001：五份公开法律文档（未登录可达——注册/下单勾选链接的落地页） */}
+          <Route path="/terms" element={<LegalDocumentPage slug="terms" />} />
+          <Route path="/privacy" element={<LegalDocumentPage slug="privacy" />} />
+          <Route path="/refund" element={<LegalDocumentPage slug="refund" />} />
+          <Route path="/points-rules" element={<LegalDocumentPage slug="points-rules" />} />
+          <Route path="/about" element={<LegalDocumentPage slug="about" />} />
+          <Route
+            path="/"
+            element={(
+              <SessionLayout>
+                <StorePage />
+              </SessionLayout>
+            )}
+          />
+          <Route
+            path="/product/:id"
+            element={(
+              <SessionLayout>
+                <ProductDetailPage />
+              </SessionLayout>
+            )}
+          />
+          <Route
+            path="/shops/:merchantId"
+            element={(
+              <SessionLayout>
+                <ShopPage />
+              </SessionLayout>
+            )}
+          />
+          <Route
+            path="/*"
+            element={
+              <SessionLayout requireAuth>
+                  <Routes>
+                    <Route path="/profile" element={<ProfilePage />} />
+                    <Route path="/recharge" element={<RechargePage />} />
+                    <Route path="/orders" element={<OrdersPage />} />
+                    <Route path="/notifications" element={<NotificationsPage />} />
+                    <Route path="/leaderboard" element={<LeaderboardPage />} />
+                    <Route
+                      path="/admin"
+                      element={
+                        <RoleGuard allowedRoles={['admin']}>
+                          <AdminPage />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route
+                      path="/admin/products/new"
+                      element={
+                        <RoleGuard allowedRoles={['admin']}>
+                          <ProductCreatePage />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route
+                      path="/admin/products/:id/edit"
+                      element={
+                        <RoleGuard allowedRoles={['admin']}>
+                          <ProductEditPage actor="admin" />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route path="/merchant/apply" element={<MerchantApplyPage />} />
+                    <Route
+                      path="/merchant/products/new"
+                      element={
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                          <ProductCreateWizard />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route
+                      path="/merchant/products/:id/edit"
+                      element={
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                          <ProductEditPage actor="merchant" />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route
+                      path="/merchant/dashboard"
+                      element={
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                          <Dashboard />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route
+                      path="/merchant/workbench"
+                      element={
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                          <WorkbenchPage />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route
+                      path="/merchant/promotions"
+                      element={
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                          <MerchantPromotionPage />
+                        </RoleGuard>
+                      }
+                    />
+                    <Route
+                      path="/merchant/*"
+                      element={
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                          <MerchantDashboardPage />
+                        </RoleGuard>
+                      }
+                    />
+                  </Routes>
             </SessionLayout>
           }
         />
       </Routes>
+      </Suspense>
       <Toast />
     </BrowserRouter>
   )

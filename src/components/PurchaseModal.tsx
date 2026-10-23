@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Loader2, ShieldCheck, Info } from 'lucide-react'
 import PointCoin from './ui/PointCoin'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
@@ -81,6 +81,7 @@ export default function PurchaseModal({
     agreementVersions: Record<string, string> | undefined
   ) => Promise<ConfirmOutcome>
 }) {
+  const formId = useId()
   const [preview, setPreview] = useState<CheckoutPreview | null>(null)
   const [loadError, setLoadError] = useState('')
   const [priceChanged, setPriceChanged] = useState(false)
@@ -501,7 +502,7 @@ export default function PurchaseModal({
           <div className="mb-6 space-y-3" data-testid="purchase-form-fields">
             {preview.purchaseForm.map(field => (
               <div key={field.key}>
-                <label className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
+                <label htmlFor={`${formId}-${field.key}`} className="block text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
                   {field.label}
                   {field.required && <span className="text-[var(--color-danger-text)] ml-0.5">*</span>}
                 </label>
@@ -513,6 +514,8 @@ export default function PurchaseModal({
                     maxLength={500}
                     value={answers[field.key] ?? ''}
                     onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    id={`${formId}-${field.key}`}
+                    aria-required={field.required}
                     data-testid={`purchase-field-${field.key}`}
                   />
                 ) : field.type === 'date' ? (
@@ -524,6 +527,8 @@ export default function PurchaseModal({
                     max={localDatePlusDays(field.maxDaysAhead ?? 30)}
                     value={answers[field.key] ?? ''}
                     onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    id={`${formId}-${field.key}`}
+                    aria-required={field.required}
                     data-testid={`purchase-form-date-${field.key}`}
                   />
                 ) : (
@@ -531,6 +536,8 @@ export default function PurchaseModal({
                     className="input appearance-none cursor-pointer"
                     value={answers[field.key] ?? ''}
                     onChange={(e) => setAnswers(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    id={`${formId}-${field.key}`}
+                    aria-required={field.required}
                     data-testid={`purchase-field-${field.key}`}
                   >
                     <option value="">请选择</option>
@@ -603,7 +610,7 @@ export default function PurchaseModal({
 
         {preview?.requiresVerification && (
           <div className="mb-6" data-testid="purchase-verify-section">
-            <label className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
+            <label htmlFor={`${formId}-password`} className="flex items-center gap-1.5 text-xs font-bold text-[var(--color-text-muted)] mb-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-[var(--color-primary)]" />
               本单金额较大，请输入登录密码确认
               <span className="text-[var(--color-danger-text)] ml-0.5">*</span>
@@ -616,6 +623,8 @@ export default function PurchaseModal({
               maxLength={128}
               value={verifyPassword}
               onChange={(e) => setVerifyPassword(e.target.value)}
+              id={`${formId}-password`}
+              aria-required="true"
               data-testid="purchase-verify-password"
             />
           </div>

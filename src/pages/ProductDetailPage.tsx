@@ -113,6 +113,7 @@ export default function ProductDetailPage() {
   const [reviewTotal, setReviewTotal] = useState(0)
   const [reviewPage, setReviewPage] = useState(1)
   const [reviewError, setReviewError] = useState(false)
+  const [reviewLoading, setReviewLoading] = useState(false)
   const [reviewAttempt, setReviewAttempt] = useState(0)
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
   const inflowCardRef = useRef<HTMLDivElement>(null)
@@ -171,6 +172,7 @@ export default function ProductDetailPage() {
     if (!id || !product || loginRequired || isReferencePreview) return
     let cancelled = false
     setReviewError(false)
+    setReviewLoading(true)
     getProductReviews(Number(id), reviewPage)
       .then((data) => {
         if (cancelled) return
@@ -180,6 +182,7 @@ export default function ProductDetailPage() {
       .catch(() => {
         if (!cancelled) setReviewError(true)
       })
+      .finally(() => { if (!cancelled) setReviewLoading(false) })
     return () => {
       cancelled = true
     }
@@ -569,8 +572,9 @@ export default function ProductDetailPage() {
         reviewTotal={reviewTotal}
         preview={isReferencePreview}
         error={reviewError}
+        loading={reviewLoading}
         onRetry={() => setReviewAttempt(attempt => attempt + 1)}
-        onLoadMore={() => setReviewPage((p) => p + 1)}
+        onLoadMore={() => { if (!reviewLoading) setReviewPage((p) => p + 1) }}
       />
     </div>
   )

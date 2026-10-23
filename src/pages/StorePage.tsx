@@ -367,7 +367,10 @@ export default function StorePage() {
       return () => { candidateRequestRef.current += 1 }
     }
 
-    void loadStoreCandidates(dynamicCategory?.code).then(candidates => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2500)
+    void loadStoreCandidates(dynamicCategory?.code, controller.signal).then(candidates => {
+      clearTimeout(timeout)
       if (requestId !== candidateRequestRef.current) return
       candidatesRef.current = candidates
       candidatesSettledRef.current = true
@@ -375,6 +378,8 @@ export default function StorePage() {
     })
 
     return () => {
+      clearTimeout(timeout)
+      controller.abort()
       // Unmount/cleanup cancel guard: bump the request id so in-flight
       // async continuations see a stale requestId and never setState.
       candidateRequestRef.current += 1
@@ -646,7 +651,6 @@ export default function StorePage() {
       window.sessionStorage.setItem('monexus:restore-product-id', String(product.id))
       window.sessionStorage.setItem('monexus:restore-scroll-y', String(currentY))
     }
-    navigate(`/product/${product.id}`)
   }
 
   // 动态 productCategories（稳定 code）为权威筛选值；旧 backend 无该字段时
@@ -812,7 +816,8 @@ export default function StorePage() {
                     <Reveal key={item.productId} delay={(i % columnCount) * 60}>
                       <StoreProductCard
                         product={item.product}
-                        onOpen={openDetail}
+                        href={`/product/${item.productId}`}
+                        onNavigate={openDetail}
                         disclosure={disclosure}
                       />
                     </Reveal>

@@ -29,6 +29,7 @@ chore/xxx ┘                                        ▲
 | PR → master（release/hotfix） | 按路径 | 按路径 | 代码有变更即跑（生产门） |
 | push → master | ✅ | ✅ | ✅ |
 
+- **真实依赖**：`external-dependencies` 在后端改动或 develop/master push 时执行真实 Redis 缓存撤销和隔离 MinIO 视频存储检查，纳入 `CI OK`。
 - **`CI OK`** 聚合 job 是唯一需要设为 required 的状态检查：上游 job 被路径过滤跳过时它仍成功，只有真实失败/取消才红。
 - **执行结构**：backend 测试按文件分 6 个 shard 并行（每 shard 独立 PostgreSQL，片内串行）。主 Playwright 套件分成 2 个 shard，通知和 catalog-ops 各有一个独立 job；每个 E2E job 自带依赖、数据库、后端构建与前端开发服务。路径过滤后，frontend、backend 和所有 E2E job 均可并行启动；`CI OK` 继续汇总所有门禁。全量耗时由最晚完成的必需 job 决定，需同时统计 job 运行时间及 runner 排队时间。
 - **E2E 分片**：主套件保留 `fullyParallel: false` 和 CI 单 worker，文件内的串行业务旅程保持在同一 shard。法律页面套件由主 E2E 的 shard 1 单独完整执行，随后 reset + seed 恢复默认夹具；shard 2 直接使用自己的初始 seed。失败报告按 shard 命名，两个 shard 都必须通过。

@@ -5,7 +5,7 @@ import { listVideoReviews, reviewProductVideo } from '../../api/productVideos'
 vi.mock('../../api/productVideos', () => ({ listVideoReviews: vi.fn(), reviewProductVideo: vi.fn() }))
 vi.mock('../catalog/ProductVideoPlayer', () => ({ default: () => <div>私有视频预览</div> }))
 const row = { assetId: 'video-a', durationMs: 1000, width: 320, height: 240, hasAudio: true, moderation: 'pending', moderationVersion: 7, product: { id: 8, name: '仅会员商品', visibility: 'members_only' } }
-beforeEach(() => { vi.mocked(listVideoReviews).mockReset().mockResolvedValue([row]); vi.mocked(reviewProductVideo).mockReset().mockResolvedValue(row) })
+beforeEach(() => { vi.mocked(listVideoReviews).mockReset().mockResolvedValue({ items: [row], total: 1, page: 1, pageSize: 50 }); vi.mocked(reviewProductVideo).mockReset().mockResolvedValue(row) })
 it('requires picture and audio attestation, and submits the exact asset/product/review version', async () => {
   render(<AdminVideoReviewPanel />)
   fireEvent.click(screen.getByRole('button', { name: '视频内容审核（含仅登录商品）' }))
@@ -30,4 +30,15 @@ it('drops the selected preview after a stale-review conflict and reloads the que
   await screen.findByRole('alert')
   expect(screen.queryByText('私有视频预览')).not.toBeInTheDocument()
   expect(listVideoReviews).toHaveBeenCalledTimes(2)
+})
+
+it('pages through reviewed history and resets pagination when the status changes', async () => {
+  vi.mocked(listVideoReviews).mockResolvedValue({ items: [row], total: 120, page: 1, pageSize: 50 })
+  render(<AdminVideoReviewPanel />)
+  fireEvent.click(screen.getByRole('button', { name: '视频内容审核（含仅登录商品）' }))
+  await screen.findByRole('button', { name: '仅会员商品 · 待审核' })
+  fireEvent.click(screen.getByRole('button', { name: '下一页' }))
+  await waitFor(() => expect(listVideoReviews).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'pending', 2))
+  fireEvent.change(screen.getByLabelText('视频审核状态'), { target: { value: 'approved' } })
+  await waitFor(() => expect(listVideoReviews).toHaveBeenLastCalledWith(expect.any(AbortSignal), 'approved', 1))
 })

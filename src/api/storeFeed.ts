@@ -28,9 +28,10 @@ export async function listStoreProducts(params: StoreProductQuery): Promise<Prod
   return data
 }
 
-export async function loadStoreCandidates(categoryCode?: string) {
+export async function loadStoreCandidates(categoryCode?: string, signal?: AbortSignal) {
   const [sponsoredResult, editorialResult] = await Promise.allSettled([
     api.get<{ items: SponsoredShelfItem[] }>('/products/sponsored', {
+      signal,
       params: {
         placement: categoryCode ? 'category_sponsored' : 'store_home_sponsored',
         ...(categoryCode ? { categoryCode } : {}),
@@ -38,6 +39,7 @@ export async function loadStoreCandidates(categoryCode?: string) {
       },
     }),
     api.get<{ items: PublicEditorialItem[] }>('/products/editorial', {
+      signal,
       params: {
         placement: categoryCode ? 'category_editorial' : 'store_editorial',
         limit: 6,
@@ -47,10 +49,10 @@ export async function loadStoreCandidates(categoryCode?: string) {
   const sponsoredItems = sponsoredResult.status === 'fulfilled' ? sponsoredResult.value.data.items : []
   const editorialItems = editorialResult.status === 'fulfilled' ? editorialResult.value.data.items : []
   const ids = [...new Set([...sponsoredItems, ...editorialItems].map(item => item.productId))]
-  const details = await Promise.allSettled(ids.map(id => api.get<ProductSummary>(`/products/${id}`)))
-  const byId = new Map(details.flatMap(result => result.status === 'fulfilled'
-    ? [[result.value.data.id, result.value.data] as const]
-    : []))
+  const response = ids.length
+    ? await api.get<{ items: ProductSummary[] }>('/products/summaries', { params: { ids: ids.join(',') }, signal }).catch(() => null)
+    : null
+  const byId = new Map((response?.data.items ?? []).map(product => [product.id, product]))
 
   return {
     sponsored: sponsoredItems.map(item => ({

@@ -29,8 +29,9 @@ export async function listProductVideoJobs(actor: ProductEditorActor, signal: Ab
   return (await api.get<VideoJob[]>(`/${actor}/product-videos`, { signal, params: merchantId == null ? undefined : { merchantId } })).data
 }
 export interface VideoReview extends ProductVideoSummary { product: { id: number; name: string; visibility: string } }
-export async function listVideoReviews(signal: AbortSignal, moderation = 'pending'): Promise<VideoReview[]> {
-  return (await api.get<VideoReview[]>('/admin/product-videos/reviews', { signal, params: { moderation } })).data
+export interface VideoReviewPage { items: VideoReview[]; total: number; page: number; pageSize: number }
+export async function listVideoReviews(signal: AbortSignal, moderation = 'pending', page = 1): Promise<VideoReviewPage> {
+  return (await api.get<VideoReviewPage>('/admin/product-videos/reviews', { signal, params: { moderation, page, pageSize: 50 } })).data
 }
 export async function reviewProductVideo(assetId: string, input: { productId: number; expectedVersion: number; action: 'approve' | 'reject'; watched?: boolean; listened?: boolean; reason?: string }): Promise<ProductVideoSummary> {
   return (await api.post<ProductVideoSummary>(`/admin/product-videos/${encodeURIComponent(assetId)}/review`, input)).data

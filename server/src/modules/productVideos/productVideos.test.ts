@@ -379,7 +379,7 @@ describe('durable processing and independent content review', () => {
     await api.get(`/api/products/${product.id}/video-playback`).set(owner.headers).expect(404)
     await api.get(`/api/merchant/product-videos/${a.id}/preview`).set(owner.headers).expect(200)
     const queue = await api.get('/api/admin/product-videos/reviews').set(adminHeaders).expect(200)
-    expect(queue.body.some((r: { assetId: string }) => r.assetId === a.id)).toBe(true)
+    expect(queue.body.items.some((r: { assetId: string }) => r.assetId === a.id)).toBe(true)
     await api.get('/api/admin/product-videos/reviews').set(owner.headers).expect(403)
     const url = `/api/admin/product-videos/${a.id}/review`
     const input = { productId: product.id, expectedVersion: 1, action: 'approve', watched: true }
@@ -412,4 +412,33 @@ describe('durable processing and independent content review', () => {
     await prisma.product.update({ where: { id: product.id }, data: { promoVideoAssetId: null } })
     await expect(reviewVideo(admin.user.id, a.id, { action: 'approve', productId: product.id, expectedVersion: 1, watched: true })).rejects.toMatchObject({ status: 409 })
   })
+})
+
+
+it('paginates reviewed history and exposes durable queue metrics', async () => {
+  const { listVideoReviews } = await import('./moderation.js')
+  const { videoQueue, videoQueueAge, videoExpiredProcessing } = await import('./metrics.js')
+  const owner = await merchant()
+  const ready = await asset(owner.merchant.id, owner.user.id)
+  const product = await createTestProduct('历史审核分页', 10, 1, ['code'], owner.merchant.id)
+  await prisma.product.update({ where: { id: product.id }, data: { promoVideoAssetId: ready.id } })
+  const second = await asset(owner.merchant.id, owner.user.id)
+  const product2 = await createTestProduct('历史审核第二页', 10, 1, ['code'], owner.merchant.id)
+  await prisma.product.update({ where: { id: product2.id }, data: { promoVideoAssetId: second.id } })
+  const page1 = await listVideoReviews({ moderation: 'approved', page: 1, pageSize: 1 })
+  const page2 = await listVideoReviews({ moderation: 'approved', page: 2, pageSize: 1 })
+  expect(page1).toMatchObject({ total: 2, page: 1, pageSize: 1 })
+  expect(page2).toMatchObject({ total: 2, page: 2, pageSize: 1 })
+  expect(new Set([...page1.items, ...page2.items].map(item => item.assetId))).toEqual(new Set([ready.id, second.id]))
+  const old = new Date(Date.now() - 600_000)
+  await prisma.productVideoAsset.createMany({ data: [
+    { id: randomUUID(), merchantId: owner.merchant.id, createdById: owner.user.id, status: 'queued', createdAt: old },
+    { id: randomUUID(), merchantId: owner.merchant.id, createdById: owner.user.id, status: 'processing', processingUntil: old },
+  ] })
+  expect((await videoQueue.get()).values).toEqual(expect.arrayContaining([
+    expect.objectContaining({ labels: { status: 'queued' }, value: 1 }),
+    expect.objectContaining({ labels: { status: 'processing' }, value: 1 }),
+  ]))
+  expect((await videoQueueAge.get()).values[0].value).toBeGreaterThanOrEqual(600)
+  expect((await videoExpiredProcessing.get()).values[0].value).toBe(1)
 })

@@ -117,20 +117,29 @@ test('store loads the next cursor page; detail page has gallery and no review se
 
   // 在当前滚动位置打开第一个可见商品详情，返回后应恢复列表状态和滚动位置。
   await expect.poll(async () => cards.count(), { timeout: 10_000 }).toBeGreaterThan(0)
-  const scrollBeforeDetail = await page.evaluate(() => window.scrollY)
-  expect(scrollBeforeDetail).toBeGreaterThan(0)
-  await page.evaluate(() => {
+  // 卡片跳转已改为卡内真实链接（无障碍改造）：定位当前可见卡片的链接并用真实点击触发，
+  // 直接对卡片容器 dispatch 合成点击不会经过子级 Link，无法再触发跳转。
+  const visibleLinkTestId = await page.evaluate(() => {
     const saleNodes = [...document.querySelectorAll('span')]
       .filter(el => /^已售 \d+$/.test(el.textContent || ''))
-    const visibleCard = saleNodes
-      .map(el => el.closest('.cursor-pointer') as HTMLElement | null)
-      .filter((card): card is HTMLElement => {
-        if (!card) return false
-        const rect = card.getBoundingClientRect()
-        return rect.bottom > 0 && rect.top < window.innerHeight
-      })[0]
-    visibleCard?.click()
+    for (const node of saleNodes) {
+      const card = node.closest('.cursor-pointer')
+      if (!card) continue
+      const rect = card.getBoundingClientRect()
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) continue
+      const link = card.querySelector('a[data-testid^="store-product-link-"]')
+      if (link) return link.getAttribute('data-testid')
+    }
+    return null
   })
+  expect(visibleLinkTestId).toBeTruthy()
+  const cardLink = page.getByTestId(visibleLinkTestId!)
+  await cardLink.scrollIntoViewIfNeeded()
+  // 以点击瞬间的位置为恢复基准：真实点击前会先把目标链接滚入视口，
+  // openDetail 保存的是点击时的 scrollY，断言不能再用滚动调整前的位置比较。
+  const scrollBeforeDetail = await page.evaluate(() => window.scrollY)
+  expect(scrollBeforeDetail).toBeGreaterThan(0)
+  await cardLink.click()
   await expect(page).toHaveURL(/\/product\/\d+/, { timeout: 10_000 })
 
   // 详情页有图集，无评价区（M9 已移除假评价）

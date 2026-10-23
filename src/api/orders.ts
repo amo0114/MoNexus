@@ -172,3 +172,16 @@ export async function disputeOrder(id: number): Promise<void> {
 export async function closeOrder(id: number): Promise<void> {
   await api.post(`/orders/${id}/close`)
 }
+
+export interface OrderPage {
+  items: UserOrderListItem[]
+  total: number
+  counts: Record<import('../utils/orderAttention').OrderListTab, number>
+  page: number
+  pageSize: number
+}
+
+export async function getOrdersPage(params: { page: number; pageSize: number; tab: import('../utils/orderAttention').OrderListTab; q: string }): Promise<OrderPage> {
+  const { data } = await api.get<OrderPage>('/orders/page', { params })
+  return data
+}

@@ -25,6 +25,7 @@ export interface StoreProductCardProps {
    * keyboard/new-tab navigable without nesting the partner-mark button in a link.
    */
   href?: string
+  onNavigate?: (product: Product) => void
   /** Replaces the seller chip text and keeps it visible on phones. */
   sellerLabel?: string
   /** Optional sponsored/editorial disclosure (SPEC-CMI-UX-001 §4.3). */
@@ -36,7 +37,7 @@ export interface StoreProductCardProps {
   compact?: boolean
 }
 
-export default function StoreProductCard({ product, onOpen, href, sellerLabel, disclosure, compact = false }: StoreProductCardProps) {
+export default function StoreProductCard({ product, onOpen, href, onNavigate, sellerLabel, disclosure, compact = false }: StoreProductCardProps) {
   const availability = readAvailabilityStatus(product)
   const isSoldOut = availability === 'unavailable'
   // One representative plan's x/y misleads for multi-plan/mixed products, so Faka cards
@@ -130,6 +131,7 @@ export default function StoreProductCard({ product, onOpen, href, sellerLabel, d
           {href ? (
             <Link
               to={href}
+              onClick={() => onNavigate?.(product)}
               data-testid={`store-product-link-${product.id}`}
               className="after:absolute after:inset-0 after:z-20 after:rounded-xl max-md:after:rounded-2xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-[var(--color-primary)]"
             >

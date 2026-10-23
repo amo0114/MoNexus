@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { authenticate, requireActiveUser, requireMfaIfAdmin, requireVerifiedEmail } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
-import { createOrderSchema, listOrdersQuerySchema } from './schema.js'
+import { createOrderSchema, listOrdersQuerySchema, pagedOrdersQuerySchema } from './schema.js'
 import * as controller from './controller.js'
 import * as reviewsController from '../reviews/controller.js'
 import { reviewBodySchema } from '../reviews/schema.js'
@@ -12,6 +12,7 @@ router.use(authenticate, requireActiveUser)
 router.post('/', validate(createOrderSchema), requireVerifiedEmail, controller.create)
 router.get('/', validate({ query: listOrdersQuerySchema }), controller.list)
 // PR-3：买家「进行中」订单权威计数（红点角标）。必须在 /:id 之前注册。
+router.get('/page', validate({ query: pagedOrdersQuerySchema }), controller.listPage)
 router.get('/attention-count', controller.attentionCount)
 router.post('/:id/dispute', validate({ params: idParamSchema }), controller.dispute)
 router.post('/:id/close', validate({ params: idParamSchema }), controller.close)

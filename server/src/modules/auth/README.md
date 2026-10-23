@@ -198,3 +198,5 @@ prints seeds, recovery codes, passwords, tokens, cookies, or database URLs.
   enrollment, session-revoke, and break-glass procedure.
 - `docs/operations/secrets-management.md` — `MFA_ENCRYPTION_KEY` ownership and
   rotation constraint.
+
+认证尝试限流：`ABUSE_PROTECTION_MODE=enforce` 时，登录、MFA、密码修改与密码重置共享 Redis 的 `authentication` IP 桶（30 次 / 15 分钟），依赖不可用返回 503，不退回内存计数。非 enforce 的本地开发保留原内存限流；注册及邮件发送继续使用各自策略。

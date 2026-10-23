@@ -650,6 +650,87 @@ jobs:
       - name: Run catalog-ops integration E2E tests
         run: bash scripts/verify-catalog-ops-e2e.sh
 
+  external-dependencies:
+    name: Real Redis and object storage
+    needs: changes
+    if: >-
+      !failure() && !cancelled() && (
+        github.event_name == 'push' || needs.changes.outputs.server == 'true'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: monexus
+          POSTGRES_PASSWORD: monexus_dev_2026
+          POSTGRES_DB: monexus_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U monexus -d monexus_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
+      TEST_DATABASE_URL: postgresql://monexus:monexus_dev_2026@localhost:5432/monexus_test?schema=public
+      JWT_SECRET: ci-jwt-secret-at-least-32-characters-long-xx
+      FRONTEND_ORIGIN: http://localhost:5173
+      REDIS_ENABLED: 'true'
+      REDIS_URL: redis://localhost:6379
+      REDIS_CONNECT_TIMEOUT_MS: '5000'
+      REDIS_COMMAND_TIMEOUT_MS: '5000'
+      REQUIRE_REAL_REDIS_TESTS: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm --prefix server ci
+      - run: npm --prefix server run db:generate
+      - run: npm --prefix server run db:migrate:deploy
+      - name: Exercise cache hits and permission revocation with Redis
+        run: npm --prefix server test -- src/modules/products/cacheRevocation.test.ts
+      # Community images/binary downloads are no longer reliably available.
+      # Build a fixed source revision for this disposable integration fixture.
+      - uses: actions/checkout@v4
+        with:
+          repository: minio/minio
+          ref: 01ce918d8279a20e4706b96a64396146894adee4 # RELEASE.2025-09-07T16-13-09Z
+          path: .ci-minio
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.1'
+          cache-dependency-path: .ci-minio/go.sum
+      - name: Build isolated object storage
+        working-directory: .ci-minio
+        run: go build -p 2 -o "$RUNNER_TEMP/minio" .
+      - name: Start isolated private object storage
+        env:
+          MINIO_ROOT_USER: video-test
+          MINIO_ROOT_PASSWORD: video-test-secret
+        run: |
+          "$RUNNER_TEMP/minio" server "$RUNNER_TEMP/video-storage" --address 127.0.0.1:19380 > "$RUNNER_TEMP/minio.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/minio.pid"
+          curl --fail --retry 20 --retry-connrefused --retry-delay 1 http://localhost:19380/minio/health/live
+      - name: Verify private video access, Range and signed URL expiry
+        working-directory: server
+        run: npx tsx scripts/product-video-storage-integration.ts
+      - name: Stop isolated object storage
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/minio.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/minio.pid")" || true
+          fi
+
   deployment-contract:
     # This is intentionally independent of source-path filtering: a malformed
     # workflow or forced-command wrapper must not reach the release branch just
@@ -662,7 +743,9 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate deployment scripts and workflow safeguards
-        run: npm run verify:compose-production-deploy
+        run: |
+          npm run verify:compose-production-deploy
+          python3 scripts/test_pg_dump_url.py
 
   architecture:
     name: Architecture boundaries and API contract
@@ -692,7 +775,7 @@ jobs:
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract, architecture]
+    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract, architecture, external-dependencies]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

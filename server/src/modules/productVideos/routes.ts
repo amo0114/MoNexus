@@ -1,4 +1,5 @@
-import { listVideoReviews, reviewVideo, videoModerationSchema } from './moderation.js'
+import { isVideoWorkerActive } from './worker.js'
+import { listVideoReviews, reviewVideo, videoModerationSchema, videoReviewsQuerySchema } from './moderation.js'
 import { enqueueVideo } from './worker.js'
 import { Router, type Request, type Response, type NextFunction } from 'express'
 import busboy from 'busboy'
@@ -88,14 +89,14 @@ function receive(req: Request, destination: string, signal: AbortSignal) {
 }
 
 router.get('/admin/product-videos/reviews', noStore, authenticate, requireActiveUser, requireAdmin, requireAdminMfa, run(async (req, res) => {
-  res.json(await listVideoReviews(z.enum(['pending', 'approved', 'rejected']).default('pending').parse(req.query.moderation)))
+  res.json(await listVideoReviews(videoReviewsQuerySchema.parse(req.query)))
 }))
 router.post('/admin/product-videos/:assetId/review', noStore, authenticate, requireActiveUser, requireAdmin, requireAdminMfa, run(async (req, res) => {
   res.json(await reviewVideo(req.user!.userId, z.string().uuid().parse(req.params.assetId), videoModerationSchema.parse(req.body)))
 }))
 
 router.get('/admin/product-videos/health', noStore, authenticate, requireActiveUser, requireAdmin, requireAdminMfa, run(async (_req, res) => {
-  res.json({ uploadEnabled: process.env.PRODUCT_VIDEO_UPLOAD_ENABLED !== 'false', playbackEnabled: process.env.PRODUCT_VIDEO_PLAYBACK_ENABLED !== 'false', toolsAvailable: await videoToolsAvailable(), busy })
+  res.json({ uploadEnabled: process.env.PRODUCT_VIDEO_UPLOAD_ENABLED !== 'false', playbackEnabled: process.env.PRODUCT_VIDEO_PLAYBACK_ENABLED !== 'false', toolsAvailable: await videoToolsAvailable(), busy, uploadBusy: busy, workerActive: isVideoWorkerActive() })
 }))
 
 router.post('/uploads/product-video', noStore, authenticate, requireActiveUser, requireVerifiedEmail, mixedRole, run(async (req, res) => {

@@ -3,10 +3,10 @@
  * - Status tabs via `?tab=active|delivered|done`
  * - Notification deeplink `/orders?focus=<id>` (SPEC-NOTIFY-001 NTF-04)
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Package, Search, ShoppingBag } from 'lucide-react'
-import { getOrderDetail, getOrders } from '../api/orders'
+import { getOrderDetail, getOrdersPage } from '../api/orders'
 import { getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
@@ -18,8 +18,6 @@ import EmptyState from '../components/ui/EmptyState'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import {
   ORDER_LIST_TABS,
-  countAttentionOrders,
-  filterOrdersByTab,
   type OrderListTab,
 } from '../utils/orderAttention'
 import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
@@ -47,8 +45,16 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [query, setQuery] = useState('')
+  const [total, setTotal] = useState(0)
+  const [counts, setCounts] = useState({ all: 0, active: 0, delivered: 0, done: 0 })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  useEffect(() => {
+    if (query === searchQuery.trim()) return
+    const timer = setTimeout(() => { setQuery(searchQuery.trim()); setPage(1) }, 250)
+    return () => clearTimeout(timer)
+  }, [searchQuery, query])
   const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
   const reloadRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
@@ -62,9 +68,12 @@ export default function OrdersPage() {
     const request = coordinator.begin(opts?.background ? 'background' : 'foreground')
     if (!opts?.background || coordinator.ownsLoading(request)) setLoading(true)
     try {
-      const list = await getOrders({ page: 1, pageSize: 100 })
+      const list = await getOrdersPage({ page, pageSize, tab, q: query })
       if (!coordinator.isLatest(request)) return
-      setOrders(list)
+      setOrders(list.items)
+      setTotal(list.total)
+      setCounts(list.counts)
+      if (page > Math.max(1, Math.ceil(list.total / pageSize))) setPage(Math.max(1, Math.ceil(list.total / pageSize)))
       // PR-3：全局角标由权威计数接口负责，页面不再用首页 100 条覆盖它。
       // 前台加载后补拉一次（本地 dispute/close 动作在 SSE 缺席时的兜底）。
       if (!opts?.background) void refreshOrderAttention()
@@ -76,7 +85,7 @@ export default function OrdersPage() {
         setLoading(false)
       }
     }
-  }, [showToast, refreshOrderAttention])
+  }, [showToast, refreshOrderAttention, page, pageSize, tab, query])
 
   useEffect(() => {
     void load()
@@ -86,22 +95,15 @@ export default function OrdersPage() {
   // attention in the background; if the current detail is the related order, reload it.
   const reloadBuyerState = useCallback(async () => {
     const request = ++reloadRequestRef.current
-    const listCoordinator = listCoordinatorRef.current
-    const listRequest = listCoordinator.begin('background')
-    if (listCoordinator.ownsLoading(listRequest)) setLoading(true)
     const currentId = selectedOrderRef.current?.id
     const detailRequest = currentId == null ? null : ++backgroundDetailRequestRef.current
-    const [listResult, detailResult] = await Promise.allSettled([
-      getOrders({ page: 1, pageSize: 100 }),
+    const [, detailResult] = await Promise.allSettled([
+      load({ background: true }),
       currentId == null ? Promise.resolve(null) : getOrderDetail(currentId),
     ])
-    if (request === reloadRequestRef.current && listCoordinator.isLatest(listRequest) && listResult.status === 'fulfilled') {
-      setOrders(listResult.value)
-      // PR-3：角标刷新由 Layout 的 buyer.orders 订阅负责，页面只管列表本身。
-    }
-    if (listCoordinator.finish(listRequest)) setLoading(false)
     if (
-      detailRequest !== null
+      request === reloadRequestRef.current
+      && detailRequest !== null
       && detailRequest === backgroundDetailRequestRef.current
       && detailResult.status === 'fulfilled'
       && detailResult.value
@@ -110,23 +112,10 @@ export default function OrdersPage() {
       selectedOrderRef.current = detailResult.value
       setSelectedOrder(detailResult.value)
     }
-  }, [])
+  }, [load])
 
   useNotificationInvalidation('buyer.orders', reloadBuyerState)
   useNotificationInvalidation('all.visible', reloadBuyerState)
-
-  const tabFiltered = useMemo(() => filterOrdersByTab(orders, tab), [orders, tab])
-  const visible = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    return tabFiltered.filter(
-      (o) =>
-        o.product?.name.toLowerCase().includes(q) ||
-        String(o.id).includes(q) ||
-        (o.merchant?.name && o.merchant.name.toLowerCase().includes(q)) ||
-        (o.offerNameSnapshot && o.offerNameSnapshot.toLowerCase().includes(q)),
-    )
-  }, [tabFiltered, searchQuery])
-  const activeCount = useMemo(() => countAttentionOrders(orders), [orders])
 
   function setTab(next: OrderListTab) {
     const nextParams = new URLSearchParams(searchParams)
@@ -136,18 +125,6 @@ export default function OrdersPage() {
     setSearchParams(nextParams, { replace: true })
     setPage(1)
   }
-
-  const totalPages = Math.max(1, Math.ceil(visible.length / pageSize))
-  useEffect(() => {
-    if (page > totalPages) {
-      setPage(totalPages)
-    }
-  }, [page, totalPages])
-
-  const paginatedOrders = useMemo(() => {
-    const start = (page - 1) * pageSize
-    return visible.slice(start, start + pageSize)
-  }, [visible, page, pageSize])
 
   const handlePageChange = useCallback((nextPage: number) => {
     setPage(nextPage)
@@ -182,13 +159,8 @@ export default function OrdersPage() {
   // Deep link from notification: open order detail once when focus is present.
   useEffect(() => {
     if (focusId == null) return
-    const idx = visible.findIndex((o) => o.id === focusId)
-    if (idx >= 0) {
-      const targetPage = Math.floor(idx / pageSize) + 1
-      setPage(targetPage)
-    }
     void openOrder(focusId)
-  }, [focusId, openOrder, visible, pageSize])
+  }, [focusId, openOrder])
 
   function clearFocus() {
     if (!searchParams.has('focus')) return
@@ -207,7 +179,7 @@ export default function OrdersPage() {
           </h1>
           <p className="text-xs text-[var(--color-text-muted)] mt-1" data-testid="orders-attention-summary">
             查看发货内容、续费与履约进度
-            {activeCount > 0 ? ` · 进行中 ${activeCount} 单` : ''}
+            {counts.active > 0 ? ` · 进行中 ${counts.active} 单` : ''}
           </p>
         </div>
         <button
@@ -227,8 +199,7 @@ export default function OrdersPage() {
           data-testid="orders-status-tabs"
         >
         {ORDER_LIST_TABS.map((t) => {
-          const count =
-            t.id === 'all' ? orders.length : filterOrdersByTab(orders, t.id).length
+          const count = counts[t.id]
           const selected = tab === t.id
           return (
             <button
@@ -260,8 +231,10 @@ export default function OrdersPage() {
           <input
             type="search"
             value={searchQuery}
+            maxLength={200}
+            aria-label="搜索订单"
             onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
-            placeholder="搜索商品、商家或单号..."
+            placeholder="搜索商品、商家或完整单号..."
             className="w-full pl-8 pr-7 py-2 rounded-xl text-xs bg-[var(--color-background)] border border-[var(--color-border)]
               focus:outline-none focus:border-[var(--color-primary)] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] transition-colors"
           />
@@ -279,7 +252,7 @@ export default function OrdersPage() {
 
       {loading ? (
         <TableSkeleton rows={5} />
-      ) : visible.length === 0 ? (
+      ) : orders.length === 0 ? (
         <div className="card p-6">
           <EmptyState
             icon={ShoppingBag}
@@ -321,7 +294,7 @@ export default function OrdersPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-            {paginatedOrders.map((order) => (
+            {orders.map((order) => (
               <BuyerOrderCard
                 key={order.id}
                 order={order}
@@ -333,7 +306,7 @@ export default function OrdersPage() {
 
           <OrdersPagination
             page={page}
-            total={visible.length}
+            total={total}
             pageSize={pageSize}
             onPageChange={handlePageChange}
             onPageSizeChange={handlePageSizeChange}
