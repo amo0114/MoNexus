@@ -12,6 +12,7 @@ import {
   type InventoryImportPayload,
 } from '../../lib/inventoryImport.js'
 import { invalidateProductPublicCache } from '../products/cache.js'
+import { adjustOfferCapacity } from '../../lib/offerCapacity.js'
 
 /**
  * P4a F2：管理端导入的规格解析。显式 offerId 必须属于该商品且是即时库存
@@ -216,4 +217,39 @@ export async function importOfferInventory(
     }
     throw error
   }
+}
+
+/**
+ * 平台自营 limited 非即时规格（固定内容 / 人工服务）的名额调整。管理端建品
+ * 写路径不接受库存，此前平台限量规格名额恒为 0、无法发布。商家商品的名额
+ * 仍只由商家调整，管理端不越权改经营数量。
+ */
+export async function adjustPlatformOfferCapacity(
+  productId: number,
+  offerId: number,
+  input: { delta: number; reason: string },
+  adminUserId: number
+) {
+  const product = await prisma.product.findUnique({ where: { id: productId }, select: { merchantId: true } })
+  if (!product) throw notFound('商品不存在')
+  if (product.merchantId != null) throw badRequest('商家商品的名额由商家调整')
+
+  const result = await prisma.$transaction(async tx => {
+    const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
+    if (!offer) throw notFound('规格不存在')
+    const adjusted = await adjustOfferCapacity(tx, productId, offer, null, adminUserId, input)
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '调整名额',
+        targetType: 'product',
+        targetId: productId,
+        detail: `offerId=${offer.id}; ${input.delta > 0 ? '+' : ''}${input.delta}，调整后 ${adjusted.stock}；原因：${input.reason}`,
+      },
+    })
+    return adjusted
+  })
+
+  await invalidateProductPublicCache(productId, { detail: true, list: 'coalesced' })
+  return result
 }

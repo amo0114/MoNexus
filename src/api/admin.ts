@@ -269,6 +269,19 @@ export async function importAdminOfferInventory(
   return data
 }
 
+/** Platform-owned limited fixed/manual Offers only; merchant products stay merchant-managed. */
+export async function adjustAdminOfferCapacity(
+  productId: number,
+  offerId: number,
+  payload: { delta: number; reason: string },
+): Promise<{ stock: number }> {
+  const { data } = await api.post<{ stock: number }>(
+    `/admin/products/${productId}/offers/${offerId}/capacity/adjust`,
+    payload,
+  )
+  return data
+}
+
 export async function deleteAdminProduct(
   productId: number,
 ): Promise<{ mode: 'archived'; productId: number; status?: string; archivedAt?: string }> {
