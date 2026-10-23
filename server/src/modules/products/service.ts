@@ -1,4 +1,4 @@
-import { videoSummary } from '../productVideos/service.js'
+import { publicVideoSummary } from '../productVideos/service.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { wrapCache } from '../../lib/cache.js'
@@ -505,7 +505,7 @@ function serializePublicProductDetail(
 
   return {
     ...publicProduct,
-    promoVideo: videoSummary(promoVideoAsset),
+    promoVideo: publicVideoSummary(promoVideoAsset),
     merchant: publicMerchant(merchant),
     // 同列表：分类只输出公开三件套，guestVisibility 不对外。
     category: publicCategory(category),
@@ -820,6 +820,7 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
   const live = await prisma.product.findUnique({
     where: { id },
     select: {
+      promoVideoAsset: true,
       status: true,
       contentVersion: true,
       archivedAt: true,
@@ -847,6 +848,7 @@ export async function getProductDetail(id: number, audience: ProductAudience = '
   const assuranceById = await loadPublicAssuranceByProductIds([baseProduct.id])
   return {
     ...baseProduct,
+    promoVideo: publicVideoSummary(live.promoVideoAsset),
     merchandising: decorated.merchandising,
     assurance: assuranceById.get(baseProduct.id) ?? null,
   }

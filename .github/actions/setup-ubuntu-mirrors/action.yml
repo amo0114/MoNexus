@@ -1,0 +1,27 @@
+name: Set up Ubuntu package mirrors
+description: Use the official Ubuntu archives instead of the slow hosted-runner Azure mirror.
+runs:
+  using: composite
+  steps:
+    - name: Configure official Ubuntu archives
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Hosted images can use either direct URIs or mirror+file URIs.
+        # Configure before Playwright install-deps as well as our apt installs.
+        for source in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+          [ -f "$source" ] || continue
+          sudo sed -i \
+            -e 's|mirror+file:/etc/apt/apt-mirrors-security\.txt|https://security.ubuntu.com/ubuntu|g' \
+            -e 's|mirror+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            -e 's|https://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+            "$source"
+        done
+        # Bound stalled connections and retry transient failures. Keep apt's
+        # signed metadata/package checks and the existing job time budgets.
+        printf '%s\n' \
+          'Acquire::Retries "3";' \
+          'Acquire::http::Timeout "30";' \
+          'Acquire::https::Timeout "30";' \
+          | sudo tee /etc/apt/apt.conf.d/80-monexus-ci-network >/dev/null

@@ -2462,6 +2462,17 @@ model ProductVideoAsset {
   videoStoredObjectId Int? @unique
   posterStoredObjectId Int? @unique
   status String @default("uploading")
+  outputGeneration String?
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  processingToken String?
+  processingUntil DateTime?
+  processingError String?
+  moderation String @default("pending")
+  moderationVersion Int @default(1)
+  reviewedById Int?
+  reviewedAt DateTime?
+  moderationReason String?
   durationMs Int @default(0)
   width Int @default(0)
   height Int @default(0)
@@ -2473,4 +2484,5 @@ model ProductVideoAsset {
   posterStoredObject StoredObject? @relation("VideoPoster", fields: [posterStoredObjectId], references: [id], onDelete: Restrict)
   @@index([merchantId, status])
   @@index([status, updatedAt])
+  @@index([status, nextAttemptAt])
 }

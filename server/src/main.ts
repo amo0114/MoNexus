@@ -1,3 +1,4 @@
+import { startVideoWorker, stopVideoWorker } from './modules/productVideos/worker.js'
 import { app } from './app.js'
 import { config } from './config/index.js'
 import { clearCacheProcessState } from './lib/cache.js'
@@ -53,6 +54,7 @@ const server = app.listen(config.port, () => {
   startPartnerEntitlementCron()
   startPaymentWorkers()
   startPaymentPayloadRetentionCron()
+  startVideoWorker()
   startTrafficCron()
   startRecommendationEventsCron()
   if (config.notificationRealtime.enabled) {
@@ -108,6 +110,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopPartnerEntitlementCron()
   stopPaymentWorkers()
   stopPaymentPayloadRetentionCron()
+  const videoStopPromise = stopVideoWorker()
   stopTrafficCron()
   stopRecommendationEventsCron()
 
@@ -129,6 +132,7 @@ async function shutdown(signal: NodeJS.Signals) {
     await serverClosePromise
     await listenerStopPromise
     await drainPromise
+    await videoStopPromise
     await quitRedis()
     clearCacheProcessState()
     await prisma.$disconnect()

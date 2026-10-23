@@ -141,7 +141,7 @@ describe('AdminGuestReviewDialog (SPEC-CATALOG-VIS-001 §4.5)', () => {
   })
 
   it('previews the video bound to the reviewed revision, releases it on conflict and reloads the new asset', async () => {
-    const video = { assetId: 'video-a', durationMs: 1000, width: 320, height: 240, hasAudio: true }
+    const video = { moderation: 'approved', assetId: 'video-a', durationMs: 1000, width: 320, height: 240, hasAudio: true }
     vi.mocked(adminApi.getAdminGuestEligibility)
       .mockResolvedValueOnce(view({ promoVideo: video }))
       .mockResolvedValueOnce(view({ publicContentRevision: 3, version: 2, promoVideo: { ...video, assetId: 'video-b' } }))
