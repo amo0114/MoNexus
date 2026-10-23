@@ -11,6 +11,7 @@ const { apiGet, createOrder, getCheckoutPreview } = vi.hoisted(() => ({
   getCheckoutPreview: vi.fn(),
 }))
 
+vi.mock('../components/purchaseConfirmArm', () => ({ CONFIRM_ARM_MS: 0 }))
 vi.mock('../api/client', () => ({
   default: { get: apiGet, post: vi.fn(), patch: vi.fn() },
 }))

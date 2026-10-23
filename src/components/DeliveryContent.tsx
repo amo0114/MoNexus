@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Clock, ExternalLink, Copy, Check, Ticket } from 'lucide-react'
 import StructuredDeliveryView from './StructuredDeliveryView'
 import FileDeliveryCard from './FileDeliveryCard'
+import ScratchReveal from './ScratchReveal'
 import type { StructuredDeliveryContent } from '../types/merchant'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { copyToClipboard } from '../utils/clipboard'
@@ -42,6 +43,11 @@ export interface DeliveryContentProps {
   urlTestId?: string
   /** Shown only when the slice has no structured/file/url/text/pending payload. */
   emptyLabel?: string | null
+  /**
+   * Scratch-off coating over plain-text delivery. Only for the one-time
+   * purchase success dialog; order detail keeps showing content directly.
+   */
+  reveal?: { revealed: boolean; onReveal: () => void }
 }
 
 function hasStructuredFields(
@@ -93,6 +99,7 @@ export default function DeliveryContent({
   bookingDate,
   urlTestId = 'delivery-link',
   emptyLabel = null,
+  reveal,
 }: DeliveryContentProps) {
   const showToast = useAppStore((s) => s.showToast)
   const structured = hasStructuredFields(structuredContent) ? structuredContent : null
@@ -133,6 +140,7 @@ export default function DeliveryContent({
 
   async function handleCopyText() {
     if (!content) return
+    reveal?.onReveal()
     const success = await copyToClipboard(content)
     if (success) {
       if (textTimerRef.current) clearTimeout(textTimerRef.current)
@@ -145,6 +153,14 @@ export default function DeliveryContent({
   }
 
   const hasHeaderMeta = Boolean(bookingDate) || Boolean(expiresAt)
+  const textBody = (
+    <div
+      className="font-mono text-sm break-all text-[var(--color-text)] select-all leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto"
+      data-testid="delivery-text-content"
+    >
+      {content}
+    </div>
+  )
   const hasPayload =
     Boolean(structured) ||
     showFile ||
@@ -299,12 +315,11 @@ export default function DeliveryContent({
                     )}
                   </button>
                 </div>
-                <div
-                  className="font-mono text-sm break-all text-[var(--color-text)] select-all leading-relaxed whitespace-pre-wrap max-h-48 overflow-y-auto"
-                  data-testid="delivery-text-content"
-                >
-                  {content}
-                </div>
+                {reveal ? (
+                  <ScratchReveal revealed={reveal.revealed} onReveal={reveal.onReveal}>
+                    {textBody}
+                  </ScratchReveal>
+                ) : textBody}
               </div>
             )}
 

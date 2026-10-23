@@ -16,6 +16,7 @@ const {
   sendProvisionEmailCode: vi.fn(),
 }))
 
+vi.mock('./purchaseConfirmArm', () => ({ CONFIRM_ARM_MS: 0 }))
 vi.mock('../api/orders', () => ({
   getCheckoutPreview,
 }))
