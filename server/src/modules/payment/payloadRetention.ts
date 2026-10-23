@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
@@ -22,45 +23,52 @@ type SweepCandidate = {
   id: string
   createdAt: Date
   paymentAttemptId: string | null
+  rechargeOrderId?: string
 }
 
-async function selectClearableIds(candidates: SweepCandidate[], now: Date): Promise<string[]> {
+async function selectClearableIds(db: Prisma.TransactionClient, candidates: SweepCandidate[], now: Date): Promise<string[]> {
   if (candidates.length === 0) return []
   const defaultCutoff = daysAgo(PAYMENT_PAYLOAD_DEFAULT_RETENTION_DAYS, now)
   const holdAfterCloseCutoff = daysAgo(PAYMENT_PAYLOAD_HOLD_AFTER_CLOSE_DAYS, now)
   const attemptIds = [...new Set(candidates.map(item => item.paymentAttemptId).filter((id): id is string => Boolean(id)))]
   const eventIds = candidates.map(item => item.id)
+  const orderIds = candidates.flatMap(item => item.rechargeOrderId ? [item.rechargeOrderId] : [])
+  const caseWhere = { OR: [{ paymentAttemptId: { in: attemptIds } }, { rechargeOrderId: { in: orderIds } }] }
 
   const [disputes, refunds, reconItems] = await Promise.all([
-    attemptIds.length === 0
+    attemptIds.length === 0 && orderIds.length === 0
       ? Promise.resolve([])
-      : prisma.paymentDispute.findMany({
-        where: { paymentAttemptId: { in: attemptIds } },
-        select: { paymentAttemptId: true, status: true, closedAt: true },
+      : db.paymentDispute.findMany({
+        where: caseWhere,
+        select: { paymentAttemptId: true, rechargeOrderId: true, status: true, closedAt: true },
       }),
-    attemptIds.length === 0
+    attemptIds.length === 0 && orderIds.length === 0
       ? Promise.resolve([])
-      : prisma.rechargeRefund.findMany({
-        where: { paymentAttemptId: { in: attemptIds } },
-        select: { paymentAttemptId: true, status: true, completedAt: true, updatedAt: true },
+      : db.rechargeRefund.findMany({
+        where: caseWhere,
+        select: { paymentAttemptId: true, rechargeOrderId: true, status: true, completedAt: true, updatedAt: true },
       }),
-    prisma.reconciliationItem.findMany({
+    db.reconciliationItem.findMany({
       where: {
         OR: [
           { paymentEventId: { in: eventIds } },
+          { rechargeOrderId: { in: orderIds } },
           ...(attemptIds.length > 0 ? [{ paymentAttemptId: { in: attemptIds } }] : []),
         ],
       },
-      select: { paymentEventId: true, paymentAttemptId: true, status: true, resolvedAt: true },
+      select: { paymentEventId: true, paymentAttemptId: true, rechargeOrderId: true, status: true, resolvedAt: true },
     }),
   ])
 
   const clearable: string[] = []
   for (const event of candidates) {
-    const relatedDisputes = disputes.filter(item => item.paymentAttemptId === event.paymentAttemptId)
-    const relatedRefunds = refunds.filter(item => item.paymentAttemptId === event.paymentAttemptId)
+    const matchesCase = (item: { paymentAttemptId: string | null; rechargeOrderId: string | null }) =>
+      (event.paymentAttemptId != null && item.paymentAttemptId === event.paymentAttemptId)
+      || (event.rechargeOrderId != null && item.rechargeOrderId === event.rechargeOrderId)
+    const relatedDisputes = disputes.filter(matchesCase)
+    const relatedRefunds = refunds.filter(matchesCase)
     const relatedRecon = reconItems.filter(item =>
-      item.paymentEventId === event.id || (event.paymentAttemptId != null && item.paymentAttemptId === event.paymentAttemptId),
+      item.paymentEventId === event.id || matchesCase(item),
     )
 
     const openHold = relatedDisputes.some(item => (OPEN_DISPUTE as readonly string[]).includes(item.status))
@@ -95,6 +103,8 @@ export async function sweepExpiredPaymentPayloads(now = new Date()): Promise<num
     const candidates: SweepCandidate[] = await prisma.paymentEvent.findMany({
       where: {
         rawPayloadEncrypted: { not: null },
+        status: { in: ['processed', 'ignored', 'reconcile_required'] },
+        createdAt: { lte: daysAgo(PAYMENT_PAYLOAD_DEFAULT_RETENTION_DAYS, now) },
         ...(afterCursor
           ? {
               OR: [
@@ -114,13 +124,35 @@ export async function sweepExpiredPaymentPayloads(now = new Date()): Promise<num
     })
     if (candidates.length === 0) break
 
-    const clearable = await selectClearableIds(candidates, now)
-    if (clearable.length > 0) {
-      const updated = await prisma.paymentEvent.updateMany({
-        where: { id: { in: clearable }, rawPayloadEncrypted: { not: null } },
-        data: { rawPayloadEncrypted: null },
+    for (const candidate of candidates) {
+      totalCleared += await prisma.$transaction(async tx => {
+        // Same lock order as payment application: Event -> RechargeOrder.
+        // Refund/dispute creation holds the order lock, reconciliation does too.
+        const events = await tx.$queryRaw<SweepCandidate[]>`SELECT id, "createdAt", "paymentAttemptId"
+          FROM "PaymentEvent" WHERE id = ${candidate.id}::uuid
+            AND "rawPayloadEncrypted" IS NOT NULL
+            AND status IN ('processed', 'ignored', 'reconcile_required') FOR UPDATE`
+        const event = events[0]
+        if (!event) return 0
+        if (event.paymentAttemptId) {
+          const attempt = await tx.paymentAttempt.findUnique({
+            where: { id: event.paymentAttemptId },
+            select: { paymentIntent: { select: { rechargeOrderId: true } } },
+          })
+          if (attempt) {
+            event.rechargeOrderId = attempt.paymentIntent.rechargeOrderId
+            await tx.$queryRaw`SELECT id FROM "RechargeOrder"
+              WHERE id = ${event.rechargeOrderId}::uuid FOR UPDATE`
+          }
+        }
+        const clearable = await selectClearableIds(tx, [event], now)
+        if (!clearable.length) return 0
+        const updated = await tx.paymentEvent.updateMany({
+          where: { id: event.id, rawPayloadEncrypted: { not: null } },
+          data: { rawPayloadEncrypted: null },
+        })
+        return updated.count
       })
-      totalCleared += updated.count
     }
 
     const last: SweepCandidate = candidates[candidates.length - 1]!

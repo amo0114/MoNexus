@@ -324,6 +324,28 @@ describe('fulfillment state machine', () => {
 })
 
 describe('GET /api/orders', () => {
+  it('searches and pages beyond 100 orders without exposing another buyer', async () => {
+    const { user } = await createTestUser('order-pages@test.local', 'pass123')
+    const other = await createTestUser('other-pages@test.local', 'pass123')
+    const product = await createTestProduct('分页商品', 100, 0, [])
+    await prisma.order.createMany({ data: Array.from({ length: 250 }, (_, index) => ({
+      userId: user.id, productId: product.id, price: 100,
+      status: index === 0 ? 'pending' : 'closed',
+      productNameSnapshot: index === 0 ? '旧订单可检索' : '分页商品',
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, index)),
+    })) })
+    await prisma.order.create({ data: { userId: other.user.id, productId: product.id, price: 100, status: 'pending', productNameSnapshot: '旧订单可检索' } })
+    const headers = authHeader((await loginAs(user.email, 'pass123')).accessToken)
+    const last = await api.get('/api/orders/page').set(headers).query({ page: 3, pageSize: 100 }).expect(200)
+    expect(last.body.total).toBe(250)
+    expect(last.body.items).toHaveLength(50)
+    expect(last.body.counts).toEqual({ all: 250, active: 1, delivered: 0, done: 249 })
+    const found = await api.get('/api/orders/page').set(headers).query({ q: '旧订单', tab: 'active' }).expect(200)
+    expect(found.body.total).toBe(1)
+    expect(found.body.items[0].id).toBe(last.body.items.at(-1).id)
+    expect(found.body.items[0].delivery?.content).toBeUndefined()
+  })
+
   it('should list user orders', async () => {
     await createTestUser('orderlist@test.local', 'pass123', 'user', 5000)
     await createTestProduct('测试商品A', 100, 3, ['a1', 'a2', 'a3'])

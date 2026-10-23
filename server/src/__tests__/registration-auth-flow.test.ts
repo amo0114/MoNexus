@@ -127,6 +127,26 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     __setMailerForTesting(null)
   })
 
+  it('uses the shared authentication bucket across login and MFA routes', async () => {
+    enableProtection()
+    const redis = new CountingRedis()
+    __setRedisForTests(redis)
+    for (let i = 0; i < 30; i++) {
+      await api.post('/api/auth/login').send({ email: 'unknown@test.local', password: 'pass12345' }).expect(401)
+    }
+    const blocked = await api.post('/api/auth/mfa/verify').send({}).expect(429)
+    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
+    expect(redis.counts.size).toBe(1)
+    expect([...redis.counts.keys()][0]).toContain(':authentication:ip:')
+  })
+
+  it('does not fall back to local login limits when shared protection is unavailable', async () => {
+    enableProtection()
+    config.redisEnabled = false
+    const result = await api.post('/api/auth/login').send({ email: 'unknown@test.local', password: 'pass12345' }).expect(503)
+    expect(result.body.error.code).toBe('ABUSE_PROTECTION_UNAVAILABLE')
+  })
+
   it('exposes only the safe challenge descriptor when protection is ready', async () => {
     enableProtection()
     const res = await api.get('/api/auth/registration-status').expect(200)
@@ -263,13 +283,13 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
   it('does not create verification tokens or mail when a user-mail bucket denies', async () => {
     enableProtection()
     const redis = new CountingRedis()
-    redis.forced.push([2, 60_000])
     __setRedisForTests(redis)
     const mailer = new CaptureMailer()
     __setMailerForTesting(mailer)
     const { user, password } = await createTestUser('verify-limited@test.local')
     const { accessToken } = await loginAs(user.email, password)
 
+    redis.forced.push([2, 60_000])
     const res = await api.post('/api/auth/send-verification').set(authHeader(accessToken)).expect(429)
     expect(res.body.error.code).toBe('RATE_LIMITED')
     expect(await prisma.emailVerificationToken.count({ where: { userId: user.id } })).toBe(0)
@@ -278,12 +298,13 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
 
   it('fails closed for verification mail when Redis is unavailable', async () => {
     enableProtection()
-    __setRedisForTests(null)
+    __setRedisForTests(new CountingRedis())
     const mailer = new CaptureMailer()
     __setMailerForTesting(mailer)
     const { user, password } = await createTestUser('verify-redis-down@test.local')
     const { accessToken } = await loginAs(user.email, password)
 
+    __setRedisForTests(null)
     const res = await api.post('/api/auth/send-verification').set(authHeader(accessToken)).expect(503)
     expect(res.body.error.code).toBe('ABUSE_PROTECTION_UNAVAILABLE')
     expect(await prisma.emailVerificationToken.count({ where: { userId: user.id } })).toBe(0)

@@ -251,27 +251,34 @@ async function upsertItem(runId: string, item: {
   quotedAmountMinor?: bigint | null
   currency: string | null
 }) {
-  await prisma.reconciliationItem.upsert({
-    where: {
-      reconciliationRunId_providerEntryKey_mismatchType: {
-        reconciliationRunId: runId,
-        providerEntryKey: item.providerEntryKey,
-        mismatchType: item.mismatchType,
+  await prisma.$transaction(async tx => {
+    // Serialize new holds with raw-payload retention, as refunds/disputes do.
+    const orderId = item.rechargeOrderId ?? (item.paymentAttemptId
+      ? (await tx.paymentAttempt.findUnique({ where: { id: item.paymentAttemptId }, select: { paymentIntent: { select: { rechargeOrderId: true } } } }))?.paymentIntent.rechargeOrderId
+      : null)
+    if (orderId) await tx.$queryRaw`SELECT id FROM "RechargeOrder" WHERE id = ${orderId}::uuid FOR UPDATE`
+    await tx.reconciliationItem.upsert({
+      where: {
+        reconciliationRunId_providerEntryKey_mismatchType: {
+          reconciliationRunId: runId,
+          providerEntryKey: item.providerEntryKey,
+          mismatchType: item.mismatchType,
+        },
       },
-    },
-    create: {
-      reconciliationRunId: runId,
-      ...item,
-      quotedAmountMinor: item.quotedAmountMinor ?? null,
-      status: 'open',
-    },
-    update: {
-      providerStatus: item.providerStatus,
-      localStatus: item.localStatus,
-      providerAmountMinor: item.providerAmountMinor,
-      localAmountMinor: item.localAmountMinor,
-      quotedAmountMinor: item.quotedAmountMinor ?? null,
-    },
+      create: {
+        reconciliationRunId: runId,
+        ...item,
+        quotedAmountMinor: item.quotedAmountMinor ?? null,
+        status: 'open',
+      },
+      update: {
+        providerStatus: item.providerStatus,
+        localStatus: item.localStatus,
+        providerAmountMinor: item.providerAmountMinor,
+        localAmountMinor: item.localAmountMinor,
+        quotedAmountMinor: item.quotedAmountMinor ?? null,
+      },
+    })
   })
   const run = await prisma.reconciliationRun.findUnique({
     where: { id: runId },

@@ -13,9 +13,20 @@ export const videoModerationSchema = z.object({
   reason: z.string().trim().min(1).max(500).optional(),
 }).strict()
 
-export async function listVideoReviews(moderation: 'pending' | 'approved' | 'rejected' = 'pending') {
-  const assets = await prisma.productVideoAsset.findMany({ where: { status: 'ready', moderation, product: { isNot: null } }, include: { product: { select: { id: true, name: true, visibility: true } } }, orderBy: [{ moderation: 'asc' }, { createdAt: 'asc' }], take: 100 })
-  return assets.map(a => ({ ...videoSummary(a)!, product: a.product }))
+export const videoReviewsQuerySchema = z.object({
+  moderation: z.enum(['pending', 'approved', 'rejected']).default('pending'),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+})
+
+export async function listVideoReviews({ moderation, page, pageSize }: z.infer<typeof videoReviewsQuerySchema>) {
+  const where = { status: 'ready', moderation, product: { isNot: null } }
+  const [total, assets] = await prisma.$transaction([
+    prisma.productVideoAsset.count({ where }),
+    prisma.productVideoAsset.findMany({ where, include: { product: { select: { id: true, name: true, visibility: true } } },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }),
+  ], { isolationLevel: 'RepeatableRead' })
+  return { items: assets.map(a => ({ ...videoSummary(a)!, product: a.product })), total, page, pageSize }
 }
 export async function reviewVideo(adminId: number, assetId: string, input: z.infer<typeof videoModerationSchema>) {
   return prisma.$transaction(async tx => {

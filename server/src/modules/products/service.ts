@@ -943,3 +943,19 @@ export async function getProductRecommendations(id: number, audience: ProductAud
     })),
   }
 }
+
+/** Bounded card projection for shelves; never return access-decision or delivery fields. */
+export async function getProductSummaries(ids: number[], audience: ProductAudience) {
+  const { items } = await hydratePublicListItems(ids, audience)
+  const pinned = await resolveCursorForRequest(null)
+  const projections = await decorateProducts(items.map(item => ({ id: item.id, merchantId: item.merchant?.id ?? null })), pinned.mode === 'run' ? pinned.run : null)
+  const projectionById = new Map(projections.map(row => [row.id, row.merchandising]))
+  return { items: items.map(item => ({
+    id: item.id, name: item.name, description: item.description, type: item.type,
+    icon: item.icon, imageUrl: item.imageUrl, images: item.images,
+    price: item.price, originalPrice: item.originalPrice, stock: item.stock,
+    stockMode: item.stockMode, sales: item.sales, ratingAvg: item.ratingAvg,
+    ratingCount: item.ratingCount, category: item.category, merchant: item.merchant,
+    availability: item.availability, fakaCapacity: item.fakaCapacity, merchandising: projectionById.get(item.id),
+  })) }
+}

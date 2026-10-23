@@ -22,6 +22,8 @@ import {
   expectedSessionBodySchema,
 } from './schema.js'
 import * as controller from './controller.js'
+import { abuseLimiter } from '../../lib/abuseLimiter.js'
+import { consumeAbuseBucket } from './authProtection.js'
 import { assertRegistrationEnabled } from './registrationService.js'
 
 const router = Router()
@@ -30,7 +32,7 @@ const router = Router()
 // auth calls per second without hitting the 5/15min cap.
 const skipInTests = () => config.nodeEnv === 'test'
 
-const authLimiter = rateLimit({
+const localAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
   standardHeaders: true,
@@ -43,6 +45,21 @@ const authLimiter = rateLimit({
     },
   },
 })
+
+// Production already requires shared abuse protection and Redis. Keep the
+// local-development fallback while preserving the existing cross-route budget.
+async function authLimiter(req: Request, res: Response, next: NextFunction) {
+  if (config.abuseProtectionMode !== 'enforce') return localAuthLimiter(req, res, next)
+  try {
+    await consumeAbuseBucket(() => abuseLimiter.consume(
+      { flow: 'authentication', dimension: 'ip', limit: 30, windowMs: 15 * 60 * 1000 },
+      ipKeyGenerator(req.ip ?? 'unknown'),
+    ))
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
 
 // A valid refresh cookie is a per-session credential, not a password-guessing
 // attempt. Key it by a one-way hash of that cookie so users behind the same
@@ -89,7 +106,7 @@ async function registrationGate(_req: Request, _res: Response, next: NextFunctio
 router.get('/registration-status', controller.registrationStatus)
 router.get('/human-challenge', validate({ query: humanChallengeQuerySchema }), controller.humanChallenge)
 
-// Registration deliberately does not use the process-local authLimiter. Its
+// Registration deliberately has its own abuse policy. Its
 // service boundary owns the fixed order: switch -> Redis preflight ->
 // human verification -> shared Redis buckets -> bcrypt/DB/session. Putting a
 // memory limiter before that boundary would both weaken multi-instance

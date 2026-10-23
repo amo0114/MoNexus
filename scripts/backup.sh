@@ -69,7 +69,7 @@ fi
 
 require_cmd gzip
 case "$BACKUP_SOURCE" in
-  url) require_cmd pg_dump ;;
+  url) require_cmd pg_dump; require_cmd python3 ;;
   docker-compose) require_cmd docker ;;
   *)
     echo "[ERROR] BACKUP_SOURCE must be url or docker-compose (got '$BACKUP_SOURCE')" >&2
@@ -93,9 +93,10 @@ dump_database() {
         echo "[ERROR] DATABASE_URL or BACKUP_DATABASE_URL is required when BACKUP_SOURCE=url" >&2
         return 1
       fi
-      # Strip Prisma query params (e.g. ?schema=public) — pg_dump rejects
-      # unknown URI params.
-      pg_dump "${database_url%%\?*}"
+      # Keep libpq transport/security options; remove only Prisma-specific parameters.
+      local dump_url
+      dump_url="$(printf '%s' "$database_url" | python3 "$script_dir/pg-dump-url.py")"
+      pg_dump "$dump_url"
       ;;
     docker-compose)
       require_cmd docker

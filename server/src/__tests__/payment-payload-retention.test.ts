@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { encryptPaymentEventPayload } from '../modules/payment/payloadCrypto.js'
@@ -59,7 +59,7 @@ afterEach(() => {
 describe('payment raw payload retention', () => {
   it('encrypts webhook payloads and clears them after 30 days unless an open case holds them', async () => {
     await seedCnyPolicy()
-    const { user } = await createTestUser('payload-retain@test.local', 'pass12345')
+    await createTestUser('payload-retain@test.local', 'pass12345')
     const auth = await loginAs('payload-retain@test.local', 'pass12345')
     const quote = await api.post('/api/recharge/quotes').set(authHeader(auth.accessToken)).send({
       currency: 'CNY', amountMinor: '1000', amountSource: 'custom', provider: 'simulator', paymentMethod: 'card',
@@ -116,20 +116,38 @@ describe('payment raw payload retention', () => {
         createdAt: held,
       },
     })
-    await prisma.rechargeRefund.create({
-      data: {
-        rechargeOrderId: stored.id,
-        paymentAttemptId: attempt.id,
-        requestIdempotencyKey: `refund-${stored.id}`,
-        amountMinor: stored.amountMinor,
-        pointsToReverse: stored.totalPoints,
-        status: 'processing',
-        reasonCode: 'hold_payload',
-        createdByUserId: user.id,
-      },
-    })
+    let sweep!: Promise<number>
+    try {
+      await prisma.$transaction(async tx => {
+        await tx.$queryRaw`SELECT id FROM "RechargeOrder" WHERE id = ${stored.id}::uuid FOR UPDATE`
+        sweep = __runPaymentPayloadRetentionForTests()
+        // Retention must wait on this parent lock, then see the newly committed hold.
+        await vi.waitFor(async () => {
+          const blocked = await prisma.$queryRaw<Array<{ count: bigint }>>`SELECT count(*) AS count FROM pg_stat_activity
+            WHERE datname = current_database() AND wait_event_type = 'Lock'
+              AND query LIKE '%SELECT id FROM "RechargeOrder"%'`
+          expect(Number(blocked[0].count)).toBeGreaterThan(0)
+        }, { timeout: 3000 })
+        await tx.paymentDispute.create({
+          data: {
+            provider: 'simulator',
+            providerAccountKey: 'simulator:sandbox:default',
+            providerDisputeId: `hold-${stored.id}`,
+            rechargeOrderId: stored.id,
+            paymentAttemptId: null,
+            amountMinor: stored.amountMinor,
+            currency: 'CNY',
+            status: 'open',
+            openedAt: new Date(),
+          },
+        })
+      })
+    } finally {
+      // Join the concurrent sweep even when an assertion fails, before DB reset.
+      if (sweep) await sweep
+    }
 
-    const cleared = await __runPaymentPayloadRetentionForTests()
+    const cleared = await sweep
     expect(cleared).toBe(1)
     expect((await prisma.paymentEvent.findUniqueOrThrow({ where: { id: expired.id } })).rawPayloadEncrypted).toBeNull()
     expect((await prisma.paymentEvent.findUniqueOrThrow({ where: { id: openHeld.id } })).rawPayloadEncrypted).toBeTruthy()

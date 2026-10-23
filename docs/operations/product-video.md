@@ -93,3 +93,18 @@ npm test -- src/components/catalog/ProductVideoPlayer.test.tsx src/components/me
 - 真实隔离 MinIO 的匿名访问、inline MIME/no-store、Range206/416、签名篡改/过期及付费 attachment 回归通过；PostgreSQL16客户端完成新generation产物的加密v3跨库/跨桶备份恢复、篡改回滚及恢复后授权播放。
 - 本机FFmpeg4.4真实HEVC/PQ MOV与PCM音轨转换为H.264/SDR/AAC-LC；Alpine运行镜像FFmpeg8.1完成同类素材及4K/HLG到1920×1080的非root有界转换。合成素材验证处理路径，不替代真实手机HDR素材的色彩、听感和长片性能验收。
 - 上线前仍需最终CI、外层代理95m、实际硬件长片容量和手机原片实测；不包含独立媒体出口及第三方SaaS缓存问题的修复。
+
+## 队列指标与审核分页
+
+`/api/metrics` 读取持久任务状态，因此 worker 不执行时也能观察积压：
+
+- `monexus_product_video_assets{status="queued|processing|failed"}`：各状态数量。
+- `monexus_product_video_oldest_queued_seconds`：最早排队任务年龄，包含重试等待。
+- `monexus_product_video_expired_processing`：领取租约已过期的处理中任务数。
+- `monexus_product_video_processing_seconds{outcome="succeeded|retry|failed"}`：包含对象存储读写的单次处理耗时直方图。
+
+健康接口保留 `busy`，并明确返回本实例 `uploadBusy`、`workerActive`。状态数量来自数据库，健康接口的活动标志只代表所请求的进程。指标查询依赖数据库；数据库不可用时 scrape 失败，应由既有 scrape/up 告警承接。
+
+示例告警见 `product-video-alerts.rules.yml`，需由运维加载到 Prometheus；默认排队阈值为 15 分钟，可按实际素材和机器能力调整。告警后先检查 worker 日志、临时盘容量与对象存储，再决定恢复服务或让商家重新上传；不要直接修改 processing token。
+
+审核列表接受 `moderation/page/pageSize`，返回 `{items,total,page,pageSize}`，按创建时间和资产 ID 稳定排序。管理面板每页 50 条，已通过/已拒绝历史也可翻页。

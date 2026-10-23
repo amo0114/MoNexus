@@ -57,3 +57,11 @@ export async function recommendations(req: Request, res: Response, next: NextFun
     next(err)
   }
 }
+
+export async function summaries(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await productService.getProductSummaries(
+      (req.query as unknown as { ids: number[] }).ids, resolveProductAudience(req.user),
+    ))
+  } catch (error) { next(error) }
+}

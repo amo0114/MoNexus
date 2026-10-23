@@ -3,6 +3,7 @@ import { api, createTestUser, loginAs, authHeader } from '../../__tests__/helper
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
 import { __resetCacheForTests } from '../../lib/cache.js'
+import { runRedisCommandWithTimeout } from '../../lib/redis.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §3.4 / §8.1（P1-B）— 真实 Redis 下「缓存不是权限真相源」。
@@ -19,6 +20,7 @@ import { __resetCacheForTests } from '../../lib/cache.js'
  */
 
 const redisUp = config.redisEnabled === true
+if (process.env.REQUIRE_REAL_REDIS_TESTS === 'true' && !redisUp) throw new Error('Real Redis checks must not be skipped')
 
 ;(redisUp ? describe : describe.skip)(
   'SPEC-CATALOG-VIS-001 §3.4 真实 Redis 下的缓存与分类收紧',
@@ -61,6 +63,9 @@ const redisUp = config.redisEnabled === true
       const warmDetail = await api.get(`/api/products/${product.id}`).expect(200)
       expect(warmDetail.body.name).toBe('缓存预热商品')
       await api.get('/api/products').expect(200)
+      const cached = await runRedisCommandWithTimeout('keys', client => client.keys!('*'))
+      const values = await Promise.all(cached.map(key => runRedisCommandWithTimeout('get', client => client.get(key))))
+      expect(values.some(value => value?.includes('缓存预热商品'))).toBe(true)
 
       // 3) 收紧分类（模拟“Redis 失效通知失败”：这里不做任何 cache bump，
       //    直接改库。若实现依赖缓存失效才生效，本用例就会失败）。

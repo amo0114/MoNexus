@@ -1090,15 +1090,19 @@ export async function getAttentionOrderCount(userId: number): Promise<number> {
 }
 
 export async function getUserOrders(userId: number, page = 1, pageSize = 20, status?: string) {
-  const orders = await prisma.order.findMany({
-    where: buildUserOrderWhere(userId, status),
+  return queryUserOrders(buildUserOrderWhere(userId, status), page, pageSize)
+}
+
+async function queryUserOrders(where: Prisma.OrderWhereInput, page: number, pageSize: number, db: Prisma.TransactionClient = prisma) {
+  const orders = await db.order.findMany({
+    where,
     include: {
       merchant: { select: { id: true, name: true } },
       product: { select: { id: true, name: true, icon: true, type: true, imageUrl: true, deliveryMode: true } },
       // P6a：列表带 expiresAt 供「已过期」徽标（内容字段照旧不进列表查询）。
       delivery: { select: { status: true, expiresAt: true } },
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     skip: (page - 1) * pageSize,
     take: pageSize,
   })
@@ -1108,6 +1112,28 @@ export async function getUserOrders(userId: number, page = 1, pageSize = 20, sta
     // P6c：列表行透出预约日期供「预约单」标识（null = 非预约单）。
     bookingDate: order.bookingDate ?? null,
   }))
+}
+
+export async function getUserOrdersPage(userId: number, query: import('./schema.js').PagedOrdersQuery) {
+  const { q, tab, page, pageSize } = query
+  const where: Prisma.OrderWhereInput = { userId }
+  if (q) {
+    const text = { contains: q, mode: 'insensitive' as const }
+    const id = /^\d+$/.test(q) ? Number(q) : 0
+    where.OR = [
+      { productNameSnapshot: text }, { product: { name: text } },
+      { offerNameSnapshot: text }, { merchant: { name: text } },
+      ...(id > 0 && id <= 2147483647 ? [{ id }] : []),
+    ]
+  }
+  const statuses = { active: ['pending', 'processing', 'disputed'], delivered: ['delivered', 'completed'], done: ['closed', 'refunded'] }
+  return prisma.$transaction(async tx => {
+    const groups = await tx.order.groupBy({ by: ['status'], where, _count: true })
+    const count = (values?: string[]) => groups.reduce((sum, row) => sum + (!values || values.includes(row.status) ? row._count : 0), 0)
+    const counts = { all: count(), active: count(statuses.active), delivered: count(statuses.delivered), done: count(statuses.done) }
+    const items = await queryUserOrders({ ...where, ...(tab === 'all' ? {} : { status: { in: statuses[tab] } }) }, page, pageSize, tx)
+    return { items, total: counts[tab], counts, page, pageSize }
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead })
 }
 
 async function assertUserOwnsOrder(orderId: number, userId: number) {

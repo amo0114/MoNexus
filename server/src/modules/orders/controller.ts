@@ -127,3 +127,9 @@ export async function issueFileDownloadUrl(req: Request, res: Response, next: Ne
     next(err)
   }
 }
+
+export async function listPage(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await orderService.getUserOrdersPage(req.user!.userId, req.query as unknown as import('./schema.js').PagedOrdersQuery))
+  } catch (error) { next(error) }
+}
