@@ -6,6 +6,9 @@ import ProductVideoPlayer from '../catalog/ProductVideoPlayer'
 export default function AdminVideoReviewPanel() {
   const [filter, setFilter] = useState('pending')
   const [open, setOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(false)
   const [rows, setRows] = useState<VideoReview[]>([])
   const [current, setCurrent] = useState<VideoReview | null>(null)
   const [watched, setWatched] = useState(false)
@@ -17,9 +20,17 @@ export default function AdminVideoReviewPanel() {
   useEffect(() => {
     if (!open) return
     const controller = new AbortController()
-    void listVideoReviews(controller.signal, filter).then(result => { if (!controller.signal.aborted) setRows(result) }).catch(err => { if (!controller.signal.aborted) setError(getApiErrorMessage(err, '视频审核列表加载失败')) })
+    setLoading(true)
+    void listVideoReviews(controller.signal, filter, page).then(result => {
+      if (controller.signal.aborted) return
+      setRows(result.items); setTotal(result.total)
+      const lastPage = Math.max(1, Math.ceil(result.total / result.pageSize))
+      if (page > lastPage) setPage(lastPage)
+    }).catch(err => {
+      if (!controller.signal.aborted) setError(getApiErrorMessage(err, '视频审核列表加载失败'))
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
-  }, [open, revision, filter])
+  }, [open, revision, filter, page])
   function select(row: VideoReview) { setCurrent(row); setWatched(false); setListened(false); setReason(''); setError('') }
   async function submit(action: 'approve' | 'reject') {
     if (!current || busy) return
@@ -38,12 +49,17 @@ export default function AdminVideoReviewPanel() {
     {open && <>
       <p className="text-sm">先审核视频，再进行游客公开审核。拒绝或撤销后，会员和游客都无法获取新的播放地址。</p>
       <button type="button" className="btn-secondary" disabled={busy} onClick={() => { setCurrent(null); setRevision(v => v + 1) }}>刷新视频列表</button>
-      <label className="block">视频审核状态 <select aria-label="视频审核状态" className="input" disabled={busy} value={filter} onChange={e => { setCurrent(null); setRows([]); setFilter(e.target.value) }}><option value="pending">待审核</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select></label>
-      <p className="text-xs">每次显示最早的 100 条，完成后刷新查看下一批。</p>
+      <label className="block">视频审核状态 <select aria-label="视频审核状态" className="input" disabled={busy} value={filter} onChange={e => { setCurrent(null); setRows([]); setFilter(e.target.value); setPage(1) }}><option value="pending">待审核</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select></label>
+      <div className="flex items-center gap-3 text-sm" aria-label="视频审核分页">
+        <button type="button" className="btn-secondary" disabled={busy || loading || page === 1} onClick={() => { setCurrent(null); setPage(p => p - 1) }}>上一页</button>
+        <span>第 {page} 页 · 共 {total} 条</span>
+        <button type="button" className="btn-secondary" disabled={busy || loading || page * 50 >= total} onClick={() => { setCurrent(null); setPage(p => p + 1) }}>下一页</button>
+      </div>
+      {loading && <p role="status">正在加载视频列表…</p>}
       <ul className="space-y-2 max-h-64 overflow-auto">{rows.map(row => <li key={row.assetId}>
-        <button type="button" className="text-sm underline" disabled={busy} onClick={() => select(row)}>{row.product.name} · {row.moderation === 'approved' ? '已通过' : row.moderation === 'rejected' ? '已拒绝' : '待审核'}</button>
+        <button type="button" className="text-sm underline" disabled={busy || loading} onClick={() => select(row)}>{row.product.name} · {row.moderation === 'approved' ? '已通过' : row.moderation === 'rejected' ? '已拒绝' : '待审核'}</button>
       </li>)}</ul>
-      {rows.length === 0 && <p>暂无已关联的视频。</p>}
+      {!loading && rows.length === 0 && <p>暂无已关联的视频。</p>}
       {current && <div className="space-y-3" key={`${current.assetId}:${current.moderationVersion}`}>
         <p className="font-medium">{current.product.name}</p>
         <div className="max-w-lg h-64"><ProductVideoPlayer assetId={current.assetId} actor="admin" /></div>

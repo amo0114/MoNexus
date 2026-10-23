@@ -68,3 +68,9 @@ export const listOrdersQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
+
+export const pagedOrdersQuerySchema = listOrdersQuerySchema.omit({ status: true }).extend({
+  tab: z.enum(['all', 'active', 'delivered', 'done']).default('all'),
+  q: z.string().trim().max(200).default(''),
+})
+export type PagedOrdersQuery = z.infer<typeof pagedOrdersQuerySchema>

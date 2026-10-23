@@ -484,7 +484,7 @@ test('blocked stream converges through the application fallback within 35 second
     if (
       request.method() === 'GET'
       && (
-        url.pathname === '/api/orders'
+        url.pathname === '/api/orders/page'
         || url.pathname === `/api/orders/${orderId}`
         || url.pathname === '/api/notifications/unread-count'
       )
@@ -513,7 +513,7 @@ test('blocked stream converges through the application fallback within 35 second
   })
   expect(Date.now() - fallbackStarted).toBeLessThanOrEqual(FALLBACK_LIMIT_MS)
   expect(documentRequests).toHaveLength(navigationBaseline)
-  expect(applicationReads).toContain('/api/orders')
+  expect(applicationReads).toContain('/api/orders/page')
   expect(applicationReads).toContain(`/api/orders/${orderId}`)
   expect(applicationReads).toContain('/api/notifications/unread-count')
 })

@@ -93,8 +93,9 @@
     TEST_DATABASE_URL=... npm --prefix server test -- src/modules/products/cacheRevocation.test.ts
   ```
 
-  CI 以 `REDIS_ENABLED=false` 运行，这组用例在 CI 上始终 skip；
-  涉及缓存失效语义的改动必须在本地按上述方式补跑并附结果。
+  标准 backend 分片仍关闭 Redis；独立 `external-dependencies` job 在后端改动和分支 push 时
+  启动真实 Redis，强制执行本组测试，禁止静默跳过。同一 job 用隔离 MinIO 运行
+  `server/scripts/product-video-storage-integration.ts`，验证私有访问、Range、签名篡改/过期。
 
 ## 8. 后端公共开销计时
 

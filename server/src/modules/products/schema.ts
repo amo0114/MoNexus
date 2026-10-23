@@ -96,3 +96,8 @@ export function validateProductCommercialFields(
     })
   }
 }
+
+export const productSummariesQuerySchema = z.object({
+  ids: z.string().max(150).transform(value => value.split(','))
+    .pipe(z.array(z.coerce.number().int().positive().max(2147483647)).min(1).max(12)),
+})

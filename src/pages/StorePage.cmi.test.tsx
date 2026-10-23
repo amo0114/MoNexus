@@ -299,8 +299,7 @@ describe('StorePage CMI — step 1 (T-CMI-001)', () => {
       if (url === '/products/editorial') {
         return Promise.resolve({ data: { items: [{ productId: 3, publicReason: '首页精选' }] } })
       }
-      if (url === '/products/2') return Promise.resolve({ data: makeProduct(2, '首页推广商品') })
-      if (url === '/products/3') return Promise.resolve({ data: makeProduct(3, '首页精选商品') })
+      if (url === '/products/summaries') return Promise.resolve({ data: { items: [makeProduct(2, '首页推广商品'), makeProduct(3, '首页精选商品')] } })
       if (url === '/products') {
         return Promise.resolve({ data: { items: [LEGACY_DTO], nextCursor: null, hasMore: false } })
       }
@@ -339,8 +338,7 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
           },
         })
       }
-      if (url === '/products/2') return Promise.resolve({ data: makeProduct(2, '赞助商品B') })
-      if (url === '/products/3') return Promise.resolve({ data: makeProduct(3, '精选商品C') })
+      if (url === '/products/summaries') return Promise.resolve({ data: { items: [makeProduct(2, '赞助商品B'), makeProduct(3, '精选商品C')] } })
       if (url === '/products') {
         // The IntersectionObserver stub never fires its callback, so the only
         // load-more candidate is the virtual-grid prefetch; serve it an empty
@@ -388,13 +386,13 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
     expect(screen.queryByTestId('merch-editorial-shelf')).not.toBeInTheDocument()
     expect(screen.queryByTestId('shelf-product-card-2')).not.toBeInTheDocument()
 
-    // HTTP independence: one detail hydration each for the blended candidates,
+    // HTTP independence: one batch hydration for the blended candidates,
     // no detail hydration for the organic product, and the candidate endpoints
     // are separate requests from the organic /products list.
     await waitFor(
       () => {
-        expect(apiGet.mock.calls.filter(([url]) => url === '/products/2')).toHaveLength(1)
-        expect(apiGet.mock.calls.filter(([url]) => url === '/products/3')).toHaveLength(1)
+        expect(apiGet.mock.calls.filter(([url]) => url === '/products/summaries')).toHaveLength(1)
+        expect(apiGet.mock.calls.some(([url]) => /^\/products\/\d+$/.test(url))).toBe(false)
         expect(apiGet.mock.calls.filter(([url]) => url === '/products/1')).toHaveLength(0)
         expect(apiGet.mock.calls.some(([url]) => url === '/products/sponsored')).toBe(true)
         expect(apiGet.mock.calls.some(([url]) => url === '/products/editorial')).toBe(true)

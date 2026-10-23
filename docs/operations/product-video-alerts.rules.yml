@@ -1,0 +1,23 @@
+groups:
+  - name: monexus-product-video
+    rules:
+      - alert: ProductVideoQueueStalled
+        expr: monexus_product_video_oldest_queued_seconds > 900
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "视频任务等待超过 15 分钟"
+      - alert: ProductVideoProcessingLeaseExpired
+        expr: monexus_product_video_expired_processing > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "视频任务租约过期后尚未恢复"
+      - alert: ProductVideoProcessingFailed
+        expr: increase(monexus_product_video_processing_seconds_count{outcome="failed"}[15m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "视频处理出现终止失败"

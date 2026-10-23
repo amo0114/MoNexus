@@ -18,6 +18,8 @@ jobs:
       BACKUP_DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
       BACKUP_AGE_RECIPIENT: ${{ secrets.BACKUP_AGE_RECIPIENT }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Check secret is configured
         run: |
           if [ -z "$BACKUP_DATABASE_URL" ] || [ -z "$BACKUP_AGE_RECIPIENT" ]; then
@@ -48,7 +50,7 @@ jobs:
           set -euo pipefail
           STAMP=$(date -u +%Y%m%dT%H%M%SZ)
           OUT="monexus-backup-${STAMP}.sql.gz.age"
-          DUMP_DATABASE_URL="${BACKUP_DATABASE_URL%%\?*}"
+          DUMP_DATABASE_URL="$(printf '%s' "$BACKUP_DATABASE_URL" | python3 scripts/pg-dump-url.py)"
           # --no-owner --no-privileges -> portable across roles
           # --clean --if-exists -> restore script can be re-run safely
           # Compress then encrypt before the file ever reaches the runner

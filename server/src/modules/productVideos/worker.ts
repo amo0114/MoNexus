@@ -12,6 +12,7 @@ import { VIDEO_SOURCE_MAX_BYTES, videoSourceKey } from '../../lib/storage/videoK
 import { HttpError } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import { processVideo } from './processing.js'
+import { videoProcessingDuration } from './metrics.js'
 import { finishVideo } from './service.js'
 
 const PERIOD = 5_000
@@ -45,6 +46,8 @@ export async function runVideoBatch(parentSignal: AbortSignal = new AbortControl
       return tx.productVideoAsset.update({ where: { id: rows[0].id }, data: { status: 'processing', attempts: { increment: 1 }, processingToken: randomUUID(), processingUntil: new Date(Date.now() + 600_000) } })
     })
     if (!asset) return
+    const startedAt = performance.now()
+    let outcome = 'succeeded'
     const token = asset.processingToken!
     const signal = AbortSignal.any([parentSignal, AbortSignal.timeout(540_000)])
     try {
@@ -69,6 +72,7 @@ export async function runVideoBatch(parentSignal: AbortSignal = new AbortControl
     } catch (error) {
       const terminal = !parentSignal.aborted && error instanceof HttpError && [413, 422].includes(error.status)
       const failed = terminal || asset.attempts >= 3
+      outcome = failed ? 'failed' : 'retry'
       const updated = await prisma.productVideoAsset.updateMany({ where: { id: asset.id, status: 'processing', processingToken: token }, data: {
         status: failed ? 'failed' : 'queued', processingToken: null, processingUntil: null,
         nextAttemptAt: new Date(Date.now() + 30_000),
@@ -80,6 +84,8 @@ export async function runVideoBatch(parentSignal: AbortSignal = new AbortControl
         await adapter?.delete(videoSourceKey(asset.id), AbortSignal.timeout(5_000)).catch(() => {})
       }
       logger.warn({ assetId: asset.id, terminal: failed }, 'video processing attempt interrupted')
+    } finally {
+      videoProcessingDuration.observe({ outcome }, (performance.now() - startedAt) / 1000)
     }
   } finally {
     if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {})
@@ -96,3 +102,5 @@ export function startVideoWorker() {
   timer = setInterval(tick, PERIOD); timer.unref(); tick()
 }
 export function stopVideoWorker() { if (timer) clearInterval(timer); timer = undefined; active?.abort(); return activeTask }
+
+export function isVideoWorkerActive() { return active !== undefined }

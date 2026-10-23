@@ -1,3 +1,4 @@
+import { api } from '../../__tests__/helpers.js'
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { getActiveNetworkNodeCategoryId } from '../../__tests__/catalogFixture.js'
@@ -145,4 +146,18 @@ describe('SPEC-CATALOG-VIS-001 §3.4 推广入口受分类可见性约束', () =
     const memberAfter = await filterSponsoredByAudience(items, 'member', prisma)
     expect(memberAfter.map(i => i.productId)).toContain(product.id)
   })
+})
+
+it('hydrates bounded shelf summaries without private fields and rechecks visibility', async () => {
+  const categoryId = await makeCategory('batch-summary', 'public')
+  const product = await makePromotableProduct('批量卡片', categoryId)
+  const before = await api.get('/api/products/summaries').query({ ids: `${product.id},${product.id}` }).expect(200)
+  expect(before.body.items).toHaveLength(1)
+  expect(before.body.items[0]).toMatchObject({ id: product.id, name: '批量卡片' })
+  for (const key of ['guestEligibility', 'publicContentRevision', 'offers', 'fixedContent', 'visibility']) {
+    expect(before.body.items[0]).not.toHaveProperty(key)
+  }
+  await prisma.productCategory.update({ where: { id: categoryId }, data: { guestVisibility: 'members_only' } })
+  expect((await api.get('/api/products/summaries').query({ ids: String(product.id) }).expect(200)).body.items).toEqual([])
+  await api.get('/api/products/summaries').query({ ids: Array(13).fill(product.id).join(',') }).expect(400)
 })
