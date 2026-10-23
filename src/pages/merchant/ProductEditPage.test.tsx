@@ -1,3 +1,9 @@
+// Media recovery is covered by uploader tests; editor fixtures never call a live API.
+vi.mock('../../api/productVideos', async () => ({
+  ...await vi.importActual<typeof import('../../api/productVideos')>('../../api/productVideos'),
+  listProductVideoJobs: vi.fn().mockResolvedValue([]),
+}))
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
@@ -264,7 +270,7 @@ describe('ProductEditPage merchant agent proposal hand-off', () => {
     await renderEditPage(transport)
     expect(await screen.findByText('经营助手文案提案')).toBeInTheDocument()
     expect(screen.queryByTestId('content-suggestion-generate')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    fireEvent.click(await screen.findByTestId('content-suggestion-select-description'))
     fireEvent.click(screen.getByTestId('content-suggestion-apply'))
     await waitFor(() => expect(screen.getByTestId('product-edit-description')).toHaveValue('经营助手的新简介'))
     expect(transport.calls.filter(call => call.method !== 'get')).toEqual([])
@@ -342,7 +348,7 @@ describe('ProductEditPage merchant agent proposal hand-off', () => {
     await act(async () => { resolveB(editorDto({ id: 43, name: '商品B' })) })
     expect(screen.getByTestId('product-edit-name')).toHaveValue('商品A')
 
-    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    fireEvent.click(await screen.findByTestId('content-suggestion-select-description'))
     fireEvent.click(screen.getByTestId('content-suggestion-apply'))
     fireEvent.click(screen.getByTestId('product-edit-save'))
     await waitFor(() => expect(patches).toHaveLength(1))
@@ -353,7 +359,7 @@ describe('ProductEditPage merchant agent proposal hand-off', () => {
     handOff(3)
     await renderEditPage(createEditTransport({}))
     await screen.findByText('经营助手文案提案')
-    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    fireEvent.click(await screen.findByTestId('content-suggestion-select-description'))
     // The expiry timer can lag behind the clock (e.g. a sleeping tab).
     const now = Date.now()
     const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 120_000)
@@ -370,7 +376,7 @@ describe('ProductEditPage merchant agent proposal hand-off', () => {
     handOff(3, 1_500)
     await renderEditPage(createEditTransport({}))
     await screen.findByText('经营助手文案提案')
-    fireEvent.click(screen.getByTestId('content-suggestion-select-description'))
+    fireEvent.click(await screen.findByTestId('content-suggestion-select-description'))
     expect(screen.getByTestId('content-suggestion-apply')).not.toBeDisabled()
     await waitFor(() => expect(screen.getByTestId('content-suggestion-apply')).toBeDisabled(), { timeout: 3_000 })
     expect(screen.getByTestId('content-suggestion-select-description')).toBeDisabled()
