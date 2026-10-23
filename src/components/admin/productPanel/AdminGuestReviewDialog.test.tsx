@@ -48,6 +48,7 @@ function view(overrides: Partial<adminApi.GuestEligibilityView> = {}): adminApi.
 describe('AdminGuestReviewDialog (SPEC-CATALOG-VIS-001 §4.5)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue()
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
     vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
     useAppStore.setState({ toasts: [] })
