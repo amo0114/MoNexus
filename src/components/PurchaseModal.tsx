@@ -13,6 +13,7 @@ import { getApiErrorMessage } from '../api/error'
 import { newIdempotencyKey } from '../utils/idempotencyKey'
 import { useAuthStore } from '../stores/authStore'
 import AnimatedNumber from './ui/AnimatedNumber'
+import { CONFIRM_ARM_MS } from './purchaseConfirmArm'
 
 export type ConfirmOutcome = 'success' | 'price_changed' | 'verification_required' | 'verification_failed' | 'failed' | 'agreement_stale'
 
@@ -113,6 +114,22 @@ export default function PurchaseModal({
     loadPreview()
   }, [loadPreview])
 
+  // On phones "立即兑换" and "确认支付" sit in the same thumb zone, so the
+  // second tap of a double-tap would confirm a price nobody has read. Each
+  // new quote (first load, price change, re-quote) waits before it can be
+  // confirmed.
+  const [armedPreview, setArmedPreview] = useState<CheckoutPreview | null>(null)
+  useEffect(() => {
+    if (!preview) return
+    if (CONFIRM_ARM_MS === 0) {
+      setArmedPreview(preview)
+      return
+    }
+    const timer = setTimeout(() => setArmedPreview(preview), CONFIRM_ARM_MS)
+    return () => clearTimeout(timer)
+  }, [preview])
+  const armed = preview != null && armedPreview === preview
+
   // Form field for Xboard email if present; otherwise use login email (no synthetic key).
   const provisionEmailKey = useMemo(() => {
     if (!preview?.requiresProvisionEmailProof) return null
@@ -206,7 +223,7 @@ export default function PurchaseModal({
   const [inFlight, setInFlight] = useState(false)
 
   async function handleConfirm() {
-    if (!preview || submitting || inFlightRef.current) return
+    if (!preview || !armed || submitting || inFlightRef.current) return
     // 协议校验时序：仅在用户点击提交按钮时拦截并聚焦协议提示，不在开窗时报红
     if (preview.legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
       setAgreementAttempted(true)
@@ -694,6 +711,7 @@ export default function PurchaseModal({
               submitting ||
               inFlight ||
               !preview ||
+              !armed ||
               !preview.sufficient ||
               !preview.purchasable ||
               missingRequired ||

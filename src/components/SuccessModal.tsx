@@ -177,6 +177,7 @@ export default function SuccessModal({
   const pendingCopy = awaitingProvision
 
   const [copiedDelivery, setCopiedDelivery] = useState(false)
+  const [revealed, setRevealed] = useState(false)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -191,6 +192,8 @@ export default function SuccessModal({
       showToast('发货信息尚未就绪', 'error')
       return
     }
+    // Asking to copy is asking to see it; never make the buyer scratch first.
+    setRevealed(true)
     const success = await copyToClipboard(text)
     if (success) {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
@@ -265,6 +268,7 @@ export default function SuccessModal({
               progress={progress}
               bookingDate={bookingDate}
               urlTestId="success-delivery-link"
+              reveal={{ revealed, onReveal: () => setRevealed(true) }}
             />
           )}
         </div>
