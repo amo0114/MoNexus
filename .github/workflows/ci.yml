@@ -65,6 +65,7 @@ jobs:
             server:
               - 'server/**'
               - 'scripts/check-runtime.mjs'
+              - '.github/actions/setup-ubuntu-mirrors/**'
               - '.github/workflows/ci.yml'
             frontend:
               - 'src/**'
@@ -82,6 +83,7 @@ jobs:
               - 'e2e/auth-fixtures.ts'
               - 'tsconfig.json'
               - 'tailwind.config.js'
+              - '.github/actions/setup-ubuntu-mirrors/**'
               - '.github/workflows/ci.yml'
             e2e:
               - 'e2e/**'
@@ -93,6 +95,7 @@ jobs:
               - 'scripts/verify-catalog-ops-e2e.sh'
               # Workflow edits change how the E2E jobs themselves run, so
               # they must prove the restructured pipeline on the PR itself.
+              - '.github/actions/setup-ubuntu-mirrors/**'
               - '.github/workflows/ci.yml'
             code:
               - 'server/**'
@@ -112,6 +115,7 @@ jobs:
               - 'playwright.catalog-ops.config.ts'
               - 'scripts/verify-notification-realtime-e2e.sh'
               - 'scripts/verify-catalog-ops-e2e.sh'
+              - '.github/actions/setup-ubuntu-mirrors/**'
               - '.github/workflows/ci.yml'
 
   backend:
@@ -190,6 +194,9 @@ jobs:
 
       - name: Build backend
         run: npm --prefix server run build
+
+      - name: Configure Ubuntu package mirrors
+        uses: ./.github/actions/setup-ubuntu-mirrors
 
       - name: Install spec and bounded media test tools
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc ffmpeg util-linux
@@ -352,6 +359,9 @@ jobs:
 
       - name: Seed E2E fixtures
         run: npm --prefix server run db:seed:force
+
+      - name: Configure Ubuntu package mirrors
+        uses: ./.github/actions/setup-ubuntu-mirrors
 
       - name: Resolve Playwright version
         id: playwright-version
@@ -611,6 +621,9 @@ jobs:
 
       - name: Generate Prisma client
         run: npm --prefix server run db:generate
+
+      - name: Configure Ubuntu package mirrors
+        uses: ./.github/actions/setup-ubuntu-mirrors
 
       - name: Resolve Playwright version
         id: playwright-version
