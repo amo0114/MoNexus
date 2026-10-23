@@ -1,5 +1,7 @@
 # 商品展示视频运行说明
 
+2026-10-23 生产开放决定：用户接受当前优选 SaaS 浏览器缓存降级，要求先开启播放；独立媒体出口、签名配置与缓存/授权复测另行跟踪。该决定与已完成/待完成的验收证据见[生产开放与后续工作](./product-video-production-followups.md)。下文默认开关与本地验证记录不代表当前生产运行值。
+
 实现分支 `feat/product-showcase-video`，独立目录 `/root/projects/worktrees/monexus-product-showcase-video`。已接入最终 P1/P1.5 基线 `e0cc7cf`（P1.5-B #280 已合并 develop），原先叠加的 P1.5-A 开发提交已由正式基线替代。原工作区的既存修改未带入。
 
 ## 使用和权限
@@ -80,4 +82,4 @@ npm test -- src/components/catalog/ProductVideoPlayer.test.tsx src/components/me
 - 前后端构建、架构与 OpenAPI 引用、架构测试、Nginx 静态检查通过；后端与前端独立代码复核未发现阻塞项。
 - 首轮远程 CI 暴露旋转样片生成命令的跨版本差异：FFmpeg 6.1/8.1 不再通过旧 `rotate` 元数据命令生成旋转信息。样片按工具能力使用 `display_rotation`，并先断言输入方向；封装显式关闭隐式旋转且复核方向、显示尺寸和音轨不变。FFmpeg 4.4 与 Ubuntu 24.04/FFmpeg 6.1 的视频后端用例各15项通过（各1项 Redis 专项跳过），8.1 镜像内真实旋转文件的解码、封装、海报和尺寸验证通过；独立复核无阻塞项。
 
-上线还需要最终远程 CI、生产实际 provider/完整反代链、目标服务器容量及 iOS Safari/Android Chrome/桌面 Firefox 的真实兼容验证。Chromium 视口不能替代 iOS Safari；本地通过不等于已发布。生产 Compose 视频上传/播放继续默认关闭，完成上线验收后再启用。
+上述本地集成记录不能替代最终远程 CI、生产实际 provider/完整反代链、目标服务器容量及真实设备兼容验收。Chromium 视口不能替代 iOS Safari；本地通过不等于已发布。Compose 开关仍默认关闭，生产运行值由部署配置显式启用；2026-10-23 的开放决定、实际验证结果及尚未关闭的问题见[生产开放与后续工作](./product-video-production-followups.md)。
