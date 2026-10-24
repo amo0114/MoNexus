@@ -22,6 +22,7 @@ const REQUIRED_IDS = [
   'payment-late-success',
   'payment-refund-processing-stale',
   'payment-reconciliation-mismatch',
+  'payment-observation-reconcile-required',
   'payment-simulator-on-production',
   'payment-monitor-offline',
   'payment-callback-retry-exhaustion',

@@ -39,7 +39,7 @@ function verificationPassed(row: {
   return row.verificationMethod === 'authenticated_provider_api'
 }
 
-async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
+export async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
   scopePrefix: string
   mismatchType: ReconciliationMismatchType
   orderId?: string | null
@@ -195,8 +195,36 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
       if (payload.status !== 'succeeded') {
         return { outcome: 'ignored' as const, reason: `status_${payload.status || 'unknown'}` }
       }
+      // Every reconcile_required exit needs an open item: it is the operator's
+      // work queue and keeps raw-payload retention from clearing the evidence.
+      const requireReconciliation = async (reason: string, local: {
+        mismatchType?: ReconciliationMismatchType
+        orderId?: string
+        attemptId?: string
+        localStatus?: string
+        localAmountMinor?: bigint
+        quotedAmountMinor?: bigint
+      } = {}) => {
+        await writeOpenReconItem(tx, {
+          scopePrefix: 'unmatched',
+          mismatchType: local.mismatchType ?? 'unknown_provider_transaction',
+          orderId: local.orderId ?? null,
+          attemptId: local.attemptId ?? observation.paymentAttemptId,
+          eventId: observation.id,
+          provider: observation.provider,
+          providerAccountKey: observation.providerAccountKey,
+          providerEntryKey: payload.providerPaymentId ?? `event:${observation.id}`,
+          providerStatus: payload.status,
+          localStatus: local.localStatus ?? null,
+          providerAmountMinor: payload.amountMinor ?? null,
+          localAmountMinor: local.localAmountMinor ?? null,
+          quotedAmountMinor: local.quotedAmountMinor ?? null,
+          currency: payload.currency ?? null,
+        })
+        return { outcome: 'reconcile_required' as const, reason, rechargeOrderId: local.orderId }
+      }
       if (!payload.providerPaymentId || payload.amountMinor == null || !payload.currency) {
-        return { outcome: 'reconcile_required' as const, reason: 'payload_incomplete' }
+        return requireReconciliation('payload_incomplete')
       }
 
       const attemptHint = observation.paymentAttemptId
@@ -212,7 +240,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         return { outcome: 'retry' as const, reason: 'attempt_missing' }
       }
       const intentHint = await tx.paymentIntent.findUnique({ where: { id: attemptHint.paymentIntentId } })
-      if (!intentHint) return { outcome: 'reconcile_required' as const, reason: 'intent_missing' }
+      if (!intentHint) return requireReconciliation('intent_missing', { attemptId: attemptHint.id })
 
       // Lock Order first so Transaction A cannot invert Transaction B / refund.
       const orderRows = await tx.$queryRaw<Array<{
@@ -227,7 +255,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         SELECT "id", "status", "amountMinor", "currency", "provider", "providerAccountKey", "paymentMethod"
         FROM "RechargeOrder" WHERE "id" = ${intentHint.rechargeOrderId}::uuid FOR UPDATE`
       const order = orderRows[0]
-      if (!order) return { outcome: 'reconcile_required' as const, reason: 'order_missing' }
+      if (!order) return requireReconciliation('order_missing', { attemptId: attemptHint.id })
       const intentRows = await tx.$queryRaw<Array<{
         id: string
         rechargeOrderId: string
@@ -237,7 +265,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         SELECT "id", "rechargeOrderId", "status", "activeAttemptId"
         FROM "PaymentIntent" WHERE "id" = ${intentHint.id}::uuid FOR UPDATE`
       const intent = intentRows[0]
-      if (!intent) return { outcome: 'reconcile_required' as const, reason: 'intent_missing' }
+      if (!intent) return requireReconciliation('intent_missing', { orderId: order.id, attemptId: attemptHint.id })
       const attemptRows = await tx.$queryRaw<Array<{
         id: string
         paymentIntentId: string
@@ -250,7 +278,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
                "expectedProviderAmountMinor"
         FROM "PaymentAttempt" WHERE "id" = ${attemptHint.id}::uuid FOR UPDATE`
       const attempt = attemptRows[0]
-      if (!attempt) return { outcome: 'reconcile_required' as const, reason: 'attempt_missing' }
+      if (!attempt) return requireReconciliation('attempt_missing', { orderId: order.id })
       tripWriteHook('after_lock_order')
 
       const quotedMismatch = payload.quotedAmountMinor !== undefined
@@ -398,7 +426,14 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
       }
 
       if (!(PAYABLE_ORDER as readonly string[]).includes(order.status)) {
-        return { outcome: 'reconcile_required' as const, reason: `order_${order.status}`, rechargeOrderId: order.id }
+        return requireReconciliation(`order_${order.status}`, {
+          mismatchType: 'provider_paid_local_unpaid',
+          orderId: order.id,
+          attemptId: attempt.id,
+          localStatus: order.status,
+          localAmountMinor: attempt.expectedProviderAmountMinor,
+          quotedAmountMinor: order.amountMinor,
+        })
       }
 
       const now = new Date()
@@ -420,7 +455,14 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         data: { status: 'paid', paidAt: now },
       })
       if (paid.count !== 1) {
-        return { outcome: 'reconcile_required' as const, reason: 'paid_cas_failed', rechargeOrderId: order.id }
+        return requireReconciliation('paid_cas_failed', {
+          mismatchType: 'provider_paid_local_unpaid',
+          orderId: order.id,
+          attemptId: attempt.id,
+          localStatus: order.status,
+          localAmountMinor: attempt.expectedProviderAmountMinor,
+          quotedAmountMinor: order.amountMinor,
+        })
       }
       tripWriteHook('after_cas_paid')
 

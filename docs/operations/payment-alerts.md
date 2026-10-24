@@ -107,6 +107,15 @@ See `docs/operations/alert-routing.md` and `docs/operations/payment-runbook.md`.
 - for: `5m`
 - meaning: reconciliation wrote an open mismatch item
 
+### MoNexus Payment observation requires reconciliation
+
+- id: `payment-observation-reconcile-required`
+- severity: P1
+- routingLabel: `payment-p1`
+- expr: `increase(payment_observation_total{result="reconcile_required"}[15m]) > 0`
+- for: `0m`
+- meaning: a payment or dispute observation could not be applied automatically (incomplete payload, missing order/intent/attempt, unmatched or partial dispute) and an open reconciliation item was written
+
 ### MoNexus Simulator configured on production deploy
 
 - id: `payment-simulator-on-production`

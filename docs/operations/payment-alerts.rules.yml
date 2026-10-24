@@ -82,6 +82,15 @@ groups:
         annotations:
           summary: Payment reconciliation mismatch
           description: Reconciliation wrote an open mismatch item.
+      - alert: MoNexusPaymentObservationReconcileRequired
+        expr: increase(payment_observation_total{result="reconcile_required"}[15m]) > 0
+        for: 0m
+        labels:
+          severity: P1
+          routing: payment-p1
+        annotations:
+          summary: Payment observation requires reconciliation
+          description: A payment or dispute observation could not be applied automatically. Review the open reconciliation item; its raw payload is retained until the item is resolved.
       - alert: MoNexusSimulatorConfiguredOnProductionDeploy
         expr: payment_simulator_configured == 1
         for: 0m
