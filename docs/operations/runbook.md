@@ -193,27 +193,41 @@ tail -n 20 /var/log/monexus/backup.log
 
 ## 6. Emergency User Point Adjustment
 
-Preferred path: admin API (writes both `PointLog` and `AdminLog`).
+Preferred path: admin API (writes both `PointLog` and `AdminLog` in one
+transaction). Admin routes require an MFA-verified session: `ADMIN_TOKEN` must
+be the access token returned by `POST /api/auth/mfa/verify` after the admin
+password login, not the password-only challenge. Body fields follow
+`adjustPointsSchema` (`server/src/modules/admin/schema.ts`): `type` is `add` or
+`deduct`, `amount` is a positive integer, `reason` is required.
 
 ```bash
-ADMIN_TOKEN='<bearer-token-of-admin>'
+ADMIN_TOKEN='<mfa-verified-admin-access-token>'
 curl -fsS -X POST "http://localhost:3000/api/admin/users/<userId>/adjust" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"delta": -100, "reason": "fraud reversal #1234"}'
+  -d '{"type": "deduct", "amount": 100, "reason": "fraud reversal #1234"}'
 ```
 
-Emergency fallback (DB direct, only when the API is unavailable). This bypasses audit — file an incident note.
+Emergency fallback (DB direct, only when the API is unavailable). This bypasses
+`AdminLog` — file an incident note. The spendable balance lives in
+`PointAccount.balance`; every change needs a `PointLog` row (`type` `in`/`out`,
+positive `amount`, `balanceAfter` = the new balance) in the same statement:
 
 ```bash
 psql "$DATABASE_URL" <<'SQL'
-BEGIN;
-UPDATE "User" SET points = points - 100 WHERE id = <userId>;
-INSERT INTO "PointLog" ("userId", "delta", "reason", "createdAt")
-  VALUES (<userId>, -100, 'manual emergency adjust', NOW());
-COMMIT;
+-- Deduct 100. "INSERT 0 0" means the balance was insufficient and nothing changed.
+WITH updated AS (
+  UPDATE "PointAccount" SET "balance" = "balance" - 100
+  WHERE "userId" = <userId> AND "balance" >= 100
+  RETURNING "userId", "balance"
+)
+INSERT INTO "PointLog" ("userId", "type", "amount", "balanceAfter", "reason")
+SELECT "userId", 'out', 100, "balance", '后台调整: manual emergency adjust #1234' FROM updated;
 SQL
 ```
+
+To add points, use `"balance" + 100`, drop the `>= 100` guard and write `'in'`;
+the `point_account_hard_cap_2000000000` check constraint still applies.
 
 ## 7. Emergency User Ban
 
