@@ -22,6 +22,7 @@ function daysAgo(days: number, now: Date): Date {
 type SweepCandidate = {
   id: string
   createdAt: Date
+  status: string
   paymentAttemptId: string | null
   rechargeOrderId?: string
 }
@@ -71,6 +72,10 @@ async function selectClearableIds(db: Prisma.TransactionClient, candidates: Swee
       item.paymentEventId === event.id || matchesCase(item),
     )
 
+    // An event that needs manual reconciliation but has no item yet (written
+    // before every reconcile_required exit created one) is still unreviewed.
+    if (event.status === 'reconcile_required' && !relatedRecon.some(item => item.paymentEventId === event.id)) continue
+
     const openHold = relatedDisputes.some(item => (OPEN_DISPUTE as readonly string[]).includes(item.status))
       || relatedRefunds.some(item => (OPEN_REFUND as readonly string[]).includes(item.status))
       || relatedRecon.some(item => item.status === 'open')
@@ -117,6 +122,7 @@ export async function sweepExpiredPaymentPayloads(now = new Date()): Promise<num
       select: {
         id: true,
         createdAt: true,
+        status: true,
         paymentAttemptId: true,
       },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
@@ -128,7 +134,7 @@ export async function sweepExpiredPaymentPayloads(now = new Date()): Promise<num
       totalCleared += await prisma.$transaction(async tx => {
         // Same lock order as payment application: Event -> RechargeOrder.
         // Refund/dispute creation holds the order lock, reconciliation does too.
-        const events = await tx.$queryRaw<SweepCandidate[]>`SELECT id, "createdAt", "paymentAttemptId"
+        const events = await tx.$queryRaw<SweepCandidate[]>`SELECT id, "createdAt", status, "paymentAttemptId"
           FROM "PaymentEvent" WHERE id = ${candidate.id}::uuid
             AND "rawPayloadEncrypted" IS NOT NULL
             AND status IN ('processed', 'ignored', 'reconcile_required') FOR UPDATE`

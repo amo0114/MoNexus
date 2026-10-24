@@ -516,6 +516,8 @@ model PointLog {
 
   rechargeCredit   RechargeCredit?
   rechargeReversal RechargeReversal?
+  recoveryConsumed PaymentRecoveryCase? @relation("PaymentRecoveryCaseConsumed")
+  recoveryRestored PaymentRecoveryCase? @relation("PaymentRecoveryCaseRestored")
 
   // 排行榜按 (type='in', createdAt ∈ 窗口) 聚合，后台支持按类型+时间倒序
   @@index([type, createdAt, id])
@@ -2188,13 +2190,18 @@ model PaymentRecoveryCase {
   resolutionReason   String?
   resolvedByUserId   Int?
   resolvedAt         DateTime?
+  // Ledger rows for held points consumed by the case and points restored afterwards.
+  consumedPointLogId Int?      @unique
+  restoredPointLogId Int?      @unique
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  paymentDispute PaymentDispute @relation(fields: [paymentDisputeId], references: [id], onDelete: Restrict)
-  rechargeCredit RechargeCredit @relation(fields: [rechargeCreditId], references: [id], onDelete: Restrict)
-  user           User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  resolvedByUser User?          @relation("PaymentRecoveryCaseResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
+  paymentDispute   PaymentDispute @relation(fields: [paymentDisputeId], references: [id], onDelete: Restrict)
+  rechargeCredit   RechargeCredit @relation(fields: [rechargeCreditId], references: [id], onDelete: Restrict)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  resolvedByUser   User?          @relation("PaymentRecoveryCaseResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: Restrict)
+  consumedPointLog PointLog?      @relation("PaymentRecoveryCaseConsumed", fields: [consumedPointLogId], references: [id], onDelete: Restrict)
+  restoredPointLog PointLog?      @relation("PaymentRecoveryCaseRestored", fields: [restoredPointLogId], references: [id], onDelete: Restrict)
 
   @@index([userId, status])
 }
