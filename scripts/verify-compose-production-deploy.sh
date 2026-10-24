@@ -184,6 +184,18 @@ for required_fragment in \
 done
 
 entrypoint="${ROOT_DIR}/deploy/vps/monexus-compose-deploy"
+# Every reviewed rule file must be mounted at runtime and validated by the
+# deployment preflight; an unmounted file silently never alerts.
+rule_files=("${ROOT_DIR}"/docs/operations/*.rules.yml)
+[[ -f "${rule_files[0]}" ]] || fail 'No Prometheus rule files found under docs/operations.'
+for rule_file in "${rule_files[@]}"; do
+  rule_name="$(basename "$rule_file")"
+  grep -Fq "./docs/operations/${rule_name}:/etc/prometheus/rules/${rule_name}:ro" "${ROOT_DIR}/docker-compose.prod.yml" || \
+    fail "Compose Prometheus does not mount rule file: docs/operations/${rule_name}"
+  grep -Fq "\${release_path}/docs/operations/${rule_name}:/etc/prometheus/rules/${rule_name}:ro" "$entrypoint" || \
+    fail "Deployment preflight does not validate rule file: docs/operations/${rule_name}"
+done
+
 for required_fragment in \
   "readonly VPS_PROXY_OVERLAY_KEY='MONEXUS_USE_VPS_PROXY_OVERLAY'" \
   'if use_vps_proxy_overlay; then' \

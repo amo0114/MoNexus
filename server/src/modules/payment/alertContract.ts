@@ -101,6 +101,15 @@ export const PAYMENT_ALERTS = [
     summary: 'reconciliation wrote an open mismatch item',
   },
   {
+    id: 'payment-observation-reconcile-required',
+    name: 'MoNexus Payment observation requires reconciliation',
+    severity: 'P1',
+    routingLabel: 'payment-p1',
+    expr: 'increase(payment_observation_total{result="reconcile_required"}[15m]) > 0',
+    for: '0m',
+    summary: 'a payment or dispute observation could not be applied automatically and needs manual reconciliation',
+  },
+  {
     id: 'payment-simulator-on-production',
     name: 'MoNexus Simulator configured on production deploy',
     severity: 'P0',
