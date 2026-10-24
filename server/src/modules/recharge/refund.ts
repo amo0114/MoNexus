@@ -20,7 +20,7 @@ import {
   hashNormalizedPayload,
   completeObservationDedupeKey,
 } from '../payment/observations/record.js'
-import { applyConfirmedPayment } from '../payment/events/applyConfirmedPayment.js'
+import { applyConfirmedPayment, writeOpenReconItem } from '../payment/events/applyConfirmedPayment.js'
 import { paymentTestHooks } from '../payment/events/hooks.js'
 import { parseNormalizedPaymentPayload } from './credit.js'
 import { claimPaymentEvent, commitPaymentEvent } from '../payment/workers/lease.js'
@@ -423,6 +423,33 @@ export async function applyRefundObservation(observationId: string) {
   try {
     const applied = await prisma.$transaction(async tx => {
       const payload = parseNormalizedPaymentPayload(observation.normalizedPayload)
+      // Every reconcile_required exit leaves an open item: the operator's work
+      // queue, and the reconciliation-mismatch metric its alert reads.
+      const requireReconciliation = async (reason: string, local: {
+        orderId?: string
+        attemptId?: string
+        localStatus?: string
+        localAmountMinor?: bigint
+        quotedAmountMinor?: bigint
+      } = {}) => {
+        await writeOpenReconItem(tx, {
+          scopePrefix: 'refund',
+          mismatchType: 'refund_mismatch',
+          orderId: local.orderId ?? null,
+          attemptId: local.attemptId ?? observation.paymentAttemptId,
+          eventId: observation.id,
+          provider: observation.provider,
+          providerAccountKey: observation.providerAccountKey,
+          providerEntryKey: payload.providerRefundId ?? `event:${observation.id}`,
+          providerStatus: payload.status,
+          localStatus: local.localStatus ?? null,
+          providerAmountMinor: payload.amountMinor ?? null,
+          localAmountMinor: local.localAmountMinor ?? null,
+          quotedAmountMinor: local.quotedAmountMinor ?? null,
+          currency: payload.currency ?? null,
+        })
+        return { outcome: 'reconcile_required' as const, reason }
+      }
       const refund = await tx.rechargeRefund.findFirst({
         where: {
           OR: [
@@ -432,7 +459,14 @@ export async function applyRefundObservation(observationId: string) {
         },
         include: { rechargeOrder: true, paymentAttempt: true },
       })
-      if (!refund) return { outcome: 'reconcile_required' as const, reason: 'REFUND_IDENTITY_MISMATCH' }
+      if (!refund) return requireReconciliation('REFUND_IDENTITY_MISMATCH')
+      const refundLocal = {
+        orderId: refund.rechargeOrderId,
+        attemptId: refund.paymentAttemptId,
+        localStatus: refund.status,
+        localAmountMinor: refund.amountMinor,
+        quotedAmountMinor: refund.rechargeOrder.amountMinor,
+      }
 
       const expectedPaymentId = refund.paymentAttempt.providerPaymentId
       const identityMismatch = observation.provider !== refund.rechargeOrder.provider
@@ -446,21 +480,22 @@ export async function applyRefundObservation(observationId: string) {
       const amountMismatch = payload.amountMinor == null || payload.amountMinor !== refund.amountMinor
       const currencyMismatch = !payload.currency || payload.currency !== refund.rechargeOrder.currency
       if (identityMismatch || amountMismatch || currencyMismatch) {
-        return {
-          outcome: 'reconcile_required' as const,
-          reason: identityMismatch
+        return requireReconciliation(
+          identityMismatch
             ? 'REFUND_IDENTITY_MISMATCH'
             : amountMismatch
               ? 'REFUND_AMOUNT_MISMATCH'
               : 'REFUND_CURRENCY_MISMATCH',
-        }
+          refundLocal,
+        )
       }
 
       const orderRows = await tx.$queryRaw<Array<{ id: string; userId: number; status: string }>>`
         SELECT "id", "userId", "status" FROM "RechargeOrder"
         WHERE "id" = ${refund.rechargeOrderId}::uuid FOR UPDATE`
       const order = orderRows[0]
-      if (!order) return { outcome: 'reconcile_required' as const, reason: 'REFUND_ORDER_MISSING' }
+      // The order row was not found, so it must not be referenced by the item's foreign key.
+      if (!order) return requireReconciliation('REFUND_ORDER_MISSING', { ...refundLocal, orderId: undefined })
 
       const existingReversal = await tx.rechargeReversal.findUnique({
         where: { rechargeRefundId: refund.id },
@@ -507,7 +542,7 @@ export async function applyRefundObservation(observationId: string) {
       })
       if (credit) {
         if (!hold || hold.status !== 'active') {
-          return { outcome: 'reconcile_required' as const, reason: 'REFUND_HOLD_MISSING' }
+          return requireReconciliation('REFUND_HOLD_MISSING', refundLocal)
         }
         const consumed = await consumeHeldPoints(tx, order.userId, Number(hold.points))
         await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'consumed' } })
