@@ -105,11 +105,19 @@ export async function applyDisputeObservation(observationId: string) {
         && attempt.provider === observation.provider
         && attempt.providerAccountKey === observation.providerAccountKey
         && attempt.providerPaymentId === observation.providerPaymentId
-      if (!identityMatches
-        || attempt.paymentIntent.rechargeOrder.amountMinor !== amountMinor
-        || attempt.paymentIntent.rechargeOrder.currency !== currency) {
-        // Partial disputes land here too; their hold rule is not specified yet.
-        const order = identityMatches ? attempt.paymentIntent.rechargeOrder : null
+      const order = identityMatches ? attempt.paymentIntent.rechargeOrder : null
+      // Full and partial disputes open a case; a dispute above the order amount
+      // is suspicious and only reconciles, as does one too small to hold a point.
+      let opensCase = order != null && order.currency === currency && amountMinor <= order.amountMinor
+      if (opensCase && order && amountMinor < order.amountMinor) {
+        const credit = await prisma.rechargeCredit.findUnique({
+          where: { rechargeOrderId: order.id },
+          select: { points: true },
+        })
+        // Without a credit openPaymentDispute rejects, exactly as for a full dispute.
+        opensCase = !credit || disputePointsToRecover(credit.points, amountMinor, order.amountMinor) >= 1n
+      }
+      if (!opensCase || !attempt) {
         await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_PAYMENT_MISMATCH', {
           ...detail,
           mismatchType: !order
@@ -166,6 +174,15 @@ export async function applyDisputeObservation(observationId: string) {
   }
 }
 
+/**
+ * Points a dispute recovers: the whole credit for a full dispute, otherwise
+ * floor(credit points x disputed amount / order amount) in integer arithmetic.
+ */
+export function disputePointsToRecover(creditPoints: bigint, disputeAmountMinor: bigint, orderAmountMinor: bigint): bigint {
+  if (disputeAmountMinor >= orderAmountMinor) return creditPoints
+  return (creditPoints * disputeAmountMinor) / orderAmountMinor
+}
+
 export async function openPaymentDispute(input: {
   provider: string
   providerAccountKey: string
@@ -195,14 +212,15 @@ export async function openPaymentDispute(input: {
     })
     if (!credit) throw conflict('没有可追回的充值入账')
 
-    const orders = await tx.$queryRaw<Array<{ id: string; userId: number }>>`
-      SELECT "id", "userId" FROM "RechargeOrder" WHERE "id" = ${input.rechargeOrderId}::uuid FOR UPDATE`
+    const orders = await tx.$queryRaw<Array<{ id: string; userId: number; amountMinor: bigint }>>`
+      SELECT "id", "userId", "amountMinor" FROM "RechargeOrder" WHERE "id" = ${input.rechargeOrderId}::uuid FOR UPDATE`
     const order = orders[0]
     if (!order) throw notFound('充值订单不存在')
 
     await tx.$queryRaw`SELECT "userId" FROM "PointAccount" WHERE "userId" = ${order.userId} FOR UPDATE`
     const account = await tx.pointAccount.findUniqueOrThrow({ where: { userId: order.userId } })
-    const pointsToRecover = Number(credit.points)
+    const recoverPoints = disputePointsToRecover(credit.points, input.amountMinor, order.amountMinor)
+    const pointsToRecover = Number(recoverPoints)
     if (!Number.isSafeInteger(pointsToRecover) || pointsToRecover <= 0) {
       throw conflict('争议追回积分不合法')
     }
@@ -245,7 +263,7 @@ export async function openPaymentDispute(input: {
         paymentDisputeId: dispute.id,
         rechargeCreditId: credit.id,
         userId: order.userId,
-        pointsToRecover: credit.points,
+        pointsToRecover: recoverPoints,
         pointsHeld: BigInt(holdPoints),
         outstandingPoints: BigInt(pointsToRecover - holdPoints),
         lossAmountMinor: input.amountMinor,
