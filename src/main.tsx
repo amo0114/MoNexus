@@ -6,6 +6,7 @@ import * as Sentry from '@sentry/react'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { ThemeProvider } from './lib/ThemeProvider'
 import { initWebVitals } from './lib/webVitals'
+import { installChunkRecovery } from './lib/chunkRecovery'
 
 if ('scrollRestoration' in window.history) {
   window.history.scrollRestoration = 'manual'
@@ -19,6 +20,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 }
 
 initWebVitals()
+installChunkRecovery()
 
 if (import.meta.env.DEV) {
   import('./stores/appStore').then(({ useAppStore }) => {

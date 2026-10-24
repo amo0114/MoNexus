@@ -105,6 +105,6 @@ npm test -- src/components/catalog/ProductVideoPlayer.test.tsx src/components/me
 
 健康接口保留 `busy`，并明确返回本实例 `uploadBusy`、`workerActive`。状态数量来自数据库，健康接口的活动标志只代表所请求的进程。指标查询依赖数据库；数据库不可用时 scrape 失败，应由既有 scrape/up 告警承接。
 
-示例告警见 `product-video-alerts.rules.yml`，需由运维加载到 Prometheus；默认排队阈值为 15 分钟，可按实际素材和机器能力调整。告警后先检查 worker 日志、临时盘容量与对象存储，再决定恢复服务或让商家重新上传；不要直接修改 processing token。
+告警规则见 `product-video-alerts.rules.yml`，生产 Compose 的 `production-monitoring` profile 会挂载到 Prometheus，部署预检会一并校验；默认排队阈值为 15 分钟，可按实际素材和机器能力调整。告警后先检查 worker 日志、临时盘容量与对象存储，再决定恢复服务或让商家重新上传；不要直接修改 processing token。
 
 审核列表接受 `moderation/page/pageSize`，返回 `{items,total,page,pageSize}`，按创建时间和资产 ID 稳定排序。管理面板每页 50 条，已通过/已拒绝历史也可翻页。

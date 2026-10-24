@@ -24,3 +24,11 @@ if ! grep -Fq 'add_header X-Content-Type-Options "nosniff" always;' <<< "$upload
 fi
 
 echo "[PASS] /uploads MIME-sniffing protection is configured"
+
+index_block="$(sed -n '/location = \/index.html {/,/^  }/p' "$config_file")"
+if ! grep -Fq 'add_header Cache-Control "no-cache";' <<< "$index_block"; then
+  echo "[ERROR] /index.html must be served with Cache-Control: no-cache" >&2
+  exit 1
+fi
+
+echo "[PASS] index.html is revalidated on every navigation"
