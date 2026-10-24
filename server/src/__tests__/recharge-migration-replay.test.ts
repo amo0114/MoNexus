@@ -13,12 +13,14 @@ const ADMIN_SANDBOX_MIGRATION = '20260823183000_admin_sandbox_payment'
 const ADMIN_SANDBOX_POLICY_MIGRATION = '20260823204000_admin_sandbox_price_policy'
 const EXPECTED_PROVIDER_AMOUNT_MIGRATION = '20260901120000_payment_attempt_expected_provider_amount'
 const QUOTED_AMOUNT_MIGRATION = '20260901121000_reconciliation_item_quoted_amount'
+const RECOVERY_POINT_LOGS_MIGRATION = '20261024120000_payment_recovery_point_logs'
 const NEW_MIGRATIONS = [
   FOUNDATION_MIGRATION,
   ADMIN_SANDBOX_MIGRATION,
   ADMIN_SANDBOX_POLICY_MIGRATION,
   EXPECTED_PROVIDER_AMOUNT_MIGRATION,
   QUOTED_AMOUNT_MIGRATION,
+  RECOVERY_POINT_LOGS_MIGRATION,
 ] as const
 const SERVER_ROOT = path.resolve(__dirname, '../..')
 const created: string[] = []
@@ -86,6 +88,7 @@ describe('recharge foundation migration replay', () => {
     expect(result.stdout + result.stderr).toMatch(new RegExp(ADMIN_SANDBOX_POLICY_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
+    expect(result.stdout + result.stderr).toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(EMPTY_DB) })
     await client.connect()
@@ -119,6 +122,7 @@ describe('recharge foundation migration replay', () => {
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(ADMIN_SANDBOX_POLICY_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
 
     const clientBefore = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await clientBefore.connect()
@@ -136,6 +140,7 @@ describe('recharge foundation migration replay', () => {
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(ADMIN_SANDBOX_POLICY_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await client.connect()
