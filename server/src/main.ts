@@ -24,9 +24,14 @@ import { startPartnerEntitlementCron, stopPartnerEntitlementCron } from './modul
 import { getNotificationRealtimeHub } from './modules/notifications/realtime/hub.js'
 import { getNotificationRealtimeLifecycle } from './modules/notifications/realtime/lifecycle.js'
 import { startPaymentWorkers, stopPaymentWorkers } from './modules/payment/workers/index.js'
+import { initPaymentMetrics } from './modules/payment/metrics.js'
 import { startPaymentPayloadRetentionCron, stopPaymentPayloadRetentionCron } from './modules/payment/payloadRetention.js'
 import { startRecommendationEventsCron, stopRecommendationEventsCron } from './modules/recommendationEvents/cron.js'
 import { startTrafficCron, stopTrafficCron } from './modules/traffic/cron.js'
+
+// Before listening: webhooks and payment workers must find every bounded
+// alert series already at 0 so their first event is visible to increase().
+logger.info({ series: initPaymentMetrics() }, 'payment metrics pre-initialized')
 
 const server = app.listen(config.port, () => {
   logger.info(

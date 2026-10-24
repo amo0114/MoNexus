@@ -123,7 +123,7 @@ describe('reconcile_required observations always leave an open reconciliation it
     expect(item.providerEntryKey).toBe(`event:${event.id}`)
   })
 
-  it('records an item for every unapplied dispute branch, including a partial dispute', async () => {
+  it('records an item for every unapplied dispute branch, including an over-amount dispute', async () => {
     const { order, attempt } = await creditedOrder('recon-dispute@test.local')
     const disputePayload = (amountMinor: string) => ({
       providerDisputeId: `dsp_${randomUUID()}`,
@@ -133,11 +133,11 @@ describe('reconcile_required observations always leave an open reconciliation it
     })
 
     const incomplete = await webhook({ eventType: 'dispute.opened', payload: disputePayload('1000') })
-    const partial = await webhook({
+    const overAmount = await webhook({
       eventType: 'dispute.opened',
       attemptId: attempt.id,
       providerPaymentId: attempt.providerPaymentId,
-      payload: disputePayload('500'),
+      payload: disputePayload('1500'),
     })
     const notOpen = await webhook({
       eventType: 'dispute.won',
@@ -154,7 +154,7 @@ describe('reconcile_required observations always leave an open reconciliation it
 
     const expected = [
       [incomplete.id, 'DISPUTE_IDENTITY_INCOMPLETE', 'unknown_provider_transaction'],
-      [partial.id, 'DISPUTE_PAYMENT_MISMATCH', 'amount_mismatch'],
+      [overAmount.id, 'DISPUTE_PAYMENT_MISMATCH', 'amount_mismatch'],
       [notOpen.id, 'DISPUTE_NOT_OPEN', 'unknown_provider_transaction'],
       [unsupported.id, 'DISPUTE_EVENT_UNSUPPORTED', 'unknown_provider_transaction'],
     ] as const
@@ -165,11 +165,11 @@ describe('reconcile_required observations always leave an open reconciliation it
       expect(item.mismatchType).toBe(mismatchType)
     }
 
-    const partialItem = await prisma.reconciliationItem.findFirstOrThrow({ where: { paymentEventId: partial.id } })
-    expect(partialItem.rechargeOrderId).toBe(order.id)
-    expect(partialItem.providerAmountMinor).toBe(500n)
-    expect(partialItem.localAmountMinor).toBe(order.amountMinor)
-    // Partial-dispute hold semantics are unspecified; this change only records the case.
+    const overAmountItem = await prisma.reconciliationItem.findFirstOrThrow({ where: { paymentEventId: overAmount.id } })
+    expect(overAmountItem.rechargeOrderId).toBe(order.id)
+    expect(overAmountItem.providerAmountMinor).toBe(1500n)
+    expect(overAmountItem.localAmountMinor).toBe(order.amountMinor)
+    // A dispute above the order amount is suspicious: it reconciles, never opens a case.
     expect(await prisma.paymentDispute.count()).toBe(0)
     expect(await prisma.pointHold.count({ where: { sourceType: 'payment_dispute' } })).toBe(0)
   })

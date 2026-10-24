@@ -80,16 +80,24 @@ const SOURCE_SET = new Set<string>(PAYMENT_OBSERVATION_SOURCES)
 const DISPUTE_SET = new Set<string>(PAYMENT_DISPUTE_STATUSES)
 const MISMATCH_SET = new Set<string>(RECONCILIATION_MISMATCH_TYPES)
 
+// Fallbacks that unbounded inputs collapse to. Pre-initialization derives
+// every label domain from the same enums and fallbacks, so the two stay aligned.
+const UNKNOWN_PROVIDER = 'unknown'
+const OTHER_CURRENCY = 'other'
+const DEFAULT_SOURCE: PaymentObservationSource = 'webhook'
+const DEFAULT_DISPUTE_STATUS: PaymentDisputeStatus = 'open'
+const DEFAULT_MISMATCH_TYPE: ReconciliationMismatchType = 'unknown_provider_transaction'
+
 function pick<T extends string>(value: string, allowed: ReadonlySet<string>, fallback: T): T {
   return allowed.has(value) ? value as T : fallback
 }
 
-function providerLabel(value: string): PaymentProviderName | 'unknown' {
-  return PROVIDER_SET.has(value) ? value as PaymentProviderName : 'unknown'
+function providerLabel(value: string): PaymentProviderName | typeof UNKNOWN_PROVIDER {
+  return PROVIDER_SET.has(value) ? value as PaymentProviderName : UNKNOWN_PROVIDER
 }
 
-function currencyLabel(value: string): RechargeCurrency | 'other' {
-  return CURRENCY_SET.has(value) ? value as RechargeCurrency : 'other'
+function currencyLabel(value: string): RechargeCurrency | typeof OTHER_CURRENCY {
+  return CURRENCY_SET.has(value) ? value as RechargeCurrency : OTHER_CURRENCY
 }
 
 export const rechargeQuoteTotal = new client.Counter({
@@ -232,6 +240,64 @@ export const paymentRefundNotSupportedTotal = new client.Counter({
   registers: [registry],
 })
 
+function withFallback(values: readonly string[], fallback: string): readonly string[] {
+  return [...new Set([...values, fallback])]
+}
+
+const PROVIDER_LABELS = withFallback(PAYMENT_PROVIDER_NAMES, UNKNOWN_PROVIDER)
+const CURRENCY_LABELS = withFallback(RECHARGE_CURRENCIES, OTHER_CURRENCY)
+const SOURCE_LABELS = withFallback(PAYMENT_OBSERVATION_SOURCES, DEFAULT_SOURCE)
+const DISPUTE_STATUS_LABELS = withFallback(PAYMENT_DISPUTE_STATUSES, DEFAULT_DISPUTE_STATUS)
+const MISMATCH_TYPE_LABELS = withFallback(RECONCILIATION_MISMATCH_TYPES, DEFAULT_MISMATCH_TYPE)
+
+type CounterLabelDomain = {
+  counter: client.Counter<string>
+  labels: Record<string, readonly string[]>
+}
+
+/** Every bounded label value each counter's record function can emit. */
+export const PAYMENT_COUNTER_LABEL_DOMAINS: readonly CounterLabelDomain[] = [
+  { counter: rechargeQuoteTotal, labels: { currency: CURRENCY_LABELS, result: PAYMENT_QUOTE_RESULTS } },
+  { counter: rechargeOrderTotal, labels: { currency: CURRENCY_LABELS, provider: PROVIDER_LABELS, result: PAYMENT_ORDER_RESULTS } },
+  { counter: paymentObservationTotal, labels: { provider: PROVIDER_LABELS, source: SOURCE_LABELS, result: PAYMENT_OBSERVATION_RESULTS } },
+  { counter: paymentWebhookSignatureFailureTotal, labels: { provider: PROVIDER_LABELS } },
+  { counter: paymentAmountMismatchTotal, labels: { provider: PROVIDER_LABELS, currency: CURRENCY_LABELS } },
+  { counter: rechargeCreditTotal, labels: { currency: CURRENCY_LABELS, result: PAYMENT_CREDIT_RESULTS } },
+  { counter: rechargePaidNotCreditedTotal, labels: { provider: PROVIDER_LABELS } },
+  { counter: paymentRefundTotal, labels: { provider: PROVIDER_LABELS, result: PAYMENT_REFUND_RESULTS } },
+  { counter: paymentDisputeTotal, labels: { provider: PROVIDER_LABELS, status: DISPUTE_STATUS_LABELS } },
+  { counter: paymentReconciliationMismatchTotal, labels: { provider: PROVIDER_LABELS, type: MISMATCH_TYPE_LABELS } },
+  { counter: paymentMonitorOfflineTotal, labels: { provider: PROVIDER_LABELS } },
+  { counter: paymentCallbackRetryTotal, labels: { provider: PROVIDER_LABELS } },
+  { counter: paymentWebhookAckFailureTotal, labels: { provider: PROVIDER_LABELS } },
+  { counter: paymentQueryByPayIdRecoveryTotal, labels: { provider: PROVIDER_LABELS, result: PAYMENT_QUERY_BY_PAY_ID_RESULTS } },
+  { counter: paymentRefundNotSupportedTotal, labels: { provider: PROVIDER_LABELS } },
+]
+
+export function counterLabelCombinations(labels: Record<string, readonly string[]>): Array<Record<string, string>> {
+  return Object.entries(labels).reduce<Array<Record<string, string>>>(
+    (combinations, [name, values]) => combinations.flatMap(combo => values.map(value => ({ ...combo, [name]: value }))),
+    [{}],
+  )
+}
+
+/**
+ * A counter series only exists after its first inc(), so increase() sees a
+ * single sample and misses the first event after a restart. Creating every
+ * bounded series at 0 makes that first event an observable 0 -> 1 increase.
+ * Adding 0 is idempotent and never changes a recorded count.
+ */
+export function initPaymentMetrics(): number {
+  let series = 0
+  for (const { counter, labels } of PAYMENT_COUNTER_LABEL_DOMAINS) {
+    for (const combination of counterLabelCombinations(labels)) {
+      counter.inc(combination, 0)
+      series += 1
+    }
+  }
+  return series
+}
+
 export function recordRechargeQuote(currency: string, result: PaymentQuoteResult) {
   rechargeQuoteTotal.inc({ currency: currencyLabel(currency), result })
 }
@@ -251,7 +317,7 @@ export function recordPaymentObservationMetric(
 ) {
   paymentObservationTotal.inc({
     provider: providerLabel(provider),
-    source: pick(source, SOURCE_SET, 'webhook'),
+    source: pick(source, SOURCE_SET, DEFAULT_SOURCE),
     result,
   })
 }
@@ -291,14 +357,14 @@ export function recordPaymentRefund(provider: string, result: PaymentRefundResul
 export function recordPaymentDispute(provider: string, status: string) {
   paymentDisputeTotal.inc({
     provider: providerLabel(provider),
-    status: pick(status, DISPUTE_SET, 'open'),
+    status: pick(status, DISPUTE_SET, DEFAULT_DISPUTE_STATUS),
   })
 }
 
 export function recordReconciliationMismatch(provider: string, type: string) {
   paymentReconciliationMismatchTotal.inc({
     provider: providerLabel(provider),
-    type: pick(type, MISMATCH_SET, 'unknown_provider_transaction'),
+    type: pick(type, MISMATCH_SET, DEFAULT_MISMATCH_TYPE),
   })
 }
 
