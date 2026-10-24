@@ -8,8 +8,9 @@ import {
   releaseHeldPoints,
 } from '../../points/checkedMutation.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
-import type { PaymentRecoveryCaseStatus } from '../../recharge/types.js'
-import { recordPaymentDispute } from '../metrics.js'
+import type { PaymentRecoveryCaseStatus, ReconciliationMismatchType } from '../../recharge/types.js'
+import { writeOpenReconItem } from '../events/applyConfirmedPayment.js'
+import { recordPaymentDispute, recordPaymentObservationMetric } from '../metrics.js'
 import { claimPaymentEvent, commitPaymentEvent } from '../workers/lease.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
@@ -24,6 +25,54 @@ type DisputeObservationPayload = {
 
 function disputePayload(value: unknown): DisputeObservationPayload {
   return value != null && typeof value === 'object' ? value as DisputeObservationPayload : {}
+}
+
+type DisputeObservation = {
+  id: string
+  provider: string
+  providerAccountKey: string
+  source: string
+  eventType: string
+  paymentAttemptId: string | null
+  providerPaymentId: string | null
+}
+
+/**
+ * A dispute the system cannot apply automatically still needs an open item:
+ * it is the operator's work queue and holds the raw payload past retention.
+ */
+async function commitDisputeForReconciliation(
+  observation: DisputeObservation,
+  leaseToken: string,
+  code: string,
+  detail: {
+    providerDisputeId: string | null
+    amountMinor: bigint | null
+    currency: string | null
+    mismatchType?: ReconciliationMismatchType
+    orderId?: string
+    localStatus?: string
+    localAmountMinor?: bigint
+  },
+) {
+  await prisma.$transaction(tx => writeOpenReconItem(tx, {
+    scopePrefix: 'dispute',
+    mismatchType: detail.mismatchType ?? 'unknown_provider_transaction',
+    orderId: detail.orderId ?? null,
+    attemptId: observation.paymentAttemptId,
+    eventId: observation.id,
+    provider: observation.provider,
+    providerAccountKey: observation.providerAccountKey,
+    providerEntryKey: detail.providerDisputeId ?? `event:${observation.id}`,
+    providerStatus: observation.eventType,
+    localStatus: detail.localStatus ?? null,
+    providerAmountMinor: detail.amountMinor,
+    localAmountMinor: detail.localAmountMinor ?? null,
+    currency: detail.currency,
+  }), TX)
+  if (await commitPaymentEvent(observation.id, leaseToken, 'reconcile_required', code)) {
+    recordPaymentObservationMetric(observation.provider, observation.source, 'reconcile_required')
+  }
 }
 
 export async function applyDisputeObservation(observationId: string) {
@@ -41,8 +90,9 @@ export async function applyDisputeObservation(observationId: string) {
       ? BigInt(payload.amountMinor)
       : null
     const currency = typeof payload.currency === 'string' ? payload.currency : null
+    const detail = { providerDisputeId, amountMinor, currency }
     if (!providerDisputeId || !amountMinor || !currency || !observation.paymentAttemptId) {
-      await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_IDENTITY_INCOMPLETE')
+      await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_IDENTITY_INCOMPLETE', detail)
       return { observationId, outcome: 'reconcile_required' as const }
     }
 
@@ -51,13 +101,24 @@ export async function applyDisputeObservation(observationId: string) {
         where: { id: observation.paymentAttemptId },
         include: { paymentIntent: { include: { rechargeOrder: true } } },
       })
-      if (!attempt
-        || attempt.provider !== observation.provider
-        || attempt.providerAccountKey !== observation.providerAccountKey
-        || attempt.providerPaymentId !== observation.providerPaymentId
+      const identityMatches = attempt != null
+        && attempt.provider === observation.provider
+        && attempt.providerAccountKey === observation.providerAccountKey
+        && attempt.providerPaymentId === observation.providerPaymentId
+      if (!identityMatches
         || attempt.paymentIntent.rechargeOrder.amountMinor !== amountMinor
         || attempt.paymentIntent.rechargeOrder.currency !== currency) {
-        await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_PAYMENT_MISMATCH')
+        // Partial disputes land here too; their hold rule is not specified yet.
+        const order = identityMatches ? attempt.paymentIntent.rechargeOrder : null
+        await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_PAYMENT_MISMATCH', {
+          ...detail,
+          mismatchType: !order
+            ? 'unknown_provider_transaction'
+            : order.currency !== currency ? 'currency_mismatch' : 'amount_mismatch',
+          orderId: order?.id,
+          localStatus: order?.status,
+          localAmountMinor: order?.amountMinor,
+        })
         return { observationId, outcome: 'reconcile_required' as const }
       }
       await openPaymentDispute({
@@ -81,7 +142,7 @@ export async function applyDisputeObservation(observationId: string) {
         },
       })
       if (!dispute) {
-        await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_NOT_OPEN')
+        await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_NOT_OPEN', detail)
         return { observationId, outcome: 'reconcile_required' as const }
       }
       await resolveDisputeOutcome({
@@ -89,7 +150,7 @@ export async function applyDisputeObservation(observationId: string) {
         outcome: observation.eventType === 'dispute.won' ? 'won' : 'lost',
       })
     } else {
-      await commitPaymentEvent(observationId, claimed.leaseToken, 'reconcile_required', 'DISPUTE_EVENT_UNSUPPORTED')
+      await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_EVENT_UNSUPPORTED', detail)
       return { observationId, outcome: 'reconcile_required' as const }
     }
     await commitPaymentEvent(observationId, claimed.leaseToken, 'processed')
