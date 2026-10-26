@@ -1,0 +1,11 @@
+{
+  "clientId": "monexus",
+  "payload": {
+    "order_no": "MN-paid-1",
+    "user_id": "9007199254740993",
+    "sku": "plan-3-reset_traffic",
+    "expected_plan_id": "3",
+    "period": "reset_traffic"
+  },
+  "payloadHash": "4ff0152d5757cc89bb8c67c4d835de79a71bbeb2c71d6bc54bfa8744f22d4615"
+}

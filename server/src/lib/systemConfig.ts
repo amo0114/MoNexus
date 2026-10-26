@@ -622,6 +622,21 @@ function formatSystemConfig(key: SystemConfigKey, row?: SystemConfigRow | null) 
   }
 }
 
+/** Read just the requested keys, preserving the single-key default semantics. */
+export async function getSystemConfigValues<K extends SystemConfigKey>(
+  keys: readonly K[],
+  tx?: Prisma.TransactionClient,
+): Promise<Record<K, number>> {
+  const uniqueKeys = [...new Set(keys)]
+  const client: ConfigClient = tx ?? prisma
+  const rows = uniqueKeys.length ? await client.systemConfig.findMany({
+    where: { key: { in: uniqueKeys } },
+    select: { key: true, value: true },
+  }) : []
+  const byKey = new Map(rows.map(row => [row.key, row.value]))
+  return Object.fromEntries(uniqueKeys.map(key => [key, byKey.get(key) ?? systemConfigDefaults[key]])) as Record<K, number>
+}
+
 export async function getSystemConfigValue(
   key: SystemConfigKey,
   tx?: Prisma.TransactionClient

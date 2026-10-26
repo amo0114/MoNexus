@@ -50,6 +50,8 @@ function isProvisionEmailField(key: string): boolean {
 export default function PurchaseModal({
   productId,
   offerId,
+  initialAccountLinkId,
+  onAccountSelectionChange,
   validityDays = null,
   currentExpiresAt = null,
   renewMode = false,
@@ -61,6 +63,8 @@ export default function PurchaseModal({
   productId: number
   /** 选中的规格(P4a);单 SKU 商品省略,服务端解析默认 Offer。 */
   offerId?: number
+  initialAccountLinkId?: string
+  onAccountSelectionChange?: (id: string) => void
   /** P6a：选中规格的订阅有效期(天);null = 永久,不渲染徽标。 */
   validityDays?: number | null
   /** 续费时：当前订单剩余到期时刻，结算前明示。 */
@@ -83,6 +87,8 @@ export default function PurchaseModal({
 }) {
   const formId = useId()
   const [preview, setPreview] = useState<CheckoutPreview | null>(null)
+  const [selectedAccountLinkId, setSelectedAccountLinkId] = useState(initialAccountLinkId ?? '')
+  const previewSequence = useRef(0)
   const [loadError, setLoadError] = useState('')
   const [priceChanged, setPriceChanged] = useState(false)
   const [idempotencyKey, setIdempotencyKey] = useState(() => newIdempotencyKey())
@@ -102,18 +108,30 @@ export default function PurchaseModal({
   const accountEmail = useAuthStore(s => s.user?.email?.toLowerCase() ?? '')
 
   const loadPreview = useCallback(async () => {
+    const sequence = ++previewSequence.current
     setLoadError('')
+    setPreview(null)
     try {
-      setPreview(await getCheckoutPreview(productId, offerId))
+      const result = selectedAccountLinkId
+        ? await getCheckoutPreview(productId, offerId, selectedAccountLinkId)
+        : await getCheckoutPreview(productId, offerId)
+      if (sequence === previewSequence.current) setPreview(result)
     } catch (err) {
+      if (sequence !== previewSequence.current) return
       setPreview(null)
       setLoadError(getApiErrorMessage(err, '获取结算信息失败，请重试'))
     }
-  }, [productId, offerId])
+  }, [productId, offerId, selectedAccountLinkId])
 
   useEffect(() => {
     loadPreview()
+    return () => { previewSequence.current++ }
   }, [loadPreview])
+
+  useEffect(() => {
+    const selected = preview?.xboardPaidReset?.selectedAccountLinkId
+    if (selected) onAccountSelectionChange?.(selected)
+  }, [preview, onAccountSelectionChange])
 
   // On phones "立即兑换" and "确认支付" sit in the same thumb zone, so the
   // second tap of a double-tap would confirm a price nobody has read. Each
@@ -225,6 +243,8 @@ export default function PurchaseModal({
 
   async function handleConfirm() {
     if (!preview || !armed || submitting || inFlightRef.current) return
+    if (preview.xboardPaidReset && (!preview.purchasable || !preview.xboardPaidReset.eligible
+      || !preview.xboardPaidReset.selectedAccountLinkId || !preview.xboardPaidReset.targetVersion)) return
     // 协议校验时序：仅在用户点击提交按钮时拦截并聚焦协议提示，不在开窗时报红
     if (preview.legalRequirement?.enforcement === 'enforce' && !agreementsChecked) {
       setAgreementAttempted(true)
@@ -328,6 +348,12 @@ export default function PurchaseModal({
           <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-sm text-[var(--color-text-muted)]">
             {loadError}
             <button type="button" onClick={loadPreview} className="ml-2 underline text-[var(--color-text)]">重试</button>
+            {selectedAccountLinkId && <button type="button" className="ml-2 underline text-[var(--color-text)]" onClick={() => {
+              setSelectedAccountLinkId('')
+              onAccountSelectionChange?.('')
+              setIdempotencyKey(newIdempotencyKey())
+              setAgreementsChecked(false)
+            }}>重新选择账号</button>}
           </div>
         ) : !preview ? (
           <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] animate-pulse space-y-3">
@@ -365,7 +391,7 @@ export default function PurchaseModal({
                 {validityDays != null ? `；续费将再延长约 ${validityDays} 天（以面板实际到期为准）` : ''}
               </div>
             )}
-            {validityDays != null && (
+            {validityDays != null && !preview.xboardPaidReset && (
               <div
                 className={`inline-flex items-center text-xs font-medium text-[var(--color-text)] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-0.5 mb-1 ${
                   preview.offerName && preview.offerName !== '默认规格' ? 'ml-1' : ''
@@ -417,7 +443,27 @@ export default function PurchaseModal({
           </div>
         )}
 
-        {preview?.autoProvision && !preview?.requiresProvisionEmailProof && (
+        {preview?.xboardPaidReset && (
+          <div className="mb-6 space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+            <label htmlFor={`${formId}-reset-account`} className="block text-sm font-medium">重置的套餐账号</label>
+            <select id={`${formId}-reset-account`} className="input" data-testid="paid-reset-account"
+              value={preview.xboardPaidReset.selectedAccountLinkId ?? ''} disabled={submitting || inFlight}
+              onChange={event => {
+                const id = event.target.value
+                setPreview(null)
+                setSelectedAccountLinkId(id)
+                onAccountSelectionChange?.(id)
+                setIdempotencyKey(newIdempotencyKey())
+                setAgreementsChecked(false)
+              }}>
+              <option value="" disabled>请选择本人套餐账号</option>
+              {preview.xboardPaidReset.accounts.map(account => <option key={account.id} value={account.id}>{account.maskedEmail}</option>)}
+            </select>
+            <p className="text-xs text-[var(--color-text-muted)]">本次按商品价格购买一次流量重置，不消耗赠送机会。套餐总流量和到期时间保持不变。</p>
+          </div>
+        )}
+
+        {preview?.autoProvision && !preview?.requiresProvisionEmailProof && !preview?.xboardPaidReset && (
           <div
             className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-[var(--color-text)] p-3 mb-6"
             data-testid="auto-provision-disclosure"

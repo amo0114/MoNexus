@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, authHeader, createTestUser, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
+import { getSystemConfigValues, systemConfigDefaults } from '../lib/systemConfig.js'
 
 async function clearSystemConfig() {
   await prisma.$executeRawUnsafe(`
@@ -25,7 +26,35 @@ describe('GET /api/config/registry', () => {
   })
 
   afterEach(async () => {
+    vi.restoreAllMocks()
     await clearSystemConfig()
+  })
+
+  it('batch reads requested keys once, including defaults and stored zero values', async () => {
+    const keys = ['defaultPageSize', 'lowStockThreshold', 'memberTierSilverBonusBps'] as const
+    const findMany = vi.spyOn(prisma.systemConfig, 'findMany')
+    expect(await getSystemConfigValues(keys)).toEqual({
+      defaultPageSize: systemConfigDefaults.defaultPageSize,
+      lowStockThreshold: systemConfigDefaults.lowStockThreshold,
+      memberTierSilverBonusBps: systemConfigDefaults.memberTierSilverBonusBps,
+    })
+    expect(findMany).toHaveBeenCalledTimes(1)
+    expect(findMany).toHaveBeenLastCalledWith({ where: { key: { in: [...keys] } }, select: { key: true, value: true } })
+    await prisma.systemConfig.create({ data: { key: 'lowStockThreshold', value: 0 } })
+    expect(await getSystemConfigValues(keys)).toMatchObject({
+      defaultPageSize: systemConfigDefaults.defaultPageSize, lowStockThreshold: 0,
+    })
+    await prisma.$transaction(async tx => {
+      await tx.systemConfig.createMany({ data: [
+        { key: 'defaultPageSize', value: 12 }, { key: 'memberTierSilverBonusBps', value: 600 },
+      ] })
+      expect(await getSystemConfigValues(keys, tx)).toEqual({
+        defaultPageSize: 12, lowStockThreshold: 0, memberTierSilverBonusBps: 600,
+      })
+    })
+    findMany.mockClear()
+    expect(await getSystemConfigValues([])).toEqual({})
+    expect(findMany).not.toHaveBeenCalled()
   })
 
   it('should return public registry constants and default operational config', async () => {

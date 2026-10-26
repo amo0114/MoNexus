@@ -5,7 +5,7 @@
  * already failed:
  *
  * 1. A plain first-page failure must settle. Nothing re-renders `fetchProducts`
- *    in a way that re-arms the 300ms initial fetch, so after a full scheduling
+ *    in a way that re-arms the initial fetch, so after a full scheduling
  *    window there must still be exactly one no-cursor request.
  *
  * 2. A plain *append* failure must pause auto-loading for that cursor. The
@@ -123,11 +123,11 @@ afterEach(() => {
 })
 
 describe('StorePage — a failed first page settles', () => {
-  it('issues no repeat no-cursor request across a full 300ms scheduling window', async () => {
+  it('issues no repeat no-cursor request after the initial failure has settled', async () => {
     const tally = makeTally()
     const apiGet = vi.fn((url: string, config?: { params?: Record<string, unknown> }) => {
-      if (url === '/products/sponsored' || url === '/products/editorial') {
-        return Promise.resolve({ data: { items: [] } })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
       }
       if (url === '/products') {
         const cursor = (config?.params?.cursor as string | undefined) ?? null
@@ -140,8 +140,7 @@ describe('StorePage — a failed first page settles', () => {
     await renderStorePage(apiGet)
 
     await waitFor(() => expect(tally.noCursor).toBe(1))
-    // 300ms is the debounce before the initial fetch; wait well past it plus a
-    // re-render cycle, then confirm nothing re-armed.
+    // Wait past the search debounce and several render cycles to detect loops.
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 900))
     })
@@ -156,8 +155,8 @@ describe('StorePage — a failed append pauses that cursor', () => {
     const tally = makeTally()
     let appendShouldFail = true
     const apiGet = vi.fn((url: string, config?: { params?: Record<string, unknown> }) => {
-      if (url === '/products/sponsored' || url === '/products/editorial') {
-        return Promise.resolve({ data: { items: [] } })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
       }
       if (url === '/products') {
         const cursor = (config?.params?.cursor as string | undefined) ?? null

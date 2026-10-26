@@ -1,6 +1,7 @@
 import { publicVideoSummary } from '../productVideos/service.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { usesStablePaidReset } from '../../lib/fakaBridge/paidResetSku.js'
 import { wrapCache } from '../../lib/cache.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
 import { projectPublicTemplateAttributes, serializePublicOffer } from '../../lib/offers.js'
@@ -361,7 +362,7 @@ function loadFakaCapacityBySku(
   const skus = [
     ...new Set(
       offers
-        .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku)
+        .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku && !usesStablePaidReset(o))
         .map(o => String(o.externalSku).trim().toLowerCase())
     ),
   ]
@@ -959,3 +960,6 @@ export async function getProductSummaries(ids: number[], audience: ProductAudien
     availability: item.availability, fakaCapacity: item.fakaCapacity, merchandising: projectionById.get(item.id),
   })) }
 }
+
+/** Shared bounded public-card use case; no per-product detail reads. */
+export const getPublicProductCardsByIds = getProductSummaries

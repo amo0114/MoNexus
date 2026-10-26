@@ -1,3 +1,4 @@
+import { grantForOrderInTx } from '../trafficReset/benefits.js'
 import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
@@ -35,6 +36,9 @@ import {
 } from './lifecycle.js'
 import { prewarmFakaCapacityForSkus } from '../../lib/fakaBridge/capacity.js'
 import { readTaskScheduleUtc } from '../../lib/fakaBridge/scheduleUtc.js'
+import { callPaidTask, invalidatePaidSnapshot, paidActorStillEligible, paidEvidenceMatches, paidExpiry, paidProof, paidSubscription,
+  sameTaskIdentity, taskIdentity, type TaskIdentity } from './paidTask.js'
+import type { PaidResetResult } from '../../lib/fakaBridge/paidResetV2.js'
 
 /** Lease covers HTTP timeout + result write headroom. */
 const LEASE_MS = () => config.fakaBridge.timeoutMs + 20_000
@@ -141,6 +145,14 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     })
     if (!order) return null
     if (order.status === 'refunded' || order.status === 'closed') {
+      if (task.protocolVersion === 2) {
+        await tx.fakaBridgeTask.update({ where: { id: taskId }, data: {
+          status: 'needs_reconcile', cancelRequested: true, revokeStatus: 'pending',
+          leaseToken: null, leaseUntil: null, nextAttemptAt: new Date(), lastError: 'ORDER_REFUNDED',
+          reconcileNote: 'terminal paid reset order requires remote cancellation tombstone',
+        } })
+        return null
+      }
       // attempts>0 ⇒ may have dispatched earlier; park for reconcile instead of hard cancel.
       if (task.attempts > 0) {
         await tx.fakaBridgeTask.update({
@@ -189,10 +201,8 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     return {
       id: task.id,
       orderId: task.orderId,
-      requestOrderNo: task.requestOrderNo,
-      emailSnapshot: task.emailSnapshot,
-      skuSnapshot: task.skuSnapshot,
-      periodSnapshot: task.periodSnapshot,
+      ...taskIdentity(task),
+      resultVersion: task.resultVersion,
       maxAttempts: task.maxAttempts,
       attempts,
       leaseToken,
@@ -217,6 +227,7 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     })
     const task = await tx.fakaBridgeTask.findUnique({ where: { id: claimed.id } })
     if (!order || !task) return false
+    if (claimed.protocolVersion === 2 && (!sameTaskIdentity(task, claimed) || task.resultVersion !== claimed.resultVersion)) return false
 
     const stillOwnsClaim =
       task.status === 'pending' && task.leaseToken === claimed.leaseToken
@@ -233,7 +244,7 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
       // Only mutate if we still hold this claim token (avoid clobbering a new worker).
       if (stillOwnsClaim && (task.cancelRequested || order.status === 'refunded' || order.status === 'closed')) {
         // May have been claimed before (attempts already > 0) — park for reconcile if so.
-        const hardCancel = task.attempts <= 0
+        const hardCancel = task.protocolVersion !== 2 && task.attempts <= 0
         await tx.fakaBridgeTask.updateMany({
           where: {
             id: claimed.id,
@@ -257,12 +268,21 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
                 leaseToken: null,
                 leaseUntil: null,
                 nextAttemptAt: new Date(),
+                ...(task.protocolVersion === 2 ? { revokeStatus: 'pending' } : {}),
                 reconcileNote:
                   'dispatch gate blocked after prior attempts; park needs_reconcile for probe',
               },
         })
       }
       // Stale lease / token mismatch: leave row for the owner; zero outbound for us.
+      return false
+    }
+
+    if (claimed.protocolVersion === 2 && !await paidActorStillEligible(task, tx)) {
+      await tx.fakaBridgeTask.update({ where: { id: claimed.id }, data: {
+        status: 'needs_reconcile', cancelRequested: true, revokeStatus: 'pending', nextAttemptAt: new Date(),
+        leaseToken: null, leaseUntil: null, lastError: 'PAID_RESET_TARGET_UNAVAILABLE',
+      } })
       return false
     }
 
@@ -283,6 +303,8 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
     fakaProvisionTotal.inc({ outcome: 'skipped' })
     return 'skipped'
   }
+
+  if (claimed.protocolVersion === 2) return processPaidResetClaim(claimed)
 
   const paidAt = Math.floor(Date.now() / 1000)
   const result = await callFakaOrderPaid(
@@ -440,7 +462,7 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
 }
 
 async function parkNeedsReconcile(
-  claimed: { id: number; leaseToken: string },
+  claimed: ClaimedTask,
   code: FakaErrorCode,
   note: string
 ): Promise<void> {
@@ -449,6 +471,7 @@ async function parkNeedsReconcile(
       id: claimed.id,
       status: 'pending',
       leaseToken: claimed.leaseToken,
+      ...(claimed.protocolVersion === 2 ? { ...taskIdentity(claimed), resultVersion: claimed.resultVersion } : {}),
     },
     data: {
       status: 'needs_reconcile',
@@ -462,7 +485,7 @@ async function parkNeedsReconcile(
 }
 
 async function clearLeaseKeepPending(
-  claimed: { id: number; leaseToken: string },
+  claimed: ClaimedTask,
   code: FakaErrorCode
 ): Promise<void> {
   await prisma.fakaBridgeTask.updateMany({
@@ -470,6 +493,7 @@ async function clearLeaseKeepPending(
       id: claimed.id,
       status: 'pending',
       leaseToken: claimed.leaseToken,
+      ...(claimed.protocolVersion === 2 ? { ...taskIdentity(claimed), resultVersion: claimed.resultVersion } : {}),
     },
     data: {
       lastError: code,
@@ -479,28 +503,50 @@ async function clearLeaseKeepPending(
   })
 }
 
-type ClaimedTask = {
+type ClaimedTask = TaskIdentity & {
   id: number
   orderId: number
-  requestOrderNo: string
-  emailSnapshot: string
-  skuSnapshot: string
-  periodSnapshot: string
   maxAttempts: number
   attempts: number
   leaseToken: string
+  resultVersion: number
+}
+
+async function processPaidResetClaim(claimed: ClaimedTask): Promise<ProcessOutcome> {
+  // A retry first recovers an already committed result. Transport errors,
+  // malformed responses and not_found never prove safe failure/refund.
+  let result = await callPaidTask(claimed.attempts > 1 ? 'paid-reset-status' : 'paid-reset', claimed, clientOverrides())
+  if (result.ok && ['not_found', 'pending'].includes(result.body.operation.status) && claimed.attempts <= claimed.maxAttempts) {
+    result = await callPaidTask('paid-reset', claimed, clientOverrides())
+  }
+  if (result.ok) {
+    const op = result.body.operation
+    invalidatePaidSnapshot(claimed, op)
+    if (op.status === 'completed') {
+      try { return await finalizeProvisionSuccess(claimed, op.trade_no, paidExpiry(op), paidSubscription(op), op) }
+      catch { /* Unrepresentable expiry must not turn into a projected expiry. */ }
+    }
+    if (op.status === 'failed' || op.status === 'revoked') {
+      const applied = await markFailedAndRefund(claimed, FAKA_ERROR.BUSINESS, op)
+      return applied ? 'failed' : 'skipped'
+    }
+  }
+  if (claimed.attempts < claimed.maxAttempts) await clearLeaseKeepPending(claimed, FAKA_ERROR.UNKNOWN)
+  else await parkNeedsReconcile(claimed, FAKA_ERROR.UNKNOWN, 'paid reset result unknown; keep held points and reconcile v2')
+  return 'retry_scheduled'
 }
 
 async function finalizeProvisionSuccess(
   claimed: ClaimedTask,
   tradeNo: string | null,
-  /** Xboard ground-truth subscription end; null = fall back to validityDays projection */
+  /** Xboard expiry; v1 null projects validityDays, paid v2 null explicitly means unlimited. */
   remoteExpiredAt: Date | null = null,
-  subscription: FakaSubscriptionResult | null = null
+  subscription: FakaSubscriptionResult | null = null,
+  paidResult?: PaidResetResult
 ): Promise<ProcessOutcome> {
   const delivery = deliveryPayload(tradeNo, claimed.emailSnapshot, subscription)
   try {
-    await prisma.$transaction(async tx => {
+    const applied = await prisma.$transaction(async tx => {
       // Order → Task lock order
       await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${claimed.orderId} FOR UPDATE`
 
@@ -508,10 +554,13 @@ async function finalizeProvisionSuccess(
         where: { id: claimed.orderId },
         select: { id: true, status: true },
       })
-      if (!order) return
+      if (!order) return false
 
       const task = await tx.fakaBridgeTask.findUnique({ where: { id: claimed.id } })
-      if (!task) return
+      if (!task) return false
+      if (claimed.protocolVersion === 2 && (!paidResult || !sameTaskIdentity(task, claimed)
+        || task.resultVersion !== claimed.resultVersion || task.leaseToken !== claimed.leaseToken || task.status !== 'pending'
+        || !paidEvidenceMatches(task.paidResetResult, paidResult))) return false
 
       // In-flight refund cancelled us or asked cancel — still mark opened + revoke.
       if (
@@ -535,14 +584,15 @@ async function finalizeProvisionSuccess(
             // A revoke must not inherit this claim's provision retry backoff.
             nextAttemptAt: new Date(),
             reconcileNote: `xboard opened after cancel/refund (order=${order.status}); queued revoke`,
+            ...(paidResult ? paidProof(paidResult) : {}),
           },
         })
-        return
+        return true
       }
 
       if (task.status !== 'pending' || task.leaseToken !== claimed.leaseToken) {
         logger.warn({ taskId: claimed.id }, 'FakaBridge success CAS missed (stale lease)')
-        return
+        return false
       }
 
       await tx.fakaBridgeTask.update({
@@ -554,6 +604,7 @@ async function finalizeProvisionSuccess(
           lastError: null,
           leaseToken: null,
           leaseUntil: null,
+          ...(paidResult ? paidProof(paidResult) : {}),
         },
       })
 
@@ -597,15 +648,18 @@ async function finalizeProvisionSuccess(
             internalNote: tradeNo
               ? `trade_no=${tradeNo}; email=${claimed.emailSnapshot}${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}${subscription?.action ? `; action=${subscription.action}` : ''}`
               : `email=${claimed.emailSnapshot}${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}${subscription?.action ? `; action=${subscription.action}` : ''}`,
-            ...(remoteExpiredAt ? { expiresAtOverride: remoteExpiredAt } : {}),
+            ...(remoteExpiredAt || claimed.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
           },
           tx
         )
         // Capture only after authoritative success, atomically with delivery.
         // Keep the order delivered so the existing dispute/refund flow remains available.
         await captureHeldOrder(tx, deliveredOrder, `Xboard 开通成功扣款: #${deliveredOrder.id}`)
+        await grantForOrderInTx(tx, deliveredOrder.id)
       }
+      return true
     })
+    if (!applied) return 'skipped'
   } catch (err) {
     logger.error({ err, taskId: claimed.id }, 'FakaBridge success result write failed')
     fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
@@ -626,23 +680,25 @@ async function finalizeProvisionSuccess(
 }
 
 async function markFailedAndRefund(
-  claimed: {
-    id: number
-    orderId: number
-    leaseToken: string
-  },
-  code: FakaErrorCode
-): Promise<void> {
+  claimed: ClaimedTask,
+  code: FakaErrorCode,
+  paidResult?: PaidResetResult
+): Promise<boolean> {
   try {
-    await prisma.$transaction(async tx => {
+    return await prisma.$transaction(async tx => {
       // Order → Task
       await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${claimed.orderId} FOR UPDATE`
 
+      if (claimed.protocolVersion === 2) {
+        const current = await tx.fakaBridgeTask.findUnique({ where: { id: claimed.id } })
+        if (!current || !paidResult || !paidEvidenceMatches(current.paidResetResult, paidResult)) return false
+      }
       const cas = await tx.fakaBridgeTask.updateMany({
         where: {
           id: claimed.id,
           status: 'pending',
           leaseToken: claimed.leaseToken,
+          ...(claimed.protocolVersion === 2 ? { ...taskIdentity(claimed), resultVersion: claimed.resultVersion } : {}),
         },
         data: {
           status: 'failed',
@@ -650,11 +706,18 @@ async function markFailedAndRefund(
           completedAt: new Date(),
           leaseToken: null,
           leaseUntil: null,
+          ...(paidResult ? {
+            ...paidProof(paidResult),
+            ...(paidResult.status === 'revoked' ? {
+              status: paidResult.after ? 'succeeded' : 'cancelled', xboardTradeNo: paidResult.trade_no,
+              cancelRequested: true, revokeStatus: 'succeeded', revokedAt: new Date(),
+            } : {}),
+          } : {}),
         },
       })
       if (cas.count !== 1) {
         // May have been cancel_requested mid-flight — leave for reconcile
-        return
+        return false
       }
 
       const order = await tx.order.findUnique({
@@ -671,7 +734,7 @@ async function markFailedAndRefund(
           deliveryModeSnapshot: true,
         },
       })
-      if (!order) return
+      if (!order) return false
 
       if (order.status === 'pending') {
         await transitionOrderStatus(
@@ -709,15 +772,12 @@ async function markFailedAndRefund(
           'FakaBridge failed while order not pending; manual review needed'
         )
       }
+      return true
     })
   } catch (err) {
     logger.error({ err, taskId: claimed.id }, 'FakaBridge fail/refund write failed')
+    return false
   }
-
-  logger.warn(
-    { taskId: claimed.id, orderId: claimed.orderId, code },
-    'FakaBridge provision failed permanently'
-  )
 }
 
 /**

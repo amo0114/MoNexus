@@ -13,7 +13,7 @@
  *    (aria-label=商品标识) or merch-partner-mark — rolling compatibility
  *    must not crash.
  * C. On the store home ('全部') the public sponsored/editorial shelves hydrate
- *    their own products (/products/{id}) independently of the organic
+ *    their own products (one aggregate response) independently of the organic
  *    /products cursor; the organic card mounts its merchandising projection
  *    (badge strip order platform_owned/platform_pick/hot, merchant-partner
  *    mark); shelf products never appear as organic store cards.
@@ -161,8 +161,8 @@ type ApiGet = ReturnType<typeof vi.fn>
 
 function makeApiGet(organicItems: unknown[]): ApiGet {
   return vi.fn((url: string, config?: { params?: Record<string, unknown> }) => {
-    if (url === '/products/sponsored' || url === '/products/editorial') {
-      return Promise.resolve({ data: { items: [] } })
+    if (url === '/storefront/candidates') {
+      return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
     }
     if (url === '/products') {
       return Promise.resolve({
@@ -293,15 +293,15 @@ describe('StorePage CMI — step 1 (T-CMI-001)', () => {
 
   it('B2: a legacy category never receives nonempty home sponsored/editorial candidates', async () => {
     const apiGet: ApiGet = vi.fn((url: string, config?: { params?: Record<string, unknown> }) => {
-      if (url === '/products/sponsored') {
-        return Promise.resolve({ data: { items: [{ productId: 2 }] } })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z',
+          sponsored: [{ productId: 2, product: makeProduct(2, '首页推广商品'), disclosure: { code: 'sponsored', label: '推广' } }],
+          editorial: [{ productId: 3, product: makeProduct(3, '首页精选商品'), publicReason: '首页精选', label: '精选' }],
+        } })
       }
-      if (url === '/products/editorial') {
-        return Promise.resolve({ data: { items: [{ productId: 3, publicReason: '首页精选' }] } })
-      }
-      if (url === '/products/summaries') return Promise.resolve({ data: { items: [makeProduct(2, '首页推广商品'), makeProduct(3, '首页精选商品')] } })
       if (url === '/products') {
-        return Promise.resolve({ data: { items: [LEGACY_DTO], nextCursor: null, hasMore: false } })
+        // This case explicitly exercises candidates arriving before organic.
+        return new Promise(resolve => setTimeout(() => resolve({ data: { items: [LEGACY_DTO], nextCursor: null, hasMore: false } }), 0))
       }
       throw new Error(`unexpected api.get url: ${url} ${JSON.stringify(config)}`)
     })
@@ -313,6 +313,7 @@ describe('StorePage CMI — step 1 (T-CMI-001)', () => {
     fireEvent.click(screen.getByRole('button', { name: '网络节点' }))
     await waitFor(() => expect(lastProductsParams(apiGet).category).toBe('网络节点'))
 
+    expect(apiGet.mock.calls.some(([url]) => url === '/storefront/candidates')).toBe(false)
     expect(apiGet.mock.calls.some(([url]) => url === '/products/sponsored')).toBe(false)
     expect(apiGet.mock.calls.some(([url]) => url === '/products/editorial')).toBe(false)
     expect(screen.queryByTestId('store-product-card-2')).not.toBeInTheDocument()
@@ -324,21 +325,12 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
   it('C: public shelves hydrate independently of the organic cursor; the organic card mounts its merchandising projection', async () => {
     const organic = makeProduct(1, '网络节点旗舰A', ORGANIC_MERCHANDISING)
     const apiGet: ApiGet = vi.fn((url: string, config?: { params?: Record<string, unknown> }) => {
-      if (url === '/products/sponsored') {
-        return Promise.resolve({
-          data: { items: [{ productId: 2, disclosure: { code: 'sponsored', label: '推广' } }] },
-        })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z',
+          sponsored: [{ productId: 2, product: makeProduct(2, '赞助商品B'), disclosure: { code: 'sponsored', label: '推广' } }],
+          editorial: [{ productId: 3, product: makeProduct(3, '精选商品C'), publicReason: '编辑精选理由', label: '精选' }],
+        } })
       }
-      if (url === '/products/editorial') {
-        return Promise.resolve({
-          data: {
-            items: [
-              { productId: 3, placement: 'store_editorial', publicReason: '编辑精选理由', label: '平台精选' },
-            ],
-          },
-        })
-      }
-      if (url === '/products/summaries') return Promise.resolve({ data: { items: [makeProduct(2, '赞助商品B'), makeProduct(3, '精选商品C')] } })
       if (url === '/products') {
         // The IntersectionObserver stub never fires its callback, so the only
         // load-more candidate is the virtual-grid prefetch; serve it an empty
@@ -346,9 +338,10 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
         if (config?.params?.cursor) {
           return Promise.resolve({ data: { items: [], nextCursor: null, hasMore: false } })
         }
-        return Promise.resolve({
+        // Candidates ready before the first ordinary batch retain the mixed template.
+        return new Promise(resolve => setTimeout(() => resolve({
           data: { items: [organic], nextCursor: 'organic-cursor', hasMore: true },
-        })
+        }), 0))
       }
       throw new Error(`unexpected api.get url: ${url}`)
     })
@@ -386,16 +379,16 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
     expect(screen.queryByTestId('merch-editorial-shelf')).not.toBeInTheDocument()
     expect(screen.queryByTestId('shelf-product-card-2')).not.toBeInTheDocument()
 
-    // HTTP independence: one batch hydration for the blended candidates,
-    // no detail hydration for the organic product, and the candidate endpoints
-    // are separate requests from the organic /products list.
+    // One aggregate response supplies both candidate kinds; no extra shelf,
+    // summary or detail HTTP is needed. Organic keeps its independent cursor.
     await waitFor(
       () => {
-        expect(apiGet.mock.calls.filter(([url]) => url === '/products/summaries')).toHaveLength(1)
+        expect(apiGet.mock.calls.filter(([url]) => url === '/storefront/candidates')).toHaveLength(1)
+        expect(apiGet.mock.calls.filter(([url]) => url === '/products/summaries')).toHaveLength(0)
         expect(apiGet.mock.calls.some(([url]) => /^\/products\/\d+$/.test(url))).toBe(false)
         expect(apiGet.mock.calls.filter(([url]) => url === '/products/1')).toHaveLength(0)
-        expect(apiGet.mock.calls.some(([url]) => url === '/products/sponsored')).toBe(true)
-        expect(apiGet.mock.calls.some(([url]) => url === '/products/editorial')).toBe(true)
+        expect(apiGet.mock.calls.some(([url]) => url === '/products/sponsored')).toBe(false)
+        expect(apiGet.mock.calls.some(([url]) => url === '/products/editorial')).toBe(false)
         expect(apiGet.mock.calls.some(([url]) => url === '/products')).toBe(true)
       },
       { timeout: 3000 },
@@ -423,6 +416,7 @@ describe('StorePage CMI — step 2 (T-CMI-002)', () => {
     )
 
     const urls = apiGet.mock.calls.map(([url]) => url as string)
+    expect(urls).not.toContain('/storefront/candidates')
     expect(urls).not.toContain('/products/sponsored')
     expect(urls).not.toContain('/products/editorial')
     expect(screen.queryByTestId('merch-sponsored-shelf')).not.toBeInTheDocument()
@@ -449,7 +443,7 @@ describe('StorePage CMI — blended feed (SPEC-CMI-UX-001 §4)', () => {
 
   it('AC-UX-007: recommendation API 500 → organic feed still renders (fail-open)', async () => {
     const apiGet: ApiGet = vi.fn((url: string) => {
-      if (url === '/products/sponsored' || url === '/products/editorial') {
+      if (url === '/storefront/candidates') {
         return Promise.reject(new Error('boom'))
       }
       if (url === '/products') {

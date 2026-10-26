@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { config } from '../../config/index.js'
 import {
   bumpCacheVersion,
   bumpProductListVersionCoalesced,
@@ -98,6 +99,7 @@ export function normalizeProductListParams(params: ProductListCacheParams) {
 // Bumped when the cached public product/card shape changes, so entries written by
 // the previous deploy are never served with missing fields; old keys just expire.
 const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v2'
+const projectionVersion = () => config.xboardAccounts.paidResetEnabled ? `${PUBLIC_PROJECTION_VERSION}-paid-reset` : PUBLIC_PROJECTION_VERSION
 
 export async function buildProductListCacheKey(params: ProductListCacheParams) {
   const normalized = normalizeProductListParams(params)
@@ -105,13 +107,13 @@ export async function buildProductListCacheKey(params: ProductListCacheParams) {
 
   const version = await getCacheVersion({ name: 'product-list' })
   if (version == null) return null
-  return makeCacheKey('product-list', PUBLIC_PROJECTION_VERSION, version, hashParams(normalized))
+  return makeCacheKey('product-list', projectionVersion(), version, hashParams(normalized))
 }
 
 export async function buildProductDetailCacheKey(productId: number, audience: 'guest' | 'member' = 'guest') {
   const version = await getCacheVersion({ name: 'product-detail', productId })
   if (version == null) return null
-  return makeCacheKey('product-detail', PUBLIC_PROJECTION_VERSION, productId, version, audience)
+  return makeCacheKey('product-detail', projectionVersion(), productId, version, audience)
 }
 
 export async function buildProductReviewsCacheKey(
