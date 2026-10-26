@@ -1,5 +1,5 @@
 import { businessRegistry } from '../../lib/businessRegistry.js'
-import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { getSystemConfigValues } from '../../lib/systemConfig.js'
 import { getPublicCategoryRegistry } from '../catalog/registry.js'
 import { config } from '../../config/index.js'
 import type { ProductAudience } from '../products/visibility.js'
@@ -7,27 +7,22 @@ import type { ProductAudience } from '../products/visibility.js'
 export async function getConfigRegistry(
   audience: ProductAudience = 'guest',
 ) {
-  const [
+  const [{
     defaultPageSize,
     maxPageSize,
     lowStockThreshold,
-    silverThreshold,
-    goldThreshold,
-    platinumThreshold,
-    silverBonusBps,
-    goldBonusBps,
-    platinumBonusBps,
-    catalog,
-  ] = await Promise.all([
-    getSystemConfigValue('defaultPageSize'),
-    getSystemConfigValue('maxPageSize'),
-    getSystemConfigValue('lowStockThreshold'),
-    getSystemConfigValue('memberTierSilverThreshold'),
-    getSystemConfigValue('memberTierGoldThreshold'),
-    getSystemConfigValue('memberTierPlatinumThreshold'),
-    getSystemConfigValue('memberTierSilverBonusBps'),
-    getSystemConfigValue('memberTierGoldBonusBps'),
-    getSystemConfigValue('memberTierPlatinumBonusBps'),
+    memberTierSilverThreshold: silverThreshold,
+    memberTierGoldThreshold: goldThreshold,
+    memberTierPlatinumThreshold: platinumThreshold,
+    memberTierSilverBonusBps: silverBonusBps,
+    memberTierGoldBonusBps: goldBonusBps,
+    memberTierPlatinumBonusBps: platinumBonusBps,
+  }, catalog] = await Promise.all([
+    getSystemConfigValues([
+      'defaultPageSize', 'maxPageSize', 'lowStockThreshold',
+      'memberTierSilverThreshold', 'memberTierGoldThreshold', 'memberTierPlatinumThreshold',
+      'memberTierSilverBonusBps', 'memberTierGoldBonusBps', 'memberTierPlatinumBonusBps',
+    ]),
     getPublicCategoryRegistry(audience),
   ])
 

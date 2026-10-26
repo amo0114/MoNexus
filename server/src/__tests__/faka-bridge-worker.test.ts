@@ -114,6 +114,43 @@ describe('M4 FakaBridge worker', () => {
     __setFakaClientOverridesForTests(undefined)
   })
 
+  it('issues a pending once-only grant atomically with successful delivery when enabled', async () => {
+    const oldReset = { ...config.trafficReset }, oldInstance = config.xboardAccounts.instanceId
+    try {
+      config.trafficReset.grantsEnabled = true
+      config.xboardAccounts.instanceId = 'worker-grant-test'
+      const { user, orderId, task } = await createHeldFakaOrder()
+      await processFakaBridgeTask(task.id)
+      expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('delivered')
+      expect(await prisma.trafficResetBenefitGrant.findFirstOrThrow()).toMatchObject({ userId: user.id, sourceOrderId: orderId, granted: 1, reserved: 0, consumed: 0, status: 'pending_verification' })
+      await processFakaBridgeTask(task.id)
+      expect(await prisma.trafficResetBenefitGrant.count()).toBe(1)
+      await expectSingleCapture(orderId, user.id)
+    } finally { Object.assign(config.trafficReset, oldReset); config.xboardAccounts.instanceId = oldInstance }
+  })
+
+  it('rolls delivery, task success and capture back if the grant write fails', async () => {
+    const oldReset = { ...config.trafficReset }, oldInstance = config.xboardAccounts.instanceId
+    try {
+      config.trafficReset.grantsEnabled = true
+      config.xboardAccounts.instanceId = 'worker-grant-test'
+      const { user, orderId, task } = await createHeldFakaOrder()
+      await prisma.$executeRawUnsafe(`CREATE FUNCTION reject_test_reset_grant() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'injected grant failure'; END; $$ LANGUAGE plpgsql`)
+      await prisma.$executeRawUnsafe(`CREATE TRIGGER reject_test_reset_grant BEFORE INSERT ON "TrafficResetBenefitGrant" FOR EACH ROW EXECUTE FUNCTION reject_test_reset_grant()`)
+      try {
+        await processFakaBridgeTask(task.id)
+        expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('pending')
+        expect((await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('pending')
+        expect(await prisma.deliveryRecord.count()).toBe(0)
+        expect(await prisma.trafficResetBenefitGrant.count()).toBe(0)
+        expect(await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).toMatchObject({ balance: 800, frozenBalance: 200 })
+      } finally {
+        await prisma.$executeRawUnsafe(`DROP TRIGGER reject_test_reset_grant ON "TrafficResetBenefitGrant"`)
+        await prisma.$executeRawUnsafe(`DROP FUNCTION reject_test_reset_grant()`)
+      }
+    } finally { Object.assign(config.trafficReset, oldReset); config.xboardAccounts.instanceId = oldInstance }
+  })
+
   it('delivers order and marks task succeeded on Xboard 200', async () => {
     const { user, email } = await createVerifiedBuyer(1000)
     const { product, offer } = await createFakaOffer(200)

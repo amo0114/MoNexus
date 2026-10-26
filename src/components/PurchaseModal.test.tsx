@@ -54,6 +54,79 @@ function preview(overrides: Partial<CheckoutPreview> = {}): CheckoutPreview {
 }
 
 describe('PurchaseModal checkout preview terms', () => {
+  it('lets the buyer explicitly recover from a stale URL account without editing the URL', async () => {
+    getCheckoutPreview.mockImplementation(async (_product, _offer, id) => {
+      if (id === 'stale') throw new Error('套餐账号已失效')
+      return preview({ purchasable: false, xboardPaidReset: { accounts: [{ id: 'owned', maskedEmail: 'o***@panel.test' }],
+        selectedAccountLinkId: null, targetVersion: null, eligible: false, blockReason: '请选择套餐账号' } })
+    })
+    const selection = vi.fn()
+    render(<PurchaseModal productId={42} initialAccountLinkId="stale" onAccountSelectionChange={selection} onClose={vi.fn()} onConfirm={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: '重新选择账号' }))
+    expect(await screen.findByTestId('paid-reset-account')).toHaveValue('')
+    expect(selection).toHaveBeenCalledWith('')
+    expect(screen.getByRole('button', { name: '确认支付' })).toBeDisabled()
+    expect(getCheckoutPreview).toHaveBeenLastCalledWith(42, undefined)
+  })
+  it('selects a stable account, skips OTP, and uses a new intent only when the target changes', async () => {
+    const accounts = [{ id: 'a', maskedEmail: 'a***@panel.test' }, { id: 'b', maskedEmail: 'b***@panel.test' }]
+    getCheckoutPreview.mockImplementation(async (_product, _offer, id) => preview({
+      chargeType: 'hold', purchasable: Boolean(id), requiresProvisionEmailProof: false,
+      xboardPaidReset: { accounts, selectedAccountLinkId: id ?? null, targetVersion: id ? `${id}-version` : null,
+        eligible: Boolean(id), blockReason: id ? null : '请选择套餐账号' },
+    }))
+    const onConfirm = vi.fn().mockResolvedValue('failed'), selection = vi.fn()
+    render(<PurchaseModal productId={42} onClose={vi.fn()} onConfirm={onConfirm} onAccountSelectionChange={selection} validityDays={30} />)
+    const select = await screen.findByTestId('paid-reset-account')
+    expect(screen.getByRole('button', { name: '确认支付' })).toBeDisabled()
+    fireEvent.change(select, { target: { value: 'a' } })
+    await waitFor(() => expect(screen.getByTestId('paid-reset-account')).toHaveValue('a'))
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1))
+    const firstKey = onConfirm.mock.calls[0][1]
+    expect(onConfirm.mock.calls[0][0].xboardPaidReset).toMatchObject({ selectedAccountLinkId: 'a', targetVersion: 'a-version' })
+    expect(screen.queryByTestId('provision-email-proof')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('preview-validity-days')).not.toBeInTheDocument()
+    expect(getProvisionEmailStatus).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(2))
+    expect(onConfirm.mock.calls[1][1]).toBe(firstKey)
+    fireEvent.change(screen.getByTestId('paid-reset-account'), { target: { value: 'b' } })
+    await waitFor(() => expect(screen.getByTestId('paid-reset-account')).toHaveValue('b'))
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(3))
+    expect(onConfirm.mock.calls[2][1]).not.toBe(firstKey)
+    expect(onConfirm.mock.calls[2][0].xboardPaidReset.selectedAccountLinkId).toBe('b')
+    expect(selection).toHaveBeenCalledWith('b')
+  })
+
+  it('preserves a URL-selected account when re-quoting changed checkout details', async () => {
+    const reset = { accounts: [{ id: 'chosen', maskedEmail: 'a***@panel.test' }],
+      selectedAccountLinkId: 'chosen', targetVersion: 'target-version', eligible: true, blockReason: null }
+    getCheckoutPreview.mockResolvedValue(preview({ xboardPaidReset: reset }))
+    const onConfirm = vi.fn().mockResolvedValueOnce('price_changed').mockResolvedValue('failed')
+    render(<PurchaseModal productId={42} offerId={7} initialAccountLinkId="chosen" onClose={vi.fn()} onConfirm={onConfirm} />)
+    await screen.findByTestId('paid-reset-account')
+    fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
+    await waitFor(() => expect(getCheckoutPreview).toHaveBeenCalledTimes(2))
+    expect(getCheckoutPreview.mock.calls.every(call => call[2] === 'chosen')).toBe(true)
+    expect(await screen.findByTestId('paid-reset-account')).toHaveValue('chosen')
+  })
+
+  it('ignores a stale quote that resolves after a different product was requested', async () => {
+    let finish!: (value: CheckoutPreview) => void
+    getCheckoutPreview.mockImplementation((productId) => productId === 42
+      ? new Promise<CheckoutPreview>(resolve => { finish = resolve })
+      : Promise.resolve(preview({ productId: 43, productName: '新商品' })))
+    const props = { onClose: vi.fn(), onConfirm: vi.fn() }
+    const view = render(<PurchaseModal productId={42} {...props} />)
+    await waitFor(() => expect(getCheckoutPreview).toHaveBeenCalledTimes(1))
+    view.rerender(<PurchaseModal productId={43} {...props} />)
+    expect(await screen.findByText('新商品')).toBeInTheDocument()
+    finish(preview({ productName: '过时商品' }))
+    await waitFor(() => expect(screen.queryByText('过时商品')).not.toBeInTheDocument())
+    expect(screen.getByText('新商品')).toBeInTheDocument()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     getCheckoutPreview.mockResolvedValue(preview())

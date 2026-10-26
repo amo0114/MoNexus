@@ -4,6 +4,13 @@ import type { PurchaseFormField } from '../types/merchant'
 import type { LegalRequirement } from './legal'
 
 export interface CheckoutPreview {
+  xboardPaidReset?: {
+    accounts: Array<{ id: string; maskedEmail: string }>
+    selectedAccountLinkId: string | null
+    targetVersion: string | null
+    eligible: boolean
+    blockReason: string | null
+  }
   productId: number
   productName: string
   /** 本次报价对应的规格(P4a);单 SKU 为默认 Offer。 */
@@ -42,9 +49,9 @@ export interface CheckoutPreview {
   assuranceGrantId: number | null
 }
 
-export async function getCheckoutPreview(productId: number, offerId?: number): Promise<CheckoutPreview> {
+export async function getCheckoutPreview(productId: number, offerId?: number, xboardAccountLinkId?: string): Promise<CheckoutPreview> {
   const { data } = await api.get('/checkout/preview', {
-    params: { productId, ...(offerId != null ? { offerId } : {}) },
+    params: { productId, ...(offerId != null ? { offerId } : {}), ...(xboardAccountLinkId ? { xboardAccountLinkId } : {}) },
   })
   return data
 }
@@ -75,6 +82,8 @@ export async function createOrder(
     expectedPrice: number
     idempotencyKey: string
     offerId?: number
+    xboardAccountLinkId?: string
+    expectedXboardTargetVersion?: string
     formAnswers?: Record<string, string>
     expectedPurchaseFormVersion?: string
     /** P4b：预览返回的 Offer 结算版本;配置变化 → 409 CHECKOUT_CHANGED。 */
@@ -94,6 +103,8 @@ export async function createOrder(
     '/orders',
     {
       productId,
+      ...(options.xboardAccountLinkId ? { xboardAccountLinkId: options.xboardAccountLinkId } : {}),
+      ...(options.expectedXboardTargetVersion ? { expectedXboardTargetVersion: options.expectedXboardTargetVersion } : {}),
       ...(options.offerId != null ? { offerId: options.offerId } : {}),
       expectedPrice: options.expectedPrice,
       ...(options.expectedPurchaseFormVersion

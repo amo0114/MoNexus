@@ -7,11 +7,12 @@ import { useAppStore } from '../stores/appStore'
  * navbar morph 为搜索卡片：input 自动聚焦（16px 防 iOS 缩放），
  * 第二行分类 chips 横滑。选择分类 / Enter / 取消 / 点遮罩均收起。
  * 状态与 StorePage 网格共享（appStore.storeQuery/storeCategory），
- * 输入经 StorePage 既有 300ms debounce 驱动列表。
+ * 输入使用 250ms 防抖，Enter 立即提交。
  */
 export default function StoreSearchPanel({ onClose, active = true }: { onClose: () => void; active?: boolean }) {
   const query = useAppStore((s) => s.storeQuery)
   const setQuery = useAppStore((s) => s.setStoreQuery)
+  const submitSearch = useAppStore((s) => s.submitStoreSearch)
   const category = useAppStore((s) => s.storeCategory)
   const setCategory = useAppStore((s) => s.setStoreCategory)
   const registry = useAppStore((s) => s.registry)
@@ -49,7 +50,11 @@ export default function StoreSearchPanel({ onClose, active = true }: { onClose: 
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape' || (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229)) onClose()
+            if (e.key === 'Escape') onClose()
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              submitSearch()
+              onClose()
+            }
           }}
           placeholder="搜账号、卡密、教程..."
           aria-label="搜索商品"

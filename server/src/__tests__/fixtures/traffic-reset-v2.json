@@ -1,0 +1,22 @@
+{
+  "payload": {
+    "operation_id": "00000000-0000-4000-8000-000000000123",
+    "actor_ref": "11",
+    "user_id": "1",
+    "benefit_code": "welcome_traffic_reset_v1",
+    "expected_plan_id": "3",
+    "subscription_fingerprint": "374a8080e3ddc7b07a160e1d1ddba4213cfccbb065692ee06f2e6e99cfe42309"
+  },
+  "payloadHash": "772c13a8fb33d1422b28882f09dac9f0bd81d687fe551966f3eb01acd5611871",
+  "snapshot": {
+    "plan_id": "3",
+    "transfer_enable": "1000",
+    "expired_at": null,
+    "last_reset_at": null,
+    "reset_count": "0",
+    "next_reset_at": null,
+    "u": "100",
+    "d": "20"
+  },
+  "fingerprint": "374a8080e3ddc7b07a160e1d1ddba4213cfccbb065692ee06f2e6e99cfe42309"
+}

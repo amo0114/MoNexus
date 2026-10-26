@@ -1,3 +1,5 @@
+import { startResetCron, stopResetCron } from './modules/trafficReset/worker.js'
+import { startAccountBackfillCron, stopAccountBackfillCron } from './modules/xboardAccounts/cron.js'
 import { startVideoWorker, stopVideoWorker } from './modules/productVideos/worker.js'
 import { app } from './app.js'
 import { config } from './config/index.js'
@@ -60,6 +62,8 @@ const server = app.listen(config.port, () => {
   startPaymentWorkers()
   startPaymentPayloadRetentionCron()
   startVideoWorker()
+  startResetCron()
+  startAccountBackfillCron()
   startTrafficCron()
   startRecommendationEventsCron()
   if (config.notificationRealtime.enabled) {
@@ -116,6 +120,8 @@ async function shutdown(signal: NodeJS.Signals) {
   stopPaymentWorkers()
   stopPaymentPayloadRetentionCron()
   const videoStopPromise = stopVideoWorker()
+  const resetStopPromise = stopResetCron()
+  const accountBackfillStopPromise = stopAccountBackfillCron()
   stopTrafficCron()
   stopRecommendationEventsCron()
 
@@ -138,6 +144,8 @@ async function shutdown(signal: NodeJS.Signals) {
     await listenerStopPromise
     await drainPromise
     await videoStopPromise
+    await accountBackfillStopPromise
+    await resetStopPromise
     await quitRedis()
     clearCacheProcessState()
     await prisma.$disconnect()

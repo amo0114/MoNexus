@@ -20,6 +20,11 @@ export {
 } from './client.js'
 export type { FakaBridgeClientOptions } from './client.js'
 
+export { callFakaV2Capabilities, callFakaV2ResolveAccount, callFakaV2Subscription } from './accountV2.js'
+export type { FakaV2Capabilities, FakaV2ResolvedAccount, FakaV2Subscription, FakaV2Result } from './accountV2.js'
+export { callPaidResetPreview, callPaidReset, paidResetPayloadHash } from './paidResetV2.js'
+export type { PaidResetPayload, PaidResetResult } from './paidResetV2.js'
+
 export {
   fetchFakaCapacityForSku,
   getFakaCapacityForPublicRead,

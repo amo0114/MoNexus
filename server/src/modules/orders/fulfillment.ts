@@ -1,3 +1,4 @@
+import { invalidateGrantForOrderInTx } from '../trafficReset/benefits.js'
 import type { Order, Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
@@ -17,10 +18,7 @@ import {
 export * from './statusPolicy.js'
 
 type OrderStatusEventWriter = Pick<Prisma.TransactionClient, 'orderStatusEvent'>
-type OrderStatusTransitionClient = Pick<
-  Prisma.TransactionClient,
-  'order' | 'orderStatusEvent' | 'deliveryRecord' | 'subscriptionReminder' | 'notification' | 'merchant' | '$queryRaw'
->
+type OrderStatusTransitionClient = Prisma.TransactionClient
 
 export async function createOrderStatusEvent(
   tx: OrderStatusEventWriter,
@@ -199,6 +197,7 @@ export async function transitionOrderStatus(
     order: updated,
   })
 
+  if (['refunded','disputed','processing'].includes(to)) await invalidateGrantForOrderInTx(client, order.id)
   return {
     ...updated,
     status: normalizeOrderStatus(updated.status),

@@ -1,0 +1,29 @@
+{
+  "format": "monexus-hmac-v2",
+  "vectors": [
+    {
+      "audience": "bot",
+      "method": "POST",
+      "path": "/api/bot/v2/xboard/profile",
+      "timestampMs": 1792900000000,
+      "nonce": "00112233445566778899aabbccddeeff",
+      "rawBody": "{\"platform\":\"qq\",\"platformId\":\"12345678\",\"requestId\":\"req-v2-1\",\"备注\":\"流量重置\"}",
+      "secret": "test-only-v2-secret-never-use-in-production",
+      "bodyHash": "ca1c02e1d6e6ab5cdd8ff923f9d75de33803a651c072c1e52de0e7fe69467f4c",
+      "payload": "[\"monexus-hmac-v2\",\"bot\",\"POST\",\"/api/bot/v2/xboard/profile\",1792900000000,\"00112233445566778899aabbccddeeff\",\"ca1c02e1d6e6ab5cdd8ff923f9d75de33803a651c072c1e52de0e7fe69467f4c\"]",
+      "signature": "a805a216863161d97279f65f2151c6ce46b81ab7efa37d4bd773d7359fca7b4e"
+    },
+    {
+      "audience": "xboard",
+      "method": "POST",
+      "path": "/plugin/faka-bridge/v2/capabilities",
+      "timestampMs": 1792900000000,
+      "nonce": "00112233445566778899aabbccddeeff",
+      "rawBody": "{}",
+      "secret": "test-only-v2-secret-never-use-in-production",
+      "bodyHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "payload": "[\"monexus-hmac-v2\",\"xboard\",\"POST\",\"/plugin/faka-bridge/v2/capabilities\",1792900000000,\"00112233445566778899aabbccddeeff\",\"44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\"]",
+      "signature": "56f29fd014a281c4649b82f44e4758e4578f80d3ecfab827704423a5243a60f9"
+    }
+  ]
+}

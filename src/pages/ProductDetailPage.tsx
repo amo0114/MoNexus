@@ -10,6 +10,7 @@ import { catalogApi } from '../api/catalog'
 import { getApiErrorMessage, getApiErrorCode } from '../api/error'
 import { captureException } from '../lib/errorReporter'
 import { createOrder, type CheckoutPreview } from '../api/orders'
+import { productCheckoutReturn } from '../utils/productCheckoutReturn'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
@@ -71,6 +72,8 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true)
   const [loginRequired, setLoginRequired] = useState(false)
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
+  const [paidAccountLinkId, setPaidAccountLinkId] = useState(searchParams.get('xboardAccountLinkId') ?? '')
+  useEffect(() => { setPaidAccountLinkId(searchParams.get('xboardAccountLinkId') ?? '') }, [id, searchParams])
 
   usePageView(`/product/${id}`, !loading && !loginRequired && product?.id === Number(id))
 
@@ -285,6 +288,10 @@ export default function ProductDetailPage() {
       const data = await createOrder(product.id, {
         expectedPrice: preview.price,
         idempotencyKey,
+        ...(preview.xboardPaidReset?.selectedAccountLinkId && preview.xboardPaidReset.targetVersion ? {
+          xboardAccountLinkId: preview.xboardPaidReset.selectedAccountLinkId,
+          expectedXboardTargetVersion: preview.xboardPaidReset.targetVersion,
+        } : {}),
         offerId: selectedOfferId ?? undefined,
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
@@ -417,7 +424,7 @@ export default function ProductDetailPage() {
   if (loginRequired) {
     const rawOffer = searchParams.get('offerId')
     const validOffer = rawOffer && /^[1-9]\d*$/.test(rawOffer) ? rawOffer : null
-    const returnTo = `/product/${id}${validOffer ? `?offerId=${validOffer}` : ''}`
+    const returnTo = productCheckoutReturn(id!, validOffer ? Number(validOffer) : undefined, paidAccountLinkId || undefined)
     return (
       <div className="max-w-md mx-auto px-4 py-16 text-center fade-in" data-testid="product-login-required">
         <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">登录后查看商品</h1>
@@ -477,7 +484,8 @@ export default function ProductDetailPage() {
   const fileDeliverySize =
     activeOffer?.fixedContentType === 'file' ? (activeOffer?.deliveryFileSize ?? null) : undefined
 
-  const loginReturnTo = selectedOfferId ? `/product/${id}?offerId=${selectedOfferId}` : `/product/${id}`
+  const loginReturnTo = productCheckoutReturn(id!, selectedOfferId ?? undefined, paidAccountLinkId || undefined)
+  const selectOffer = (offerId: number) => { setSelectedOfferId(offerId); setPaidAccountLinkId('') }
   const handleRedeemClick = () => {
     if (isReferencePreview) {
       showToast('参考商品仅供预览，不会生成订单或扣款', 'info')
@@ -491,7 +499,7 @@ export default function ProductDetailPage() {
       return
     }
     if (isInsufficient) {
-      const returnTo = `/product/${id}${activeOffer ? `?offerId=${activeOffer.id}` : ''}`
+      const returnTo = productCheckoutReturn(id!, activeOffer?.id, paidAccountLinkId || undefined)
       navigate(`/recharge?returnTo=${encodeURIComponent(returnTo)}`)
       return
     }
@@ -603,7 +611,7 @@ export default function ProductDetailPage() {
           template={template}
           activeOffer={activeOffer}
           selectedOfferId={selectedOfferId}
-          onSelectOffer={setSelectedOfferId}
+          onSelectOffer={selectOffer}
           onRedeem={handleRedeemClick}
           redeemLabel={redeemLabel}
           purchaseDisabled={!isReferencePreview && isLoggedIn && isSoldOut}
@@ -633,7 +641,7 @@ export default function ProductDetailPage() {
           template={template}
           activeOffer={activeOffer}
           selectedOfferId={selectedOfferId}
-          onSelectOffer={setSelectedOfferId}
+          onSelectOffer={selectOffer}
           onRedeem={handleRedeemClick}
           redeemLabel={redeemLabel}
           purchaseDisabled={!isReferencePreview && isLoggedIn && isSoldOut}
@@ -655,7 +663,7 @@ export default function ProductDetailPage() {
           offers={offers}
           isMultiSku={isMultiSku}
           selectedOfferId={selectedOfferId}
-          onSelectOffer={setSelectedOfferId}
+          onSelectOffer={selectOffer}
           onRedeem={handleRedeemClick}
           redeemLabel={redeemLabel}
           purchaseDisabled={isLoggedIn && isSoldOut}
@@ -752,6 +760,8 @@ export default function ProductDetailPage() {
         <PurchaseModal
           productId={product.id}
           offerId={selectedOfferId ?? undefined}
+          initialAccountLinkId={paidAccountLinkId || undefined}
+          onAccountSelectionChange={setPaidAccountLinkId}
           validityDays={activeOffer?.validityDays ?? null}
           submitting={purchasing}
           hideWhileSubmitting={isMobileViewport}
