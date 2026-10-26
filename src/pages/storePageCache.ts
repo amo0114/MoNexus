@@ -7,6 +7,8 @@ export interface StorePageCache {
   hasMore: boolean
   scrollY: number
   audience: 'guest' | 'member'
+  /** Opaque session scope; never reused for another member or login session. */
+  identityKey: string
   lastProductId?: number | null
 }
 

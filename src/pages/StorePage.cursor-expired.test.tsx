@@ -165,8 +165,8 @@ describe('StorePage — PRODUCT_CURSOR_EXPIRED recovery', () => {
   it('restarts from page 1 without the dead cursor when an appended page 409s', async () => {
     let organicCall = 0
     const apiGet = vi.fn((url: string) => {
-      if (url === '/products/sponsored' || url === '/products/editorial') {
-        return Promise.resolve({ data: { items: [] } })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
       }
       if (url === '/products') {
         organicCall += 1
@@ -213,8 +213,8 @@ describe('StorePage — PRODUCT_CURSOR_EXPIRED recovery', () => {
     // surfaces the failure instead of looping on an identical response.
     let organicCall = 0
     const apiGet = vi.fn((url: string) => {
-      if (url === '/products/sponsored' || url === '/products/editorial') {
-        return Promise.resolve({ data: { items: [] } })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
       }
       if (url === '/products') {
         organicCall += 1

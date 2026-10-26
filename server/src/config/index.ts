@@ -372,6 +372,16 @@ const envSchema = z.object({
   // Optional: when unset, /api/bot/* answers 503 and the site keeps working.
   // The bot signs requests with HMAC-SHA256 instead of holding a user JWT.
   BOT_SHARED_SECRET: optionalStringEnvSchema,
+  TRAFFIC_RESET_GRANT_ENABLED: realtimeBooleanEnvSchema(),
+  TRAFFIC_RESET_REQUESTS_ENABLED: realtimeBooleanEnvSchema(),
+  TRAFFIC_RESET_DISPATCH_ENABLED: realtimeBooleanEnvSchema(),
+  TRAFFIC_RESET_CONFIRM_SECRET: optionalStringEnvSchema,
+  TRAFFIC_RESET_PREVIOUS_CONFIRM_SECRET: optionalStringEnvSchema,
+  TRAFFIC_RESET_CLIENT_ID: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).default('monexus'),
+  XBOARD_ACCOUNT_QUERY_ENABLED: realtimeBooleanEnvSchema(),
+  XBOARD_PAID_RESET_TARGET_V2_ENABLED: realtimeBooleanEnvSchema(),
+  XBOARD_INSTANCE_ID: z.preprocess(v => v === '' ? undefined : v,
+    z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).optional()),
   /** 定时催签默认启用；插件侧另有开关，这里是服务端总闸。 */
   BOT_REMINDER_ENABLED: z.coerce.boolean().default(true),
   // Test-only escape hatch. Production boot refuses true.
@@ -713,6 +723,22 @@ if (env.AI_ENABLED && !env.OPENAI_API_KEY) {
 // FakaBridge: URL and SECRET are all-or-nothing. Status URL is optional.
 const fakaUrl = env.FAKA_BRIDGE_URL
 const fakaSecret = env.FAKA_BRIDGE_SECRET
+if (env.XBOARD_PAID_RESET_TARGET_V2_ENABLED && (!env.XBOARD_INSTANCE_ID || !fakaUrl || !fakaSecret)) {
+  console.error('[Config] paid reset checkout requires stable instance and bridge credentials')
+  process.exit(1)
+}
+if (env.XBOARD_ACCOUNT_QUERY_ENABLED && (!env.XBOARD_INSTANCE_ID || !fakaUrl || !fakaSecret || !env.BOT_SHARED_SECRET || !env.REDIS_ENABLED)) {
+  console.error('[Config] XBOARD_ACCOUNT_QUERY_ENABLED requires XBOARD_INSTANCE_ID, bridge URL/secret, BOT_SHARED_SECRET and Redis')
+  process.exit(1)
+}
+if (env.TRAFFIC_RESET_REQUESTS_ENABLED && (!env.XBOARD_ACCOUNT_QUERY_ENABLED || !env.TRAFFIC_RESET_CONFIRM_SECRET || env.TRAFFIC_RESET_CONFIRM_SECRET.length < 32)) {
+  console.error('[Config] reset requests require Xboard queries and a dedicated confirmation secret of at least 32 characters')
+  process.exit(1)
+}
+if ((env.TRAFFIC_RESET_DISPATCH_ENABLED || env.TRAFFIC_RESET_GRANT_ENABLED) && (!env.XBOARD_INSTANCE_ID || !fakaUrl || !fakaSecret)) {
+  console.error('[Config] reset grants/dispatch require stable instance and bridge credentials')
+  process.exit(1)
+}
 const fakaPartial = Boolean(fakaUrl) !== Boolean(fakaSecret)
 if (fakaPartial) {
   console.error(
@@ -1062,6 +1088,11 @@ export const config = {
     shutdownGraceMs: env.NOTIFICATION_REALTIME_SHUTDOWN_GRACE_MS,
   },
   // SPEC-CHAT-BOT-001: undefined secret ⇒ bot channel disabled (503).
+  trafficReset: { grantsEnabled: env.TRAFFIC_RESET_GRANT_ENABLED, requestsEnabled: env.TRAFFIC_RESET_REQUESTS_ENABLED,
+    dispatchEnabled: env.TRAFFIC_RESET_DISPATCH_ENABLED, confirmSecret: env.TRAFFIC_RESET_CONFIRM_SECRET,
+    previousConfirmSecret: env.TRAFFIC_RESET_PREVIOUS_CONFIRM_SECRET, clientId: env.TRAFFIC_RESET_CLIENT_ID },
+  xboardAccounts: { enabled: env.XBOARD_ACCOUNT_QUERY_ENABLED, instanceId: env.XBOARD_INSTANCE_ID,
+    paidResetEnabled: env.XBOARD_PAID_RESET_TARGET_V2_ENABLED },
   chatBot: env.BOT_SHARED_SECRET
     ? {
         enabled: true as const,

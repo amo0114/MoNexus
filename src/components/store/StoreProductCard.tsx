@@ -35,9 +35,11 @@ export interface StoreProductCardProps {
    * chip, description or rating. Price, sales and availability text stay unchanged.
    */
   compact?: boolean
+  imageLoading?: 'eager' | 'lazy'
+  imageFetchPriority?: 'high' | 'auto'
 }
 
-export default function StoreProductCard({ product, onOpen, href, onNavigate, sellerLabel, disclosure, compact = false }: StoreProductCardProps) {
+export default function StoreProductCard({ product, onOpen, href, onNavigate, sellerLabel, disclosure, compact = false, imageLoading = 'lazy', imageFetchPriority = 'auto' }: StoreProductCardProps) {
   const availability = readAvailabilityStatus(product)
   const isSoldOut = availability === 'unavailable'
   // One representative plan's x/y misleads for multi-plan/mixed products, so Faka cards
@@ -77,12 +79,13 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
         imageClassName="transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 group-hover:opacity-95"
         fit="cover"
         imageProps={{
-          loading: 'lazy',
+          loading: imageLoading,
+          fetchPriority: imageFetchPriority,
           decoding: 'async',
           'data-testid': `store-product-image-${product.id}`,
           sizes: compact
             ? '(min-width: 1280px) 25vw, (min-width: 768px) 33vw, 50vw'
-            : '(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw',
+            : '(min-width: 1024px) 33vw, 50vw',
         }}
       >
         {disclosure && (

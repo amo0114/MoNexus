@@ -191,6 +191,10 @@ async function installMockApi(context: BrowserContext, options: { mfaUserId?: nu
       await route.fulfill({ json: { count: 0 } })
       return
     }
+    if (requestPath === '/api/storefront/candidates') {
+      await route.fulfill({ json: { version: 1, generatedAt: new Date().toISOString(), sponsored: [], editorial: [] } })
+      return
+    }
     if (requestPath === '/api/products/sponsored' || requestPath === '/api/products/editorial') {
       await route.fulfill({ json: { items: [] } })
       return

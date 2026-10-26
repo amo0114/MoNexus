@@ -8,6 +8,7 @@ export const previewQuerySchema = z.object({
   productId: z.coerce.number().int().positive(),
   // 购买的规格（P4a）。可选：单 SKU 商品由服务端解析为唯一 active Offer。
   offerId: z.coerce.number().int().positive().optional(),
+  xboardAccountLinkId: z.string().uuid().optional(),
 })
 
 const router = Router()

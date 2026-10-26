@@ -83,6 +83,10 @@
     {
       "name": "Admin Recharge",
       "description": "充值订单、事件重放、对账、争议。默认不返回原始 payload。"
+    },
+    {
+      "name": "QQ Xboard",
+      "description": "AstrBot 服务端签名调用；复用当前 QQ 绑定，查询不发放或消费重置权益。"
     }
   ],
   "components": {
@@ -91,6 +95,12 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "BotV2Hmac": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-monexus-signature",
+        "description": "HMAC-SHA256 原始 UTF-8 bytes 签名；详见 docs/specs/2026-10-25-performance-and-qq-xboard/protocol-v2.md。非 Bearer/JWT。"
       }
     },
     "schemas": {
@@ -4293,6 +4303,1103 @@
             "maximum": 100
           }
         }
+      },
+      "StorefrontCandidates": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "generatedAt",
+          "sponsored",
+          "editorial"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sponsored": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "productId",
+                "product",
+                "disclosure"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "product": {
+                  "$ref": "#/components/schemas/PublicProductCard"
+                },
+                "disclosure": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "label"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": [
+                        "sponsored"
+                      ]
+                    },
+                    "label": {
+                      "type": "string",
+                      "enum": [
+                        "推广"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "editorial": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "productId",
+                "product",
+                "publicReason",
+                "label"
+              ],
+              "properties": {
+                "productId": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "product": {
+                  "$ref": "#/components/schemas/PublicProductCard"
+                },
+                "publicReason": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "label": {
+                  "type": "string",
+                  "enum": [
+                    "精选"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "QqXboardAccountsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "platformId"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "platformId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{4,19}$",
+            "description": "必须取自可信平台事件的真实 sender ID，不能取命令参数。"
+          }
+        }
+      },
+      "QqXboardProfileRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "platformId"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "platformId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{4,19}$",
+            "description": "必须取自可信平台事件的真实 sender ID，不能取命令参数。"
+          },
+          "accountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "QqXboardSelectRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "platformId",
+          "accountLinkId",
+          "requestId"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "platformId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{4,19}$",
+            "description": "必须取自可信平台事件的真实 sender ID，不能取命令参数。"
+          },
+          "accountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "同一业务重试保持，签名 nonce 每次更新。"
+          }
+        }
+      },
+      "QqXboardUnbound": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          }
+        }
+      },
+      "QqXboardAccountCard": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "maskedEmail",
+          "status",
+          "isDefault"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "maskedEmail": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked",
+              "unresolved"
+            ]
+          },
+          "isDefault": {
+            "type": "boolean"
+          }
+        }
+      },
+      "QqXboardAccounts": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "accounts",
+          "defaultAccountLinkId",
+          "truncated",
+          "associationStatus"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "accounts": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/QqXboardAccountCard"
+            }
+          },
+          "defaultAccountLinkId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "associationStatus": {
+            "type": "string",
+            "enum": [
+              "available",
+              "pending_sync"
+            ]
+          }
+        }
+      },
+      "QqXboardProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "account",
+          "subscription",
+          "freeReset",
+          "canFreeReset",
+          "blockReason",
+          "resetHistory",
+          "freshness"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "account": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "maskedEmail"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "maskedEmail": {
+                "type": "string"
+              }
+            }
+          },
+          "subscription": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "planId",
+              "planName",
+              "totalBytes",
+              "uploadBytes",
+              "downloadBytes",
+              "usedBytes",
+              "remainingBytes",
+              "expiresAtUnix",
+              "nextResetAtUnix"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "expired",
+                  "no_plan",
+                  "blocked"
+                ]
+              },
+              "planId": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "nullable": true
+              },
+              "planName": {
+                "type": "string",
+                "nullable": true
+              },
+              "totalBytes": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "uploadBytes": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "downloadBytes": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "usedBytes": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "remainingBytes": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              },
+              "expiresAtUnix": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "nullable": true
+              },
+              "nextResetAtUnix": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "nullable": true
+              }
+            },
+            "nullable": true
+          },
+          "freeReset": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "granted",
+              "available",
+              "reserved",
+              "consumed",
+              "status"
+            ],
+            "properties": {
+              "granted": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "available": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "reserved": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "consumed": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "revoked",
+                  "pending_verification"
+                ]
+              }
+            },
+            "nullable": true,
+            "description": "不存在已发放权益时为 null；查询不隐式发放。所有账号共享终身一次；pending_verification/revoked 的 available=0。"
+          },
+          "canFreeReset": {
+            "type": "boolean"
+          },
+          "blockReason": {
+            "type": "string",
+            "nullable": true,
+            "description": "有限原因；展示用预检，创建意图及执行时重新校验。"
+          },
+          "resetHistory": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "platformSuccessfulForAccount",
+              "xboardAllSources",
+              "coverageFrom",
+              "freeSuccessfulForAccount",
+              "coverageScope",
+              "paidSuccessfulForAccount",
+              "truncated"
+            ],
+            "properties": {
+              "platformSuccessfulForAccount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "当前账号已核实免费 v2 + 付费 v2 实际执行数；执行后退款不减。truncated=true 时为已核实下限，不含旧 v1/站外。"
+              },
+              "xboardAllSources": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "nullable": true,
+                "description": "原生 reset_count，可能包含自动周期等来源，不是本平台赠送/购买次数。"
+              },
+              "coverageFrom": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "返回记录/权益中最早的本地时间；不是完整统计起点或全历史保证。"
+              },
+              "freeSuccessfulForAccount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "当前账号本地免费 v2 成功操作数；零只代表该覆盖范围内无记录。"
+              },
+              "coverageScope": {
+                "type": "string",
+                "enum": [
+                  "verified_v2_only"
+                ]
+              },
+              "paidSuccessfulForAccount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 1000,
+                "description": "最近最多1000条本人稳定账号 v2 task 中经完整快照/冻结身份/hash 复验的执行数；按外部单号去重，退款保留。"
+              },
+              "truncated": {
+                "type": "boolean",
+                "description": "付费任务超过1000条，只核对最近1000条；数量为下限。"
+              }
+            }
+          },
+          "freshness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "queriedAt",
+              "stale",
+              "unavailable"
+            ],
+            "properties": {
+              "queriedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "unavailable": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      },
+      "QqXboardSelection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "selectedAccountLinkId",
+          "appliedAt",
+          "replayed"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "selectedAccountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "appliedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "QqXboardResetIntentRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "platformId",
+          "requestId"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "platformId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{4,19}$",
+            "description": "必须取自可信平台事件的真实 sender ID，不能取命令参数。"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "QqXboardResetConfirmRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "platformId",
+          "intentId",
+          "confirmationCode",
+          "requestId"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "platformId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{4,19}$",
+            "description": "必须取自可信平台事件的真实 sender ID，不能取命令参数。"
+          },
+          "intentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmationCode": {
+            "type": "string",
+            "pattern": "^[A-Z2-7]{6}$"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "QqXboardResetStatusRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "platformId",
+          "operationId"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "platformId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{4,19}$",
+            "description": "必须取自可信平台事件的真实 sender ID，不能取命令参数。"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "QqXboardResetIntent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "intentId",
+          "accountLinkId",
+          "confirmationCode",
+          "expiresAt",
+          "expired",
+          "consumes"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "intentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "confirmationCode": {
+            "type": "string",
+            "pattern": "^[A-Z2-7]{6}$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "consumes": {
+            "type": "integer",
+            "enum": [
+              1
+            ]
+          }
+        }
+      },
+      "QqXboardResetAccepted": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "operationId",
+          "status",
+          "replayed"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "sending",
+              "needs_reconcile",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "QqXboardResetSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "plan_id",
+          "transfer_enable",
+          "expired_at",
+          "last_reset_at",
+          "reset_count",
+          "next_reset_at",
+          "u",
+          "d"
+        ],
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "nullable": true
+          },
+          "transfer_enable": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "expired_at": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "nullable": true
+          },
+          "last_reset_at": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "nullable": true
+          },
+          "reset_count": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "next_reset_at": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$",
+            "nullable": true
+          },
+          "u": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          },
+          "d": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)$"
+          }
+        }
+      },
+      "QqXboardResetStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "operationId",
+          "accountLinkId",
+          "status",
+          "errorCode",
+          "completedAt",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "sending",
+              "needs_reconcile",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "有界错误/等待原因，不含远端响应原文。"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QqXboardResetSnapshot"
+              }
+            ],
+            "nullable": true
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QqXboardResetSnapshot"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "QqXboardResetIntentStatusRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "platform",
+          "platformId",
+          "intentId"
+        ],
+        "properties": {
+          "platform": {
+            "type": "string",
+            "enum": [
+              "qq"
+            ]
+          },
+          "platformId": {
+            "type": "string",
+            "pattern": "^[1-9][0-9]{4,19}$",
+            "description": "必须取自可信平台事件的真实 sender ID，不能取命令参数。"
+          },
+          "intentId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "QqXboardResetIntentOperation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationId",
+          "accountLinkId",
+          "status",
+          "errorCode",
+          "completedAt",
+          "before",
+          "after"
+        ],
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "accountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "sending",
+              "needs_reconcile",
+              "succeeded",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "errorCode": {
+            "type": "string",
+            "nullable": true,
+            "description": "有界错误/等待原因，不含远端响应原文。"
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "before": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QqXboardResetSnapshot"
+              }
+            ],
+            "nullable": true
+          },
+          "after": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QqXboardResetSnapshot"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "QqXboardResetIntentStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "intentId",
+          "operation"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "intentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/QqXboardResetIntentOperation"
+              }
+            ],
+            "nullable": true,
+            "description": "尚未观察到已提交的 operation 时为 null；不代表确认绝未接受，不能据此释放或创建另一重置。"
+          }
+        }
+      },
+      "PaidResetCheckoutPreview": {
+        "type": "object",
+        "required": [
+          "accounts",
+          "selectedAccountLinkId",
+          "targetVersion",
+          "eligible",
+          "blockReason"
+        ],
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "maskedEmail"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "maskedEmail": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "selectedAccountLinkId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "targetVersion": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$",
+            "nullable": true
+          },
+          "eligible": {
+            "type": "boolean"
+          },
+          "blockReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "description": "仅当前用户当前实例的 active 关联；多个账号需选择。无远端用户 ID、邮箱原文或原始远端错误。仅剩一个账号时可预选。"
+      },
+      "CheckoutPreview": {
+        "type": "object",
+        "required": [
+          "productId",
+          "offerId",
+          "price",
+          "purchasable",
+          "purchaseForm",
+          "purchaseFormVersion",
+          "checkoutVersion",
+          "requiresProvisionEmailProof"
+        ],
+        "properties": {
+          "productId": {
+            "type": "integer"
+          },
+          "offerId": {
+            "type": "integer"
+          },
+          "price": {
+            "type": "integer"
+          },
+          "purchasable": {
+            "type": "boolean"
+          },
+          "unpurchasableReason": {
+            "type": "string"
+          },
+          "purchaseForm": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "purchaseFormVersion": {
+            "type": "string"
+          },
+          "checkoutVersion": {
+            "type": "string"
+          },
+          "requiresProvisionEmailProof": {
+            "type": "boolean"
+          },
+          "xboardPaidReset": {
+            "$ref": "#/components/schemas/PaidResetCheckoutPreview"
+          }
+        },
+        "additionalProperties": true,
+        "description": "现有积分、内容、条款和报价字段保留；稳定账号 reset 时过滤邮箱表单字段，表单版本仍覆盖原完整配置。无新购名额摘要，资格由新鲜远端预检决定。"
+      },
+      "QqXboardPurchaseReset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bound",
+          "accountLinkId",
+          "purchase",
+          "blockReason"
+        ],
+        "properties": {
+          "bound": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "accountLinkId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "blockReason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "NO_OFFER",
+              "SUBSCRIPTION_INELIGIBLE",
+              null
+            ]
+          },
+          "purchase": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": false,
+            "required": [
+              "productId",
+              "offerId",
+              "accountLinkId",
+              "price"
+            ],
+            "properties": {
+              "productId": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "offerId": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              "accountLinkId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "price": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "积分参考价；网站重取报价，不构成支付授权。"
+              }
+            }
+          }
+        }
       }
     },
     "responses": {
@@ -5354,7 +6461,7 @@
           "Orders"
         ],
         "summary": "兑换商品；商家商品会同步生成结算记录",
-        "description": "事务内执行：锁定一条 `available` 库存 → 扣积分 + 写 `PointLog` → 创建 `Order` + `Delivery` → 商家商品则同步创建 `Settlement(pending)`。库存为零或积分不足时整事务回滚。",
+        "description": "事务内执行：锁定一条 `available` 库存 → 扣积分 + 写 `PointLog` → 创建 `Order` + `Delivery` → 商家商品则同步创建 `Settlement(pending)`。库存为零或积分不足时整事务回滚。 稳定账号付费重置须启用 XBOARD_PAID_RESET_TARGET_V2_ENABLED，并携带本人 xboardAccountLinkId 和预览 targetVersion。仅此分支免 Xboard 邮箱 OTP 与新增订阅人数容量门槛，价格、库存、权限和站内验证保持；建单冻结积分，v2 履约成功后扣款。原 v1 订单仍按原协议对账。",
         "security": [
           {
             "bearerAuth": []
@@ -5372,6 +6479,20 @@
                 "properties": {
                   "productId": {
                     "type": "integer"
+                  },
+                  "offerId": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "xboardAccountLinkId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "仅稳定账号 reset 规格使用；必须属于当前用户，与 expectedXboardTargetVersion 同时提供。"
+                  },
+                  "expectedXboardTargetVersion": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$",
+                    "description": "本人账号及实例/稳定目标/SKU 的预览版本，纳入幂等指纹；该值本身不授予权限。"
                   }
                 }
               }
@@ -5395,7 +6516,19 @@
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "稳定账号付费重置必须提供；同意图复用，同键异账号/目标版本拒绝。",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
       },
       "get": {
         "tags": [
@@ -9617,6 +10750,935 @@
           },
           "400": {
             "$ref": "#/components/responses/ValidationError"
+          }
+        }
+      }
+    },
+    "/api/storefront/candidates": {
+      "get": {
+        "tags": [
+          "Products"
+        ],
+        "summary": "商城推广与精选候选，一次返回经实时可见性校验的批量公开卡片",
+        "description": "可选登录态决定 guest/member 视角。每类至多6项，分类在选取前过滤；未知或无权查看的分类均返回空候选。一类选取失败可降级返回另一类。无完整卡片响应缓存，不扩张原有撤销窗口；响应 Cache-Control: private, no-store。旧 sponsored/editorial/summaries 路径保留兼容。",
+        "security": [
+          {},
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "categoryCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 64,
+              "pattern": "^[a-z][a-z0-9_-]{1,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "候选卡片；任一来源不可用时允许该来源为空",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorefrontCandidates"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/accounts": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "列出当前 QQ 绑定用户的套餐账号",
+        "description": "仅 POST、无 query/尾斜杠。完整路径与实际原始报文参与签名；时间窗 ±300000ms。Redis 原子 nonce 去重 601000ms，不可用时拒绝。流量快照 15 秒，瞬时故障仅可返回 60 秒内旧值并标记；无快照 subscription=null，绝不伪造零。群聊展示边界由持有 bot 密钥的可信 AstrBot 适配器执行。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardAccountsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "未绑定返回 bound=false；已绑定按对应 DTO 返回，Cache-Control: private, no-store。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QqXboardUnbound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QqXboardAccounts"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "账号引用不属于当前绑定用户/实例"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "查询开关/实例/桥接能力/防重放存储不可用"
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/profile": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "查询指定或默认套餐账号流量",
+        "description": "仅 POST、无 query/尾斜杠。完整路径与实际原始报文参与签名；时间窗 ±300000ms。Redis 原子 nonce 去重 601000ms，不可用时拒绝。流量快照 15 秒，瞬时故障仅可返回 60 秒内旧值并标记；无快照 subscription=null，绝不伪造零。群聊展示边界由持有 bot 密钥的可信 AstrBot 适配器执行。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "未绑定返回 bound=false；已绑定按对应 DTO 返回，Cache-Control: private, no-store。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QqXboardUnbound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QqXboardProfile"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "账号引用不属于当前绑定用户/实例"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "查询开关/实例/桥接能力/防重放存储不可用"
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/select-default": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "幂等选择本人的默认套餐账号",
+        "description": "仅 POST、无 query/尾斜杠。完整路径与实际原始报文参与签名；时间窗 ±300000ms。Redis 原子 nonce 去重 601000ms，不可用时拒绝。流量快照 15 秒，瞬时故障仅可返回 60 秒内旧值并标记；无快照 subscription=null，绝不伪造零。群聊展示边界由持有 bot 密钥的可信 AstrBot 适配器执行。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardSelectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "未绑定返回 bound=false；已绑定按对应 DTO 返回，Cache-Control: private, no-store。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QqXboardUnbound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QqXboardSelection"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "账号引用不属于当前绑定用户/实例"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "查询开关/实例/桥接能力/防重放存储不可用"
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/reset-intents": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "创建免费重置确认意图",
+        "description": "复用 QQ v2 原始字节 HMAC、Redis 防重放及当前绑定授权；无 query，严格 DTO，8 KiB/no-store。每个绑定用户共享 10 次/分钟。新业务请求受免费请求开关控制；已有 operation 可在关闭新请求后查询/重放。合法重试使用新 nonce，保持 requestId。 确认码 6 位 Base32、120 秒；冻结当前目标及套餐指纹。同 requestId 重放返回原意图（可能已过期），切换默认不改目标。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardResetIntentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "未绑定返回 bound=false；已绑定返回对应 DTO。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QqXboardUnbound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QqXboardResetIntent"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法；确认码错误或累计过多为 TRAFFIC_RESET_CONFIRMATION_INVALID"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "账号引用不属于当前绑定用户/实例"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED / TRAFFIC_RESET_INELIGIBLE / TRAFFIC_RESET_INTENT_EXPIRED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "查询开关/实例/桥接能力/防重放存储不可用 / TRAFFIC_RESET_UNAVAILABLE（新请求开关、确认密钥或插件写能力不满足）"
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/resets": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "确认免费重置并预占一次机会",
+        "description": "复用 QQ v2 原始字节 HMAC、Redis 防重放及当前绑定授权；无 query，严格 DTO，8 KiB/no-store。每个绑定用户共享 10 次/分钟。新业务请求受免费请求开关控制；已有 operation 可在关闭新请求后查询/重放。合法重试使用新 nonce，保持 requestId。 确认错误累计最多 5 次；每个意图只创建一个 operation，成功重放用的新 requestId 同样永久绑定原操作，异参 409。202 仅表示接受，成功必须看 status。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardResetConfirmRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "QQ 尚未绑定。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QqXboardUnbound"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法；确认码错误或累计过多为 TRAFFIC_RESET_CONFIRMATION_INVALID"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "账号引用不属于当前绑定用户/实例"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED / TRAFFIC_RESET_INELIGIBLE / TRAFFIC_RESET_INTENT_EXPIRED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "查询开关/实例/桥接能力/防重放存储不可用 / TRAFFIC_RESET_UNAVAILABLE（新请求开关、确认密钥或插件写能力不满足）"
+          },
+          "202": {
+            "description": "已绑定响应；Cache-Control: private, no-store。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QqXboardResetAccepted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/reset-status": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "查询本人的免费重置进度",
+        "description": "复用 QQ v2 原始字节 HMAC、Redis 防重放及当前绑定授权；无 query，严格 DTO，8 KiB/no-store。每个绑定用户共享 10 次/分钟。新业务请求受免费请求开关控制；已有 operation 可在关闭新请求后查询/重放。合法重试使用新 nonce，保持 requestId。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardResetStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "未绑定返回 bound=false；已绑定返回对应 DTO。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QqXboardUnbound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QqXboardResetStatus"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法；确认码错误或累计过多为 TRAFFIC_RESET_CONFIRMATION_INVALID"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "账号引用不属于当前绑定用户/实例"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED / TRAFFIC_RESET_INELIGIBLE / TRAFFIC_RESET_INTENT_EXPIRED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "查询开关/实例/桥接能力/防重放存储不可用 / TRAFFIC_RESET_UNAVAILABLE（新请求开关、确认密钥或插件写能力不满足）"
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/reset-intent-status": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "通过原确认意图找回已接受的重置操作",
+        "description": "仅本人当前原 QQ 绑定及实例可读；意图过期、新请求/派发关闭后仍可查询。复用原始 bytes HMAC v2、nonce、严格 DTO、8 KiB/no-store 及共享限流。只读取本地已提交 operation，不创建、预占或调用远端。operation=null 仅表示当前未观察到，可能存在尚未提交的确认；原请求号保持不变。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardResetIntentStatusRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "未绑定返回 bound=false；已绑定返回对应 DTO。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QqXboardUnbound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QqXboardResetIntentStatus"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法；确认码错误或累计过多为 TRAFFIC_RESET_CONFIRMATION_INVALID"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "不存在、其他用户/实例或已变更 QQ 绑定的意图，统一不透露存在性"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED / TRAFFIC_RESET_INELIGIBLE / TRAFFIC_RESET_INTENT_EXPIRED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "查询开关/实例/桥接能力/防重放存储不可用 / TRAFFIC_RESET_UNAVAILABLE（新请求开关、确认密钥或插件写能力不满足）"
+          }
+        }
+      }
+    },
+    "/api/checkout/preview": {
+      "get": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "本人结账预览与可选稳定账号付费重置预检",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "productId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "offerId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "xboardAccountLinkId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "no-store；只读，不预占、不创建订单",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "查询参数或规格不适用"
+          },
+          "401": {
+            "description": "未登录"
+          },
+          "404": {
+            "description": "账号不存在或不属于本人"
+          },
+          "409": {
+            "description": "关联待核验或结账目标变化"
+          },
+          "503": {
+            "description": "目标实例、能力或远端预检不可用；不回退邮箱身份"
+          }
+        }
+      }
+    },
+    "/api/bot/v2/xboard/purchase-reset": {
+      "post": {
+        "tags": [
+          "QQ Xboard"
+        ],
+        "summary": "读取当前本人账号套餐对应的付费重置购买引用",
+        "description": "只读且不扣款。复用严格原始字节签名/Redis nonce/绑定用户限流与 no-store；必须开启 XBOARD_PAID_RESET_TARGET_V2_ENABLED。可选 accountLinkId；多账号无默认需选择。新鲜稳定 ID 订阅读取当前 plan，精确匹配 reset_traffic/reset_price、active 商品/规格、本地库存及商家状态，使用付费 capability/preview 重验，等待后重验授权和商品。返回 typed IDs，不接收/返回任意 URL 或邮箱。适配器仅在私聊调用，并在其固定 HTTPS origin 构造 /product/{productId}?offerId={offerId}&xboardAccountLinkId={UUID}。网站必须另行校验归属、资格、价格和付款。无可售规格/资格不符返回 purchase=null 与有限 blockReason。",
+        "security": [
+          {
+            "BotV2Hmac": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "x-monexus-signature-version",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "x-monexus-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9][0-9]{0,15})$"
+            }
+          },
+          {
+            "name": "x-monexus-nonce",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QqXboardProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "未绑定返回 bound=false；已绑定按对应 DTO 返回，Cache-Control: private, no-store。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/QqXboardUnbound"
+                    },
+                    {
+                      "$ref": "#/components/schemas/QqXboardPurchaseReset"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "严格 DTO / JSON 不合法"
+          },
+          "401": {
+            "description": "签名、版本、路径、时间窗或唯一头无效"
+          },
+          "403": {
+            "description": "站内用户状态不可用"
+          },
+          "404": {
+            "description": "账号引用不属于当前绑定用户/实例"
+          },
+          "409": {
+            "description": "BOT_REQUEST_REPLAYED / XBOARD_BINDING_CHANGED / XBOARD_ACCOUNT_UNRESOLVED / XBOARD_ACCOUNT_SELECTION_REQUIRED / IDEMPOTENCY_KEY_REUSED"
+          },
+          "413": {
+            "description": "原始请求超过 8 KiB"
+          },
+          "415": {
+            "description": "不支持压缩请求体"
+          },
+          "429": {
+            "description": "机器人主机 600/分钟或绑定用户 10/分钟限流"
+          },
+          "503": {
+            "description": "XBOARD_PAID_RESET_UNAVAILABLE / XBOARD_CAPABILITY_UNAVAILABLE，或签名防重放服务不可用"
           }
         }
       }

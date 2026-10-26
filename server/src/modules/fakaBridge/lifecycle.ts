@@ -1,3 +1,4 @@
+import { grantForOrderInTx } from '../trafficReset/benefits.js'
 /**
  * FakaBridge refund + revoke + reconcile hooks.
  * Keep side-effects out of order state machine transactions where possible;
@@ -23,6 +24,9 @@ import { isLeaseExpiredUtc, readTaskScheduleUtc } from '../../lib/fakaBridge/sch
 import { parseFakaExpiredAt } from '../../lib/fakaBridge/expiredAt.js'
 import { buildFakaDeliveryPayload, subscriptionFromPaidBody } from '../../lib/fakaBridge/subscriptionResult.js'
 import type { FakaSubscriptionResult } from '../../lib/fakaBridge/types.js'
+import { callPaidTask, invalidatePaidSnapshot, paidEvidenceMatches, paidExpiry, paidProof, paidSubscription, sameTaskIdentity,
+  taskIdentity, type TaskIdentity } from './paidTask.js'
+import type { PaidResetResult } from '../../lib/fakaBridge/paidResetV2.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -74,6 +78,15 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
 
   const leaseExpired = await isLeaseExpiredUtc(tx, task.id)
   const inFlight = task.status === 'pending' && !leaseExpired
+  if (task.protocolVersion === 2) {
+    if (task.revokeStatus === 'succeeded') return
+    await tx.fakaBridgeTask.update({ where: { id: task.id }, data: {
+      cancelRequested: true, revokeStatus: 'pending', nextAttemptAt: new Date(),
+      ...(!leaseExpired ? {} : { status: 'needs_reconcile', leaseToken: null, leaseUntil: null }),
+      reconcileNote: 'paid reset refund: require stable-target revoke tombstone',
+    } })
+    return
+  }
   // attempts is incremented at claim; any prior claim means remote may have been called
   // (even after clearLeaseKeepPending left lease empty).
   const mayHaveDispatched = task.attempts > 0
@@ -201,7 +214,8 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
     return {
       id: task.id,
       orderId: task.orderId,
-      requestOrderNo: task.requestOrderNo,
+      ...taskIdentity(task),
+      resultVersion: task.resultVersion,
       revokeAttempts: attempts,
       leaseToken,
     }
@@ -214,6 +228,8 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
 
   const task = claimed
   const attempts = claimed.revokeAttempts
+
+  if (task.protocolVersion === 2) return processPaidRevokeClaim(claimed)
 
   const result = await callFakaOrderRevoke(
     task.requestOrderNo,
@@ -331,6 +347,53 @@ export async function runFakaRevokeBatch(limit = 10): Promise<number> {
   return n
 }
 
+async function processPaidRevokeClaim(claimed: TaskIdentity & {
+  id: number; orderId: number; leaseToken: string; resultVersion: number; revokeAttempts: number
+}): Promise<'succeeded' | 'failed' | 'skipped'> {
+  const response = await callPaidTask('paid-reset-revoke', claimed, clientOverrides())
+  if (!response.ok) {
+    // No 404 shortcut: the original execute could still arrive later.
+    const updated = await prisma.fakaBridgeTask.updateMany({ where: { id: claimed.id, leaseToken: claimed.leaseToken,
+      revokeStatus: 'pending', resultVersion: claimed.resultVersion, ...taskIdentity(claimed) }, data: {
+      revokeStatus: claimed.revokeAttempts >= MAX_REVOKE_ATTEMPTS ? 'failed' : 'pending',
+      lastRevokeError: 'PAID_RESET_REVOKE_UNCONFIRMED', leaseToken: null, leaseUntil: null,
+      nextAttemptAt: new Date(Date.now() + revokeBackoffMs(claimed.revokeAttempts)),
+      reconcileNote: 'paid reset revoke unconfirmed; held points retained, operator retry required after exhaustion',
+    } })
+    return updated.count === 1 ? 'failed' : 'skipped'
+  }
+  const op = response.body.operation
+  const applied = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${claimed.orderId} FOR UPDATE`
+    const current = await tx.fakaBridgeTask.findUnique({ where: { id: claimed.id } })
+    if (!current || current.leaseToken !== claimed.leaseToken || current.revokeStatus !== 'pending'
+      || current.resultVersion !== claimed.resultVersion || !sameTaskIdentity(current, claimed)) return false
+    if (!paidEvidenceMatches(current.paidResetResult, op)) {
+      await tx.fakaBridgeTask.update({ where: { id: current.id }, data: {
+        revokeStatus: 'failed', lastRevokeError: 'PAID_RESET_EVIDENCE_CONFLICT', leaseToken: null, leaseUntil: null,
+        reconcileNote: 'remote revoke conflicts with stored execution evidence; operator review required',
+      } })
+      return false
+    }
+    const order = await tx.order.findUniqueOrThrow({ where: { id: claimed.orderId } })
+    await tx.fakaBridgeTask.update({ where: { id: claimed.id }, data: {
+      ...paidProof(op), status: op.after ? 'succeeded' : 'cancelled', xboardTradeNo: op.trade_no,
+      completedAt: current.completedAt ?? new Date(), revokeStatus: 'succeeded', revokedAt: new Date(),
+      lastRevokeError: null, cancelRequested: true, leaseToken: null, leaseUntil: null,
+      reconcileNote: 'paid reset revoked; original subscription unchanged',
+    } })
+    if (order.status === 'pending') {
+      await transitionOrderStatus({ orderId: order.id, toStatus: 'refunded', actorRole: 'system',
+        action: 'system.faka_bridge.paid_reset_cancel_refund', publicNote: '流量重置订单已取消，积分已退回' }, tx)
+      await releaseHeldOrder(tx, order, `Xboard 重置撤销退款: #${order.id}`)
+      await applyRefundInventoryPolicy(tx, order, { fromStatus: 'pending', actorUserId: order.userId })
+    }
+    return true
+  })
+  if (applied) invalidatePaidSnapshot(claimed, op)
+  return applied ? 'succeeded' : 'skipped'
+}
+
 export type StuckFakaTaskRow = {
   id: number
   orderId: number
@@ -393,7 +456,7 @@ export async function selectStuckFakaTasksForReconcile(
  * the lease of a revoke/provision worker that claimed the row while HTTP was
  * in flight.
  */
-type ReconcileTaskSnapshot = Pick<
+type ReconcileTaskSnapshot = TaskIdentity & Pick<
   FakaBridgeTask,
   | 'id'
   | 'orderId'
@@ -412,6 +475,7 @@ type ReconcileTaskSnapshot = Pick<
   | 'revokedAt'
   | 'lastRevokeError'
   | 'reconcileNote'
+  | 'resultVersion'
 >
 
 function snapshotReconcileTask(task: FakaBridgeTask): ReconcileTaskSnapshot {
@@ -433,6 +497,8 @@ function snapshotReconcileTask(task: FakaBridgeTask): ReconcileTaskSnapshot {
     revokedAt: task.revokedAt,
     lastRevokeError: task.lastRevokeError,
     reconcileNote: task.reconcileNote,
+    ...taskIdentity(task),
+    resultVersion: task.resultVersion,
   }
 }
 
@@ -447,6 +513,7 @@ function sameReconcileTaskSnapshot(
   return (
     current.id === snapshot.id &&
     current.orderId === snapshot.orderId &&
+    sameTaskIdentity(current, snapshot) && current.resultVersion === snapshot.resultVersion &&
     current.status === snapshot.status &&
     current.cancelRequested === snapshot.cancelRequested &&
     current.attempts === snapshot.attempts &&
@@ -467,6 +534,9 @@ function sameReconcileTaskSnapshot(
 
 function reconcileTaskSnapshotWhere(snapshot: ReconcileTaskSnapshot): Prisma.FakaBridgeTaskWhereInput {
   return {
+    ...taskIdentity(snapshot),
+    orderId: snapshot.orderId,
+    resultVersion: snapshot.resultVersion,
     id: snapshot.id,
     status: snapshot.status,
     cancelRequested: snapshot.cancelRequested,
@@ -522,6 +592,51 @@ async function updateReconcileTaskIfCurrent(
   })
 }
 
+async function reconcilePaidTask(full: FakaBridgeTask, snapshot: ReconcileTaskSnapshot): Promise<boolean> {
+  if (full.revokeStatus === 'failed' || full.revokeStatus === 'pending') return false
+  const queueCancel = () => updateReconcileTaskIfCurrent(snapshot, {
+    status: 'needs_reconcile', cancelRequested: true, revokeStatus: 'pending', nextAttemptAt: new Date(),
+    leaseToken: null, leaseUntil: null, reconcileNote: 'paid reset uncertain; require revoke tombstone before refund',
+  }, { allowedOrderStatuses: ['pending'] })
+  if (full.cancelRequested) return queueCancel()
+  const response = await callPaidTask('paid-reset-status', full, clientOverrides())
+  if (response.ok) {
+    const op = response.body.operation
+    if (!paidEvidenceMatches(full.paidResetResult, op)) return updateReconcileTaskIfCurrent(snapshot, {
+      nextAttemptAt: new Date(Date.now() + RECONCILE_COOLDOWN_MS),
+      reconcileNote: 'remote paid reset status conflicts with stored execution evidence; held points retained',
+    }, { allowedOrderStatuses: ['pending'] })
+    if (op.status === 'completed') {
+      let expiry: Date | null
+      try { expiry = paidExpiry(op) } catch {
+        return updateReconcileTaskIfCurrent(snapshot, {
+          nextAttemptAt: new Date(Date.now() + RECONCILE_COOLDOWN_MS),
+          reconcileNote: 'unrepresentable paid reset expiry; held points retained',
+        }, { allowedOrderStatuses: ['pending'] })
+      }
+      const delivered = await tryDeliverPendingOrder(snapshot, op.trade_no, full.emailSnapshot, {
+        ...paidProof(op), status: 'succeeded', xboardTradeNo: op.trade_no, completedAt: new Date(),
+        lastError: null, leaseToken: null, leaseUntil: null,
+      }, expiry, paidSubscription(op))
+      if (delivered) invalidatePaidSnapshot(full, op)
+      // A refund may have won while status was in flight; the refund hook will
+      // queue a revoke. Never replace that newer lifecycle from this response.
+      return delivered
+    }
+    if (op.status === 'failed' || op.status === 'revoked') return tryRefundPendingOrder(snapshot, op.status, op)
+    // Missing is not a refund proof. Retry the SAME semantic order while within
+    // the limit; after exhaustion, enqueue the serialized cancellation worker.
+    if (full.attempts < full.maxAttempts) return updateReconcileTaskIfCurrent(snapshot, {
+      status: 'pending', nextAttemptAt: new Date(), reconcileNote: 'paid reset not observed; retry same frozen target',
+    }, { allowedOrderStatuses: ['pending'] })
+  }
+  if (full.attempts >= full.maxAttempts) return queueCancel()
+  return updateReconcileTaskIfCurrent(snapshot, {
+    status: 'needs_reconcile', nextAttemptAt: new Date(Date.now() + RECONCILE_COOLDOWN_MS),
+    reconcileNote: 'paid reset status unavailable; keep held points and stable protocol',
+  }, { allowedOrderStatuses: ['pending'] })
+}
+
 /**
  * Reconcile half-success states via order-status (unified classification):
  * - opened → deliver (order pending) or queue revoke (order refunded)
@@ -561,6 +676,16 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     const fullSnapshot = snapshotReconcileTask(full)
     const leaseExpired = await isLeaseExpiredUtc(prisma, full.id)
     const inFlight = full.status === 'pending' && !leaseExpired
+
+    if (full.protocolVersion === 2) {
+      if (full.revokeStatus !== 'succeeded' && full.revokeStatus !== 'failed' && full.revokeStatus !== 'pending') {
+        const queued = await updateReconcileTaskIfCurrent(fullSnapshot,
+          { cancelRequested: true, revokeStatus: 'pending', nextAttemptAt: new Date() },
+          { allowedOrderStatuses: ['refunded'], requireExpiredLease: false })
+        if (queued) actions++
+      }
+      continue
+    }
 
     // Defer status probes until nextAttemptAt (UTC; 5‑minute park after intermediate).
     // Still process in-flight cancel_requested and pure revoke queue without waiting.
@@ -731,6 +856,11 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     const schedule = await readTaskScheduleUtc(prisma, full.id)
     if (!schedule?.leaseExpired || !schedule.nextAttemptDue) continue
 
+    if (full.protocolVersion === 2) {
+      if (await reconcilePaidTask(full, snapshot)) actions++
+      continue
+    }
+
     if (full.status === 'succeeded') {
       // Task already succeeded without MN delivery (race). Probe status for
       // expired_at when possible so we don't fall back to validityDays-only.
@@ -889,7 +1019,8 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
 /** Refund a still-pending order when remote is definitively not opened. */
 async function tryRefundPendingOrder(
   snapshot: ReconcileTaskSnapshot,
-  reason: string
+  reason: string,
+  paidResult?: PaidResetResult
 ): Promise<boolean> {
   const { id: taskId, orderId } = snapshot
   try {
@@ -929,6 +1060,13 @@ async function tryRefundPendingOrder(
           leaseUntil: null,
           cancelRequested: true,
           reconcileNote: `reconcile: remote ${reason} → refund held points`,
+          ...(paidResult ? {
+            ...paidProof(paidResult),
+            ...(paidResult.status === 'revoked' ? {
+              status: paidResult.after ? 'succeeded' : 'cancelled', xboardTradeNo: paidResult.trade_no,
+              revokeStatus: 'succeeded', revokedAt: new Date(),
+            } : {}),
+          } : {}),
         },
       })
       if (taskUpdated.count !== 1) return false
@@ -979,20 +1117,13 @@ export async function syncFakaExpiresAtFromRemote(
   }
   const task = await prisma.fakaBridgeTask.findUnique({
     where: { id: taskId },
-    select: {
-      id: true,
-      orderId: true,
-      status: true,
-      requestOrderNo: true,
-      emailSnapshot: true,
-      order: {
-        select: {
-          status: true,
-          delivery: { select: { expiresAt: true } },
-        },
-      },
-    },
+    include: { order: { select: { status: true, delivery: { select: { expiresAt: true } } } } },
   })
+  if (task?.protocolVersion === 2) {
+    return { aligned: false, orderId: task.orderId, expiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      previousExpiresAt: task.order.delivery?.expiresAt?.toISOString() ?? null,
+      message: 'paid reset expiry is frozen execution evidence; no current-subscription expiry sync' }
+  }
   if (!task) throw new Error('FakaBridge task not found')
   if (task.status !== 'succeeded') {
     return {
@@ -1159,13 +1290,14 @@ async function tryDeliverPendingOrder(
           internalNote: tradeNo
             ? `trade_no=${tradeNo}; reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`
             : `reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`,
-          ...(remoteExpiredAt ? { expiresAtOverride: remoteExpiredAt } : {}),
+          ...(remoteExpiredAt || snapshot.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
         },
         tx
       )
       // Reconciled success must capture the same reservation as direct success.
       // The order lock and task CAS keep retries from charging a second time.
       await captureHeldOrder(tx, deliveredOrder, `Xboard 对账开通成功扣款: #${deliveredOrder.id}`)
+      await grantForOrderInTx(tx, deliveredOrder.id)
       return true
     })
   } catch (err) {
