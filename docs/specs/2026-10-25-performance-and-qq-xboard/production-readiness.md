@@ -4,11 +4,11 @@
 
 ## 2026-10-26 执行进度
 
-用户已授权代理执行。Xboard 已从固定输入构建并升级至补丁镜像，FakaBridge 1.8.0 与三个新增迁移已落地；v2 查询已启用，免费/付费执行关闭。Web/Horizon 同一持久 SQLite 文件，商城旧发布已恢复健康。AstrBot 新插件文件已安装、默认开关关闭，尚未重载。
+用户已授权代理执行。Xboard 已从固定输入构建并升级至补丁镜像，FakaBridge 1.8.0 与三个新增迁移已落地；v2 查询已启用，免费/付费执行关闭。Web/Horizon 同一持久 SQLite 文件，商城旧发布已恢复健康。AstrBot 新插件已通过上传安装接口定向加载，原 31 个插件登记状态保留，三个新功能开关关闭。
 
-数据库备份及恢复验证已完成；真实 Kernel 在生产 SQLite 副本上完成升级演练。升级时发现上游入口脚本 chown 共享 Redis 目录，已通过 PHP 只读 Redis 挂载与恢复正确属主修复，BGSAVE 成功。后续必须保留 `/root/Xboard/compose.override.yaml`，不能只使用基础 compose 绕过此覆盖文件。
+签名 v2 capabilities 和既有 v1 套餐目录均已返回 HTTP 200，buildId 与本次清单一致；执行能力关闭。持续检查 Web/Horizon 重启计数均为 0。数据库备份及恢复验证已完成；真实 Kernel 在生产 SQLite 副本上完成升级演练。升级时发现上游入口脚本 chown 共享 Redis 目录，已通过 PHP 只读 Redis 挂载与恢复正确属主修复，BGSAVE 成功。后续必须保留 `/root/Xboard/compose.override.yaml`，不能只使用基础 compose 绕过此覆盖文件。
 
-MoNexus PR #307 正在按既有流程验收；新应用与 Prisma 迁移尚未部署。自有测试账号、真实 QQ/重置/付款及性能指标仍待完成。详细证据见 [第十四批实施记录](./implementation-log.md)。以下第 1/2 节保留升级前核对结果，作为变更对照；第 3 节起是各阶段操作说明，不能将尚未执行的步骤当作完成。
+MoNexus PR #307 的修复提交 f14f5e3 已通过全部必需 CI，合并到 develop（2dcf38a）；master 发布 PR 正按既有流程准备。新应用与 Prisma 迁移尚未部署。自有测试账号、真实 QQ/重置/付款及性能指标仍待完成。详细证据见 [第十四批实施记录](./implementation-log.md)。以下第 1/2 节保留升级前核对结果，作为变更对照；第 3 节起是各阶段操作说明，不能将尚未执行的步骤当作完成。
 
 ## 1. 升级前结论
 
