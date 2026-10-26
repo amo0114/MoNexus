@@ -20,7 +20,7 @@ test('URL target, account choice and confirmed target version reach one paid res
   await page.addInitScript(({ user, accessToken }) => {
     localStorage.setItem('monexus-auth', JSON.stringify({ state: { user, accessToken, isLoggedIn: true }, version: 0 }))
   }, { user, accessToken: createMockAccessToken(user) })
-  await page.route('**/api/**', async route => {
+  await page.route(url => url.pathname.startsWith('/api/'), async route => {
     const req = route.request(), url = new URL(req.url()), path = url.pathname
     if (path.includes('/provision-email/')) emailRequests.push(path)
     if (path === '/api/auth/me') return route.fulfill({ json: user })

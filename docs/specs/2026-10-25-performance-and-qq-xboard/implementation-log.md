@@ -520,3 +520,27 @@ AstrBot 版本 **0.2.0**。安装包 `/tmp/astrbot_plugin_monexus_xboard-0.2.0.z
 先恢复SSH可达性并完成horizon同库、全部消费者与一致性备份核对，再收口MoNexus正式发布身份/所需CI与镜像、执行新插件/Prisma迁移和真实QQ验收。尚无生产历史覆盖/正式灰度allowlist、掉电/文件系统故障、所有第三方购买/节点写路径的全站证据；不把最小schema文件夹具称为完整生产验收。性能P0与P3仍未完成。
 
 原MoNexus diff/status SHA256与既有基线完全一致，原Mo-lab main仍干净；两个实施worktree HEAD未变，改动保留未提交。新测试服务/文件位于可丢弃容器，未操作旧停止的集成容器。没有提交、推送、合并、生产迁移、重启或真实QQ消息。
+
+## 第十四批：冻结发布、可恢复备份与 Xboard 关闭执行升级
+
+用户授权由代理完成部署与联调。两边实施 worktree 冻结并推送：MoNexus `0e80e36c58233b4fe7b7ca9a298fbb127b688407`，PR #307 → develop；Mo-lab `d8f12a8cf4864840b0b1c8320bc1d7b0b4bc146d`，PR #2 已合并，合并提交 `fb29e5013f8631fa2b8992a34b3032d152ef600b`。原用户工作区 diff/status 指纹保持不变。文档跨仓库链接改为可分发的 GitHub 链接。
+
+### 生产预检与备份
+
+- 已通过两台机器 SSH；Xboard 连接曾间歇超时，后通过连接复用继续操作。Web/Horizon 的 SQLite 物理文件身份摘要相同，均为持久化文件、SQLite 3.53.4/WAL。
+- PostgreSQL 只读预检：107 个成功迁移，零失败、零 checksum 差异；仅本次 3 个新增迁移待执行。14 个既有桥接任务均 succeeded，无活动租约或未结清撤销任务。未输出用户记录。
+- 私有备份目录 `/root/monexus-release-backups/20261026-qq-xboard-063032`，权限 0700。SQLite 使用在线 backup API 得到一致快照，`integrity_check=ok`；PostgreSQL 使用 pg_dump，自带 TOC 检查后在 network=none、tmpfs 的临时 PostgreSQL 中成功恢复，确认 107 个迁移。临时库已删除。备份包含部署配置及旧插件；不把备份内容写入仓库。
+- AstrBot 配置、Compose、现有签到插件已备份到插件扫描目录之外的私有目录。新插件 0.2.0 的 10 个文件已安装，三个开关默认关闭，尚未运行重载或真实 QQ 验收。当前 ZIP SHA256 `467bdf40adb2bfd9b4ad21676eacc1ae19b19e6d40bab67f81fc5778ccd6c234`，包含可分发文档链接。
+
+### Xboard 实际升级
+
+- 目标机从固定源包构建，manifest SHA256 仍为 `98f6016641a81ef80101bf8ab2f97c859ba2efe548143a69dbdddc2ed396eda2`，目标机镜像 ID `sha256:c89dfe6da086d12e3fd0baedf546661f4fad0a056c2aaf82da8b2e67f68a0824`，不冒充 registry digest。
+- 在生产 SQLite 备份副本、network=none 的临时容器上启动真实 Kernel，执行 PluginManager 升级：1.4.0 → 1.8.0，三个迁移成功，原配置完整保留，native SQLite 适配、read capability 和免费/付费关闭门槛均通过。副本不挂载生产数据目录。
+- 短暂停止商城 server 与 Xboard PHP 进程，确认桥接任务清空后，完整更新宿主插件、执行生产插件升级迁移，共同重建 Web/Horizon。商城原发布恢复 healthy。运行容器镜像/文件检查通过；免费/付费执行仍关闭。
+- 持续检查发现上游 `/entrypoint.sh` 会递归 chown `/www`，触及嵌套 Redis 数据目录，导致 Redis RDB 权限错误及 PHP 重启。已将 PHP 对 `/data` 和 `/www/.docker/.data/redis` 的挂载改为只读，保持 SQLite 主挂载可写；恢复 Redis 实际运行 UID/GID 后 BGSAVE 成功。没有关闭 Redis stop-writes-on-bgsave-error，也没有 chmod 777。当前 Compose override 保存在 `/root/Xboard/compose.override.yaml`；后续显式 `-f compose.yaml` 操作须同时带上 override。
+
+### CI 与剩余门槛
+
+- 首轮 PR CI 的后端、前端构建、架构、真实 Redis/对象存储等通过，默认 Playwright 分片 2 的新增付费冒烟失败。原因是 `**/api/**` 同时拦截 Vite `/src/api/auth.ts`，夹具返回 404。已改为 URL pathname 必须以 `/api/` 开头，使用 Vite 开发服务单独执行该用例，1 条通过（12.3s）。没有手动重跑全量测试；更新提交后由现有必需 CI 执行。
+- MoNexus 新版本尚未合入 develop/master 或部署，生产仍为 d4c5032；三个 Prisma 迁移尚未执行。正式流程须同 SHA CI/双架构镜像成功并经过 production Environment reviewer。
+- 真实免费/付费验收仍等待用户指定自有测试账号及允许的实际消费；不对普通用户试重置。性能 P0 浏览器/HAR 与 P3 字体/媒体仍未完成，不宣称整项上线验收完成。
