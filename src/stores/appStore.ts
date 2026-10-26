@@ -100,6 +100,7 @@ interface AppState {
   registryStatus: 'idle' | 'loading' | 'ready' | 'error'
   /** 商城搜索/分类（V3 灵动岛）：岛内交互与 StorePage 网格共享同一状态 */
   storeQuery: string
+  storeSearchSubmission: number
   storeCategory: string
   /** 积分流水 Sheet（V3 角色化 Tab Bar）：Tab Bar「积分」与 Profile 按钮共用 */
   pointsHistoryOpen: boolean
@@ -112,6 +113,7 @@ interface AppState {
   orderAttentionCount: number
   setActiveTab: (tab: 'store' | 'profile' | 'admin') => void
   setStoreQuery: (q: string) => void
+  submitStoreSearch: () => void
   setStoreCategory: (c: string) => void
   setPointsHistoryOpen: (open: boolean) => void
   setTabbarHidden: (hidden: boolean) => void
@@ -200,6 +202,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   registry: null,
   registryStatus: 'idle',
   storeQuery: '',
+  storeSearchSubmission: 0,
   storeCategory: '全部',
   pointsHistoryOpen: false,
   tabbarHidden: false,
@@ -210,6 +213,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
   setNotificationStreamState: (state) => set({ notificationStreamState: state }),
   setStoreQuery: (q) => set({ storeQuery: q }),
+  submitStoreSearch: () => set((state) => ({ storeSearchSubmission: state.storeSearchSubmission + 1 })),
   setStoreCategory: (c) => set({ storeCategory: c }),
   setPointsHistoryOpen: (open) => set({ pointsHistoryOpen: open }),
   setTabbarHidden: (hidden) => set({ tabbarHidden: hidden }),

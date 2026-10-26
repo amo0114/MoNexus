@@ -1,17 +1,35 @@
+import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma.js'
 import {
   CATEGORY_GUEST_VISIBILITY,
+  guestVisibleProductIdsSql,
   isCurrentlyPubliclyVisible,
   type ProductAudience,
 } from '../../products/visibility.js'
 
 export async function listEditorialShelf(
-  input: { placement?: string; limit?: number } = {},
+  input: { placement?: string; categoryCode?: string; limit?: number } = {},
   audience: ProductAudience = 'guest',
+  queryTime?: Date,
 ) {
-  const [{ now }] = await prisma.$queryRaw<Array<{ now: Date }>>`SELECT now() AT TIME ZONE 'UTC' AS now`
+  const now = queryTime ?? (await prisma.$queryRaw<Array<{ now: Date }>>`SELECT now() AT TIME ZONE 'UTC' AS now`)[0].now
+  // Prisma cannot compare reviewedRevision on the related eligibility row
+  // with publicContentRevision. Select exact visible feature IDs before LIMIT;
+  // filtering after LIMIT would let outdated approvals consume every slot.
+  const guestIds = audience === 'guest' ? await prisma.$queryRaw<Array<{ id: number }>>(Prisma.sql`
+    SELECT f."id" FROM "EditorialFeature" f
+    WHERE f."status" = 'active' AND f."startsAt" <= ${now} AND f."endsAt" > ${now}
+      ${input.placement ? Prisma.sql`AND f."placement" = ${input.placement}` : Prisma.empty}
+      AND f."productId" IN ${guestVisibleProductIdsSql(
+        input.categoryCode ? Prisma.sql`c."code" = ${input.categoryCode}` : undefined,
+      )}
+    ORDER BY f."sortWeight" DESC, f."id" DESC
+    LIMIT ${input.limit ?? 6}
+  `) : undefined
+  if (guestIds?.length === 0) return []
   const rows = await prisma.editorialFeature.findMany({
     where: {
+      ...(guestIds ? { id: { in: guestIds.map(row => row.id) } } : {}),
       status: 'active',
       startsAt: { lte: now },
       endsAt: { gt: now },
@@ -26,9 +44,14 @@ export async function listEditorialShelf(
         ...(audience === 'guest'
           ? {
               visibility: 'public',
-              category: { is: { guestVisibility: CATEGORY_GUEST_VISIBILITY.PUBLIC } },
             }
           : {}),
+        ...((input.categoryCode || audience === 'guest') ? {
+          category: { is: {
+            ...(input.categoryCode ? { code: input.categoryCode } : {}),
+            ...(audience === 'guest' ? { guestVisibility: CATEGORY_GUEST_VISIBILITY.PUBLIC } : {}),
+          } },
+        } : {}),
         OR: [{ merchantId: null }, { merchant: { status: 'active' } }],
       },
     },

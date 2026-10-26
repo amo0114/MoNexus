@@ -92,8 +92,8 @@ const GUEST_PRODUCT = makeProduct(201, '公开商品')
 
 function mockListByAudience() {
   apiGet.mockImplementation((url: string) => {
-    if (url === '/products/sponsored' || url === '/products/editorial') {
-      return Promise.resolve({ data: { items: [] } })
+    if (url === '/storefront/candidates') {
+      return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
     }
     if (url === '/products') {
       const items = useAuthStore.getState().isLoggedIn ? [MEMBER_PRODUCT] : [GUEST_PRODUCT]
@@ -184,8 +184,8 @@ describe('StorePage audience on logout', () => {
   it('drops an in-flight member page-1 after logout instead of saving it as guest', async () => {
     let resolveMemberList: ((value: unknown) => void) | undefined
     apiGet.mockImplementation((url: string) => {
-      if (url === '/products/sponsored' || url === '/products/editorial') {
-        return Promise.resolve({ data: { items: [] } })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
       }
       if (url === '/products') {
         if (useAuthStore.getState().isLoggedIn) {
@@ -258,8 +258,8 @@ describe('StorePage scroll restoration and BackToTop', () => {
           },
         })
       }
-      if (url === '/products/sponsored' || url === '/products/editorial') {
-        return Promise.resolve({ data: { items: [] } })
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
       }
       return Promise.reject(new Error(`unexpected: ${url}`))
     })

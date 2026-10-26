@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import type { CheckoutPreview } from '../api/orders'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -79,6 +79,16 @@ function renderPage() {
 }
 
 describe('ProductDetailPage createOrder term fields', () => {
+  it('retains the chosen account when a member-only product sends a guest to login', async () => {
+    useAuthStore.setState({ user: null, accessToken: null, isLoggedIn: false })
+    apiGet.mockRejectedValue({ response: { data: { error: { code: 'PRODUCT_LOGIN_REQUIRED' } } } })
+    function LoginTarget() { return <div data-testid="login-return">{new URLSearchParams(useLocation().search).get('returnTo')}</div> }
+    render(<MemoryRouter initialEntries={['/product/42?offerId=7&xboardAccountLinkId=chosen']}>
+      <Routes><Route path="/product/:id" element={<ProductDetailPage />} /><Route path="/login" element={<LoginTarget />} /></Routes>
+    </MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: '去登录' }))
+    expect(await screen.findByTestId('login-return')).toHaveTextContent('/product/42?offerId=7&xboardAccountLinkId=chosen')
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [], islandNotice: null, modalDepth: 0 })

@@ -42,8 +42,10 @@ import { merchandisingAdminRouter } from './integrations/cmi/merchandisingAdminR
 import { paymentWebhookRoutes } from './modules/payment/webhooks/routes.js'
 import { productTemplateRoutes } from './modules/catalog/templates/routes.js'
 import { chatBotRoutes } from './modules/chatbot/routes.js'
+import { xboardBotRoutes } from './modules/chatbot/xboard/routes.js'
 import { recommendationEventRoutes } from './modules/recommendationEvents/routes.js'
 import { shopRoutes } from './modules/shops/routes.js'
+import { storefrontRoutes } from './modules/storefront/routes.js'
 import { trafficRoutes } from './modules/traffic/routes.js'
 
 const app = express()
@@ -116,6 +118,10 @@ const paymentWebhookLimiter = rateLimit({
 // Provider webhooks must see the raw body and must not share the generic /api limiter.
 app.use('/api/payment/webhooks', paymentWebhookLimiter, paymentWebhookRoutes)
 
+// v2 verifies the original wire bytes. Mount before the JSON parser and v1
+// bot signature middleware; its own host/user admission limits apply here.
+app.use('/api/bot/v2/xboard', xboardBotRoutes)
+
 app.use(express.json({ limit: '1mb' }))
 app.use(metricsMiddleware)
 
@@ -145,6 +151,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/traffic', trafficRoutes)
 app.use('/api/recommendations', recommendationEventRoutes)
 app.use('/api/shops', shopRoutes)
+app.use('/api/storefront', storefrontRoutes)
 // Public Merch shelves must precede Product `/:id`, otherwise Express would
 // parse `sponsored`/`editorial` as a product id.
 app.use('/api/products', publicSponsoredRouter)

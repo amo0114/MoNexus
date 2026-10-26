@@ -99,6 +99,14 @@ model User {
   notifications                Notification[]
   chatBindings                 ChatBinding[]
   chatBindCodes                ChatBindCode[]
+  xboardAccountLinks           XboardAccountLink[]
+  xboardAccountEvidence        XboardAccountEvidence[]
+  xboardAccountPreferences     XboardAccountPreference[]
+  xboardAccountSelections      XboardAccountSelection[]
+  trafficResetGrants TrafficResetBenefitGrant[]
+  trafficResetIntents TrafficResetIntent[]
+  trafficResetOperations XboardTrafficResetOperation[]
+  trafficResetConfirmations TrafficResetConfirmationRequest[]
 
   // SPEC-VALUE-POLICY-ACTIVATION-CONTROLS-001: immutable governance actors.
   valuePoliciesCreated   ValuePolicy[]                  @relation("ValuePolicyCreatedBy")
@@ -876,6 +884,10 @@ model Order {
   provisionTask   ProvisionTask?
   fakaBridgeTask  FakaBridgeTask?
   pricingSnapshot OrderPricingSnapshot?
+  xboardAccountSources XboardAccountLink[]
+  xboardAccountEvidence XboardAccountEvidence[]
+  trafficResetGrants TrafficResetBenefitGrant[]
+  trafficResetOperations XboardTrafficResetOperation[]
 
   renewalOf            Order?                     @relation("OrderRenewal", fields: [renewalOfOrderId], references: [id], onDelete: Restrict)
   renewals             Order[]                    @relation("OrderRenewal")
@@ -893,9 +905,193 @@ model Order {
   @@index([userId, status])
 }
 
+// Stable instance identity is pinned to a configured origin. Repointing an
+// instance ID must not silently reassign all its remote user IDs.
+model XboardInstance {
+  id String @id @db.VarChar(64)
+  origin String
+  createdAt DateTime @default(now())
+  links XboardAccountLink[]
+  preferences XboardAccountPreference[]
+  selections XboardAccountSelection[]
+  backfill XboardAccountBackfillState?
+}
+
+model XboardAccountLink {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  instanceId String @db.VarChar(64)
+  xboardUserId String @db.VarChar(19)
+  currentEmail String
+  emailSnapshot String
+  sourceOrderId Int
+  sourceExternalOrderNo String
+  status String @default("active") // active | blocked | unresolved
+  blockReason String?
+  resolvedAt DateTime @default(now())
+  lastSyncedAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  instance XboardInstance @relation(fields: [instanceId], references: [id], onDelete: Restrict)
+  sourceOrder Order @relation(fields: [sourceOrderId], references: [id], onDelete: Restrict)
+  evidence XboardAccountEvidence[]
+  resetIntents TrafficResetIntent[]
+  resetOperations XboardTrafficResetOperation[]
+  defaultedBy XboardAccountPreference[]
+  selections XboardAccountSelection[]
+  @@unique([instanceId, xboardUserId])
+  @@unique([id, userId, instanceId])
+  @@index([userId, instanceId, status])
+}
+
+// Append-only purchase/ownership evidence. A conflicting claimant is retained
+// here and blocks the existing link; it never overwrites the owner's userId.
+model XboardAccountEvidence {
+  id String @id @default(uuid()) @db.Uuid
+  accountLinkId String @db.Uuid
+  userId Int
+  sourceOrderId Int @unique
+  externalOrderNo String
+  emailSnapshot String
+  proofKind String
+  proofVerifiedAt DateTime
+  resolvedAt DateTime @default(now())
+  accountLink XboardAccountLink @relation(fields: [accountLinkId], references: [id], onDelete: Restrict)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  sourceOrder Order @relation(fields: [sourceOrderId], references: [id], onDelete: Restrict)
+}
+
+model XboardAccountPreference {
+  userId Int
+  instanceId String @db.VarChar(64)
+  defaultAccountLinkId String @db.Uuid
+  updatedAt DateTime @default(now()) @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  instance XboardInstance @relation(fields: [instanceId], references: [id], onDelete: Restrict)
+  defaultAccount XboardAccountLink @relation(fields: [defaultAccountLinkId, userId, instanceId], references: [id, userId, instanceId], onDelete: Restrict)
+  @@id([userId, instanceId])
+}
+
+model XboardAccountSelection {
+  userId Int
+  instanceId String @db.VarChar(64)
+  requestId String @db.Uuid
+  accountLinkId String @db.Uuid
+  chatBindingId Int
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  instance XboardInstance @relation(fields: [instanceId], references: [id], onDelete: Restrict)
+  accountLink XboardAccountLink @relation(fields: [accountLinkId, userId, instanceId], references: [id, userId, instanceId], onDelete: Restrict)
+  @@id([userId, instanceId, requestId])
+}
+
+model XboardAccountBackfillState {
+  instanceId String @id @db.VarChar(64)
+  cursorUserId Int @default(0)
+  cursorTaskId Int @default(0)
+  cycle Int @default(0)
+  updatedAt DateTime @default(now()) @updatedAt
+  instance XboardInstance @relation(fields: [instanceId], references: [id], onDelete: Restrict)
+}
+
 // FakaBridge outbox：下单事务内创建，事务外 HTTP 调用 Xboard 插件。
 // 协议与商家 autoProvision 不同（body HMAC + order_no/email/sku），独立表。
 // status: pending | succeeded | failed | cancelled | needs_reconcile
+model TrafficResetBenefitGrant {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  benefitCode String @default("welcome_traffic_reset_v1")
+  granted Int @default(1)
+  reserved Int @default(0)
+  consumed Int @default(0)
+  status String @default("active")
+  sourceOrderId Int
+  revokedReason String?
+  version Int @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  sourceOrder Order @relation(fields: [sourceOrderId], references: [id], onDelete: Restrict)
+  intents TrafficResetIntent[]
+  operations XboardTrafficResetOperation[]
+  @@unique([userId, benefitCode])
+}
+
+model TrafficResetIntent {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  chatBindingId Int
+  accountLinkId String @db.Uuid
+  benefitGrantId String @db.Uuid
+  instanceIdSnapshot String @db.VarChar(64)
+  tokenHash String @db.VarChar(64)
+  keyId String @db.VarChar(16)
+  expectedPlanId String @db.VarChar(19)
+  expectedFingerprint String @db.VarChar(64)
+  expiresAt DateTime
+  requestId String @db.Uuid
+  requestHash String @db.VarChar(64)
+  requestedAccountLinkId String? @db.Uuid
+  failedAttempts Int @default(0)
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  grant TrafficResetBenefitGrant @relation(fields: [benefitGrantId], references: [id], onDelete: Restrict)
+  accountLink XboardAccountLink @relation(fields: [accountLinkId], references: [id], onDelete: Restrict)
+  operation XboardTrafficResetOperation?
+  @@unique([userId, requestId])
+  @@index([expiresAt])
+}
+
+model TrafficResetConfirmationRequest {
+  userId Int
+  requestId String @db.Uuid
+  requestHash String @db.VarChar(64)
+  operationId String @db.Uuid
+  createdAt DateTime @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  operation XboardTrafficResetOperation @relation(fields: [operationId], references: [id], onDelete: Restrict)
+  @@id([userId, requestId])
+}
+
+model XboardTrafficResetOperation {
+  id String @id @default(uuid()) @db.Uuid
+  userId Int
+  intentId String @unique @db.Uuid
+  benefitGrantId String @db.Uuid
+  accountLinkId String @db.Uuid
+  instanceIdSnapshot String @db.VarChar(64)
+  originSnapshot String
+  clientIdSnapshot String @db.VarChar(64)
+  xboardUserIdSnapshot String @db.VarChar(19)
+  benefitCodeSnapshot String
+  sourceOrderId Int
+  expectedPlanId String @db.VarChar(19)
+  expectedFingerprint String @db.VarChar(64)
+  requestId String @db.Uuid
+  requestHash String @db.VarChar(64)
+  status String @default("queued")
+  cancelRequested Boolean @default(false)
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  leaseUntil DateTime?
+  leaseToken String? @db.Uuid
+  reservationApplied Boolean @default(true)
+  consumptionApplied Boolean @default(false)
+  beforeSnapshot Json?
+  afterSnapshot Json?
+  errorCode String?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  confirmations TrafficResetConfirmationRequest[]
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  intent TrafficResetIntent @relation(fields: [intentId], references: [id], onDelete: Restrict)
+  grant TrafficResetBenefitGrant @relation(fields: [benefitGrantId], references: [id], onDelete: Restrict)
+  accountLink XboardAccountLink @relation(fields: [accountLinkId], references: [id], onDelete: Restrict)
+  sourceOrder Order @relation(fields: [sourceOrderId], references: [id], onDelete: Restrict)
+  @@unique([userId, requestId])
+  @@index([status, nextAttemptAt, leaseUntil])
+}
+
 model FakaBridgeTask {
   id              Int       @id @default(autoincrement())
   orderId         Int       @unique
@@ -917,6 +1113,17 @@ model FakaBridgeTask {
   emailSnapshot   String
   skuSnapshot     String
   periodSnapshot  String    @default("monthly")
+  // 1 = historical email protocol; 2 = stable-account commercial reset. Frozen on insert.
+  protocolVersion Int      @default(1)
+  accountLinkIdSnapshot String? @db.Uuid
+  instanceIdSnapshot String?
+  originSnapshot String?
+  xboardUserIdSnapshot String?
+  expectedPlanIdSnapshot String?
+  clientIdSnapshot String?
+  // Validated immutable remote execution evidence (also retained after refund).
+  paidResetResult Json?
+  resultVersion Int @default(0)
   createdAt       DateTime  @default(now())
   completedAt     DateTime?
   // null | pending | succeeded | failed | skipped — 退款后撤 Xboard 订阅

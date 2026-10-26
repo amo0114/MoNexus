@@ -48,22 +48,26 @@ const GRID_GAP_MOBILE = 12
 const OVERSCAN_ROWS = 8
 const PREFETCH_ROWS = 6
 
-function currentStoreAudience(): 'guest' | 'member' {
-  return useAuthStore.getState().isLoggedIn ? 'member' : 'guest'
+function storeIdentityKey(state: ReturnType<typeof useAuthStore.getState>): string {
+  return JSON.stringify([state.isLoggedIn ? state.user?.id : 'guest', state.sessionId, state.authEpoch])
+}
+
+function currentStoreIdentity(): string {
+  return storeIdentityKey(useAuthStore.getState())
 }
 
 function readMatchingStoreCache(): StorePageCache | null {
   const cached = getStorePageCache<StorePageCache>()
-  if (!cached || cached.audience !== currentStoreAudience()) return null
+  if (!cached || cached.identityKey !== currentStoreIdentity()) return null
   return cached
 }
 
 function getProductQueryKey(
   category: string,
   searchQuery: string,
-  audience: 'guest' | 'member' = currentStoreAudience(),
+  identityKey = currentStoreIdentity(),
 ) {
-  return JSON.stringify({ category, searchQuery, audience })
+  return JSON.stringify({ category, searchQuery, identityKey })
 }
 
 function getColumnCount(width: number, isMobile: boolean) {
@@ -114,6 +118,10 @@ export default function StorePage() {
   const { theme } = useTheme()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
   const audience: 'guest' | 'member' = isLoggedIn ? 'member' : 'guest'
+  const identityKey = useAuthStore(storeIdentityKey)
+  const categoryCode = category === '全部' ? undefined
+    : registry?.productCategories?.find(item => item.code === category)?.code
+  const waitingForCategory = Boolean(urlCategory && !registry)
   const initialCacheRef = useRef((() => {
     const cached = readMatchingStoreCache()
     return urlCategory && cached?.category !== category ? null : cached
@@ -135,7 +143,7 @@ export default function StorePage() {
       ? getProductQueryKey(
           initialCacheRef.current.category,
           initialCacheRef.current.searchQuery,
-          initialCacheRef.current.audience,
+          initialCacheRef.current.identityKey,
         )
       : null,
   )
@@ -143,8 +151,11 @@ export default function StorePage() {
   const [feedItems, setFeedItems] = useState<FeedOutputItem<Product>[]>(() => initialCacheRef.current?.feedItems ?? [])
   // V3 灵动岛：搜索/分类上提至 appStore，岛内交互与本页网格共享；
   // store 在 SPA 生命周期内持续，详情页返回时状态自然保留
-  const searchQuery = useAppStore((s) => s.storeQuery)
+  const draftSearchQuery = useAppStore((s) => s.storeQuery)
+  const searchQuery = draftSearchQuery.trim()
   const setSearchQuery = useAppStore((s) => s.setStoreQuery)
+  const searchSubmission = useAppStore((s) => s.storeSearchSubmission)
+  const submitSearch = useAppStore((s) => s.submitStoreSearch)
   const [loading, setLoading] = useState(() => !initialCacheRef.current?.feedItems.length)
   const [nextCursor, setNextCursor] = useState<string | null>(() => initialCacheRef.current?.nextCursor ?? null)
   const [hasMore, setHasMore] = useState(() => initialCacheRef.current?.hasMore ?? false)
@@ -175,10 +186,15 @@ export default function StorePage() {
   const candidateRequestRef = useRef(0)
   // 有机列表 stale-response guard：分类/搜索切换后，在途旧响应必须被丢弃。
   const organicEpochRef = useRef(0)
+  const organicControllerRef = useRef<AbortController | null>(null)
+  const scheduledQueryRef = useRef<{
+    category: string; identityKey: string; searchQuery: string
+  } | null>(null)
+  const pendingSearchRef = useRef<{ timer: ReturnType<typeof setTimeout>; start: () => void } | null>(null)
   // Session dedup: productIds already shown in this browse session.
   const seenRef = useRef<Set<number>>(new Set(initialCacheRef.current?.seenIds ?? []))
-  // Page-1 organic buffered until candidates settle so the first 12 slots are
-  // composed exactly once (SPEC-CMI-UX-001 §4.2).
+  // Commit page 1 exactly once. Only candidates already ready at that instant
+  // participate; late candidates never replace visible organic cards.
   const page1OrganicRef = useRef<Product[] | null>(null)
   const candidatesRef = useRef<{
     sponsored: SponsoredFeedCandidate<Product>[]
@@ -187,11 +203,11 @@ export default function StorePage() {
   const candidatesSettledRef = useRef(false)
   const composedRef = useRef(Boolean(initialCacheRef.current?.feedItems.length))
   // Public `/` stays mounted across login/logout. The feed + module cache are
-  // audience-scoped; keep them aligned before paint so a member list cannot
-  // remain on screen or be written back as guest.
-  const [feedAudience, setFeedAudience] = useState(audience)
-  if (feedAudience !== audience) {
-    setFeedAudience(audience)
+  // session-scoped; keep them aligned before paint so another account's cards
+  // cannot remain visible or be saved into the new session's cache.
+  const [feedIdentity, setFeedIdentity] = useState(identityKey)
+  if (feedIdentity !== identityKey) {
+    setFeedIdentity(identityKey)
     organicEpochRef.current += 1
     candidateRequestRef.current += 1
     setFeedItems([])
@@ -221,16 +237,16 @@ export default function StorePage() {
     else if (!urlCategory) setStoreCategory('全部')
   }, [category, registry?.productCategories, setStoreCategory, urlCategory])
 
-  /** Compose the first screen once both page-1 organic and candidates are ready. */
+  /** Organic readiness owns the first commit; recommendations never block it. */
   const maybeComposePage1 = useCallback(() => {
     if (composedRef.current) return
-    if (page1OrganicRef.current == null || !candidatesSettledRef.current) return
+    if (page1OrganicRef.current == null) return
     const organic = page1OrganicRef.current
     page1OrganicRef.current = null
     const result = composeStoreFeed({
       organic,
-      sponsored: candidatesRef.current.sponsored,
-      editorial: candidatesRef.current.editorial,
+      sponsored: candidatesSettledRef.current ? candidatesRef.current.sponsored : [],
+      editorial: candidatesSettledRef.current ? candidatesRef.current.editorial : [],
       searchQuery,
       seenProductIds: seenRef.current,
     })
@@ -290,23 +306,24 @@ export default function StorePage() {
     // Stale-response guard: a category/search switch while a list request is
     // in flight must never land old-filter results (AC-CAT-017).
     let epoch = organicEpochRef.current
+    const signal = organicControllerRef.current?.signal
+    if (signal?.aborted) return
     try {
       const params: StoreProductQuery = { pageSize: PAGE_SIZE }
       if (cursor) params.cursor = cursor
       if (searchQuery) params.q = searchQuery
       if (category !== '全部') {
-        const dynamicCategory = registry?.productCategories?.find(item => item.code === category)
-        if (dynamicCategory) params.categoryCode = dynamicCategory.code
+        if (categoryCode) params.categoryCode = categoryCode
         else params.category = category
       }
-      const data = await listStoreProducts(params)
-      if (epoch !== organicEpochRef.current) return
+      const data = await listStoreProducts(params, signal)
+      if (signal?.aborted || epoch !== organicEpochRef.current) return
       // A successful fetch clears any pause recorded for this cursor.
       failedCursorRef.current = null
       setNextCursor(data.nextCursor)
       setHasMore(data.hasMore)
       if (!append) {
-        // First page: buffer until candidates settle, then compose ONCE.
+        // First page commits immediately with whichever candidates are ready.
         hydratedQueryKeyRef.current = queryKey
         page1OrganicRef.current = data.items
         maybeComposePage1()
@@ -314,7 +331,7 @@ export default function StorePage() {
         appendOrganicPage(data.items)
       }
     } catch (error) {
-      if (epoch !== organicEpochRef.current) return
+      if (signal?.aborted || epoch !== organicEpochRef.current) return
       const expired = getApiErrorCode(error) === 'PRODUCT_CURSOR_EXPIRED'
       // One automatic retry only. A 409 on the retried page 1 means recovery
       // cannot succeed (e.g. the server keeps rejecting), so stop and surface
@@ -338,26 +355,23 @@ export default function StorePage() {
       // resubmitted immediately and forever.
       if (cursor) failedCursorRef.current = cursor
     } finally {
-      if (epoch !== organicEpochRef.current) return
+      if (signal?.aborted || epoch !== organicEpochRef.current) return
       setLoading(false)
       setLoadingMore(false)
       loadingMoreRef.current = false
     }
-  }, [searchQuery, category, registry?.productCategories, showToast, maybeComposePage1, appendOrganicPage, recoverFromExpiredCursor])
+  }, [searchQuery, category, categoryCode, showToast, maybeComposePage1, appendOrganicPage, recoverFromExpiredCursor])
 
   useEffect(() => {
     const requestId = ++candidateRequestRef.current
-    const dynamicCategory = category === '全部'
-      ? null
-      : registry?.productCategories?.find(item => item.code === category) ?? null
 
     // Reset candidate readiness for this query. `composedRef` is owned by the
     // query/category reset effect (it must survive cache-restore on mount).
     candidatesSettledRef.current = false
     candidatesRef.current = { sponsored: [], editorial: [] }
 
-    const selectedCategoryHasNoStableCode = category !== '全部' && dynamicCategory == null
-    if (searchQuery.trim() || selectedCategoryHasNoStableCode) {
+    const selectedCategoryHasNoStableCode = category !== '全部' && !categoryCode
+    if (searchQuery || selectedCategoryHasNoStableCode || waitingForCategory) {
       // Search mode: no injection (D-UX-02). Settle immediately with no
       // candidates so page-1 organic composes as a plain feed. A legacy-only
       // category label also cannot safely scope candidates, so fail closed
@@ -369,13 +383,15 @@ export default function StorePage() {
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 2500)
-    void loadStoreCandidates(dynamicCategory?.code, controller.signal).then(candidates => {
-      clearTimeout(timeout)
-      if (requestId !== candidateRequestRef.current) return
-      candidatesRef.current = candidates
-      candidatesSettledRef.current = true
-      maybeComposePage1()
-    })
+    void loadStoreCandidates(categoryCode, controller.signal)
+      .catch(() => ({ sponsored: [], editorial: [] }))
+      .then(candidates => {
+        clearTimeout(timeout)
+        if (controller.signal.aborted || requestId !== candidateRequestRef.current) return
+        candidatesRef.current = candidates
+        candidatesSettledRef.current = true
+        maybeComposePage1()
+      })
 
     return () => {
       clearTimeout(timeout)
@@ -384,11 +400,11 @@ export default function StorePage() {
       // async continuations see a stale requestId and never setState.
       candidateRequestRef.current += 1
     }
-  }, [audience, category, registry?.productCategories, searchQuery, maybeComposePage1])
+  }, [identityKey, category, categoryCode, waitingForCategory, searchQuery, maybeComposePage1])
 
   const saveStorePageCache = useCallback((scrollY = window.scrollY, lastProductId?: number | null) => {
-    const liveAudience = currentStoreAudience()
-    if (liveAudience !== feedAudience) return
+    const liveIdentity = currentStoreIdentity()
+    if (liveIdentity !== feedIdentity || hydratedQueryKeyRef.current !== getProductQueryKey(category, searchQuery, liveIdentity)) return
     const prevCache = getStorePageCache<StorePageCache>()
     setStorePageCache({
       feedItems,
@@ -398,26 +414,45 @@ export default function StorePage() {
       nextCursor,
       hasMore,
       scrollY,
-      audience: liveAudience,
+      audience,
+      identityKey: liveIdentity,
       lastProductId: lastProductId !== undefined ? lastProductId : (prevCache?.lastProductId ?? null),
     })
-  }, [category, feedAudience, feedItems, hasMore, nextCursor, searchQuery])
+  }, [category, audience, feedIdentity, feedItems, hasMore, nextCursor, searchQuery])
 
   useEffect(() => {
-    const queryKey = getProductQueryKey(category, searchQuery, audience)
-    if (urlCategory && !registry) return
+    const queryKey = getProductQueryKey(category, searchQuery, identityKey)
+    if (waitingForCategory) return
+
+    const previous = scheduledQueryRef.current
+    const debounceSearch = previous != null && previous.category === category
+      && previous.identityKey === identityKey && previous.searchQuery !== searchQuery
+      && Boolean(searchQuery)
+    scheduledQueryRef.current = { category, identityKey, searchQuery }
 
     if (hydratedQueryKeyRef.current === queryKey) {
+      const controller = new AbortController()
+      organicControllerRef.current = controller
       setLoading(false)
-      return
+      setLoadingMore(false)
+      loadingMoreRef.current = false
+      return () => {
+        controller.abort()
+        organicEpochRef.current += 1
+      }
     }
     // 搜索词 / 分类 / audience 变化：重置列表、游标与滚动缓存（AC-CAT-017）。
     // 递增 epoch 使任何在途旧列表响应失效（stale-response guard）。
     organicEpochRef.current += 1
+    const controller = new AbortController()
+    organicControllerRef.current = controller
+    hydratedQueryKeyRef.current = null
     setLoading(true)
     setFeedItems([])
     setNextCursor(null)
     setHasMore(false)
+    setLoadingMore(false)
+    loadingMoreRef.current = false
     seenRef.current = new Set()
     page1OrganicRef.current = null
     // `candidatesSettledRef` is owned by the candidate effect (it resets to
@@ -435,9 +470,29 @@ export default function StorePage() {
       window.sessionStorage.removeItem('monexus:restore-scroll-y')
     }
     window.scrollTo?.({ top: 0, behavior: 'instant' })
-    const timer = setTimeout(() => fetchProducts(null, false, queryKey), 300)
-    return () => clearTimeout(timer)
-  }, [audience, category, fetchProducts, searchQuery, urlCategory, registry])
+    const start = () => {
+      if (pendingSearchRef.current) clearTimeout(pendingSearchRef.current.timer)
+      pendingSearchRef.current = null
+      // No timer for initial/category/explicit submissions. A microtask lets
+      // StrictMode discard its first effect before any organic HTTP is sent.
+      void Promise.resolve().then(() => {
+        if (!controller.signal.aborted) return fetchProducts(null, false, queryKey)
+      })
+    }
+    const timer = debounceSearch ? setTimeout(start, 250) : undefined
+    if (timer !== undefined) pendingSearchRef.current = { timer, start }
+    else start()
+    return () => {
+      clearTimeout(timer)
+      pendingSearchRef.current = null
+      controller.abort()
+      organicEpochRef.current += 1
+    }
+  }, [identityKey, category, fetchProducts, searchQuery, waitingForCategory])
+
+  // Enter flushes a pending debounce. An identical in-flight or completed
+  // query keeps its controller and cursor instead of being aborted/restarted.
+  useEffect(() => { pendingSearchRef.current?.start() }, [searchSubmission])
 
   useEffect(() => {
     // 关键守卫：挂载时如果当前有在途的滚动恢复意图，严禁以首帧的 window.scrollY(0) 冲刷缓存
@@ -694,7 +749,7 @@ export default function StorePage() {
   }, [columnCount, loadMore, feedItems.length, visibleEndIndex])
 
   return (
-    <div className="fade-in space-y-8 max-w-6xl mx-auto" style={{ animationDelay: '0.1s' }}>
+    <div className="space-y-8 max-w-6xl mx-auto">
       {/* Header — compacted on mobile (V2-M2) */}
       {/* Header — compacted on mobile, explanatory subtitle preserved */}
       <div className="flex flex-col items-center justify-center text-center max-md:pt-0 max-md:pb-1 pt-2 pb-2 relative">
@@ -726,8 +781,11 @@ export default function StorePage() {
           <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition-all duration-200 pointer-events-none" />
           <input
             type="text"
-            value={searchQuery}
+            value={draftSearchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) submitSearch()
+            }}
             placeholder={isMobile ? '搜索商品、服务...' : '搜账号、卡密、教程...'}
             aria-label="搜索商品"
             className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[var(--color-primary)]/40 focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition-all text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
@@ -807,20 +865,22 @@ export default function StorePage() {
                 }}
               >
                 {visibleFeedItems.map((item, i) => {
+                  const initialCard = visibleStartIndex + i < columnCount * 2
                   const disclosure: FeedDisclosure | undefined = item.kind === 'sponsored'
                     ? { kind: 'sponsored', label: '推广' }
                     : item.kind === 'editorial'
                       ? { kind: 'editorial', label: '精选', publicReason: item.publicReason }
                       : undefined
-                  return (
-                    <Reveal key={item.productId} delay={(i % columnCount) * 60}>
-                      <StoreProductCard
+                  const card = <StoreProductCard
                         product={item.product}
                         href={`/product/${item.productId}`}
                         onNavigate={openDetail}
                         disclosure={disclosure}
+                        imageLoading={initialCard ? 'eager' : 'lazy'}
+                        imageFetchPriority={visibleStartIndex + i === 0 ? 'high' : 'auto'}
                       />
-                    </Reveal>
+                  return initialCard ? <div key={item.productId}>{card}</div> : (
+                    <Reveal key={item.productId} delay={(i % columnCount) * 60}>{card}</Reveal>
                   )
                 })}
               </div>
