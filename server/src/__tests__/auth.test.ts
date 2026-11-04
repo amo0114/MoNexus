@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import bcrypt from 'bcryptjs'
 import { api, createTestUser, createTestMerchant, loginAs } from './helpers.js'
 import { loginUser, refreshAccessToken } from '../modules/auth/service.js'
 import { prisma } from '../lib/prisma.js'
@@ -133,6 +134,28 @@ describe('POST /api/auth/login', () => {
     expect(res.body.user.status).toBeDefined()
     const cookies = (res.headers['set-cookie'] as unknown) as string[]
     expect(cookies.some(c => c.startsWith('refreshToken='))).toBe(true)
+  })
+
+  it('does not reveal a ban or an unknown email without the right password', async () => {
+    const { user, password } = await createTestUser('banned-login@test.local', 'Right#Pass-2026')
+    await prisma.user.update({ where: { id: user.id }, data: { status: '已封禁' } })
+
+    const bannedWrong = await api.post('/api/auth/login').send({ email: user.email, password: 'wrong-password' }).expect(401)
+    const unknown = await api.post('/api/auth/login').send({ email: 'nobody-here@test.local', password: 'wrong-password' }).expect(401)
+    expect(bannedWrong.body.error).toEqual(unknown.body.error)
+
+    const bannedRight = await api.post('/api/auth/login').send({ email: user.email, password }).expect(400)
+    expect(bannedRight.body.error.message).toBe('账号已被封禁')
+  })
+
+  it('runs a bcrypt comparison for unknown emails too, so timing does not reveal existence', async () => {
+    const compare = vi.spyOn(bcrypt, 'compare')
+    try {
+      await api.post('/api/auth/login').send({ email: 'timing-unknown@test.local', password: 'whatever' }).expect(401)
+      expect(compare).toHaveBeenCalledTimes(1)
+    } finally {
+      compare.mockRestore()
+    }
   })
 
   it('should reject wrong password', async () => {
