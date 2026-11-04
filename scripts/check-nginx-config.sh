@@ -55,3 +55,17 @@ if grep -Fq 'Content-Security-Policy' <<< "$api_block"; then
 fi
 
 echo "[PASS] static locations send the browser security headers"
+
+# SEC-06/SEC-07: storage errors and headers never reach the client, and hashed
+# assets carry no mtime-derived ETag.
+if ! grep -Fq 'proxy_intercept_errors on;' <<< "$uploads_block" || ! grep -Fq 'proxy_hide_header X-Amz-Id-2;' <<< "$uploads_block"; then
+  echo "[ERROR] /uploads must intercept storage errors and hide x-amz-* headers" >&2
+  exit 1
+fi
+assets_block="$(sed -n '/location \/assets\/ {/,/^  }/p' "$config_file")"
+if ! grep -Fq 'etag off;' <<< "$assets_block"; then
+  echo "[ERROR] /assets must not send mtime-based ETags" >&2
+  exit 1
+fi
+
+echo "[PASS] storage internals and build timestamps stay hidden"
