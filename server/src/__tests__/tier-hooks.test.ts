@@ -19,7 +19,7 @@ describe('M7 tier earning hooks', () => {
 
   it('should keep bronze check-in at the base reward without bonus', async () => {
     const baseReward = await getSystemConfigValue('checkinReward')
-    const { user, password } = await createTestUser('tier-checkin-bronze@test.local', 'pass123', 'user', 0)
+    const { user, password } = await createTestUser('tier-checkin-bronze@test.local', 'Reg1ster#Flow-2026', 'user', 0)
     const { accessToken } = await loginAs(user.email, password)
 
     const res = await api
@@ -51,7 +51,7 @@ describe('M7 tier earning hooks', () => {
     const baseReward = await getSystemConfigValue('checkinReward')
     const { user, password } = await createTestUser(
       'tier-checkin-silver@test.local',
-      'pass123',
+      'Reg1ster#Flow-2026',
       'user',
       config.thresholds.silver
     )
@@ -86,7 +86,7 @@ describe('M7 tier earning hooks', () => {
     const baseReward = await getSystemConfigValue('checkinReward')
     const { user, password } = await createTestUser(
       'tier-checkin-platinum@test.local',
-      'pass123',
+      'Reg1ster#Flow-2026',
       'user',
       config.thresholds.platinum
     )
@@ -117,7 +117,7 @@ describe('M7 tier earning hooks', () => {
 
   it('should snapshot a bronze referral reward without immediately crediting it', async () => {
     const inviteReward = await getSystemConfigValue('inviteReward')
-    const { user: inviter } = await createTestUser('tier-invite-bronze@test.local', 'pass123', 'user', 0)
+    const { user: inviter } = await createTestUser('tier-invite-bronze@test.local', 'Reg1ster#Flow-2026', 'user', 0)
     await prisma.user.update({
       where: { id: inviter.id },
       data: {
@@ -129,7 +129,7 @@ describe('M7 tier earning hooks', () => {
 
     const res = await api
       .post('/api/auth/register')
-      .send({ email: inviteeEmail, password: 'pass123', inviteCode: (await issueTestInviteCode(inviter.id)).code })
+      .send({ email: inviteeEmail, password: 'Reg1ster#Flow-2026', inviteCode: (await issueTestInviteCode(inviter.id)).code })
       .expect(201)
 
     expect(res.body.user.points).toBe(0)
@@ -154,7 +154,7 @@ describe('M7 tier earning hooks', () => {
     const registerReward = await getSystemConfigValue('registerReward')
     const { user: inviter } = await createTestUser(
       'tier-invite-gold@test.local',
-      'pass123',
+      'Reg1ster#Flow-2026',
       'user',
       config.thresholds.gold
     )
@@ -177,7 +177,7 @@ describe('M7 tier earning hooks', () => {
 
     const res = await api
       .post('/api/auth/register')
-      .send({ email: inviteeEmail, password: 'pass123', inviteCode: (await issueTestInviteCode(inviter.id)).code })
+      .send({ email: inviteeEmail, password: 'Reg1ster#Flow-2026', inviteCode: (await issueTestInviteCode(inviter.id)).code })
       .expect(201)
 
     expect(res.body.user.points).toBe(0)

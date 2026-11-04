@@ -64,11 +64,11 @@ describe('Auth token flows (P0-D)', () => {
 
       await api
         .post('/api/auth/reset-password')
-        .send({ token: firstRawToken, password: 'old-link-password' })
+        .send({ token: firstRawToken, password: 'Old#Link-Cred-31' })
         .expect(400)
       await api
         .post('/api/auth/reset-password')
-        .send({ token: secondRawToken, password: 'new-link-password' })
+        .send({ token: secondRawToken, password: 'New#Link-Cred-72' })
         .expect(200)
     })
   })
@@ -125,12 +125,12 @@ describe('Auth token flows (P0-D)', () => {
 
       await api
         .post('/api/auth/reset-password')
-        .send({ token: rawToken, password: 'brand-new-password' })
+        .send({ token: rawToken, password: 'Brand#New-Cred-88' })
         .expect(200)
 
       // New password works
       const updated = await prisma.user.findUnique({ where: { id: user.id } })
-      expect(await bcrypt.compare('brand-new-password', updated!.password)).toBe(true)
+      expect(await bcrypt.compare('Brand#New-Cred-88', updated!.password)).toBe(true)
       // Old password no longer works (compare returns false)
       expect(await bcrypt.compare(password, updated!.password)).toBe(false)
       // All refresh tokens revoked
@@ -151,10 +151,10 @@ describe('Auth token flows (P0-D)', () => {
       const link = mailer.lastTo(user.email)!.text.match(/reset-password\/([a-f0-9]+)/)!
       const rawToken = link[1]
 
-      await api.post('/api/auth/reset-password').send({ token: rawToken, password: 'first-new-pw' }).expect(200)
+      await api.post('/api/auth/reset-password').send({ token: rawToken, password: 'First#New-Cred-15' }).expect(200)
       const res = await api
         .post('/api/auth/reset-password')
-        .send({ token: rawToken, password: 'second-new-pw' })
+        .send({ token: rawToken, password: 'Second#New-Cred-26' })
         .expect(400)
       expect(res.body.error.message).toMatch(/已被使用/)
     })
@@ -165,16 +165,33 @@ describe('Auth token flows (P0-D)', () => {
       const rawToken = mailer.lastTo(user.email)!.text.match(/reset-password\/([a-f0-9]+)/)![1]
 
       const attempts = await Promise.all([
-        api.post('/api/auth/reset-password').send({ token: rawToken, password: 'parallel-password-a' }),
-        api.post('/api/auth/reset-password').send({ token: rawToken, password: 'parallel-password-b' }),
+        api.post('/api/auth/reset-password').send({ token: rawToken, password: 'Parallel#Cred-A-41' }),
+        api.post('/api/auth/reset-password').send({ token: rawToken, password: 'Parallel#Cred-B-42' }),
       ])
       expect(attempts.map(attempt => attempt.status).sort()).toEqual([200, 400])
 
       const updated = await prisma.user.findUniqueOrThrow({ where: { id: user.id } })
-      const firstWon = await bcrypt.compare('parallel-password-a', updated.password)
-      const secondWon = await bcrypt.compare('parallel-password-b', updated.password)
+      const firstWon = await bcrypt.compare('Parallel#Cred-A-41', updated.password)
+      const secondWon = await bcrypt.compare('Parallel#Cred-B-42', updated.password)
       expect(Number(firstWon) + Number(secondWon)).toBe(1)
       expect(await prisma.passwordResetToken.count({ where: { userId: user.id, used: false } })).toBe(0)
+    })
+
+    it('rejects a weak reset password without consuming the link', async () => {
+      const { user, password } = await createTestUser('reset-weak@test.local', 'current-password')
+      await api.post('/api/auth/forgot-password').send({ email: user.email }).expect(200)
+      const rawToken = mailer.lastTo(user.email)!.text.match(/reset-password\/([a-f0-9]+)/)![1]
+
+      const res = await api
+        .post('/api/auth/reset-password')
+        .send({ token: rawToken, password: 'reset-weak2026' })
+        .expect(400)
+
+      expect(res.body.error.code).toBe('VALIDATION_ERROR')
+      expect(res.body.error.details).toEqual([{ field: 'body.password', message: expect.any(String) }])
+      const updated = await prisma.user.findUniqueOrThrow({ where: { id: user.id } })
+      expect(await bcrypt.compare(password, updated.password)).toBe(true)
+      expect(await prisma.passwordResetToken.count({ where: { userId: user.id, used: false } })).toBe(1)
     })
   })
 
@@ -182,8 +199,23 @@ describe('Auth token flows (P0-D)', () => {
     it('should reject unauthenticated password changes', async () => {
       await api
         .post('/api/auth/password-change')
-        .send({ currentPassword: 'old-password', newPassword: 'new-password' })
+        .send({ currentPassword: 'old-password', newPassword: 'Fresh#Cred-4471' })
         .expect(401)
+    })
+
+    it('rejects a weak new password and keeps the current one', async () => {
+      const { user, password } = await createTestUser('change-weak@test.local', 'current-password')
+      const login = await loginAs(user.email, password)
+
+      const res = await api
+        .post('/api/auth/password-change')
+        .set(authHeader(login.accessToken))
+        .send({ currentPassword: password, newPassword: 'password1' })
+        .expect(400)
+
+      expect(res.body.error.code).toBe('VALIDATION_ERROR')
+      expect(res.body.error.details).toEqual([{ field: 'body.newPassword', message: expect.any(String) }])
+      await api.post('/api/auth/login').send({ email: user.email, password }).expect(200)
     })
 
     it('should change the password and revoke existing refresh tokens', async () => {
@@ -193,7 +225,7 @@ describe('Auth token flows (P0-D)', () => {
       const res = await api
         .post('/api/auth/password-change')
         .set(authHeader(login.accessToken))
-        .send({ currentPassword: password, newPassword: 'new-password' })
+        .send({ currentPassword: password, newPassword: 'Fresh#Cred-4471' })
         .expect(200)
 
       expect(res.body.message).toBe('密码已修改，请重新登录')
@@ -210,7 +242,7 @@ describe('Auth token flows (P0-D)', () => {
 
       await api
         .post('/api/auth/login')
-        .send({ email: user.email, password: 'new-password' })
+        .send({ email: user.email, password: 'Fresh#Cred-4471' })
         .expect(200)
 
       const activeTokens = await prisma.refreshToken.count({
@@ -226,7 +258,7 @@ describe('Auth token flows (P0-D)', () => {
       const res = await api
         .post('/api/auth/password-change')
         .set(authHeader(login.accessToken))
-        .send({ currentPassword: 'wrong-password', newPassword: 'new-password' })
+        .send({ currentPassword: 'wrong-password', newPassword: 'Fresh#Cred-4471' })
         .expect(401)
 
       expect(res.body.error.message).toMatch(/密码/)
@@ -238,7 +270,7 @@ describe('Auth token flows (P0-D)', () => {
 
       await api
         .post('/api/auth/login')
-        .send({ email: user.email, password: 'new-password' })
+        .send({ email: user.email, password: 'Fresh#Cred-4471' })
         .expect(401)
     })
 
@@ -251,7 +283,7 @@ describe('Auth token flows (P0-D)', () => {
       await api
         .post('/api/auth/password-change')
         .set(authHeader(login.accessToken))
-        .send({ currentPassword: password, newPassword: 'changed-password' })
+        .send({ currentPassword: password, newPassword: 'Chang3d#Cred-9182' })
         .expect(200)
 
       expect(await prisma.passwordResetToken.count({ where: { userId: user.id, used: false } })).toBe(0)

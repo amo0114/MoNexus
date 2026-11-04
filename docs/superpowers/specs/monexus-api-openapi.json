@@ -445,7 +445,8 @@
           },
           "password": {
             "type": "string",
-            "minLength": 6
+            "minLength": 8,
+            "maxLength": 128
           },
           "inviteCode": {
             "type": "string"
@@ -766,7 +767,8 @@
           },
           "password": {
             "type": "string",
-            "minLength": 6
+            "minLength": 8,
+            "maxLength": 128
           }
         }
       },
@@ -783,7 +785,8 @@
           },
           "newPassword": {
             "type": "string",
-            "minLength": 6
+            "minLength": 8,
+            "maxLength": 128
           }
         }
       },

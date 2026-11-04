@@ -132,8 +132,8 @@ describe('Admin system config', () => {
   })
 
   it('should reject non-admin config updates', async () => {
-    await createTestUser('config-user@test.local', 'pass123', 'user')
-    const user = await loginAs('config-user@test.local', 'pass123')
+    await createTestUser('config-user@test.local', 'Reg1ster#Flow-2026', 'user')
+    const user = await loginAs('config-user@test.local', 'Reg1ster#Flow-2026')
 
     await updateConfig(user.accessToken, 'checkinReward', 77).expect(403)
   })
@@ -158,7 +158,7 @@ describe('Admin system config', () => {
 
   it('should use updated checkinReward for future check-ins', async () => {
     const { accessToken: adminToken } = await loginAdmin()
-    const { user, password } = await createTestUser('checkin-config@test.local', 'pass123', 'user', 0)
+    const { user, password } = await createTestUser('checkin-config@test.local', 'Reg1ster#Flow-2026', 'user', 0)
     const userLogin = await loginAs(user.email, password)
 
     await updateConfig(adminToken, 'checkinReward', 77).expect(200)
@@ -190,7 +190,7 @@ describe('Admin system config', () => {
 
     const res = await api
       .post('/api/auth/register')
-      .send({ email: 'register-config@test.local', password: 'pass123' })
+      .send({ email: 'register-config@test.local', password: 'Reg1ster#Flow-2026' })
       .expect(201)
 
     expect(res.body.user.points).toBe(0)
@@ -206,7 +206,7 @@ describe('Admin system config', () => {
 
   it('should snapshot an updated inviteReward for future eligible invited registrations', async () => {
     const { accessToken } = await loginAdmin()
-    const { user: inviter } = await createTestUser('inviter-config@test.local', 'pass123', 'user', 0)
+    const { user: inviter } = await createTestUser('inviter-config@test.local', 'Reg1ster#Flow-2026', 'user', 0)
     await prisma.user.update({
       where: { id: inviter.id },
       data: {
@@ -222,7 +222,7 @@ describe('Admin system config', () => {
       .post('/api/auth/register')
       .send({
         email: 'invitee-config@test.local',
-        password: 'pass123',
+        password: 'Reg1ster#Flow-2026',
         inviteCode: invite.code,
       })
       .expect(201)

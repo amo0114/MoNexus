@@ -67,7 +67,8 @@
     "react-easy-crop": "^6.2.3",
     "react-router-dom": "^6.28.0",
     "web-vitals": "^5.2.0",
-    "zustand": "^5.0.0"
+    "zustand": "^5.0.0",
+    "zxcvbn": "^4.4.2"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
@@ -78,6 +79,7 @@
     "@types/dompurify": "^3.0.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@types/zxcvbn": "^4.4.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "axe-core": "^4.10.2",

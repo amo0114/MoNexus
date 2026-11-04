@@ -14,7 +14,7 @@ describe('POST /api/auth/register', () => {
   it('should register a new user and return access token + user', async () => {
     const res = await api
       .post('/api/auth/register')
-      .send({ email: 'newuser@test.local', password: 'abcdef' })
+      .send({ email: 'newuser@test.local', password: 'Reg1ster#Flow-2026' })
       .expect(201)
 
     expect(res.body.accessToken).toBeDefined()
@@ -34,16 +34,44 @@ describe('POST /api/auth/register', () => {
     await createTestUser('dup@test.local')
     const res = await api
       .post('/api/auth/register')
-      .send({ email: 'dup@test.local', password: 'abcdef' })
+      .send({ email: 'dup@test.local', password: 'Reg1ster#Flow-2026' })
       .expect(409)
 
     expect(res.body.error.code).toBe('CONFLICT')
   })
 
+  it('rejects short, common and low-entropy passwords on body.password', async () => {
+    for (const password of ['123456', 'qwerty', '111111', 'abc123', 'iloveyou', 'admin123', 'P@ssw0rd', 'Monexus2026!']) {
+      const res = await api
+        .post('/api/auth/register')
+        .send({ email: 'weak-password@test.local', password })
+        .expect(400)
+
+      expect(res.body.error.code).toBe('VALIDATION_ERROR')
+      expect(res.body.error.details).toEqual([{ field: 'body.password', message: expect.any(String) }])
+    }
+    expect(await prisma.user.count({ where: { email: 'weak-password@test.local' } })).toBe(0)
+
+    await api
+      .post('/api/auth/register')
+      .send({ email: 'strong-password@test.local', password: 'Xk9#mQ2vLp' })
+      .expect(201)
+  })
+
+  it('rejects passwords derived from the email local part or nickname', async () => {
+    for (const body of [
+      { email: 'zhangwei.chen@test.local', password: 'zhangwei.chen1' },
+      { email: 'nick-check@test.local', password: 'Lanternfish88', nickname: 'Lanternfish' },
+    ]) {
+      const res = await api.post('/api/auth/register').send(body).expect(400)
+      expect(res.body.error.details).toEqual([{ field: 'body.password', message: expect.any(String) }])
+    }
+  })
+
   it('should reject invalid email', async () => {
     const res = await api
       .post('/api/auth/register')
-      .send({ email: 'notanemail', password: 'abcdef' })
+      .send({ email: 'notanemail', password: 'Reg1ster#Flow-2026' })
       .expect(400)
 
     expect(res.body.error.code).toBe('VALIDATION_ERROR')
@@ -52,7 +80,7 @@ describe('POST /api/auth/register', () => {
   it('persists a friendly default nickname and keeps it across profile reads and login', async () => {
     const res = await api
       .post('/api/auth/register')
-      .send({ email: 'auto-nick@test.local', password: 'abcdef' })
+      .send({ email: 'auto-nick@test.local', password: 'Reg1ster#Flow-2026' })
       .expect(201)
 
     expect(res.body.user.nickname).toMatch(/^[\u4e00-\u9fff]+$/)
@@ -62,7 +90,7 @@ describe('POST /api/auth/register', () => {
     expect(res.body.user.avatarUrl).toBeNull()
     const me = await api.get('/api/auth/me').set('Authorization', `Bearer ${res.body.accessToken}`).expect(200)
     expect(me.body.nickname).toBe(stored.nickname)
-    const login = await api.post('/api/auth/login').send({ email: stored.email, password: 'abcdef' }).expect(200)
+    const login = await api.post('/api/auth/login').send({ email: stored.email, password: 'Reg1ster#Flow-2026' }).expect(200)
     expect(login.body.user.nickname).toBe(stored.nickname)
     const cookies = login.headers['set-cookie'] as unknown as string[]
     const refreshed = await api.post('/api/auth/refresh').set('Cookie', cookies)
@@ -74,7 +102,7 @@ describe('POST /api/auth/register', () => {
   it('accepts optional nickname on register', async () => {
     const res = await api
       .post('/api/auth/register')
-      .send({ email: 'custom-nick@test.local', password: 'abcdef', nickname: '  小明同学  ' })
+      .send({ email: 'custom-nick@test.local', password: 'Reg1ster#Flow-2026', nickname: '  小明同学  ' })
       .expect(201)
 
     expect(res.body.user.nickname).toBe('小明同学')
@@ -84,7 +112,7 @@ describe('POST /api/auth/register', () => {
 
   it('keeps a manually chosen legacy-looking nickname on registration', async () => {
     const res = await api.post('/api/auth/register')
-      .send({ email: 'manual-legacy-nick@test.local', password: 'abcdef', nickname: 'mn_23456789' }).expect(201)
+      .send({ email: 'manual-legacy-nick@test.local', password: 'Reg1ster#Flow-2026', nickname: 'mn_23456789' }).expect(201)
     expect(res.body.user.nickname).toBe('mn_23456789')
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: res.body.user.id } })
     expect(stored.nicknameIsGenerated).toBe(false)

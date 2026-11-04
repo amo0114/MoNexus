@@ -17,8 +17,8 @@ test.describe('toast interactions', () => {
     await page.route('**/api/config/registry', (route) => route.fulfill({ json: {} }))
 
     await page.goto('/reset-password/test-token')
-    await page.getByPlaceholder('新密码', { exact: true }).fill('abcdef')
-    await page.getByPlaceholder('再次输入新密码').fill('abcdefg')
+    await page.getByPlaceholder('新密码', { exact: true }).fill('abcdefgh')
+    await page.getByPlaceholder('再次输入新密码').fill('abcdefghi')
     await page.getByRole('button', { name: '重置密码' }).click()
 
     const toast = page.locator('[data-toast-card]')
@@ -35,8 +35,8 @@ test.describe('desktop toast timing', () => {
     await page.route('**/api/config/registry', (route) => route.fulfill({ json: {} }))
 
     await page.goto('/reset-password/test-token')
-    await page.getByPlaceholder('新密码', { exact: true }).fill('abcdef')
-    await page.getByPlaceholder('再次输入新密码').fill('abcdefg')
+    await page.getByPlaceholder('新密码', { exact: true }).fill('abcdefgh')
+    await page.getByPlaceholder('再次输入新密码').fill('abcdefghi')
 
     // A DOM click deliberately keeps the pointer in the desktop toast lane.
     // Browsers emit pointerenter when the card animates in beneath it; that must

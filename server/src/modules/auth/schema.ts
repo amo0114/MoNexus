@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { isPresetAvatarUrl } from './avatarPresets.js'
 import { HUMAN_VERIFICATION_PAYLOAD_MAX_BYTES } from './humanVerification/types.js'
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, passwordPolicyIssue } from '../../lib/passwordPolicy.js'
 
 const normalizedEmailSchema = z.string()
   .trim()
@@ -20,9 +21,18 @@ export const humanChallengeQuerySchema = z.object({
   action: z.enum(['register', 'forgot_password']),
 }).strict()
 
+// Only new passwords are checked; login keeps accepting existing credentials.
+// Reset/change only bound the length here because the account context needed
+// for the full policy is checked in passwordService.
+const newPasswordLengthSchema = z.string()
+  .min(PASSWORD_MIN_LENGTH, `密码至少 ${PASSWORD_MIN_LENGTH} 位`)
+  .max(PASSWORD_MAX_LENGTH, `密码不能超过 ${PASSWORD_MAX_LENGTH} 位`)
+
 export const registerSchema = z.object({
   email: normalizedEmailSchema,
-  password: z.string().min(6, '密码至少 6 位'),
+  // Length is part of passwordPolicyIssue below; repeating it here would
+  // report the same issue twice.
+  password: z.string(),
   // SPEC-INVITE-001 IV-01：trim + 大写归一化后必须恰为 8 位短码；空串视同
   // 未携带（invite-only 的缺码判定在 service 层，见 IV-08）。
   inviteCode: z.preprocess(
@@ -47,7 +57,10 @@ export const registerSchema = z.object({
     z.string().trim().min(1).max(32),
   ).refine(value => Object.keys(value).length <= 8, '协议确认条目过多').optional(),
   nickname: z.string().trim().min(1).max(20, '昵称最多 20 字').optional(),
-}).strict()
+}).strict().superRefine((body, ctx) => {
+  const issue = passwordPolicyIssue(body.password, body)
+  if (issue) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['password'], message: issue })
+})
 export const loginSchema = z.object({
   email: normalizedEmailSchema,
   password: z.string().min(1, '请输入密码'),
@@ -88,12 +101,12 @@ export const forgotPasswordSchema = z.object({
 
 export const resetPasswordSchema = z.object({
   token: z.string().min(1, '令牌不能为空'),
-  password: z.string().min(6, '密码至少 6 位'),
+  password: newPasswordLengthSchema,
 })
 
 export const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, '请输入当前密码'),
-  newPassword: z.string().min(6, '密码至少 6 位'),
+  newPassword: newPasswordLengthSchema,
 })
 
 export const updateMeSchema = z.object({

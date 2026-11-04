@@ -103,7 +103,7 @@ test('prepares a one-time in-memory Turnstile proof before registration submissi
   await expect(turnstileContainer).toHaveCSS('height', '1px')
   await expect(page.getByTestId('turnstile-status')).toHaveCount(0)
   await page.getByLabel('邮箱地址').fill(profile.email)
-  await page.getByLabel('密码（至少 6 位）').fill('TestPass123!')
+  await page.getByLabel('密码（至少 8 位）').fill('TestPass123!')
   await expect(page.getByRole('button', { name: '创建账号' })).toBeEnabled()
   const executeCallsBeforeSubmit = await page.evaluate(() => (
     window as unknown as { turnstileExecuteCalls?: number }

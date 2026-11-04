@@ -23,6 +23,7 @@ import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmatio
 import HumanVerificationWidget from '../components/auth/HumanVerificationWidget'
 import type { HumanVerificationHandle } from '../components/auth/humanVerificationTypes'
 import Logo from '../components/ui/Logo'
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULE_HINT, passwordPolicyIssue } from '../lib/passwordPolicy'
 import { parseSafeProductReturnTo } from '../utils/returnTo'
 import type { PendingAuthSessionCommit } from '../auth/pendingAuthSession'
 import { AuthSessionChangedError } from '../auth/sessionContext'
@@ -296,6 +297,16 @@ export default function LoginPage() {
           return
         }
 
+        // Before the human-verification proof, so a rejected password does not consume it.
+        const passwordIssue = await passwordPolicyIssue(password, {
+          email: email.trim().toLowerCase(),
+          nickname: nickname.trim(),
+        })
+        if (passwordIssue) {
+          showToast(passwordIssue, 'error')
+          return
+        }
+
         let humanVerification: { provider: 'altcha' | 'turnstile'; payload: string } | undefined
         if (registrationState.challenge) {
           if (!humanVerificationRef.current || !verificationReady) {
@@ -488,20 +499,29 @@ export default function LoginPage() {
           className="input"
           disabled={loading}
         />
-        <input
-          type="password"
-          placeholder="密码（至少 6 位）"
-          aria-label="密码（至少 6 位）"
-          value={password}
-          onChange={(event) => {
-            setPassword(event.target.value)
-            if (isRegister) humanVerificationRef.current?.reset()
-          }}
-          required
-          minLength={6}
-          className="input"
-          disabled={loading}
-        />
+        <div className="space-y-1">
+          <input
+            type="password"
+            placeholder={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
+            aria-label={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
+            aria-describedby={isRegister ? 'register-password-hint' : undefined}
+            value={password}
+            onChange={(event) => {
+              setPassword(event.target.value)
+              if (isRegister) humanVerificationRef.current?.reset()
+            }}
+            required
+            // Login keeps the legacy minimum so existing accounts can still sign in.
+            minLength={isRegister ? PASSWORD_MIN_LENGTH : 6}
+            className="input"
+            disabled={loading}
+          />
+          {isRegister && (
+            <p id="register-password-hint" className="px-0.5 text-left text-[11px] leading-relaxed text-[var(--color-text-muted)]">
+              {PASSWORD_RULE_HINT}
+            </p>
+          )}
+        </div>
 
         {isRegister && (
           <>

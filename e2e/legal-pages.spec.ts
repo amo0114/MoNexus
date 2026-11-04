@@ -70,7 +70,7 @@ test.describe('registration consent gate', () => {
 
     const email = `legal-e2e-${Date.now()}@test.local`
     await page.getByPlaceholder('邮箱地址').fill(email)
-    await page.getByPlaceholder('密码（至少 6 位）').fill('legalpass123')
+    await page.getByPlaceholder('密码（至少 8 位）').fill('Reg1ster#Flow-2026')
 
     const submit = page.getByRole('button', { name: '创建账号' })
     await expect(submit).toBeDisabled()
@@ -182,7 +182,7 @@ test.describe('checkout consent gate', () => {
   test('enforce mode rejects agreement-less orders and registrations at the API boundary', async ({ request }) => {
     // 注册：缺协议确认 → 400 REQUIRED
     const register = await request.post(`${API_BASE}/api/auth/register`, {
-      data: { email: `legal-api-${Date.now()}@test.local`, password: 'legalpass123' },
+      data: { email: `legal-api-${Date.now()}@test.local`, password: 'Reg1ster#Flow-2026' },
     })
     expect(register.status()).toBe(400)
     expect((await register.json()).error.code).toBe('LEGAL_AGREEMENT_REQUIRED')
