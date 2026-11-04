@@ -162,34 +162,14 @@ export async function searchProducts(params: {
 /**
  * 商品详情。
  *
- * 返回三种可区分的结果，调用方据此给出不同文案：
- *
  *   { kind: 'found' }         —— 当前视角可见，带完整投影
- *   { kind: 'not_found' }     —— 不存在 / 已归档 / 商家停用 / 草稿（原 404 契约）
- *   { kind: 'login_required' }—— 商品存在但仅登录可见，403 PRODUCT_LOGIN_REQUIRED
- *
- * 为什么把 403 单列出来而不是并进 404：用户拿到的编号是真实存在的商品，
- * 告诉他「不存在」会让他在群友面前被误导着反复重试。但「仅登录可见」
- * 这个结果本身**不得携带任何商品字段**（名称、价格、库存、商家、分类、
- * 图片、描述、ID 都不给）——只回答「这里有东西，但你得先登录」。
- *
- * ⚠️ 与仓库「不属于你的资源返回 404 而非 403」的通用原则存在偏差，代价要
- * 说清楚：**商品的存在性可被探测**。guest 逐个试编号时，看到的是
- * 「{ found: false }」与「{ found: false, loginRequired: true }」两种不同结果，
- * 因此能区分「不存在」和「存在但需登录」，也就能数出 members_only 商品的
- * 数量。这与网站详情页当前的行为一致（访客直访受限商品同样收 403），
- * 方案 §2.1 已接受这一取舍——§2.3 的保护目标是名称、说明、价格、套餐、
- * 评价、分类元数据和图片 URL，存在性本身不在其中。
- *
- * 真正被禁的是**内容**：固定结果不随商品变化，只有「需登录」这一个比特，
- * 商品字段一个都不给（含 ID）。若日后要连存在性一起收敛，正确做法是让
- * guest 对受限商品也返回 not_found——但那会让真实买家以为商品下架，
- * 属于产品决策，不在这里顺手改。
+ *   { kind: 'not_found' }     —— 不存在 / 已归档 / 商家停用 / 草稿，以及 guest
+ *                                视角下仅登录可见的商品（SEC-05：与网站详情页
+ *                                一致，guest 无法区分两者，存在性不可探测）
  */
 export type BotProductDetailResult =
   | { kind: 'found'; product: BotProductDetail }
   | { kind: 'not_found' }
-  | { kind: 'login_required' }
 
 export async function productDetail(params: {
   id: unknown
@@ -205,9 +185,6 @@ export async function productDetail(params: {
   } catch (err) {
     if (err instanceof HttpError) {
       if (err.status === 404) return { kind: 'not_found' }
-      if (err.status === 403 && err.code === 'PRODUCT_LOGIN_REQUIRED') {
-        return { kind: 'login_required' }
-      }
     }
     throw err
   }

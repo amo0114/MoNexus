@@ -14,6 +14,8 @@ export type ErrorCode =
   // 换新幂等键并让用户针对新表单再次确认。
   | 'CHECKOUT_CHANGED'
   | 'BAD_REQUEST'
+  | 'PAYLOAD_TOO_LARGE'
+  | 'INVALID_JSON'
   | 'INTERNAL_SERVER_ERROR'
   | 'RATE_LIMITED'
   // 高风险订单二次验证（P3）：触发阈值但请求缺少登录密码 / 密码错误 /

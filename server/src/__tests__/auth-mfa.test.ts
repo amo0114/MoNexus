@@ -267,7 +267,7 @@ describe('administrator MFA enrollment and login', () => {
 
 describe('bcrypt 12 migration boundaries', () => {
   it('writes bcrypt 12 for registration, password change, and password reset', async () => {
-    await api.post('/api/auth/register').send({ email: 'bcrypt-register@test.local', password: 'new-password' }).expect(201)
+    await api.post('/api/auth/register').send({ email: 'bcrypt-register@test.local', password: 'Fresh#Cred-4471' }).expect(201)
     const registered = await prisma.user.findUniqueOrThrow({ where: { email: 'bcrypt-register@test.local' } })
 
     const { user: changing } = await createTestUser('bcrypt-change@test.local', 'old-password')
@@ -275,7 +275,7 @@ describe('bcrypt 12 migration boundaries', () => {
     await api
       .post('/api/auth/password-change')
       .set(authHeader(legacyUserToken))
-      .send({ currentPassword: 'old-password', newPassword: 'changed-password' })
+      .send({ currentPassword: 'old-password', newPassword: 'Chang3d#Cred-9182' })
       .expect(200)
     const changed = await prisma.user.findUniqueOrThrow({ where: { id: changing.id } })
 
@@ -288,7 +288,7 @@ describe('bcrypt 12 migration boundaries', () => {
         expiresAt: new Date(Date.now() + 60_000),
       },
     })
-    await api.post('/api/auth/reset-password').send({ token: rawResetToken, password: 'reset-password' }).expect(200)
+    await api.post('/api/auth/reset-password').send({ token: rawResetToken, password: 'Res3t#Cred-5530' }).expect(200)
     const reset = await prisma.user.findUniqueOrThrow({ where: { id: resetting.id } })
 
     expect(
@@ -336,7 +336,7 @@ describe('administrator password security boundary', () => {
     await api
       .post('/api/auth/password-change')
       .set(authHeader(authenticated.accessToken))
-      .send({ currentPassword: password, newPassword: 'new-admin-password' })
+      .send({ currentPassword: password, newPassword: 'Adm1n#Rotate-6624' })
       .expect(200)
 
     const [after, storedChallenge] = await Promise.all([
@@ -361,7 +361,7 @@ describe('administrator password security boundary', () => {
 
     const relogin = await api
       .post('/api/auth/login')
-      .send({ email: user.email, password: 'new-admin-password' })
+      .send({ email: user.email, password: 'Adm1n#Rotate-6624' })
       .expect(202)
     await api
       .post('/api/auth/mfa/verify')
@@ -386,7 +386,7 @@ describe('administrator password security boundary', () => {
     await api
       .post('/api/auth/password-change')
       .set(authHeader(authenticated.accessToken))
-      .send({ currentPassword: 'incorrect-password', newPassword: 'new-admin-password' })
+      .send({ currentPassword: 'incorrect-password', newPassword: 'Adm1n#Rotate-6624' })
       .expect(401)
 
     const [after, storedChallenge] = await Promise.all([
@@ -416,7 +416,7 @@ describe('administrator password security boundary', () => {
 
     await api
       .post('/api/auth/reset-password')
-      .send({ token: resetToken, password: 'new-admin-password' })
+      .send({ token: resetToken, password: 'Adm1n#Rotate-6624' })
       .expect(200)
 
     const [after, storedChallenge] = await Promise.all([

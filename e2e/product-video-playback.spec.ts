@@ -28,7 +28,7 @@ test('private video autoplays muted, plays real MP4 and releases media on galler
   expect((await saved).ok()).toBeTruthy()
   const published = await request.post(`${API_BASE}/api/merchant/products/${productId}/publish`, { headers: { Authorization: `Bearer ${merchant.accessToken}` } })
   expect(published.ok(), await published.text()).toBeTruthy()
-  expect((await request.get(`${API_BASE}/api/products/${productId}/video-playback`)).status()).toBe(403)
+  expect((await request.get(`${API_BASE}/api/products/${productId}/video-playback`)).status()).toBe(404)
 
   const adminContext = await browser.newContext()
   const guestContext = await browser.newContext()

@@ -37,8 +37,8 @@ describe('purchase form definitions (merchant API)', () => {
       .expect(200)
     expect(user).toBeDefined()
 
-    const guest = await api.get(`/api/products/${res.body.id}`).expect(403)
-    expect(guest.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+    const guest = await api.get(`/api/products/${res.body.id}`).expect(404)
+    expect(guest.body.error.code).toBe('NOT_FOUND')
 
     await createTestUser('pf-member@test.local', 'pass123', 'user', 0)
     const member = await loginAs('pf-member@test.local', 'pass123')

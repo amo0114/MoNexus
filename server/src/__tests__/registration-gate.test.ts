@@ -110,7 +110,7 @@ describe('registration gate (REG-03)', () => {
   afterEach(clearRegistrationSwitch)
 
   it('keeps base registration working with the default row absent and holds its reward', async () => {
-    const { user: inviter } = await createTestUser('gate-default-inviter@test.local', 'pass123', 'user', 0)
+    const { user: inviter } = await createTestUser('gate-default-inviter@test.local', 'Reg1ster#Flow-2026', 'user', 0)
     await prisma.user.update({
       where: { id: inviter.id },
       data: { emailVerified: new Date(), createdAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000) },
@@ -121,7 +121,7 @@ describe('registration gate (REG-03)', () => {
       .post('/api/auth/register')
       .send({
         email: 'gate-default@test.local',
-        password: 'pass123',
+        password: 'Reg1ster#Flow-2026',
         inviteCode: invite.code,
       })
       .expect(201)
@@ -144,14 +144,14 @@ describe('registration gate (REG-03)', () => {
 
     const res = await api
       .post('/api/auth/register')
-      .send({ email: 'gate-enabled@test.local', password: 'pass123' })
+      .send({ email: 'gate-enabled@test.local', password: 'Reg1ster#Flow-2026' })
       .expect(201)
     expect(res.body.user.email).toBe('gate-enabled@test.local')
   })
 
   it('rejects registration with 403 and zero side effects once disabled (P.2)', async () => {
     const { accessToken } = await loginAdmin('gate-disabled-admin@test.local')
-    const { user: inviter } = await createTestUser('gate-disabled-inviter@test.local', 'pass123', 'user', 0)
+    const { user: inviter } = await createTestUser('gate-disabled-inviter@test.local', 'Reg1ster#Flow-2026', 'user', 0)
     const invite = await issueTestInviteCode(inviter.id)
     await putSwitch(accessToken, 0).expect(200)
 
@@ -184,7 +184,7 @@ describe('registration gate (REG-03)', () => {
     await prisma.systemConfig.create({ data: { key: CONFIG_KEY, value: 0 } })
 
     await expect(
-      registerUser('gate-service-level@test.local', 'pass123')
+      registerUser('gate-service-level@test.local', 'Reg1ster#Flow-2026')
     ).rejects.toMatchObject({ status: 403, code: 'REGISTRATION_DISABLED' })
 
     expect(await prisma.user.findUnique({ where: { email: 'gate-service-level@test.local' } })).toBeNull()
@@ -253,8 +253,8 @@ describe('registration switch authorization', () => {
 
   it('keeps the switch behind admin MFA while the public status stays open', async () => {
     const { user: admin } = await loginAdmin('reg-authz-admin@test.local')
-    await createTestUser('reg-authz-user@test.local', 'pass123', 'user')
-    const normalUser = await loginAs('reg-authz-user@test.local', 'pass123')
+    await createTestUser('reg-authz-user@test.local', 'Reg1ster#Flow-2026', 'user')
+    const normalUser = await loginAs('reg-authz-user@test.local', 'Reg1ster#Flow-2026')
     const session = await prisma.refreshToken.findFirstOrThrow({
       where: { userId: admin.id, revoked: false },
       orderBy: { id: 'desc' },
@@ -321,28 +321,28 @@ describe('registration switch monotonicity (P.4 / REG-05)', () => {
 
     await api
       .post('/api/auth/register')
-      .send({ email: 'monotonic-before@test.local', password: 'pass123' })
+      .send({ email: 'monotonic-before@test.local', password: 'Reg1ster#Flow-2026' })
       .expect(201)
 
     await putSwitch(accessToken, 0).expect(200)
     for (let i = 0; i < 3; i++) {
       await api
         .post('/api/auth/register')
-        .send({ email: `monotonic-during-${i}@test.local`, password: 'pass123' })
+        .send({ email: `monotonic-during-${i}@test.local`, password: 'Reg1ster#Flow-2026' })
         .expect(403)
     }
 
     await putSwitch(accessToken, 1).expect(200)
     await api
       .post('/api/auth/register')
-      .send({ email: 'monotonic-after@test.local', password: 'pass123' })
+      .send({ email: 'monotonic-after@test.local', password: 'Reg1ster#Flow-2026' })
       .expect(201)
   })
 
   it('lets an in-flight registration that already passed the gate finish (REG-05)', async () => {
     // 门在 registerUser 第一步读完就放行，之后是 bcrypt（数百毫秒）+ 两个
     // 事务；在这段窗口里关开关，不撤销已经通过检查的请求。
-    const inFlight = registerUser('inflight-registration@test.local', 'pass123')
+    const inFlight = registerUser('inflight-registration@test.local', 'Reg1ster#Flow-2026')
       .then(result => ({ result, finishedAt: Date.now() }))
 
     await new Promise(resolve => setTimeout(resolve, 150))
@@ -359,7 +359,7 @@ describe('registration switch monotonicity (P.4 / REG-05)', () => {
     expect(disabledAt).toBeLessThan(finishedAt)
 
     // 关闭生效之后开始的调用必须失败。
-    await expect(registerUser('after-disable@test.local', 'pass123')).rejects.toMatchObject({
+    await expect(registerUser('after-disable@test.local', 'Reg1ster#Flow-2026')).rejects.toMatchObject({
       code: 'REGISTRATION_DISABLED',
     })
   })

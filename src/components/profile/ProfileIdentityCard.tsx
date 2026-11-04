@@ -10,6 +10,7 @@ import AvatarPresetDialog from './AvatarPresetDialog'
 import UserAvatar from '../ui/UserAvatar'
 import AsyncButton from '../ui/AsyncButton'
 import { showCompletionToast } from '../../lib/completionFeedback'
+import { PASSWORD_MIN_LENGTH, passwordPolicyIssue } from '../../lib/passwordPolicy'
 
 /**
  * 个人资料与账号安全卡：
@@ -87,15 +88,15 @@ export default function ProfileIdentityCard() {
       return
     }
 
-    if (newPassword.length < 6) {
-      setPwdError('新密码长度不能少于 6 个字符')
-      return
-    }
-
     const requestContext = getRequestAuthContext()
     if (!requestContext) return
     setSavingPwd(true)
     try {
+      const passwordIssue = await passwordPolicyIssue(newPassword, { email: user?.email, nickname: user?.nickname })
+      if (passwordIssue) {
+        setPwdError(passwordIssue)
+        return
+      }
       await changePassword({ currentPassword, newPassword })
       if (!isRequestContextCurrent(requestContext)) return
       showToast('密码已修改，请重新登录')
@@ -403,8 +404,8 @@ export default function ProfileIdentityCard() {
               />
               <input
                 type="password"
-                placeholder="新密码（至少 6 位）"
-                aria-label="新密码（至少 6 位）"
+                placeholder={`新密码（至少 ${PASSWORD_MIN_LENGTH} 位）`}
+                aria-label={`新密码（至少 ${PASSWORD_MIN_LENGTH} 位）`}
                 autoComplete="new-password"
                 aria-describedby={pwdError ? passwordErrorId : undefined}
                 value={newPassword}

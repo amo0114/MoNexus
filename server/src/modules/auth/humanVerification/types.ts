@@ -3,7 +3,7 @@
  * with the matching action, so a proof minted for one flow can never be
  * replayed against another.
  */
-export type HumanVerificationAction = 'register' | 'forgot_password'
+export type HumanVerificationAction = 'register' | 'forgot_password' | 'login'
 
 export type HumanVerificationProvider = 'off' | 'altcha' | 'turnstile'
 

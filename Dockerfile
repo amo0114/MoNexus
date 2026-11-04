@@ -28,6 +28,9 @@ ENV STORAGE_BUCKET=monexus-uploads
 ENV DELIVERY_STORAGE_BUCKET=monexus-files
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=builder /app/dist /usr/share/nginx/html
+# SEC-07: hashed assets never change under the same name; a fixed mtime keeps
+# Last-Modified from revealing the build time.
+RUN find /usr/share/nginx/html/assets -type f -exec touch -d @0 {} +
 
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
