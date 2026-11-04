@@ -250,7 +250,9 @@ export default function ProductDetailPage() {
         }
       } catch (err) {
         if (cancelled) return
-        if (getApiErrorCode(err) === 'PRODUCT_LOGIN_REQUIRED') {
+        // SEC-05: for guests the API answers "members only" and "missing" with
+        // the same 404, so every guest 404 offers the login path.
+        if (!isLoggedIn && getApiErrorCode(err) === 'NOT_FOUND') {
           setLoginRequired(true)
           return
         }
@@ -429,7 +431,7 @@ export default function ProductDetailPage() {
       <div className="max-w-md mx-auto px-4 py-16 text-center fade-in" data-testid="product-login-required">
         <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">登录后查看商品</h1>
         <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-          该商品仅登录用户可浏览，登录后即可查看详情与套餐。
+          该商品可能已下架，或仅登录用户可浏览。登录后即可查看详情与套餐。
         </p>
         <button
           type="button"

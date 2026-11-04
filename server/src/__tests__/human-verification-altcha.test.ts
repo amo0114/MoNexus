@@ -198,7 +198,7 @@ describe('ALTCHA human verification', () => {
   })
 
   it('rejects client-supplied algorithm, difficulty, callback, or unknown action', async () => {
-    await api.get('/api/auth/human-challenge?action=login').expect(400)
+    await api.get('/api/auth/human-challenge?action=checkout').expect(400)
     await api.get('/api/auth/human-challenge?action=register&algorithm=SHA-1').expect(400)
     await api.get('/api/auth/human-challenge?action=register&maxnumber=1').expect(400)
     await api.get('/api/auth/human-challenge?action=register&callback=https://evil.example').expect(400)
@@ -291,32 +291,32 @@ describe('ALTCHA human verification', () => {
 
   it('maps missing, mismatched provider, failed, and unavailable proofs to 400/403/503', async () => {
     const missing = await api.post('/api/auth/register').send({
-      email: 'altcha-missing@test.local', password: 'pass123',
+      email: 'altcha-missing@test.local', password: 'Reg1ster#Flow-2026',
     }).expect(400)
     expect(missing.body.error.code).toBe('HUMAN_VERIFICATION_REQUIRED')
 
     const legacy = await api.post('/api/auth/register').send({
-      email: 'altcha-legacy@test.local', password: 'pass123', turnstileToken: 'old-turnstile-proof',
+      email: 'altcha-legacy@test.local', password: 'Reg1ster#Flow-2026', turnstileToken: 'old-turnstile-proof',
     }).expect(400)
     expect(legacy.body.error.code).toBe('HUMAN_VERIFICATION_REQUIRED')
 
     const weaker = await api.post('/api/auth/register').send({
       email: 'altcha-weaker@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       humanVerification: { provider: 'turnstile', payload: 'turnstile-proof' },
     }).expect(403)
     expect(weaker.body.error.code).toBe('HUMAN_VERIFICATION_FAILED')
 
     const oversized = await api.post('/api/auth/register').send({
       email: 'altcha-oversize@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       humanVerification: { provider: 'altcha', payload: 'a'.repeat(HUMAN_VERIFICATION_PAYLOAD_MAX_BYTES + 1) },
     }).expect(400)
     expect(oversized.body.error.code).toBe('VALIDATION_ERROR')
 
     const malformed = await api.post('/api/auth/register').send({
       email: 'altcha-malformed@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       humanVerification: { provider: 'altcha', payload: 'not-a-proof' },
     }).expect(403)
     expect(malformed.body.error.code).toBe('HUMAN_VERIFICATION_FAILED')
@@ -330,7 +330,7 @@ describe('ALTCHA human verification', () => {
 
     const accepted = await api.post('/api/auth/register').send({
       email: 'altcha-success@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       humanVerification: { provider: 'altcha', payload },
     }).expect(201)
     expect(accepted.body.user.email).toBe('altcha-success@test.local')
@@ -339,7 +339,7 @@ describe('ALTCHA human verification', () => {
 
     const replay = await api.post('/api/auth/register').send({
       email: 'altcha-replay@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       humanVerification: { provider: 'altcha', payload },
     }).expect(403)
     expect(replay.body.error.code).toBe('HUMAN_VERIFICATION_FAILED')
@@ -357,7 +357,7 @@ describe('ALTCHA human verification', () => {
     const payload = await solveToPayload(issued)
     const register = await api.post('/api/auth/register').send({
       email: 'altcha-redis-down@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       humanVerification: { provider: 'altcha', payload },
     }).expect(503)
     expect(['ABUSE_PROTECTION_UNAVAILABLE', 'HUMAN_VERIFICATION_UNAVAILABLE']).toContain(register.body.error.code)

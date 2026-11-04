@@ -13,6 +13,14 @@ describe('observability middleware', () => {
     })
   })
 
+  it('leaves HSTS to the edge and keeps the other helmet headers (SEC-09)', async () => {
+    const res = await api.get('/api/health').expect(200)
+
+    expect(res.headers['strict-transport-security']).toBeUndefined()
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+    expect(res.headers['content-security-policy']).toContain("default-src 'self'")
+  })
+
   it('should echo a provided request id', async () => {
     const requestId = 'client-request-id-123'
 
@@ -27,6 +35,19 @@ describe('observability middleware', () => {
       uptime: expect.any(Number),
       timestamp: expect.any(String),
     })
+  })
+
+  it('replaces a malformed or oversized request id with a server UUID', async () => {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    for (const requestId of ['attacker controlled', 'id<script>', 'short', 'a'.repeat(65), 'x'.repeat(2_000)]) {
+      const res = await api
+        .get('/api/points/history')
+        .set('x-request-id', requestId)
+        .expect(401)
+
+      expect(res.headers['x-request-id']).toMatch(uuid)
+      expect(res.body.requestId).toBe(res.headers['x-request-id'])
+    }
   })
 
   it('should include request id in error responses', async () => {

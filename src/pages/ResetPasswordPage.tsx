@@ -4,6 +4,7 @@ import { KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { resetPassword } from '../api/auth'
 import { getApiErrorMessage } from '../api/error'
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULE_HINT, passwordPolicyIssue } from '../lib/passwordPolicy'
 
 export default function ResetPasswordPage() {
   const { token = '' } = useParams<{ token: string }>()
@@ -22,6 +23,12 @@ export default function ResetPasswordPage() {
     }
     setSubmitting(true)
     try {
+      // The reset link carries no account context; the server adds email/nickname checks.
+      const passwordIssue = await passwordPolicyIssue(password)
+      if (passwordIssue) {
+        showToast(passwordIssue, 'error')
+        return
+      }
       await resetPassword(token, password)
       setDone(true)
       setTimeout(() => navigate('/login'), 2000)
@@ -65,7 +72,7 @@ export default function ResetPasswordPage() {
               </div>
               <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-1">设置新密码</h1>
               <p className="text-sm text-[var(--color-text-muted)]">
-                请设置一个至少 6 位的新密码
+                {PASSWORD_RULE_HINT}
               </p>
             </div>
 
@@ -76,7 +83,7 @@ export default function ResetPasswordPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                minLength={6}
+                minLength={PASSWORD_MIN_LENGTH}
                 className="input"
               />
               <input
@@ -85,7 +92,7 @@ export default function ResetPasswordPage() {
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 required
-                minLength={6}
+                minLength={PASSWORD_MIN_LENGTH}
                 className="input"
               />
               <button

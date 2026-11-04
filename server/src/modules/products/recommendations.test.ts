@@ -241,8 +241,8 @@ describe('GET /api/products/:id/recommendations', () => {
     expect((await recommend(base.id)).items.map(item => item.id)).toEqual([open.id])
     expect((await recommend(base.id, accessToken)).items.map(item => item.id)).toEqual([members.id, open.id])
 
-    const guestLocked = await api.get(`/api/products/${members.id}/recommendations`).expect(403)
-    expect(guestLocked.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+    const guestLocked = await api.get(`/api/products/${members.id}/recommendations`).expect(404)
+    expect(guestLocked.body.error.code).toBe('NOT_FOUND')
     expect(guestLocked.headers['cache-control']).toBe('private, no-store')
     expect(JSON.stringify(guestLocked.body)).not.toMatch(/候选|基准/)
 

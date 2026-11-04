@@ -604,3 +604,40 @@ docker exec 1Panel-openresty-iMZ6 sh -c \
   'echo | openssl s_client -connect 127.0.0.1:443 -servername monexus.oai-o.com 2>/dev/null \
    | openssl x509 -noout -subject -dates'
 ~~~
+
+## 12. 响应头去重与超长 URL（SEC-09 / SEC-10）
+
+应用侧已改为：Express 不再发 HSTS（`helmet({ strictTransportSecurity: false })`），
+bundled Nginx 只在自己直接服务的位置发浏览器安全头，`/api` 只留 helmet 的一份。
+以下两项在 Cloudflare / OpenResty 侧完成，仓库无法代管。
+
+### HSTS 只保留一层
+
+1. 逐层采样 `strict-transport-security`：直连 `127.0.0.1:<WEB_PORT>`（应无）→
+   经 OpenResty（`--resolve monexus.oai-o.com:443:127.0.0.1`）→ 公网，确认现有
+   `max-age=31536000` 来自 1Panel 站点 HTTPS 设置（含 `10-static.conf`）还是
+   Cloudflare「SSL/TLS → Edge Certificates → HSTS」。
+2. 只保留 Cloudflare 一处：开启 HSTS，`max-age=31536000`，**勾选 includeSubDomains**
+   （前提：`*.monexus.oai-o.com` 全部可用 HTTPS，含 staging）；同时关掉 1Panel 站点的
+   HSTS，并删除 `10-static.conf` 里的 HSTS 行。Cloudflare 的 No-Sniff 选项保持关闭，
+   `nosniff` 由源站发送。
+3. 验收：公网 `curl -sI` 的 `/`、`/api/health`、`/assets/<任一文件>`，每个安全头只出现
+   一次，HSTS 含 `includeSubDomains`。
+
+SPA 入口 `/` 的 `cache-control: no-cache` 目前出现两次：bundled Nginx 已发一份，
+另一份来自 OpenResty `root.conf` 的注入（见第 10 节）。属无害重复，若要去掉，按第 10 节
+做法用不受面板管理的文件覆盖 `/`，不要直接改 `root.conf`。
+
+### 超长 URL 返回 414 而不是 520
+
+源站链路本身正确：bundled Nginx 对超过 8 KB 的请求行返回 414，本地验证到 40 KB 仍为
+414。公网 ≥ 15 KB 出现 520，说明问题在 Cloudflare 与 OpenResty 之间（OpenResty 的
+`large_client_header_buffers`、1Panel WAF 或连接被重置）。
+
+1. 按第 10 节诊断路径逐层发送 9 KB / 15 KB / 20 KB 的 URL，找到哪一层未返回 414。
+2. 若是 OpenResty：让其 `large_client_header_buffers` 不小于 `4 16k`（与 Cloudflare 的
+   16 KB URL 上限对齐），超长部分交给 bundled Nginx 返回 414。
+3. 或在 Cloudflare 加 WAF 自定义规则：`len(http.request.uri) > 8000` 时直接拦截，
+   不再回源。
+4. 验收：公网 9 KB、15 KB、20 KB 的 URL 都返回 414（或规则配置的 4xx），不再出现 520；
+   正常长度的游标分页查询不受影响。

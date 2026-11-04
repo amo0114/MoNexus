@@ -21,6 +21,8 @@ import {
 } from './sessionService.js'
 import { recordSecurityEvent } from './securityEvents.js'
 import { createAuthChallenge } from './mfa.js'
+import { clearLoginFailures, enforceLoginVerification, recordLoginFailure } from './loginFailures.js'
+import type { HumanVerificationRequest } from './humanVerification.js'
 import { resolveUserNickname } from '../../lib/defaultNickname.js'
 
 type AuthenticatedLoginResult = {
@@ -40,11 +42,31 @@ type MfaChallengeLoginResult = {
 
 export type LoginResult = AuthenticatedLoginResult | MfaChallengeLoginResult
 
-export async function loginUser(email: string, password: string, ip?: string, userAgent?: string): Promise<LoginResult> {
+// A cost-12 hash of a throwaway string: unknown emails pay the same bcrypt
+// cost as real ones, so response time does not reveal account existence.
+const LOGIN_TIMING_EQUALIZER_HASH = '$2a$12$4OvJg9qSMmfN1g2fOK6TpuB6VcfVC6uXm8CVJ1Q.A620ttoz2x6Ee'
+
+export async function loginUser(
+  email: string,
+  password: string,
+  ip?: string,
+  userAgent?: string,
+  humanVerification?: HumanVerificationRequest['humanVerification'],
+): Promise<LoginResult> {
+  // Checked before the account lookup so unknown emails behave identically.
+  await enforceLoginVerification(email, humanVerification, ip)
+  const credentialFailure = async () => {
+    await recordLoginFailure(email)
+    return unauthenticated('邮箱或密码错误')
+  }
+
   // This non-decision lookup identifies the advisory-lock key only. The
   // password, status, role, and points are all re-read after taking the lock.
   const candidate = await prisma.user.findUnique({ where: { email }, select: { id: true } })
-  if (!candidate) throw unauthenticated('邮箱或密码错误')
+  if (!candidate) {
+    await bcrypt.compare(password, LOGIN_TIMING_EQUALIZER_HASH)
+    throw await credentialFailure()
+  }
 
   const maxAgeMs = await getRefreshTokenMaxAgeMs()
   const issued = await prisma.$transaction(async tx => {
@@ -53,11 +75,13 @@ export async function loginUser(email: string, password: string, ip?: string, us
       where: { id: candidate.id },
       include: { pointAccount: true },
     })
-    if (!user) throw unauthenticated('邮箱或密码错误')
-    if (user.status === '已封禁') throw badRequest('账号已被封禁')
+    if (!user) throw await credentialFailure()
 
     const valid = await bcrypt.compare(password, user.password)
-    if (!valid) throw unauthenticated('邮箱或密码错误')
+    if (!valid) throw await credentialFailure()
+    await clearLoginFailures(email)
+    // Only someone who proved the password learns that the account is banned.
+    if (user.status === '已封禁') throw badRequest('账号已被封禁')
 
     // An administrator's password is only pre-authentication. Do not retain
     // it, rehash it, or create a refresh family until a factor succeeds.

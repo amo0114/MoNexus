@@ -95,7 +95,9 @@ const apiLimiter = rateLimit({
 })
 
 app.use(requestLogger)
-app.use(helmet())
+// SEC-09: HSTS belongs to the edge (one policy for every response and
+// subdomain); emitting it here too sent two conflicting headers on /api.
+app.use(helmet({ strictTransportSecurity: false }))
 app.use(cors({
   origin: config.frontendOrigin,
   credentials: true,

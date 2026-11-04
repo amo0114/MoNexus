@@ -1,4 +1,4 @@
-export type HumanVerificationAction = 'register' | 'forgot_password'
+export type HumanVerificationAction = 'register' | 'forgot_password' | 'login'
 
 export type HumanVerificationDescriptor =
   | { provider: 'altcha'; challengeUrl: string }

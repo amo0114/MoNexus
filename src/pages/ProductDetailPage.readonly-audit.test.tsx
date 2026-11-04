@@ -122,8 +122,8 @@ describe('ProductDetailPage — Multi-offer Read-only Audit Fixes', () => {
 
     const err = {
       response: {
-        status: 401,
-        data: { error: { code: 'PRODUCT_LOGIN_REQUIRED', message: '请先登录' } },
+        status: 404,
+        data: { error: { code: 'NOT_FOUND', message: '商品暂不可用' } },
       },
     }
     apiGet.mockRejectedValue(err)
