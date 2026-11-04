@@ -79,7 +79,7 @@ export async function productVideoPlayback(productId: number, audience: ProductA
   const product = await prisma.product.findUnique({ where: { id: productId }, include: {
     merchant: { select: { status: true } }, category: { select: { guestVisibility: true } }, guestEligibility: { select: { decision: true, reviewedRevision: true } },
   } })
-  if (!product) throw notFound()
+  if (!product) throw notFound('商品暂不可用')
   assertPublicProductAccess(product, audience)
   if (expectedAssetId && product.promoVideoAssetId !== expectedAssetId) throw new HttpError(409, 'PRODUCT_MEDIA_CHANGED', '商品视频已更新，请刷新')
   if (!product.promoVideoAssetId) throw notFound()

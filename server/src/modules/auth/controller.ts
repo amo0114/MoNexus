@@ -68,10 +68,10 @@ export async function humanChallenge(req: Request, res: Response, next: NextFunc
 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
-    const { email, password } = req.body
+    const { email, password, humanVerification } = req.body
     const result = await authService.loginUser(
       email, password,
-      req.ip, req.headers['user-agent']
+      req.ip, req.headers['user-agent'], humanVerification,
     )
     if (result.kind === 'mfa_challenge') {
       // A password-authenticated administrator remains pre-authenticated

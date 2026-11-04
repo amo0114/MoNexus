@@ -131,13 +131,15 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     enableProtection()
     const redis = new CountingRedis()
     __setRedisForTests(redis)
+    // Distinct emails keep the per-email login lockout (SEC-02) out of the way.
     for (let i = 0; i < 30; i++) {
-      await api.post('/api/auth/login').send({ email: 'unknown@test.local', password: 'pass12345' }).expect(401)
+      await api.post('/api/auth/login').send({ email: `unknown-${i}@test.local`, password: 'pass12345' }).expect(401)
     }
     const blocked = await api.post('/api/auth/mfa/verify').send({}).expect(429)
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
-    expect(redis.counts.size).toBe(1)
-    expect([...redis.counts.keys()][0]).toContain(':authentication:ip:')
+    const authenticationKeys = [...redis.counts.keys()].filter(key => key.includes(':authentication:'))
+    expect(authenticationKeys).toHaveLength(1)
+    expect(authenticationKeys[0]).toContain(':authentication:ip:')
   })
 
   it('does not fall back to local login limits when shared protection is unavailable', async () => {
@@ -189,7 +191,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     const before = await sideEffectSnapshot()
     const res = await api.post('/api/auth/register').send({
       email: 'blocked-before-validation@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       unknownField: 'must-not-reach-validation',
     }).expect(403)
 
@@ -215,7 +217,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     const before = await sideEffectSnapshot()
     const res = await api.post('/api/auth/register').send({
       email: 'preflight-blocked@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       turnstileToken: 'proof',
     }).expect(429)
 
@@ -233,19 +235,19 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     __setHumanVerifierForTesting({ verify: async () => verification })
 
     const missing = await api.post('/api/auth/register').send({
-      email: 'missing-proof@test.local', password: 'pass123',
+      email: 'missing-proof@test.local', password: 'Reg1ster#Flow-2026',
     }).expect(400)
     expect(missing.body.error.code).toBe('HUMAN_VERIFICATION_REQUIRED')
 
     verification = { kind: 'rejected' }
     const rejected = await api.post('/api/auth/register').send({
-      email: 'rejected-proof@test.local', password: 'pass123', turnstileToken: 'bad-proof',
+      email: 'rejected-proof@test.local', password: 'Reg1ster#Flow-2026', turnstileToken: 'bad-proof',
     }).expect(403)
     expect(rejected.body.error.code).toBe('HUMAN_VERIFICATION_FAILED')
 
     verification = { kind: 'unavailable' }
     const unavailable = await api.post('/api/auth/register').send({
-      email: 'unavailable-proof@test.local', password: 'pass123', turnstileToken: 'proof',
+      email: 'unavailable-proof@test.local', password: 'Reg1ster#Flow-2026', turnstileToken: 'proof',
     }).expect(503)
     expect(unavailable.body.error.code).toBe('HUMAN_VERIFICATION_UNAVAILABLE')
 
@@ -254,7 +256,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     // the first full registration bucket and must stop before bcrypt/DB.
     redis.forced.push([1, 600_000], [6, 3_600_000])
     const limited = await api.post('/api/auth/register').send({
-      email: 'full-bucket-blocked@test.local', password: 'pass123', turnstileToken: 'proof',
+      email: 'full-bucket-blocked@test.local', password: 'Reg1ster#Flow-2026', turnstileToken: 'proof',
     }).expect(429)
     expect(limited.body.error.code).toBe('RATE_LIMITED')
     expect(await prisma.user.findUnique({ where: { email: 'full-bucket-blocked@test.local' } })).toBeNull()
@@ -267,7 +269,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
 
     const before = await sideEffectSnapshot()
     const unavailable = await api.post('/api/auth/register').send({
-      email: 'redis-down@test.local', password: 'pass123', turnstileToken: 'proof',
+      email: 'redis-down@test.local', password: 'Reg1ster#Flow-2026', turnstileToken: 'proof',
     }).expect(503)
     expect(unavailable.body.error.code).toBe('ABUSE_PROTECTION_UNAVAILABLE')
     expect(await sideEffectSnapshot()).toEqual(before)
@@ -275,7 +277,7 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     const redis = new CountingRedis()
     __setRedisForTests(redis)
     const accepted = await api.post('/api/auth/register').send({
-      email: 'protected-success@test.local', password: 'pass123', turnstileToken: 'proof',
+      email: 'protected-success@test.local', password: 'Reg1ster#Flow-2026', turnstileToken: 'proof',
     }).expect(201)
     expect(accepted.body.user.email).toBe('protected-success@test.local')
   })

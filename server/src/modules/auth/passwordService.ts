@@ -8,6 +8,7 @@ import type { HumanVerificationRequest } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/index.js'
 import { logger } from '../../lib/logger.js'
+import { passwordPolicyIssue, type PasswordContext } from '../../lib/passwordPolicy.js'
 import { lockUserRefreshSessionMutations, revokeAllUserRefreshTokens } from './sessionService.js'
 import {
   PASSWORD_BCRYPT_ROUNDS,
@@ -20,6 +21,11 @@ import {
   consumeAbuseBucket,
   enforceHumanVerification,
 } from './authProtection.js'
+
+function assertNewPasswordPolicy(password: string, account: PasswordContext, field: string) {
+  const issue = passwordPolicyIssue(password, account)
+  if (issue) throw new HttpError(400, 'VALIDATION_ERROR', '参数校验失败', [{ field, message: issue }])
+}
 
 async function enforcePasswordResetProtection(
   email: string,
@@ -181,6 +187,7 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
   if (!stored) throw badRequest('重置链接无效', 'BAD_REQUEST')
   if (stored.used) throw badRequest('重置链接已被使用', 'BAD_REQUEST')
   if (stored.expiresAt < new Date()) throw badRequest('重置链接已过期', 'BAD_REQUEST')
+  assertNewPasswordPolicy(newPassword, stored.user, 'body.password')
 
   const hashed = await bcrypt.hash(newPassword, PASSWORD_BCRYPT_ROUNDS)
   const consumed = await prisma.$transaction(async tx => {
@@ -221,6 +228,9 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
 }
 
 export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
+  const account = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, nickname: true } })
+  if (!account) throw notFound('用户不存在')
+  assertNewPasswordPolicy(newPassword, account, 'body.newPassword')
   const hashed = await bcrypt.hash(newPassword, PASSWORD_BCRYPT_ROUNDS)
   await prisma.$transaction(async tx => {
     await lockUserRefreshSessionMutations(tx, userId)

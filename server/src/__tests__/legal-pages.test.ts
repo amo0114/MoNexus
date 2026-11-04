@@ -181,7 +181,7 @@ describe('registration consent', () => {
 
   it('rejects registration without agreements in enforce mode (zero side effects)', async () => {
     enableLegal('enforce')
-    const res = await api.post('/api/auth/register').send({ email, password: 'pass123' })
+    const res = await api.post('/api/auth/register').send({ email, password: 'Reg1ster#Flow-2026' })
     expect(res.status).toBe(400)
     expect(res.body.error.code).toBe('LEGAL_AGREEMENT_REQUIRED')
     expect(await prisma.user.findUnique({ where: { email } })).toBeNull()
@@ -191,7 +191,7 @@ describe('registration consent', () => {
     enableLegal('enforce')
     const res = await api.post('/api/auth/register').send({
       email,
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       agreements: { terms: '0.9', privacy: '1.0' },
     })
     expect(res.status).toBe(409)
@@ -205,7 +205,7 @@ describe('registration consent', () => {
     enableLegal('enforce')
     const res = await api.post('/api/auth/register').send({
       email,
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       agreements: { ...currentRegistrationAgreements(), 'fake-doc': '1.0' },
     })
     expect(res.status).toBe(400)
@@ -217,7 +217,7 @@ describe('registration consent', () => {
     const res = await api
       .post('/api/auth/register')
       .set('User-Agent', 'legal-test-agent/1.0')
-      .send({ email, password: 'pass123', agreements: currentRegistrationAgreements() })
+      .send({ email, password: 'Reg1ster#Flow-2026', agreements: currentRegistrationAgreements() })
     expect(res.status).toBe(201)
 
     const user = await prisma.user.findUniqueOrThrow({ where: { email } })
@@ -241,14 +241,14 @@ describe('registration consent', () => {
 
   it('records but does not require agreements in off mode', async () => {
     enableLegal('off')
-    const without = await api.post('/api/auth/register').send({ email, password: 'pass123' })
+    const without = await api.post('/api/auth/register').send({ email, password: 'Reg1ster#Flow-2026' })
     expect(without.status).toBe(201)
     const user = await prisma.user.findUniqueOrThrow({ where: { email } })
     expect(await prisma.userAgreementConsent.count({ where: { userId: user.id } })).toBe(0)
 
     const withAgreements = await api.post('/api/auth/register').send({
       email: 'legal-register-2@test.local',
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       agreements: { terms: '1.0' }, // off 模式：只记录携带的部分
     })
     expect(withAgreements.status).toBe(201)
@@ -262,7 +262,7 @@ describe('registration consent', () => {
     config.legalPages.enabled = false
     const res = await api.post('/api/auth/register').send({
       email,
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       agreements: currentRegistrationAgreements(),
     })
     expect(res.status).toBe(201)
@@ -276,7 +276,7 @@ describe('registration consent', () => {
     // 否则"确认过 about@0.1"会被静默丢弃，证据失真。
     const res = await api.post('/api/auth/register').send({
       email,
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       agreements: { ...currentRegistrationAgreements(), about: '0.1' },
     })
     expect(res.status).toBe(409)
@@ -290,7 +290,7 @@ describe('registration consent', () => {
     enableLegal('enforce')
     const res = await api.post('/api/auth/register').send({
       email,
-      password: 'pass123',
+      password: 'Reg1ster#Flow-2026',
       agreements: { ...currentRegistrationAgreements(), about: '1.0' },
     })
     expect(res.status).toBe(201)

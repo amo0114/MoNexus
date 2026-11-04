@@ -3,12 +3,16 @@ import type { NextFunction, Request, Response } from 'express'
 import { classifyClientIp } from '../lib/clientIp.js'
 import { logger } from '../lib/logger.js'
 
+// Client-supplied ids are echoed in responses and written to logs, so only a
+// bounded, log-safe charset is trusted; anything else gets a server UUID.
+const REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{8,64}$/
+
 function getIncomingRequestId(value: Request['headers']['x-request-id']) {
   const requestId = Array.isArray(value) ? value[0] : value
   if (!requestId) return undefined
 
   const trimmed = requestId.trim()
-  return trimmed.length > 0 ? trimmed : undefined
+  return REQUEST_ID_PATTERN.test(trimmed) ? trimmed : undefined
 }
 
 export function requestLogger(req: Request, res: Response, next: NextFunction) {

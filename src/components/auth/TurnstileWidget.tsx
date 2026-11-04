@@ -5,7 +5,7 @@ const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api
 
 type TurnstileWidgetId = string | number
 
-export type HumanVerificationAction = 'register' | 'forgot_password'
+export type HumanVerificationAction = 'register' | 'forgot_password' | 'login'
 
 type TurnstileApi = {
   render: (container: HTMLElement, options: {

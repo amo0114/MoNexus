@@ -7,7 +7,17 @@ function requestContext(req: Request) {
   return req.requestId ? { requestId: req.requestId } : {}
 }
 
-export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction) {
+// body-parser (express.json / raw) tags its client errors with `type`; without
+// this mapping they surface as 500s and pollute error reporting.
+function fromBodyParserError(err: Error): HttpError | undefined {
+  const type = (err as { type?: unknown }).type
+  if (type === 'entity.too.large') return new HttpError(413, 'PAYLOAD_TOO_LARGE', '请求体过大')
+  if (type === 'entity.parse.failed') return new HttpError(400, 'INVALID_JSON', '请求格式错误')
+  return undefined
+}
+
+export function errorHandler(error: Error, req: Request, res: Response, _next: NextFunction) {
+  const err = fromBodyParserError(error) ?? error
   if (err instanceof HttpError) {
     if (err.retryAfterSeconds !== undefined) {
       res.set('Retry-After', String(err.retryAfterSeconds))

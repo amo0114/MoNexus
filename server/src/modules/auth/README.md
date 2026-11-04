@@ -160,6 +160,7 @@ public-registration switch, written through `PUT /api/admin/config/registrationE
 | `authLimiter` | 15 min | 30 | `/register`, `/login`, all three MFA routes, `/reset-password`, `/password-change`; IP key |
 | `refreshLimiter` | 15 min | 30 | `/refresh`; one-way refresh-cookie hash, falling back to an IPv6-safe IP key only when no cookie exists |
 | `mailLimiter` | 15 min | 5 | `/forgot-password`, `/send-verification`; IP key |
+| `loginFailures.ts` | 15 min | 5 consecutive failures | `/login`; HMAC of the requested email, counted whether or not the account exists, cleared on a correct password. Beyond the limit the login needs a `login` human-verification proof (`HUMAN_VERIFICATION_REQUIRED` / `_FAILED`) instead of being locked, so nobody can lock another user out. Enforce mode only; fails closed (`503`) without Redis, like the shared IP bucket |
 
 `/registration-status` intentionally carries no auth limiter — it is a read-only page-load
 probe, and charging it against the authentication budget would let ordinary page views lock

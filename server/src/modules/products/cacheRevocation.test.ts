@@ -76,8 +76,8 @@ if (process.env.REQUIRE_REAL_REDIS_TESTS === 'true' && !redisUp) throw new Error
 
       // 4) 游客详情：缓存里仍躺着旧的 200 内容，但返回前必须实时复核并拒绝。
       const afterDetail = await api.get(`/api/products/${product.id}`)
-      expect(afterDetail.status).toBe(403)
-      expect(afterDetail.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+      expect(afterDetail.status).toBe(404)
+      expect(afterDetail.body.error.code).toBe('NOT_FOUND')
       expect(JSON.stringify(afterDetail.body)).not.toContain('缓存预热商品')
 
       // 5) 游客列表：不得含该商品。

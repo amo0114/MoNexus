@@ -59,7 +59,7 @@ describe('createProductShareLink', () => {
     expect(creates).toBe(1)
   })
 
-  it('returns 404 for inactive or archived products and 403 for members_only guests', async () => {
+  it('returns 404 for inactive or archived products and for members_only guests', async () => {
     const inactive = await createTestProduct('下架不可分享', 40, 1, ['SHARE-IN'])
     await prisma.product.update({ where: { id: inactive.id }, data: { status: 'inactive' } })
     __setShortlinkClientForTests({
@@ -73,8 +73,8 @@ describe('createProductShareLink', () => {
     const locked = await createTestProduct('会员分享', 40, 1, ['SHARE-LOCK'])
     await prisma.product.update({ where: { id: locked.id }, data: { visibility: 'members_only' } })
     await expect(createProductShareLink(locked.id, 'guest')).rejects.toMatchObject({
-      status: 403,
-      code: CATALOG_ERROR_CODES.PRODUCT_LOGIN_REQUIRED,
+      status: 404,
+      code: 'NOT_FOUND',
     })
     const member = await createProductShareLink(locked.id, 'member')
     expect(member.url).toBe(PUBLIC_URL)
@@ -110,8 +110,8 @@ describe('createProductShareLink', () => {
       data: { guestVisibility: 'members_only' },
     })
     await expect(createProductShareLink(product.id, 'guest')).rejects.toMatchObject({
-      status: 403,
-      code: CATALOG_ERROR_CODES.PRODUCT_LOGIN_REQUIRED,
+      status: 404,
+      code: 'NOT_FOUND',
     })
 
     // member 不受影响（分类可见性只约束游客）。
@@ -132,8 +132,8 @@ describe('createProductShareLink', () => {
     })
 
     await expect(createProductShareLink(product.id, 'guest')).rejects.toMatchObject({
-      status: 403,
-      code: CATALOG_ERROR_CODES.PRODUCT_LOGIN_REQUIRED,
+      status: 404,
+      code: 'NOT_FOUND',
     })
     const row = await prisma.productShareLink.findUnique({ where: { productId: product.id } })
     expect(row).toMatchObject({ status: 'ready', url: PUBLIC_URL })

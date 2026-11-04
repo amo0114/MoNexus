@@ -175,20 +175,14 @@ router.post('/products/search', async (req, res, next) => {
 /**
  * 商品详情（只读）。
  *
- * 身份与视角规则同搜索。三种可区分结果：
+ * 身份与视角规则同搜索。
  *
- *   found          —— 200 { found: true, product }
- *   not_found      —— 200 { found: false }（不存在/已归档/商家停用/草稿）
- *   login_required —— 200 { found: false, loginRequired: true }
+ *   found     —— 200 { found: true, product }
+ *   not_found —— 200 { found: false }（不存在/已归档/商家停用/草稿，以及 guest
+ *                视角下仅登录可见的商品——SEC-05 起与网站详情页同样不可区分）
  *
- * `getProductDetail` 对不存在/不可见商品**抛 404**（不是返回 null），
- * 对「存在但仅登录可见」抛 403 PRODUCT_LOGIN_REQUIRED。机器人需要的是
- * 可预期结果而非异常，故两者都在这里收敛。
- *
- * login_required 的响应**不得包含任何商品字段**（ID、名称、价格、库存、
- * 商家、分类、图片、描述一律没有）。它不是「查无此物」——用户拿的编号
- * 是真实存在的商品，说成不存在会让他在群里被误导着反复重试；
- * 它也不是信息出口——只回答「需登录后查看」。
+ * `getProductDetail` 对不存在/不可见商品**抛 404**（不是返回 null），机器人
+ * 需要的是可预期结果而非异常，故在这里收敛。
  *
  * 其余错误（其他 403、500、DB 故障）继续 next(err)，不伪装成查无商品。
  */
@@ -204,9 +198,6 @@ router.post('/products/detail', async (req, res, next) => {
     switch (result.kind) {
       case 'found':
         res.json({ found: true, product: result.product })
-        return
-      case 'login_required':
-        res.json({ found: false, loginRequired: true })
         return
       default:
         res.json({ found: false })

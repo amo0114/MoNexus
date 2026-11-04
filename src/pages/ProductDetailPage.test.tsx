@@ -81,13 +81,23 @@ function renderPage() {
 describe('ProductDetailPage createOrder term fields', () => {
   it('retains the chosen account when a member-only product sends a guest to login', async () => {
     useAuthStore.setState({ user: null, accessToken: null, isLoggedIn: false })
-    apiGet.mockRejectedValue({ response: { data: { error: { code: 'PRODUCT_LOGIN_REQUIRED' } } } })
+    apiGet.mockRejectedValue({ response: { status: 404, data: { error: { code: 'NOT_FOUND', message: '商品暂不可用' } } } })
     function LoginTarget() { return <div data-testid="login-return">{new URLSearchParams(useLocation().search).get('returnTo')}</div> }
     render(<MemoryRouter initialEntries={['/product/42?offerId=7&xboardAccountLinkId=chosen']}>
       <Routes><Route path="/product/:id" element={<ProductDetailPage />} /><Route path="/login" element={<LoginTarget />} /></Routes>
     </MemoryRouter>)
     fireEvent.click(await screen.findByRole('button', { name: '去登录' }))
     expect(await screen.findByTestId('login-return')).toHaveTextContent('/product/42?offerId=7&xboardAccountLinkId=chosen')
+  })
+  it('keeps the not-found handling for a logged-in user (SEC-05 guide is guest-only)', async () => {
+    useAuthStore.setState({ user: null, accessToken: 'token', isLoggedIn: true })
+    apiGet.mockRejectedValue({ response: { status: 404, data: { error: { code: 'NOT_FOUND', message: '商品暂不可用' } } } })
+    function Home() { return <div data-testid="home" /> }
+    render(<MemoryRouter initialEntries={['/product/42']}>
+      <Routes><Route path="/product/:id" element={<ProductDetailPage />} /><Route path="/" element={<Home />} /></Routes>
+    </MemoryRouter>)
+    expect(await screen.findByTestId('home')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '去登录' })).toBeNull()
   })
   beforeEach(() => {
     vi.clearAllMocks()
