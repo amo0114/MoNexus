@@ -29,6 +29,19 @@ describe('observability middleware', () => {
     })
   })
 
+  it('replaces a malformed or oversized request id with a server UUID', async () => {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    for (const requestId of ['attacker controlled', 'id<script>', 'short', 'a'.repeat(65), 'x'.repeat(2_000)]) {
+      const res = await api
+        .get('/api/points/history')
+        .set('x-request-id', requestId)
+        .expect(401)
+
+      expect(res.headers['x-request-id']).toMatch(uuid)
+      expect(res.body.requestId).toBe(res.headers['x-request-id'])
+    }
+  })
+
   it('should include request id in error responses', async () => {
     const requestId = 'error-request-id-456'
 
