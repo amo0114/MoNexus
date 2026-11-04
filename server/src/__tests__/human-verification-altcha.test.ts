@@ -198,7 +198,7 @@ describe('ALTCHA human verification', () => {
   })
 
   it('rejects client-supplied algorithm, difficulty, callback, or unknown action', async () => {
-    await api.get('/api/auth/human-challenge?action=login').expect(400)
+    await api.get('/api/auth/human-challenge?action=checkout').expect(400)
     await api.get('/api/auth/human-challenge?action=register&algorithm=SHA-1').expect(400)
     await api.get('/api/auth/human-challenge?action=register&maxnumber=1').expect(400)
     await api.get('/api/auth/human-challenge?action=register&callback=https://evil.example').expect(400)

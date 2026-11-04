@@ -473,6 +473,15 @@
           "password": {
             "type": "string",
             "minLength": 1
+          },
+          "humanVerification": {
+            "type": "object",
+            "description": "SEC-02：同一邮箱连续登录失败 5 次后必填（action=`login` 的人机验证证明），否则返回 400 HUMAN_VERIFICATION_REQUIRED；不存在的邮箱行为一致。",
+            "required": ["provider", "payload"],
+            "properties": {
+              "provider": { "type": "string", "enum": ["altcha", "turnstile"] },
+              "payload": { "type": "string" }
+            }
           }
         }
       },

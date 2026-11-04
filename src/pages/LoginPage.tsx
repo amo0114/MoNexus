@@ -93,6 +93,11 @@ export default function LoginPage() {
   const [registrationRefresh, setRegistrationRefresh] = useState(0)
   const [registrationState, setRegistrationState] = useState<RegistrationViewState>({ kind: 'loading' })
   const [verificationReady, setVerificationReady] = useState(false)
+  // SEC-02: set once the server asks for a proof after repeated failures. The
+  // descriptor is kept apart from registrationState so it also works while
+  // registration itself is closed.
+  const [loginVerificationRequired, setLoginVerificationRequired] = useState(false)
+  const [loginChallenge, setLoginChallenge] = useState<RegistrationChallenge | null>(null)
   // SPEC-LEGAL-001：协议勾选默认不勾（明示同意），STALE 后强制重新勾选。
   const [agreementsChecked, setAgreementsChecked] = useState(false)
 
@@ -113,6 +118,7 @@ export default function LoginPage() {
     getRegistrationStatus()
       .then((status) => {
         if (!active) return
+        setLoginChallenge(status.challenge)
         if (!status.registrationEnabled) {
           setRegistrationState({ kind: 'disabled' })
         } else if (!status.registrationAvailable) {
@@ -278,6 +284,22 @@ export default function LoginPage() {
     showToast(getApiErrorMessage(error, '操作失败'), 'error')
   }
 
+  function handleLoginError(error: unknown) {
+    // A proof is single-use whether or not the password was right.
+    humanVerificationRef.current?.reset()
+    const code = getApiErrorCode(error)
+    if (code === 'HUMAN_VERIFICATION_REQUIRED') {
+      setLoginVerificationRequired(true)
+      showToast(loginChallenge ? '登录失败次数较多，请完成安全验证后重试' : '安全验证暂不可用，请稍后重试', 'error')
+      return
+    }
+    if (code === 'HUMAN_VERIFICATION_FAILED') {
+      showToast('请完成安全验证后重试', 'error')
+      return
+    }
+    showToast(getApiErrorMessage(error, '操作失败'), 'error')
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     const requestAuthEpoch = useAuthStore.getState().authEpoch
@@ -343,8 +365,26 @@ export default function LoginPage() {
         return
       }
 
+      let loginProof: { provider: 'altcha' | 'turnstile'; payload: string } | undefined
+      if (loginVerificationRequired && loginChallenge) {
+        if (!humanVerificationRef.current || !verificationReady) {
+          showToast('安全验证仍在准备，请稍后重试', 'error')
+          return
+        }
+        try {
+          loginProof = await humanVerificationRef.current.requestProof()
+        } catch {
+          showToast('请完成安全验证后重试', 'error')
+          return
+        }
+      }
+
       pendingAuthEpochRef.current = requestAuthEpoch
-      const result = await loginWithPassword({ email, password }, requestAuthEpoch, async (accessToken, commitProof) => {
+      const result = await loginWithPassword({
+        email,
+        password,
+        ...(loginProof ? { humanVerification: loginProof } : {}),
+      }, requestAuthEpoch, async (accessToken, commitProof) => {
         const committed = await establishSession(accessToken, '登录成功！', commitProof)
         if (!committed) throw new AuthSessionChangedError()
       })
@@ -360,7 +400,7 @@ export default function LoginPage() {
       if (pendingAuthEpochRef.current === requestAuthEpoch) pendingAuthEpochRef.current = null
       if (requestStillOwnsAuthState) {
         if (isRegister) handleRegistrationError(error)
-        else showToast(getApiErrorMessage(error, '操作失败'), 'error')
+        else handleLoginError(error)
       }
     } finally {
       setLoading(false)
@@ -476,7 +516,8 @@ export default function LoginPage() {
   })) ?? []
   // 复审 P2：仅 enforce 门控提交；off（记录模式）勾选可选，不阻断注册。
   const missingAgreements = isRegister && legalRequirement?.enforcement === 'enforce' && !agreementsChecked
-  const verificationPreparing = isRegister && Boolean(registrationChallenge) && !verificationReady
+  const showLoginVerification = !isRegister && loginVerificationRequired && Boolean(loginChallenge)
+  const verificationPreparing = (isRegister ? Boolean(registrationChallenge) : showLoginVerification) && !verificationReady
 
   return (
     <LoginShell>
@@ -604,6 +645,15 @@ export default function LoginPage() {
               </label>
             )}
           </>
+        )}
+
+        {showLoginVerification && loginChallenge && (
+          <HumanVerificationWidget
+            ref={humanVerificationRef}
+            descriptor={loginChallenge}
+            action="login"
+            onReadyChange={setVerificationReady}
+          />
         )}
 
         <button

@@ -106,7 +106,11 @@ export function isMfaLoginChallenge(response: LoginResponse): response is MfaLog
 }
 
 export async function loginWithPassword(
-  payload: { email: string; password: string },
+  payload: {
+    email: string
+    password: string
+    humanVerification?: { provider: 'altcha' | 'turnstile'; payload: string }
+  },
   expectedAuthEpoch: number,
   onAuthenticated: AuthenticatedSessionHandler,
 ): Promise<LoginResponse> {
@@ -130,7 +134,7 @@ export async function getRegistrationStatus(): Promise<RegistrationStatus> {
   return data
 }
 
-export async function getHumanChallenge(action: 'register' | 'forgot_password'): Promise<AltchaChallenge> {
+export async function getHumanChallenge(action: 'register' | 'forgot_password' | 'login'): Promise<AltchaChallenge> {
   const { data } = await api.get<AltchaChallenge>('/auth/human-challenge', {
     params: { action },
     ...preAuthRequestConfig(),

@@ -18,7 +18,7 @@ const humanVerificationSchema = z.object({
 }).strict()
 
 export const humanChallengeQuerySchema = z.object({
-  action: z.enum(['register', 'forgot_password']),
+  action: z.enum(['register', 'forgot_password', 'login']),
 }).strict()
 
 // Only new passwords are checked; login keeps accepting existing credentials.
@@ -64,6 +64,8 @@ export const registerSchema = z.object({
 export const loginSchema = z.object({
   email: normalizedEmailSchema,
   password: z.string().min(1, '请输入密码'),
+  // Required by the service only after repeated failures for this email.
+  humanVerification: humanVerificationSchema.optional(),
 })
 
 export const expectedSessionBodySchema = z.object({

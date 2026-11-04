@@ -131,13 +131,15 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     enableProtection()
     const redis = new CountingRedis()
     __setRedisForTests(redis)
+    // Distinct emails keep the per-email login lockout (SEC-02) out of the way.
     for (let i = 0; i < 30; i++) {
-      await api.post('/api/auth/login').send({ email: 'unknown@test.local', password: 'pass12345' }).expect(401)
+      await api.post('/api/auth/login').send({ email: `unknown-${i}@test.local`, password: 'pass12345' }).expect(401)
     }
     const blocked = await api.post('/api/auth/mfa/verify').send({}).expect(429)
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
-    expect(redis.counts.size).toBe(1)
-    expect([...redis.counts.keys()][0]).toContain(':authentication:ip:')
+    const authenticationKeys = [...redis.counts.keys()].filter(key => key.includes(':authentication:'))
+    expect(authenticationKeys).toHaveLength(1)
+    expect(authenticationKeys[0]).toContain(':authentication:ip:')
   })
 
   it('does not fall back to local login limits when shared protection is unavailable', async () => {

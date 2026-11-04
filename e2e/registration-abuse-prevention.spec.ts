@@ -123,6 +123,50 @@ test('prepares a one-time in-memory Turnstile proof before registration submissi
   expect(stored).not.toContain(proof)
 })
 
+test('asks for a login proof only after the server requires one, even with registration closed', async ({ page }) => {
+  const proof = 'login-proof-must-not-persist'
+  const loginPayloads: Array<Record<string, unknown>> = []
+
+  await mockTurnstile(page, proof)
+  await mockRegistry(page)
+  await page.route(apiRoute('/auth/registration-status'), route => route.fulfill({
+    json: {
+      registrationEnabled: false,
+      registrationAvailable: false,
+      challenge: { provider: 'turnstile', siteKey: 'public-test-site-key' },
+    },
+  }))
+  await page.route(apiRoute('/auth/login'), async route => {
+    const payload = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
+    loginPayloads.push(payload)
+    if (!payload.humanVerification) {
+      await route.fulfill({ status: 400, json: { error: { code: 'HUMAN_VERIFICATION_REQUIRED', message: '请完成安全验证' } } })
+      return
+    }
+    await route.fulfill({ json: { user: profile, accessToken: userAccessToken } })
+  })
+  await page.route(apiRoute('/auth/me'), route => route.fulfill({ json: profile }))
+
+  await page.goto('/login')
+  await page.getByLabel('邮箱地址').fill(profile.email)
+  await page.getByLabel('密码（至少 6 位）').fill('correct-password')
+  // No widget is mounted before the server asks for one.
+  expect(await page.evaluate(() => (window as unknown as { turnstileAction?: string }).turnstileAction)).toBeUndefined()
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+
+  await expect(page.locator('[data-toast-card]')).toContainText('登录失败次数较多，请完成安全验证后重试')
+  await expect.poll(() => page.evaluate(() => (window as unknown as { turnstileAction?: string }).turnstileAction)).toBe('login')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+
+  await expect(page).toHaveURL(/\/$/)
+  expect(loginPayloads).toEqual([
+    { email: profile.email, password: 'correct-password' },
+    { email: profile.email, password: 'correct-password', humanVerification: { provider: 'turnstile', payload: proof } },
+  ])
+  const stored = await page.evaluate(() => localStorage.getItem('monexus-auth') ?? '')
+  expect(stored).not.toContain(proof)
+})
+
 test('binds password-reset proofs to the forgot_password action without persisting them', async ({ page }) => {
   const proof = 'forgot-password-proof-must-not-persist'
   let forgotPasswordPayload: Record<string, unknown> | null = null
