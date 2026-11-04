@@ -1,6 +1,5 @@
 import { Prisma } from '@prisma/client'
-import { HttpError, notFound } from '../../lib/httpError.js'
-import { CATALOG_ERROR_CODES } from '../catalog/constants.js'
+import { notFound } from '../../lib/httpError.js'
 import type { AuthPayload } from '../../middlewares/auth.js'
 
 /**
@@ -223,13 +222,10 @@ export function assertPublicProductAccess(
     throw notFound('商品暂不可用')
   }
   if (guestRequiresLogin(product) && audience === 'guest') {
-    // 商品与分类的受限共用同一个 403 码与文案：错误体不得透露是「商品仅登录」
-    // 还是「分类仅登录」，否则就成了分类元数据泄露（§3.2）。
-    throw new HttpError(
-      403,
-      CATALOG_ERROR_CODES.PRODUCT_LOGIN_REQUIRED,
-      '登录后查看商品',
-    )
+    // SEC-05：对游客与「不存在」完全同形（状态码、错误码、文案），否则连续的
+    // 商品 ID 可被逐个探测出登录可见商品的数量与上架节奏。商品与分类受限
+    // 也因此不可区分（§3.2）。前端对游客的 404 统一展示「登录后查看」引导。
+    throw notFound('商品暂不可用')
   }
 }
 

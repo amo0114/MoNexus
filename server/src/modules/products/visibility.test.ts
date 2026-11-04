@@ -29,13 +29,16 @@ describe('product audience visibility (SPEC-PRODUCT-COMMERCE-002 §6)', () => {
     expect(guestOpen.body.name).toBe('公开可见商品')
     expect(guestOpen.body.merchant?.status).toBeUndefined()
 
-    const guestLocked = await api.get(`/api/products/${locked.id}`).expect(403)
-    expect(guestLocked.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+    const guestLocked = await api.get(`/api/products/${locked.id}`).expect(404)
+    expect(guestLocked.body.error.code).toBe('NOT_FOUND')
     expect(JSON.stringify(guestLocked.body)).not.toContain('会员可见商品')
-    expect(guestLocked.body.error.message).toBe('登录后查看商品')
+    expect(guestLocked.body.error.message).toBe('商品暂不可用')
+    // SEC-05: indistinguishable from a product that does not exist.
+    const guestMissing = await api.get('/api/products/999999').expect(404)
+    expect({ ...guestLocked.body, requestId: undefined }).toEqual({ ...guestMissing.body, requestId: undefined })
 
-    const guestReviews = await api.get(`/api/products/${locked.id}/reviews`).expect(403)
-    expect(guestReviews.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+    const guestReviews = await api.get(`/api/products/${locked.id}/reviews`).expect(404)
+    expect(guestReviews.body.error.code).toBe('NOT_FOUND')
     expect(JSON.stringify(guestReviews.body)).not.toContain('会员可见商品')
   })
 
@@ -46,7 +49,7 @@ describe('product audience visibility (SPEC-PRODUCT-COMMERCE-002 §6)', () => {
     const { accessToken } = await loginAs('vis-member@test.local', 'pass123')
 
     await api.get('/api/products').expect(200)
-    await api.get(`/api/products/${product.id}`).expect(403)
+    await api.get(`/api/products/${product.id}`).expect(404)
 
     const memberList = await api.get('/api/products').set(authHeader(accessToken)).expect(200)
     expect(memberList.body.items.some((item: { id: number }) => item.id === product.id)).toBe(true)
@@ -63,7 +66,7 @@ describe('product audience visibility (SPEC-PRODUCT-COMMERCE-002 §6)', () => {
     await api.get(`/api/products/${product.id}`).expect(200)
 
     await setVisibility(product.id, 'members_only')
-    await api.get(`/api/products/${product.id}`).expect(403)
+    await api.get(`/api/products/${product.id}`).expect(404)
     const listAfterFlip = await api.get('/api/products').expect(200)
     expect(listAfterFlip.body.items.some((item: { id: number }) => item.id === product.id)).toBe(false)
 
@@ -195,13 +198,13 @@ describe('SPEC-CATALOG-VIS-001 §3.1 分类限制即时生效', () => {
     expect(after.body.items.map((i: { id: number }) => i.id)).not.toContain(product.id)
     expect(JSON.stringify(after.body)).not.toContain('即时生效商品')
 
-    // 详情立即 403，且错误体不含商品信息（§3.2）。
-    const detail = await api.get(`/api/products/${product.id}`).expect(403)
-    expect(detail.body.error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+    // 详情立即与「不存在」同形的 404（SEC-05），且错误体不含商品信息（§3.2）。
+    const detail = await api.get(`/api/products/${product.id}`).expect(404)
+    expect(detail.body.error.code).toBe('NOT_FOUND')
     expect(JSON.stringify(detail.body)).not.toContain('即时生效商品')
 
     // 评价入口同样拒绝。
-    await api.get(`/api/products/${product.id}/reviews`).expect(403)
+    await api.get(`/api/products/${product.id}/reviews`).expect(404)
 
     // 登录用户不受影响（member 不看分类可见性）。
     await createTestUser('vis-now-member@test.local', 'pass123', 'user', 1000)
@@ -222,7 +225,7 @@ describe('SPEC-CATALOG-VIS-001 §3.1 分类限制即时生效', () => {
       where: { id: row.categoryId },
       data: { guestVisibility: 'members_only' },
     })
-    await api.get(`/api/products/${product.id}`).expect(403)
+    await api.get(`/api/products/${product.id}`).expect(404)
 
     await prisma.productCategory.update({
       where: { id: row.categoryId },

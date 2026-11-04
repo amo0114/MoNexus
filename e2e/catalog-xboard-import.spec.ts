@@ -2415,12 +2415,13 @@ test.describe.serial('Catalog Xboard import', () => {
         await expect(productRow.getByTestId(`admin-product-status-${imported.productId}`)).toHaveText('已发布');
 
         const guestDetail = await request.get(`${API_BASE}/api/products/${imported.productId}`);
-        expect(guestDetail.status()).toBe(403);
+        // SEC-05: members-only products look like missing ones to guests.
+        expect(guestDetail.status()).toBe(404);
         const guestBody: unknown = await guestDetail.json();
         if (
           !isRecord(guestBody)
           || !isRecord(guestBody.error)
-          || guestBody.error.code !== 'PRODUCT_LOGIN_REQUIRED'
+          || guestBody.error.code !== 'NOT_FOUND'
         ) {
           throw new Error('guest product detail did not require login for the published Xboard product');
         }

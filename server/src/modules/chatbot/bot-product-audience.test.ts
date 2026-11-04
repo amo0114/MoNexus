@@ -39,7 +39,7 @@ import { buildBotSignPayload } from './service.js'
  * 1. 视角判定：仅「私聊 + 已绑定 + 账号正常」为 member，其余一律 guest。
  * 2. 失败不降级：绑定/用户查询抛错按原错误流程处理，不当成 member，
  *    也不吞成「未找到」。
- * 3. 详情三分支：found / not_found(404) / login_required(403 收敛且无商品字段)。
+ * 3. 详情：found / not_found；guest 视角的受限商品与不存在同形（SEC-05），且无商品字段。
  *
  * 翻页不在本次范围内：机器人商品命令不提供翻页，接口不接收 cursor。
  * develop 上的原始路由同样只接收 { keyword, page }，「还有更多结果，可加
@@ -257,13 +257,13 @@ describe('BOT-1 商品搜索视角判定', () => {
   })
 })
 
-describe('BOT-1 商品详情三分支', () => {
-  it('members_only 商品对 guest 返回 loginRequired，且不含任何商品字段', async () => {
+describe('BOT-1 商品详情', () => {
+  it('members_only 商品对 guest 与不存在同形（SEC-05），且不含任何商品字段', async () => {
     const locked = await makeMembersOnlyProduct('详情受限商品')
 
     const res = await botPost('/products/detail', { productId: locked.id }).expect(200)
 
-    expect(res.body).toEqual({ found: false, loginRequired: true })
+    expect(res.body).toEqual({ found: false })
     // 逐项确认：ID、名称、价格、库存、商家、分类、图片、描述都不能出现。
     const raw = JSON.stringify(res.body)
     expect(raw).not.toContain('详情受限商品')
@@ -272,7 +272,7 @@ describe('BOT-1 商品详情三分支', () => {
     expect(res.body.items).toBeUndefined()
   })
 
-  it('不存在/下架商品维持 { found: false }，不带 loginRequired', async () => {
+  it('不存在/下架商品维持 { found: false }', async () => {
     const draft = await createTestProduct('详情草稿商品', 10, 1, ['D-1'])
     await prisma.product.update({
       where: { id: draft.id },
@@ -306,7 +306,7 @@ describe('BOT-1 商品详情三分支', () => {
     expect(res.body.loginRequired).toBeUndefined()
   })
 
-  it('群聊里查同一件商品仍是 loginRequired（即使发送者已绑定）', async () => {
+  it('群聊里查同一件商品仍按 guest 处理（即使发送者已绑定）', async () => {
     const locked = await makeMembersOnlyProduct('群聊详情会员商品')
     const bound = await makeBoundUser()
 
@@ -317,7 +317,7 @@ describe('BOT-1 商品详情三分支', () => {
       conversationType: 'group',
     }).expect(200)
 
-    expect(res.body).toEqual({ found: false, loginRequired: true })
+    expect(res.body).toEqual({ found: false })
     expect(JSON.stringify(res.body)).not.toContain('群聊详情会员商品')
   })
 

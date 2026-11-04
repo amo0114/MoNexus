@@ -168,8 +168,8 @@ test.describe('M-P2.1 edit page purchase form', () => {
     await publishMerchantProduct(request, token, productId)
 
     const guestDetail = await request.get(`${API_BASE}/api/products/${productId}`)
-    expect(guestDetail.status()).toBe(403)
-    expect((await guestDetail.json()).error.code).toBe('PRODUCT_LOGIN_REQUIRED')
+    expect(guestDetail.status()).toBe(404)
+    expect((await guestDetail.json()).error.code).toBe('NOT_FOUND')
 
     const { accessToken: userToken } = await loginAsApi(request, SEED_ACCOUNTS.user)
     const detail = await request.get(`${API_BASE}/api/products/${productId}`, {
