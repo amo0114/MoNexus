@@ -13,6 +13,14 @@ describe('observability middleware', () => {
     })
   })
 
+  it('leaves HSTS to the edge and keeps the other helmet headers (SEC-09)', async () => {
+    const res = await api.get('/api/health').expect(200)
+
+    expect(res.headers['strict-transport-security']).toBeUndefined()
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+    expect(res.headers['content-security-policy']).toContain("default-src 'self'")
+  })
+
   it('should echo a provided request id', async () => {
     const requestId = 'client-request-id-123'
 
