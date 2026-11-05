@@ -9848,6 +9848,72 @@
         }
       }
     },
+    "/api/admin/recharge/orders/{id}/reconcile/resolve": {
+      "post": {
+        "tags": [
+          "Admin Recharge"
+        ],
+        "summary": "人工处置 reconcile_required 订单（渠道复查确认全额支付后入账或退款）",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "credit",
+                      "refund"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "处置后订单状态（credited / paid / refund_pending）；对账项置 resolved，写入 AdminLog"
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/admin/payments/events/{id}/retry": {
       "post": {
         "tags": [

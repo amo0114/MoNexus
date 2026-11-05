@@ -107,6 +107,7 @@ export const ADMIN_AUDIT_ACTION_REGISTRY: Record<string, AuditActionRegistryItem
   'value_policy.retire': { value: 'value_policy.retire', label: '停用价值策略', tone: 'warning', group: '价值策略与支付充值' },
   'payment.event.retry': { value: 'payment.event.retry', label: '重试支付事件', tone: 'info', group: '价值策略与支付充值' },
   'payment.order.reconcile': { value: 'payment.order.reconcile', label: '核对充值订单', tone: 'info', group: '价值策略与支付充值' },
+  'payment.order.resolve_reconcile': { value: 'payment.order.resolve_reconcile', label: '处置待对账充值', tone: 'warning', group: '价值策略与支付充值' },
   'payment.order.refund': { value: 'payment.order.refund', label: '发起充值退款', tone: 'warning', group: '价值策略与支付充值' },
   'payment.admin_sandbox.confirm': { value: 'payment.admin_sandbox.confirm', label: '确认沙箱支付', tone: 'info', group: '价值策略与支付充值' },
   'payment.recon.create': { value: 'payment.recon.create', label: '创建对账任务', tone: 'info', group: '价值策略与支付充值' },

@@ -197,6 +197,10 @@ export const adminRefundSchema = z.object({
   reasonCode: z.string().min(1).max(64).optional(),
 })
 
+export const adminResolveReconcileSchema = z.object({
+  action: z.enum(['credit', 'refund']),
+})
+
 export const adminResolveDisputeSchema = z.object({
   outcome: z.enum(['won', 'lost']),
 })

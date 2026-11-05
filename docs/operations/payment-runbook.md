@@ -158,9 +158,20 @@ auto-refund.
    dispute API (`supportsRefunds=false`, `supportsDisputes=false`). Keep
    unpaid and refund the collection-code payment outside MoNexus, then
    record `AdminLog` / points-adjust per `docs/operations/vmqfox-runbook.md`.
-3. Record the decision with an admin reconcile/refund action so `AdminLog`
-   captures the operator, not the payload. Providers that advertise
-   `supportsRefunds=true` may still refund at the provider; VMQFox may not.
+3. Apply the decision with
+   `POST /api/admin/recharge/orders/:id/reconcile/resolve` and body
+   `{"action":"credit"}` or `{"action":"refund"}`. The endpoint re-queries the
+   provider and returns 409 unless the attempt is `succeeded` for the full
+   expected amount and currency; it then resolves the open reconciliation
+   items and writes `AdminLog` `payment.order.resolve_reconcile`.
+   - `credit`: order goes `paid` and through the normal credit path (one
+     `RechargeCredit`, one `PointLog`). If the credit fails again (for example
+     the balance hard cap) the order returns to `reconcile_required`; refund it.
+   - `refund`: order goes `refund_pending` with a `requested` refund that the
+     refund worker submits. A failed provider refund returns the order to
+     `paid`, which the paid-not-credited worker then credits.
+   - `refund` returns `PAYMENT_REFUND_NOT_SUPPORTED` when the provider has
+     `supportsRefunds=false` (VMQFox); handle that refund outside MoNexus.
 
 ## Refund recovery
 

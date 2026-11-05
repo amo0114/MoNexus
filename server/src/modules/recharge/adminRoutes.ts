@@ -12,6 +12,7 @@ import {
   adminPatchPricePolicySchema,
   adminRefundSchema,
   adminResolveDisputeSchema,
+  adminResolveReconcileSchema,
   adminCloseRecoveryCaseSchema,
   adminUuidParamSchema,
 } from './adminSchema.js'
@@ -42,6 +43,11 @@ rechargeAdminRoutes.post(
   '/recharge/orders/:id/reconcile',
   validate({ params: adminUuidParamSchema }),
   controller.reconcileOrder,
+)
+rechargeAdminRoutes.post(
+  '/recharge/orders/:id/reconcile/resolve',
+  validate({ params: adminUuidParamSchema, body: adminResolveReconcileSchema }),
+  controller.resolveReconcileRequired,
 )
 rechargeAdminRoutes.post(
   '/recharge/orders/:id/refunds',

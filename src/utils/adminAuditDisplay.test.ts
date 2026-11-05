@@ -49,6 +49,7 @@ describe('adminAuditDisplay registry', () => {
         'value_policy.retire',
         'payment.event.retry',
         'payment.order.reconcile',
+        'payment.order.resolve_reconcile',
         'payment.order.refund',
         'payment.admin_sandbox.confirm',
         'payment.recon.create',
