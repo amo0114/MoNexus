@@ -1,6 +1,8 @@
 import { createHmac } from 'node:crypto'
 import type { Request, Response, NextFunction } from 'express'
 import { config } from '../../config/index.js'
+import { abuseProtectionUnavailable, HttpError } from '../../lib/httpError.js'
+import { getRedis, runRedisCommandWithTimeout } from '../../lib/redis.js'
 import { botSignaturesEqual, buildBotSignPayload, BOT_SIGNATURE_TOLERANCE_MS } from './service.js'
 
 /**
@@ -69,6 +71,27 @@ export function requireBotSignature(req: Request, res: Response, next: NextFunct
     return
   }
 
-  ;(req as BotSignedRequest).botBody = body
-  next()
+  void rejectReplay(digest).then(() => {
+    ;(req as BotSignedRequest).botBody = body
+    next()
+  }, next)
+}
+
+/**
+ * v1 签名不带 nonce，客户端协议也不能改；同一签名即同一请求，时间窗内
+ * 第二次出现按重放拒收（与 v2 的 BOT_REQUEST_REPLAYED 同语义）。未启用
+ * Redis 的本地/开发环境只保留时间窗校验。
+ */
+async function rejectReplay(digest: string) {
+  if (!getRedis()) return
+  const key = `${config.cacheKeyPrefix}:bot:v1:sig:${digest}`
+  let consumed: unknown
+  try {
+    consumed = await runRedisCommandWithTimeout('bot_v1_replay', client =>
+      client.set(key, '1', 'PX', BOT_SIGNATURE_TOLERANCE_MS * 2, 'NX'))
+  } catch {
+    throw abuseProtectionUnavailable()
+  }
+  if (consumed === null) throw new HttpError(409, 'BOT_REQUEST_REPLAYED', '请求已处理，请使用新的签名重试')
+  if (consumed !== 'OK') throw abuseProtectionUnavailable()
 }
