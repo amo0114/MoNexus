@@ -38,6 +38,7 @@ function TypeIcon({ type }: { type: PointLogType }) {
   const cls = 'w-4 h-4'
   switch (type) {
     case 'in':
+    case 'settlement_in':
       return <ArrowDownLeft className={cls} />
     case 'out':
       return <ArrowUpRight className={cls} />
