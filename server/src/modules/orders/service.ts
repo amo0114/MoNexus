@@ -575,7 +575,8 @@ async function createOrderOnce(
       merchantId = merchant.id
       merchantName = merchant.name
       commissionRate = Number(merchant.commissionRate)
-      commissionAmount = Math.floor(offer.price * commissionRate)
+      // Decimal 精确相乘：浮点下 100 * 0.29 = 28.999… 会被 floor 成 28，少收 1 积分佣金。
+      commissionAmount = merchant.commissionRate.mul(offer.price).floor().toNumber()
     }
 
     const isManual = deliveryMode === 'manual_service'
