@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
+import { useRechargeNavAvailable } from '../hooks/useRechargeNavAvailable'
 import ThemeToggle from './ThemeToggle'
 import { DialogOverlay } from './ui/Dialog'
 import UserAvatar from './ui/UserAvatar'
@@ -34,6 +35,7 @@ export default function MobileNavDrawer() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
+  const rechargeNavAvailable = useRechargeNavAvailable()
 
   const go = (path: string) => {
     setOpen(false)
@@ -108,7 +110,7 @@ export default function MobileNavDrawer() {
               <Home className="w-4 h-4 text-[var(--color-text-muted)]" />
               商城首页
             </button>
-            {user && (
+            {user && rechargeNavAvailable && (
             <button
               className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
               onClick={() => go('/recharge')}

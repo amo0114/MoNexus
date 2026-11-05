@@ -24,6 +24,7 @@ import QuietIslandNotice from './QuietIslandNotice'
 import ActionIslandNotice from './ActionIslandNotice'
 import { useIslandQueuePause } from '../hooks/useIslandQueuePause'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
+import { useRechargeNavAvailable } from '../hooks/useRechargeNavAvailable'
 import { useAnnouncements } from '../hooks/useAnnouncements'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import { NotificationRealtimeBridge } from './NotificationRealtimeBridge'
@@ -57,6 +58,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const announcements = useAnnouncements()
+  const rechargeNavAvailable = useRechargeNavAvailable()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
   const [forcedAnnouncementTab, setForcedAnnouncementTab] = useState(false)
   const surfacedRequiredAnnouncements = useRef(new Set<string>())
@@ -560,6 +562,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <ThemeToggle />
                 </div>
 
+                {rechargeNavAvailable && (
                 <button
                   type="button"
                   onClick={() => navigate('/recharge')}
@@ -576,6 +579,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Wallet className="w-4 h-4" />
                   <span className="hidden lg:inline font-bold text-xs">充值</span>
                 </button>
+                )}
 
                 {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
                 <div
