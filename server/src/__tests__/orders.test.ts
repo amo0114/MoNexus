@@ -474,6 +474,35 @@ describe('GET /api/orders/:id', () => {
     expect(res.body.commissionAmount).toBe(60)
   })
 
+  it.each([
+    [100, 0.29, 29],
+    [200, 0.57, 114],
+  ])('should compute commission exactly for price %i at rate %f', async (price, commissionRate, expected) => {
+    const { merchant } = await createTestMerchant('exact-commission@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+      name: '精确抽成商家',
+      commissionRate,
+    })
+    await createTestUser('exact-commission-buyer@test.local', 'pass123', 'user', 1000)
+    const product = await createTestProduct('精确抽成商品', price, 1, ['exact-commission-1'], merchant.id)
+    const buyer = await loginAs('exact-commission-buyer@test.local', 'pass123')
+
+    const created = await api
+      .post('/api/orders')
+      .set(authHeader(buyer.accessToken))
+      .send({ productId: product.id })
+      .expect(201)
+
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { id: created.body.orderId },
+      include: { settlement: true },
+    })
+    expect(order.commissionAmount).toBe(expected)
+    expect(order.settlement?.commissionAmount).toBe(expected)
+    expect(order.settlement?.settlementAmount).toBe(price - expected)
+  })
+
   it('should return 404 for non-existent order', async () => {
     await createTestUser('noorder@test.local', 'pass123')
     const { accessToken } = await loginAs('noorder@test.local', 'pass123')
