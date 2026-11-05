@@ -90,6 +90,8 @@ Operational invariants:
 - administrator sandbox attempts are excluded from provider query recovery and
   the query-worker backlog because Simulator state is process-local and the
   only authoritative completion path is the MFA-protected administrator action;
+  a production deploy does not mount `POST /api/payment/webhooks/simulator`
+  (its signature is a fixed test string);
 - credited points enter `PointAccount.sandboxBalance` with
   `PointLog.type=sandbox_in`; they are excluded from spending, refund,
   settlement, ranking balances, and real recharge limit buckets;

@@ -2,7 +2,9 @@ import { Router, raw, type Request, type Response, type NextFunction } from 'exp
 import { prisma } from '../../../lib/prisma.js'
 import { logger } from '../../../lib/logger.js'
 import { HttpError } from '../../../lib/httpError.js'
+import { config } from '../../../config/index.js'
 import { getRegisteredProvider } from '../providers/registry.js'
+import { shouldRegisterSimulatorControlRoutes } from '../providers/simulator/index.js'
 import { hashNormalizedPayload, recordPaymentObservation } from '../observations/record.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
 import { applyRefundObservation } from '../../recharge/refund.js'
@@ -207,13 +209,16 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
   }
 }
 
-export function createPaymentWebhookRouter() {
+export function createPaymentWebhookRouter(options: { isProductionDeploy: boolean } = { isProductionDeploy: false }) {
   const router = Router()
   const parser = raw({ type: () => true, limit: WEBHOOK_BODY_LIMIT })
   for (const route of WEBHOOK_ROUTES) {
+    // The simulator "signature" is a fixed test string. Production admin
+    // sandbox confirms through the admin API, so the webhook stays unmounted.
+    if (route.provider === 'simulator' && !shouldRegisterSimulatorControlRoutes(options.isProductionDeploy)) continue
     router.post(route.path, parser, handleProviderWebhook(route.provider))
   }
   return router
 }
 
-export const paymentWebhookRoutes = createPaymentWebhookRouter()
+export const paymentWebhookRoutes = createPaymentWebhookRouter({ isProductionDeploy: config.isProductionDeploy })
