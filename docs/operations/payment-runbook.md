@@ -144,6 +144,14 @@ Alert: paid more than two minutes without `creditedAt`.
 3. `POST /api/admin/payments/events/:id/retry` resets the lease and calls the
    same apply path (`applyConfirmedPayment` or `applyRefundObservation`).
 4. Duplicate webhooks must ACK 2xx and reuse the existing observation.
+5. A failing observation never blocks the rest of the worker tick. After 30
+   attempts (about 8 minutes at the capped 16s backoff) it is parked as
+   `reconcile_required` with an open `unknown_provider_transaction`
+   reconciliation item (`scopePrefix` `exhausted`); fix the cause, then use the
+   retry endpoint above to re-drive it.
+6. A recharge credit task that exhausts `maxAttempts` (default 8) on retryable
+   balance conflicts parks its order as `reconcile_required`; resolve it with
+   `POST /api/admin/recharge/orders/:id/reconcile/resolve`.
 
 ## Late payment
 

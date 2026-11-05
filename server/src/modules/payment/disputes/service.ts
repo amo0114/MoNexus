@@ -137,6 +137,23 @@ export async function applyDisputeObservation(observationId: string) {
         return { observationId, outcome: 'reconcile_required' as const }
       }
       const disputedOrder = attempt.paymentIntent.rechargeOrder
+      // No credit to recover. A `paid` order is about to be credited, so the
+      // throw from openPaymentDispute retries it; any other state never gets a
+      // credit and would otherwise retry forever.
+      const credit = await prisma.rechargeCredit.findUnique({
+        where: { rechargeOrderId: disputedOrder.id },
+        select: { id: true },
+      })
+      if (!credit && disputedOrder.status !== 'paid') {
+        await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_WITHOUT_CREDIT', {
+          ...detail,
+          mismatchType: 'unknown_provider_transaction',
+          orderId: disputedOrder.id,
+          localStatus: disputedOrder.status,
+          localAmountMinor: disputedOrder.amountMinor,
+        })
+        return { observationId, outcome: 'reconcile_required' as const }
+      }
       const refund = await prisma.rechargeRefund.findUnique({
         where: { rechargeOrderId: disputedOrder.id },
         select: { status: true },

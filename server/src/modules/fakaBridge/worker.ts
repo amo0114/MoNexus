@@ -788,23 +788,24 @@ export async function runFakaBridgeBatch(): Promise<number> {
     return 0
   }
 
-  let processed = 0
-  for (let i = 0; i < BATCH_LIMIT; i++) {
-    const now = new Date()
-    const due = await prisma.$queryRaw<Array<{ id: number }>>`
-      SELECT "id" FROM "FakaBridgeTask"
-      WHERE "status" = 'pending'
-        AND ("nextAttemptAt" AT TIME ZONE 'UTC') <= ${now}
-        AND ("leaseUntil" IS NULL OR ("leaseUntil" AT TIME ZONE 'UTC') <= ${now})
-      ORDER BY "nextAttemptAt" ASC
-      LIMIT 1`
-    if (due.length === 0) break
+  // One candidate list per batch: a task that is skipped (claim lost to
+  // another instance, or no longer claimable) must not end the batch or keep
+  // being re-selected ahead of the rest. cancelRequested tasks belong to the
+  // revoke/reconcile batches, which the claim refuses anyway.
+  const now = new Date()
+  const due = await prisma.$queryRaw<Array<{ id: number }>>`
+    SELECT "id" FROM "FakaBridgeTask"
+    WHERE "status" = 'pending'
+      AND "cancelRequested" = false
+      AND ("nextAttemptAt" AT TIME ZONE 'UTC') <= ${now}
+      AND ("leaseUntil" IS NULL OR ("leaseUntil" AT TIME ZONE 'UTC') <= ${now})
+    ORDER BY "nextAttemptAt" ASC
+    LIMIT ${BATCH_LIMIT}`
 
-    const outcome = await processFakaBridgeTask(due[0].id)
-    if (outcome === 'skipped') {
-      break
-    }
-    processed += 1
+  let processed = 0
+  for (const task of due) {
+    const outcome = await processFakaBridgeTask(task.id)
+    if (outcome !== 'skipped') processed += 1
   }
   return processed
 }

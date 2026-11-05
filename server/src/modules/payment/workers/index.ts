@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { logger } from '../../../lib/logger.js'
 import { prisma } from '../../../lib/prisma.js'
-import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
+import { applyConfirmedPayment, writeOpenReconItem } from '../events/applyConfirmedPayment.js'
 import { recordNormalizedPaymentFact } from '../observations/record.js'
 import { getHistoricalProvider } from '../providers/registry.js'
 import { executeRechargeCredit } from '../../recharge/credit.js'
@@ -57,9 +57,21 @@ function providerQueryAttemptWhere(cutoff?: Date): Prisma.PaymentAttemptWhereInp
   }
 }
 
-export async function processOneObservation(): Promise<boolean> {
+// About 8 minutes of retries at the capped 16s backoff. A local apply that
+// still throws by then is not transient; park it for an operator instead of
+// retrying forever (admin event retry re-drives it).
+export const OBSERVATION_MAX_ATTEMPTS = 30
+
+/**
+ * Applies the oldest due observation. A throwing apply is contained here so
+ * one poison event cannot abort the rest of the worker tick; `skipIds` keeps
+ * an event that failed without advancing its schedule from being re-picked
+ * in the same tick.
+ */
+export async function processOneObservation(skipIds: Set<string> = new Set()): Promise<boolean> {
   const due = await prisma.paymentEvent.findFirst({
     where: {
+      ...(skipIds.size > 0 ? { id: { notIn: [...skipIds] } } : {}),
       status: { in: ['received', 'processing', 'failed'] },
       nextAttemptAt: { lte: new Date() },
       OR: [{ leaseUntil: null }, { leaseUntil: { lt: new Date() } }],
@@ -68,14 +80,51 @@ export async function processOneObservation(): Promise<boolean> {
     select: { id: true, eventType: true },
   })
   if (!due) return false
-  if (due.eventType.startsWith('dispute.')) {
-    await applyDisputeObservation(due.id)
-  } else if (due.eventType.startsWith('refund.')) {
-    await applyRefundObservation(due.id)
-  } else {
-    await applyConfirmedPayment(due.id)
+  try {
+    if (due.eventType.startsWith('dispute.')) {
+      await applyDisputeObservation(due.id)
+    } else if (due.eventType.startsWith('refund.')) {
+      await applyRefundObservation(due.id)
+    } else {
+      await applyConfirmedPayment(due.id)
+    }
+  } catch (error) {
+    skipIds.add(due.id)
+    logger.warn({ event: 'payment.observation_apply_failed', observationId: due.id, err: error instanceof Error ? error.message : 'apply_failed' },
+      'payment observation apply failed; will retry with backoff')
+    await parkExhaustedObservation(due.id)
   }
   return true
+}
+
+async function parkExhaustedObservation(id: string) {
+  const event = await prisma.paymentEvent.findUnique({ where: { id } })
+  if (!event || event.status !== 'failed' || event.attempts < OBSERVATION_MAX_ATTEMPTS) return
+  const parked = await prisma.$transaction(async tx => {
+    const updated = await tx.paymentEvent.updateMany({
+      where: { id, status: 'failed', leaseToken: null },
+      data: { status: 'reconcile_required', processedAt: new Date() },
+    })
+    if (updated.count !== 1) return false
+    // Every reconcile_required exit needs an open item: it is the operator's
+    // queue and keeps the raw payload past retention.
+    await writeOpenReconItem(tx, {
+      scopePrefix: 'exhausted',
+      mismatchType: 'unknown_provider_transaction',
+      attemptId: event.paymentAttemptId,
+      eventId: event.id,
+      provider: event.provider,
+      providerAccountKey: event.providerAccountKey,
+      providerEntryKey: `event:${event.id}`,
+      providerStatus: event.eventType,
+    })
+    return true
+  })
+  if (parked) {
+    recordPaymentObservationMetric(event.provider, event.source, 'reconcile_required')
+    logger.error({ event: 'payment.observation_exhausted', observationId: id, attempts: event.attempts, lastErrorCode: event.lastErrorCode },
+      'payment observation exhausted retries; parked as reconcile_required')
+  }
 }
 
 export async function processOneCreditTask(): Promise<boolean> {
@@ -83,12 +132,49 @@ export async function processOneCreditTask(): Promise<boolean> {
   if (!claimed) return false
   const task = await prisma.rechargeCreditTask.findUnique({ where: { id: claimed.id } })
   if (!task) return false
-  await executeRechargeCredit({
-    rechargeOrderId: task.rechargeOrderId,
-    creditTaskId: task.id,
-    leaseToken: claimed.leaseToken,
-  })
+  try {
+    await executeRechargeCredit({
+      rechargeOrderId: task.rechargeOrderId,
+      creditTaskId: task.id,
+      leaseToken: claimed.leaseToken,
+    })
+  } catch (error) {
+    // The credit already committed the task as failed with backoff; contain
+    // the error so other tasks and worker stages still run this tick.
+    logger.warn({ event: 'recharge.credit_task_failed', creditTaskId: task.id, err: error instanceof Error ? error.message : 'credit_failed' },
+      'recharge credit task failed; will retry with backoff')
+    await parkExhaustedCreditTask(task.id)
+  }
   return true
+}
+
+/**
+ * A task past maxAttempts moves its order to reconcile_required, where the
+ * admin reconcile resolution can credit or refund it (and resets the task).
+ */
+async function parkExhaustedCreditTask(id: string) {
+  const ref = await prisma.rechargeCreditTask.findUnique({ where: { id }, select: { rechargeOrderId: true } })
+  if (!ref) return
+  const parked = await prisma.$transaction(async tx => {
+    // Same lock order as the credit path: RechargeOrder, then its task.
+    await tx.$queryRaw`SELECT "id" FROM "RechargeOrder" WHERE "id" = ${ref.rechargeOrderId}::uuid FOR UPDATE`
+    await tx.$queryRaw`SELECT "id" FROM "RechargeCreditTask" WHERE "id" = ${id}::uuid FOR UPDATE`
+    const task = await tx.rechargeCreditTask.findUnique({ where: { id } })
+    if (!task || task.status !== 'failed' || task.leaseToken || task.attempts < task.maxAttempts) return null
+    await tx.rechargeCreditTask.update({
+      where: { id },
+      data: { status: 'reconcile_required', completedAt: new Date(), lastErrorCode: `MAX_ATTEMPTS:${task.lastErrorCode ?? 'unknown'}`.slice(0, 80) },
+    })
+    await tx.rechargeOrder.updateMany({
+      where: { id: task.rechargeOrderId, status: 'paid' },
+      data: { status: 'reconcile_required' },
+    })
+    return task
+  })
+  if (parked) {
+    logger.error({ event: 'recharge.credit_task_exhausted', creditTaskId: id, rechargeOrderId: parked.rechargeOrderId, attempts: parked.attempts },
+      'recharge credit task exhausted retries; order parked as reconcile_required')
+  }
 }
 
 export async function recoverPaidNotCredited(): Promise<number> {
@@ -111,17 +197,23 @@ export async function recoverPaidNotCredited(): Promise<number> {
     recordPaidNotCredited(order.provider)
   }
   for (const order of orders) {
-    if (order.creditTask) {
-      const claimed = await claimCreditTask(order.creditTask.id)
-      if (claimed) {
-        await executeRechargeCredit({
-          rechargeOrderId: order.id,
-          creditTaskId: claimed.id,
-          leaseToken: claimed.leaseToken,
-        })
+    try {
+      if (order.creditTask) {
+        const claimed = await claimCreditTask(order.creditTask.id)
+        if (claimed) {
+          await executeRechargeCredit({
+            rechargeOrderId: order.id,
+            creditTaskId: claimed.id,
+            leaseToken: claimed.leaseToken,
+          })
+        }
+      } else {
+        await executeRechargeCredit({ rechargeOrderId: order.id })
       }
-    } else {
-      await executeRechargeCredit({ rechargeOrderId: order.id })
+    } catch (error) {
+      logger.warn({ event: 'recharge.paid_not_credited_retry', rechargeOrderId: order.id, err: error instanceof Error ? error.message : 'credit_failed' },
+        'paid-not-credited recovery will retry')
+      if (order.creditTask) await parkExhaustedCreditTask(order.creditTask.id)
     }
   }
   return orders.length
@@ -306,8 +398,9 @@ async function refreshPaymentWorkerGauges() {
 }
 
 export async function runPaymentWorkersOnce() {
+  const failedObservations = new Set<string>()
   for (let i = 0; i < 20; i += 1) {
-    const worked = await processOneObservation()
+    const worked = await processOneObservation(failedObservations)
     if (!worked) break
   }
   for (let i = 0; i < 20; i += 1) {
