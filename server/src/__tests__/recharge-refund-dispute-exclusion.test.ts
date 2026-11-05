@@ -140,12 +140,12 @@ async function expectConserved(userId: number, frozen: number) {
 }
 
 async function waitForLockWaiters(count: number) {
-  for (let i = 0; i < 250; i++) {
+  for (let i = 0; i < 400; i++) {
     const rows = await prisma.$queryRaw<{ n: bigint }[]>`
       SELECT count(*)::bigint AS n FROM pg_stat_activity
-      WHERE datname = current_database() AND state = 'active' AND wait_event_type = 'Lock'`
+      WHERE datname = current_database() AND wait_event_type = 'Lock'`
     if (Number(rows[0]!.n) >= count) return
-    await new Promise(r => setTimeout(r, 20))
+    await new Promise(r => setTimeout(r, 25))
   }
   throw new Error(`barrier: expected ${count} lock waiters`)
 }
@@ -196,20 +196,16 @@ describe('recharge refund and payment dispute are mutually exclusive', () => {
 
   it('lets exactly one of a concurrent refund and dispute win the order lock', async () => {
     const ctx = await creditedOrder('excl-race@test.local')
-    let release!: () => void
-    const gate = new Promise<void>(r => { release = r })
-    const blocker = prisma.$transaction(async tx => {
-      await tx.$queryRaw`SELECT "id" FROM "RechargeOrder" WHERE "id" = ${ctx.order.id}::uuid FOR UPDATE`
-      await gate
-    }, { timeout: 20_000 })
-
     const settle = <T>(p: Promise<T>) => p.then(() => true, () => false)
-    const refundP = settle(refund(ctx))
-    const disputeP = settle(dispute(ctx))
-    await waitForLockWaiters(2)
-    release()
-    await blocker
-    const outcomes = await Promise.all([refundP, disputeP])
+    let racing!: Promise<boolean[]>
+    // Racers start only after the blocker owns the row lock, and the blocker
+    // rolls back if the barrier throws, so a failed barrier cannot leak the lock.
+    await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "RechargeOrder" WHERE "id" = ${ctx.order.id}::uuid FOR UPDATE`
+      racing = Promise.all([settle(refund(ctx)), settle(dispute(ctx))])
+      await waitForLockWaiters(2)
+    }, { timeout: 20_000 })
+    const outcomes = await racing
 
     expect(outcomes.filter(Boolean)).toHaveLength(1)
     expect(await prisma.rechargeRefund.count() + await prisma.paymentDispute.count()).toBe(1)
