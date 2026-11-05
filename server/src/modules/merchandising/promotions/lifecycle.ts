@@ -17,6 +17,7 @@
 //   - metrics：经 promotion_campaign_transition_total{from,to}（枚举、有界）。
 
 import { config } from '../../../config/index.js'
+import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from '../../../lib/cronLease.js'
 import { logger } from '../../../lib/logger.js'
 import { prisma } from '../../../lib/prisma.js'
 import { CAMPAIGN_STATUS } from '../constants.js'
@@ -65,7 +66,10 @@ let running = false
 export async function runCampaignLifecycleBatch(): Promise<CampaignLifecycleResult | null> {
   if (running) return null
   running = true
+  let lease: CronLeaseHandle | null = null
   try {
+    lease = await acquireCronLeaseWithHeartbeat('campaignLifecycle', CAMPAIGN_LIFECYCLE_CRON_TICK_MS)
+    if (!lease) return null
     const result = await advanceCampaignLifecycle()
     if (result.scheduledToActive > 0 || result.activeToExpired > 0) {
       logger.info(
@@ -78,6 +82,7 @@ export async function runCampaignLifecycleBatch(): Promise<CampaignLifecycleResu
     logger.error({ err }, 'promotion campaign lifecycle batch failed')
     return null
   } finally {
+    lease?.release()
     running = false
   }
 }

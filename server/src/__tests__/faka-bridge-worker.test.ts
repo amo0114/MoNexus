@@ -5,7 +5,7 @@ import { closeOrder, createOrder, disputeOrder } from '../modules/orders/service
 import { __runAutoCloseBatchForTests } from '../modules/orders/cron.js'
 import { batchSettle, resolveOrder } from '../modules/admin/service.js'
 import { prisma } from '../lib/prisma.js'
-import { __setFakaClientOverridesForTests, processFakaBridgeTask, runFakaReconcileBatch } from '../modules/fakaBridge/service.js'
+import { __setFakaClientOverridesForTests, processFakaBridgeTask, runFakaBridgeBatch, runFakaReconcileBatch } from '../modules/fakaBridge/service.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestMerchant, createTestUser } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
@@ -112,6 +112,36 @@ describe('M4 FakaBridge worker', () => {
   afterEach(() => {
     Object.assign(config.fakaBridge, ORIG_FAKA)
     __setFakaClientOverridesForTests(undefined)
+  })
+
+  it('does not let a task the claim refuses stop the rest of the batch', async () => {
+    const blocked = await createHeldFakaOrder()
+    const blockedOrder = await prisma.order.findUniqueOrThrow({ where: { id: blocked.orderId } })
+    const { user } = await createVerifiedBuyer(1000)
+    const { orderId } = await createOrder(user.id, blockedOrder.productId, {
+      offerId: blockedOrder.offerId!,
+      expectedPrice: 200,
+      idempotencyKey: randomUUID(),
+    })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId } })
+    __setFakaClientOverridesForTests({
+      url: config.fakaBridge.url,
+      secret: config.fakaBridge.secret,
+      transport: async () => ({
+        status: 200,
+        text: JSON.stringify({ success: true, order_no: task.requestOrderNo, status: 'completed', trade_no: `TEST-XBOARD-${orderId}` }),
+      }),
+    })
+    // Oldest due row that the claim refuses (cancel requested while still pending).
+    await prisma.fakaBridgeTask.update({
+      where: { id: blocked.task.id },
+      data: { cancelRequested: true, nextAttemptAt: new Date(Date.now() - 60_000) },
+    })
+    await prisma.fakaBridgeTask.update({ where: { id: task.id }, data: { nextAttemptAt: new Date(Date.now() - 1_000) } })
+
+    expect(await runFakaBridgeBatch()).toBe(1)
+    expect((await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('succeeded')
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('delivered')
   })
 
   it('issues a pending once-only grant atomically with successful delivery when enabled', async () => {
