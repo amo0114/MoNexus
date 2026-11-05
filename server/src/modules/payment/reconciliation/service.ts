@@ -474,6 +474,84 @@ export async function resolveReconcileRequiredOrder(input: {
   return { orderId: fresh.id, status: fresh.status }
 }
 
+/**
+ * Operator review of a single reconciliation item (the work queue that every
+ * reconcile_required exit opens). Closing an item starts its raw-payload
+ * retention clock. Items of a reconcile_required order are closed by the
+ * order resolution instead, so the order cannot be left stuck behind a
+ * closed item.
+ */
+export async function reviewReconciliationItem(input: {
+  itemId: string
+  status: 'resolved' | 'ignored'
+  reason: string
+  actorUserId: number
+}) {
+  const item = await prisma.$transaction(async tx => {
+    const locked = await tx.$queryRaw<Array<{ status: string; rechargeOrderId: string | null }>>`
+      SELECT "status", "rechargeOrderId" FROM "ReconciliationItem" WHERE "id" = ${input.itemId}::uuid FOR UPDATE`
+    const row = locked[0]
+    if (!row) throw notFound('对账项不存在')
+    if (row.status !== 'open') throw conflict('对账项已处理')
+    if (row.rechargeOrderId) {
+      const order = await tx.rechargeOrder.findUnique({ where: { id: row.rechargeOrderId }, select: { status: true } })
+      if (order?.status === 'reconcile_required') throw conflict('该订单待人工处置，请使用订单处置接口')
+    }
+    return tx.reconciliationItem.update({
+      where: { id: input.itemId },
+      data: {
+        status: input.status,
+        resolutionReason: input.reason,
+        resolvedByUserId: input.actorUserId,
+        resolvedAt: new Date(),
+      },
+    })
+  }, TX)
+  return serializeReconItem(item)
+}
+
+export function serializeReconItem(item: {
+  id: string
+  reconciliationRunId: string
+  providerEntryKey: string
+  rechargeOrderId: string | null
+  paymentAttemptId: string | null
+  paymentEventId: string | null
+  mismatchType: string
+  providerStatus: string | null
+  localStatus: string | null
+  providerAmountMinor: bigint | null
+  localAmountMinor: bigint | null
+  quotedAmountMinor: bigint | null
+  currency: string | null
+  status: string
+  resolutionReason: string | null
+  resolvedByUserId: number | null
+  resolvedAt: Date | null
+  createdAt: Date
+}) {
+  return {
+    id: item.id,
+    runId: item.reconciliationRunId,
+    providerEntryKey: item.providerEntryKey,
+    rechargeOrderId: item.rechargeOrderId,
+    paymentAttemptId: item.paymentAttemptId,
+    paymentEventId: item.paymentEventId,
+    mismatchType: item.mismatchType,
+    providerStatus: item.providerStatus,
+    localStatus: item.localStatus,
+    providerAmountMinor: item.providerAmountMinor == null ? null : serializeAmountMinor(item.providerAmountMinor),
+    localAmountMinor: item.localAmountMinor == null ? null : serializeAmountMinor(item.localAmountMinor),
+    quotedAmountMinor: item.quotedAmountMinor == null ? null : serializeAmountMinor(item.quotedAmountMinor),
+    currency: item.currency,
+    status: item.status,
+    resolutionReason: item.resolutionReason,
+    resolvedByUserId: item.resolvedByUserId,
+    resolvedAt: item.resolvedAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
+  }
+}
+
 export function serializeRun(run: {
   id: string
   provider: string

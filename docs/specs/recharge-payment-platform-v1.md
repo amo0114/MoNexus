@@ -837,6 +837,8 @@ POST /api/admin/recharge/orders/:id/reconcile/resolve
 POST /api/admin/recharge/orders/:id/refunds
 GET  /api/admin/payments/reconciliation-runs
 POST /api/admin/payments/reconciliation-runs
+GET  /api/admin/payments/reconciliation-items
+POST /api/admin/payments/reconciliation-items/:id/review
 GET  /api/admin/payments/disputes
 PATCH /api/admin/recharge/price-policies/:id
 POST /api/admin/recharge/price-policies/:id/activate

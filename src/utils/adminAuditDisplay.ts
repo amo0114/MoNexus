@@ -111,6 +111,7 @@ export const ADMIN_AUDIT_ACTION_REGISTRY: Record<string, AuditActionRegistryItem
   'payment.order.refund': { value: 'payment.order.refund', label: '发起充值退款', tone: 'warning', group: '价值策略与支付充值' },
   'payment.admin_sandbox.confirm': { value: 'payment.admin_sandbox.confirm', label: '确认沙箱支付', tone: 'info', group: '价值策略与支付充值' },
   'payment.recon.create': { value: 'payment.recon.create', label: '创建对账任务', tone: 'info', group: '价值策略与支付充值' },
+  'payment.recon_item.review': { value: 'payment.recon_item.review', label: '复核对账项', tone: 'info', group: '价值策略与支付充值' },
   'payment.recon.rerun': { value: 'payment.recon.rerun', label: '重跑对账任务', tone: 'warning', group: '价值策略与支付充值' },
   'payment.dispute.resolve': { value: 'payment.dispute.resolve', label: '解决支付争议', tone: 'success', group: '价值策略与支付充值' },
   'payment.recovery_case.close': { value: 'payment.recovery_case.close', label: '关闭支付恢复案例', tone: 'info', group: '价值策略与支付充值' },

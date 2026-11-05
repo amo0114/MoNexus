@@ -8,6 +8,8 @@ import {
   adminListEventsQuerySchema,
   adminListOrdersQuerySchema,
   adminListPricePoliciesQuerySchema,
+  adminListReconItemsQuerySchema,
+  adminReviewReconItemSchema,
   adminListRefundsQuerySchema,
   adminPatchPricePolicySchema,
   adminRefundSchema,
@@ -99,6 +101,16 @@ rechargeAdminRoutes.post(
   '/payments/reconciliation-runs/:id/rerun',
   validate({ params: adminUuidParamSchema }),
   controller.rerunRecon,
+)
+rechargeAdminRoutes.get(
+  '/payments/reconciliation-items',
+  validate({ query: adminListReconItemsQuerySchema }),
+  controller.listReconItems,
+)
+rechargeAdminRoutes.post(
+  '/payments/reconciliation-items/:id/review',
+  validate({ params: adminUuidParamSchema, body: adminReviewReconItemSchema }),
+  controller.reviewReconItem,
 )
 rechargeAdminRoutes.get(
   '/payments/disputes',

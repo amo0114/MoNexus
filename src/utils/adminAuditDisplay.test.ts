@@ -54,6 +54,7 @@ describe('adminAuditDisplay registry', () => {
         'payment.admin_sandbox.confirm',
         'payment.recon.create',
         'payment.recon.rerun',
+        'payment.recon_item.review',
         'payment.dispute.resolve',
         'payment.recovery_case.close',
         'recharge.price_policy.create',

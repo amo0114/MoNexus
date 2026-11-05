@@ -207,6 +207,14 @@ auto-refund.
    pending/failed run.
 3. Open items stay until an operator resolves them. Raw payloads for those
    events are retained until 180 days after close.
+4. `GET /api/admin/payments/reconciliation-items?status=open` lists the queue
+   (every `reconcile_required` exit opens one item, each in its own manual
+   run, so the run list is not a usable queue).
+5. `POST /api/admin/payments/reconciliation-items/:id/review` with
+   `{"status":"resolved"|"ignored","reason":"..."}` closes an item and writes
+   `AdminLog` `payment.recon_item.review`. Items whose order is still
+   `reconcile_required` return 409: use the order resolution endpoint, which
+   closes them.
 
 ## Credential rotation
 
