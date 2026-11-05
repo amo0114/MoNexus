@@ -186,6 +186,11 @@ auto-refund.
    `PAYMENT_REFUND_NOT_SUPPORTED` and increment
    `payment_refund_not_supported_total{provider="vmqfox"}`. Manual cash-path
    refunds stay outside MoNexus; see `docs/operations/vmqfox-runbook.md`.
+6. Refunds and disputes on one recharge are mutually exclusive. A refund is
+   rejected (409) while a dispute is open, lost or closed. A `dispute.opened`
+   on a refunded or refund-in-flight payment does not hold points; it leaves
+   an open `refund_mismatch` reconciliation item for the operator to decide
+   whether the provider really returned the money twice.
 
 ## Reconciliation
 
