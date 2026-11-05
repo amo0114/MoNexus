@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import { api, createTestUser, createTestMerchant, loginAs } from './helpers.js'
 import { loginUser, refreshAccessToken } from '../modules/auth/service.js'
 import { prisma } from '../lib/prisma.js'
+import { registerStoredObject } from '../lib/storage/storedObjectRegistry.js'
 import avatarPresetUrls from '../modules/auth/avatarPresetUrls.json' with { type: 'json' }
 
 function sessionIdFromAccessToken(accessToken: string): string {
@@ -367,7 +368,12 @@ describe('PATCH /api/auth/me', () => {
     expect(reloaded.body.avatarUrl).toBe(valid)
   })
 
+  const registerUploadedAvatar = (objectKey: string) => registerStoredObject({
+    providerConfigId: null, bucketRole: 'public', objectKey, mimeType: 'image/png', source: 'upload_image',
+  })
+
   it('updates nickname and avatarUrl', async () => {
+    await registerUploadedAvatar('abc.png')
     await createTestUser('patch-me@test.local', 'pass123')
     const { accessToken } = await loginAs('patch-me@test.local', 'pass123')
 
@@ -392,9 +398,22 @@ describe('PATCH /api/auth/me', () => {
       .expect(400)
 
     expect(res.body.error.code).toBe('BAD_REQUEST')
+
+    // Prefix/path-only matching used to accept these; only the registered
+    // object's canonical URL is allowed.
+    await registerUploadedAvatar('abc.png')
+    for (const avatarUrl of [
+      'http://localhost:3000.evil.example/uploads/abc.png',
+      'https://evil.example/uploads/abc.png',
+      'http://localhost:3000/uploads/unregistered.png',
+      'http://localhost:3000/uploads/abc.png?track=1',
+    ]) {
+      await api.patch('/api/auth/me').set('Authorization', `Bearer ${accessToken}`).send({ avatarUrl }).expect(400)
+    }
   })
 
   it('clears avatarUrl with null', async () => {
+    await registerUploadedAvatar('abc.png')
     await createTestUser('patch-me-clear@test.local', 'pass123')
     const { accessToken } = await loginAs('patch-me-clear@test.local', 'pass123')
 

@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import {
   conflict,
   HttpError,
+  notFound,
   paymentRefundNotSupported,
   refundBalanceInsufficient,
   refundRequiresReview,
@@ -151,7 +152,7 @@ export async function requestRechargeRefund(input: {
         SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "paymentMethod", "adminSandbox"
         FROM "RechargeOrder" WHERE "id" = ${input.orderId}::uuid FOR UPDATE`
       const order = orders[0]
-      if (!order || order.userId !== input.userId) throw conflict('充值订单不存在')
+      if (!order || order.userId !== input.userId) throw notFound('充值订单不存在')
       if (order.adminSandbox) throw conflict('管理员沙箱充值不支持退款')
       await assertProviderSupportsRefunds(order)
       if (order.status === 'refunded') {
