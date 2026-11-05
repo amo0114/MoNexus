@@ -139,7 +139,9 @@ export async function batchSettle(adminUserId: number, settlementIds: number[]) 
         await tx.pointLog.create({
           data: {
             userId: merchantUserId,
-            type: 'in',
+            // Business income, not earned points: member tier, invite and
+            // leaderboard all count only type 'in'.
+            type: 'settlement_in',
             amount,
             balanceAfter,
             reason: `商家结算入账: 订单#${settlement.orderId}`,

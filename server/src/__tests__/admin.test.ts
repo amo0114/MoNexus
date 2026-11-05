@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { api, createTestUser, createTestProduct, createTestMerchant, getDefaultOfferId, makeManualService, loginAs, authHeader } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
+import { computeLifetimeEarnedPoints } from '../lib/memberTier.js'
 
 describe('Admin access control', () => {
   it('should reject unauthenticated access to admin routes', async () => {
@@ -705,6 +706,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
       orderBy: { id: 'asc' },
     })
     const admin = await loginAs('settle-admin-ok@test.local', 'admin123')
+    const lifetimeBefore = await computeLifetimeEarnedPoints(merchant.userId)
 
     const res = await api
       .post('/api/admin/settlements/batch-settle')
@@ -731,12 +733,14 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     const creditLogs = await prisma.pointLog.findMany({
       where: {
         userId: merchant.userId,
-        type: 'in',
+        type: 'settlement_in',
         reason: { startsWith: '商家结算入账:' },
       },
     })
     expect(creditLogs).toHaveLength(2)
     expect(creditLogs.reduce((s, l) => s + l.amount, 0)).toBe(360)
+    // Settlement income is not earned points: member tier growth is unchanged.
+    expect(await computeLifetimeEarnedPoints(merchant.userId)).toBe(lifetimeBefore)
   })
 
   it('should reject mixed settlement statuses without partially settling pending records', async () => {

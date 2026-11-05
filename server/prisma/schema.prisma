@@ -506,7 +506,7 @@ model PointAccount {
 model PointLog {
   id           Int      @id @default(autoincrement())
   userId       Int
-  type         String // in | out | hold | release | refund；会员成长仅统计 in
+  type         String // in | out | hold | release | refund | sandbox_in | settlement_in；会员成长仅统计 in
   amount       Int
   balanceAfter Int
   reason       String?

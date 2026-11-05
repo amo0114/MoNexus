@@ -833,6 +833,7 @@ GET  /api/admin/recharge/orders/:id
 GET  /api/admin/payments/events
 POST /api/admin/payments/events/:id/retry
 POST /api/admin/recharge/orders/:id/reconcile
+POST /api/admin/recharge/orders/:id/reconcile/resolve
 POST /api/admin/recharge/orders/:id/refunds
 GET  /api/admin/payments/reconciliation-runs
 POST /api/admin/payments/reconciliation-runs

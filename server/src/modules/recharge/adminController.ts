@@ -84,6 +84,18 @@ export async function reconcileOrder(req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function resolveReconcileRequired(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminPaymentOperations.adminResolveReconcileRequired(
+      String(req.params.id),
+      req.user!.userId,
+      req.body.action,
+    ))
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function requestRefund(req: Request, res: Response, next: NextFunction) {
   try {
     res.status(201).json(await adminPaymentOperations.adminRequestRefund(

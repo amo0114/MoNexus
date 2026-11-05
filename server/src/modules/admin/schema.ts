@@ -357,6 +357,7 @@ export const POINT_LOG_TYPES = [
   'release',
   'refund',
   'sandbox_in',
+  'settlement_in',
 ] as const
 
 export type PointLogType = (typeof POINT_LOG_TYPES)[number]

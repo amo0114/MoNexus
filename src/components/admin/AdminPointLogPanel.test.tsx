@@ -280,6 +280,7 @@ describe('AdminPointLogPanel', () => {
       '解除冻结',
       '退款',
       '沙箱入账',
+      '商家结算入账',
     ])
 
     // Verify no option label contains English letters
@@ -289,7 +290,7 @@ describe('AdminPointLogPanel', () => {
 
     // Verify option values preserve backend enums
     const optionValues = options.map((o) => o.value)
-    expect(optionValues).toEqual(['', 'in', 'out', 'hold', 'release', 'refund', 'sandbox_in'])
+    expect(optionValues).toEqual(['', 'in', 'out', 'hold', 'release', 'refund', 'sandbox_in', 'settlement_in'])
   })
 
   it('renders error state when API contract violation occurs (e.g. array returned instead of envelope)', async () => {

@@ -8,6 +8,8 @@ import {
   createReconciliationRun,
   executeReconciliationRun,
   reconcileOrder,
+  resolveReconcileRequiredOrder,
+  type ReconcileResolution,
 } from '../payment/reconciliation/service.js'
 import type { PaymentProviderName, ReconciliationScopeType } from './types.js'
 import { writePaymentAdminLog } from '../payment/audit.js'
@@ -50,6 +52,17 @@ export async function adminReconcileOrder(orderId: string, actorUserId: number) 
     targetKey: orderId,
   })
   return reconcileOrder(orderId)
+}
+
+export async function adminResolveReconcileRequired(orderId: string, actorUserId: number, action: ReconcileResolution) {
+  await writePaymentAdminLog({
+    adminUserId: actorUserId,
+    action: 'payment.order.resolve_reconcile',
+    targetType: 'RechargeOrder',
+    targetKey: orderId,
+    extra: { resolution: action },
+  })
+  return resolveReconcileRequiredOrder({ orderId, action, actorUserId })
 }
 
 export async function adminRequestRefund(orderId: string, actorUserId: number, reasonCode?: string) {
