@@ -40,6 +40,15 @@ const pureRules = new Set([
   `${modules}catalog/offerPolicy.ts`, `${lib}paginationPolicy.ts`, `${lib}businessTime.ts`,
 ])
 const pureDependencies = new Set([...pureRules, `${lib}httpError.ts`, `${lib}businessRegistry.ts`])
+// Provider-neutral core: reaches fulfillment providers only through the registry
+// (server/src/bootstrap/extensions.ts is the composition root).
+const providerNeutral = [
+  'server/src/extension-contracts/', `${modules}fulfillment/`, `${modules}orders/fulfillment.ts`,
+  `${modules}admin/orderAdmin.ts`, `${modules}merchant/orderService.ts`,
+]
+const providerImplementations = [
+  `${modules}fakaBridge/`, `${modules}trafficReset/`, `${modules}xboardAccounts/`, `${lib}fakaBridge/`,
+]
 
 function resolveSource(file, specifier, sources) {
   if (!specifier.startsWith('.')) return null
@@ -67,6 +76,8 @@ export function checkBoundaries(sources) {
         if (file !== controller && file.startsWith(path.dirname(facade) + '/') && target === facade) fail('implementation imports its own public service facade')
       }
       if (pureRules.has(file) && dependency.runtime && !pureDependencies.has(target)) fail('pure rules must not import workflows or database modules')
+      if (providerNeutral.some(prefix => file.startsWith(prefix))
+        && providerImplementations.some(prefix => target.startsWith(prefix))) fail('provider-neutral core imports a fulfillment provider')
       if (dependency.runtime && !dependency.dynamic && sources.has(target)) graph.get(file).push(target)
     }
   }

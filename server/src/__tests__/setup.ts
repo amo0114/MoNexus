@@ -2,6 +2,7 @@ import { beforeAll, afterAll, beforeEach } from 'vitest'
 import { relative } from 'node:path'
 import { __resetCacheForTests } from '../lib/cache.js'
 import { prisma } from '../lib/prisma.js'
+import '../bootstrap/extensions.js'
 import { reportCommonTestTimings, timeTestOperation } from './commonTiming.js'
 
 let profileFile = ''

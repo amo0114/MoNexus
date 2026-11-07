@@ -7,6 +7,7 @@ caching and other infrastructure; it must not import business modules.
 | File | Responsibility |
 | --- | --- |
 | `service.ts` | Public exports for other business modules and application startup. |
+| `provider.ts` | `FulfillmentProvider` registration: refund hooks, welcome-benefit invalidation and Xboard background jobs. |
 | `worker.ts` | Provision-task claiming, remote dispatch, delivery/payment application and cron lifecycle. |
 | `lifecycle.ts` | Refund/revoke scheduling, reconciliation and expiry synchronization. |
 | `outbox.ts` | Transactional task insertion and the post-commit first attempt. |

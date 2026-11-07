@@ -16,9 +16,7 @@ import {
 } from '../../lib/fakaBridge/client.js'
 import { classifyFakaRemoteStatus } from '../../lib/fakaBridge/errors.js'
 import { fakaReconcileTotal, fakaRevokeTotal } from '../../lib/metrics.js'
-import { transitionOrderStatus } from '../orders/fulfillment.js'
-import { captureHeldOrder, releaseHeldOrder } from '../orders/accounting.js'
-import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
+import { deliverExternalResultInTx, refundUndeliveredExternalOrderInTx } from '../fulfillment/apply.js'
 import { config } from '../../config/index.js'
 import { isLeaseExpiredUtc, readTaskScheduleUtc } from '../../lib/fakaBridge/scheduleUtc.js'
 import { parseFakaExpiredAt } from '../../lib/fakaBridge/expiredAt.js'
@@ -299,11 +297,10 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
       const order = await tx.order.findUniqueOrThrow({ where: { id: task.orderId } })
       if (order.status === 'pending') {
         // Points stayed held until this confirmation (see worker queueRevokeBeforeRefund).
-        await transitionOrderStatus({ orderId: order.id, toStatus: 'refunded', actorRole: 'system',
+        await refundUndeliveredExternalOrderInTx(tx, order, {
           action: 'system.faka_bridge.revoked_refund', publicNote: '订阅开通失败，积分已退回',
-          internalNote: current.lastError ?? undefined }, tx)
-        await releaseHeldOrder(tx, order, `FakaBridge 撤销确认后退款: #${order.id}`)
-        await applyRefundInventoryPolicy(tx, order, { fromStatus: 'pending', actorUserId: order.userId })
+          internalNote: current.lastError ?? undefined, releaseReason: `FakaBridge 撤销确认后退款: #${order.id}`,
+        })
       }
       return true
     })
@@ -413,10 +410,10 @@ async function processPaidRevokeClaim(claimed: TaskIdentity & {
       reconcileNote: 'paid reset revoked; original subscription unchanged',
     } })
     if (order.status === 'pending') {
-      await transitionOrderStatus({ orderId: order.id, toStatus: 'refunded', actorRole: 'system',
-        action: 'system.faka_bridge.paid_reset_cancel_refund', publicNote: '流量重置订单已取消，积分已退回' }, tx)
-      await releaseHeldOrder(tx, order, `Xboard 重置撤销退款: #${order.id}`)
-      await applyRefundInventoryPolicy(tx, order, { fromStatus: 'pending', actorUserId: order.userId })
+      await refundUndeliveredExternalOrderInTx(tx, order, {
+        action: 'system.faka_bridge.paid_reset_cancel_refund', publicNote: '流量重置订单已取消，积分已退回',
+        releaseReason: `Xboard 重置撤销退款: #${order.id}`,
+      })
     }
     return true
   })
@@ -1140,25 +1137,11 @@ async function tryRefundPendingOrder(
       })
       if (taskUpdated.count !== 1) return false
 
-      await transitionOrderStatus(
-        {
-          orderId: order.id,
-          toStatus: 'refunded',
-          actorRole: 'system',
-          action: 'system.faka_bridge.reconcile_refund',
-          publicNote: '订阅开通失败，积分已退回',
-          internalNote: `reconcile remote=${reason}`,
-        },
-        tx
-      )
-      await releaseHeldOrder(
-        tx,
-        order,
-        `FakaBridge 对账开通失败退款: #${order.id} (${reason})`
-      )
-      await applyRefundInventoryPolicy(tx, order, {
-        fromStatus: 'pending',
-        actorUserId: order.userId,
+      await refundUndeliveredExternalOrderInTx(tx, order, {
+        action: 'system.faka_bridge.reconcile_refund',
+        publicNote: '订阅开通失败，积分已退回',
+        internalNote: `reconcile remote=${reason}`,
+        releaseReason: `FakaBridge 对账开通失败退款: #${order.id} (${reason})`,
       })
       return true
     })
@@ -1335,37 +1318,21 @@ async function tryDeliverPendingOrder(
       })
       if (taskUpdated.count !== 1) return false
 
-      if (order.status === 'pending') {
-        await transitionOrderStatus(
-          {
-            orderId,
-            toStatus: 'processing',
-            actorRole: 'system',
-            action: 'system.faka_bridge.reconcile_start',
-            publicNote: '正在开通 Xboard 订阅（对账）',
-          },
-          tx
-        )
-      }
-      const deliveredOrder = await transitionOrderStatus(
-        {
-          orderId,
-          toStatus: 'delivered',
-          actorRole: 'system',
-          action: 'system.faka_bridge.reconcile_deliver',
-          deliveryContent: delivery.content,
-          deliveryStructuredContent: delivery.structuredContent,
-          publicNote: 'Xboard 订阅已开通（对账收敛）',
-          internalNote: tradeNo
-            ? `trade_no=${tradeNo}; reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`
-            : `reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`,
-          ...(remoteExpiredAt || snapshot.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
-        },
-        tx
-      )
-      // Reconciled success must capture the same reservation as direct success.
-      // The order lock and task CAS keep retries from charging a second time.
-      await captureHeldOrder(tx, deliveredOrder, `Xboard 对账开通成功扣款: #${deliveredOrder.id}`)
+      const expiryNote = remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''
+      const deliveredOrder = await deliverExternalResultInTx(tx, {
+        orderId,
+        action: { start: 'system.faka_bridge.reconcile_start', deliver: 'system.faka_bridge.reconcile_deliver' },
+        startNote: '正在开通 Xboard 订阅（对账）',
+        publicNote: 'Xboard 订阅已开通（对账收敛）',
+        internalNote: tradeNo ? `trade_no=${tradeNo}; reconcile${expiryNote}` : `reconcile${expiryNote}`,
+        deliveryContent: delivery.content,
+        deliveryStructuredContent: delivery.structuredContent,
+        ...(remoteExpiredAt || snapshot.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
+        // The order lock and task CAS keep retries from charging a second time.
+        captureReason: `Xboard 对账开通成功扣款: #${orderId}`,
+      })
+      // The task CAS above must not commit without the delivery it stands for.
+      if (!deliveredOrder) throw new Error('FakaBridge reconcile deliver: order no longer deliverable')
       await grantForOrderInTx(tx, deliveredOrder.id)
       return true
     })
