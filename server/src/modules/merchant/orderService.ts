@@ -7,7 +7,7 @@ import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 import { canonicalDeliveryText, parseStoredDeliveryFields, validateDeliveryValues, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
-import { onFakaOrderRefundedInTx } from '../fakaBridge/service.js'
+import { afterOrderRefunded, onOrderRefundedInTx } from '../fulfillment/coordination.js'
 import { assertMyDeliveryFile } from './deliveryFilePolicy.js'
 import type { MerchantOrderListQuery } from './schema.js'
 
@@ -430,9 +430,10 @@ export async function rejectOrder(
       actorUserId,
     })
 
-    // FakaBridge：拒单时取消尚未开通的任务（避免退款后仍外呼开通）
-    await onFakaOrderRefundedInTx(tx, orderId)
+    // 外部履约：拒单时取消尚未开通的任务（避免退款后仍外呼开通）
+    await onOrderRefundedInTx(tx, orderId)
   })
+  await afterOrderRefunded(orderId)
 
   return getMyOrderDetail(merchantId, orderId)
 }

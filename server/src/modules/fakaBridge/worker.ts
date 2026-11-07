@@ -3,8 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
-import { transitionOrderStatus } from '../orders/fulfillment.js'
-import { captureHeldOrder, releaseHeldOrder } from '../orders/accounting.js'
+import { deliverExternalResultInTx, refundUndeliveredExternalOrderInTx } from '../fulfillment/apply.js'
 import {
   fakaProvisionTotal,
   fakaRevokePendingGauge,
@@ -27,7 +26,6 @@ import {
   isFakaUncertainResult,
   type FakaErrorCode,
 } from '../../lib/fakaBridge/errors.js'
-import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import type { FakaBridgeClientOptions } from '../../lib/fakaBridge/client.js'
 import {
   runFakaReconcileBatch,
@@ -410,9 +408,15 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
         )
       }
       if (remoteClass === 'not_opened') {
-        await markFailedAndRefund(claimed, code)
-        fakaProvisionTotal.inc({ outcome: 'failed' })
-        return 'failed'
+        // Only a remote revoked row blocks a late order-paid; failed rows can resume.
+        if (xbStatus.toLowerCase() === 'revoked') {
+          await markFailedAndRefund(claimed, code)
+          fakaProvisionTotal.inc({ outcome: 'failed' })
+          return 'failed'
+        }
+        await queueRevokeBeforeRefund(claimed, code, `status probe ${xbStatus} after ${claimed.attempts} attempts`)
+        fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+        return 'retry_scheduled'
       }
       // intermediate (pending / processing-no-trade) → park, do NOT refund
       await parkNeedsReconcile(
@@ -424,9 +428,10 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
       return 'retry_scheduled'
     }
     if (st.httpStatus === 404) {
-      await markFailedAndRefund(claimed, code)
-      fakaProvisionTotal.inc({ outcome: 'failed' })
-      return 'failed'
+      // 404 only means the row is not there yet: the timed-out order-paid may still land.
+      await queueRevokeBeforeRefund(claimed, code, `status 404 after ${claimed.attempts} attempts`)
+      fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+      return 'retry_scheduled'
     }
     // Probe failed / unknown — park for reconcile; do NOT refund yet.
     await parkNeedsReconcile(
@@ -439,10 +444,11 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
   }
 
   if (exhausted) {
-    // Definitive non-retryable / business failure only.
-    await markFailedAndRefund(claimed, code)
-    fakaProvisionTotal.inc({ outcome: 'failed' })
-    return 'failed'
+    // Even a definitive rejection does not prove an earlier timed-out attempt
+    // cannot still open remotely; refund only after the revoke tombstone.
+    await queueRevokeBeforeRefund(claimed, code, `failed after ${claimed.attempts} attempts (${code})`)
+    fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+    return 'retry_scheduled'
   }
 
   await clearLeaseKeepPending(claimed, code)
@@ -480,6 +486,32 @@ async function parkNeedsReconcile(
       leaseUntil: null,
       nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
       reconcileNote: note,
+    },
+  })
+}
+
+/**
+ * v1 refund gate: hand the task to the revoke worker, whose confirmed remote
+ * `revoked` (tombstone for unknown order_no) is the only proof that a late
+ * order-paid cannot open. Held points stay frozen until then.
+ */
+async function queueRevokeBeforeRefund(
+  claimed: ClaimedTask,
+  code: FakaErrorCode,
+  note: string
+): Promise<void> {
+  await prisma.fakaBridgeTask.updateMany({
+    where: { id: claimed.id, status: 'pending', leaseToken: claimed.leaseToken },
+    data: {
+      status: 'needs_reconcile',
+      cancelRequested: true,
+      revokeStatus: 'pending',
+      lastRevokeError: null,
+      lastError: code,
+      leaseToken: null,
+      leaseUntil: null,
+      nextAttemptAt: new Date(),
+      reconcileNote: `${note}; revoke tombstone before refund`,
     },
   })
 }
@@ -608,55 +640,31 @@ async function finalizeProvisionSuccess(
         },
       })
 
-      if (order.status === 'pending') {
-        await transitionOrderStatus(
-          {
-            orderId: order.id,
-            toStatus: 'processing',
-            actorRole: 'system',
-            action: 'system.faka_bridge.start',
-            publicNote: '正在开通 Xboard 订阅',
-          },
-          tx
-        )
-      }
-
-      const refreshed = await tx.order.findUnique({
-        where: { id: claimed.orderId },
-        select: { status: true },
+      const actionNote =
+        subscription?.action === 'renew'
+          ? 'Xboard 续费成功'
+          : subscription?.action === 'reset_traffic'
+            ? 'Xboard 流量重置成功'
+            : subscription?.action === 'onetime'
+              ? 'Xboard 流量包已开通'
+              : subscription?.action === 'new'
+                ? 'Xboard 新购开通成功'
+                : 'Xboard 订阅已开通'
+      const detail = `${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}${subscription?.action ? `; action=${subscription.action}` : ''}`
+      const deliveredOrder = await deliverExternalResultInTx(tx, {
+        orderId: claimed.orderId,
+        action: { start: 'system.faka_bridge.start', deliver: 'system.faka_bridge.deliver' },
+        startNote: '正在开通 Xboard 订阅',
+        publicNote: actionNote,
+        internalNote: tradeNo
+          ? `trade_no=${tradeNo}; email=${claimed.emailSnapshot}${detail}`
+          : `email=${claimed.emailSnapshot}${detail}`,
+        deliveryContent: delivery.content,
+        deliveryStructuredContent: delivery.structuredContent,
+        ...(remoteExpiredAt || claimed.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
+        captureReason: `Xboard 开通成功扣款: #${claimed.orderId}`,
       })
-      if (refreshed?.status === 'processing') {
-        const actionNote =
-          subscription?.action === 'renew'
-            ? 'Xboard 续费成功'
-            : subscription?.action === 'reset_traffic'
-              ? 'Xboard 流量重置成功'
-              : subscription?.action === 'onetime'
-                ? 'Xboard 流量包已开通'
-                : subscription?.action === 'new'
-                  ? 'Xboard 新购开通成功'
-                  : 'Xboard 订阅已开通'
-        const deliveredOrder = await transitionOrderStatus(
-          {
-            orderId: claimed.orderId,
-            toStatus: 'delivered',
-            actorRole: 'system',
-            action: 'system.faka_bridge.deliver',
-            deliveryContent: delivery.content,
-            deliveryStructuredContent: delivery.structuredContent,
-            publicNote: actionNote,
-            internalNote: tradeNo
-              ? `trade_no=${tradeNo}; email=${claimed.emailSnapshot}${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}${subscription?.action ? `; action=${subscription.action}` : ''}`
-              : `email=${claimed.emailSnapshot}${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}${subscription?.action ? `; action=${subscription.action}` : ''}`,
-            ...(remoteExpiredAt || claimed.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
-          },
-          tx
-        )
-        // Capture only after authoritative success, atomically with delivery.
-        // Keep the order delivered so the existing dispute/refund flow remains available.
-        await captureHeldOrder(tx, deliveredOrder, `Xboard 开通成功扣款: #${deliveredOrder.id}`)
-        await grantForOrderInTx(tx, deliveredOrder.id)
-      }
+      if (deliveredOrder) await grantForOrderInTx(tx, deliveredOrder.id)
       return true
     })
     if (!applied) return 'skipped'
@@ -737,25 +745,11 @@ async function markFailedAndRefund(
       if (!order) return false
 
       if (order.status === 'pending') {
-        await transitionOrderStatus(
-          {
-            orderId: order.id,
-            toStatus: 'refunded',
-            actorRole: 'system',
-            action: 'system.faka_bridge.failed_refund',
-            publicNote: '订阅开通失败，积分已退回',
-            internalNote: code,
-          },
-          tx
-        )
-        await releaseHeldOrder(
-          tx,
-          order,
-          `FakaBridge 开通失败退款: #${order.id} (${code})`
-        )
-        await applyRefundInventoryPolicy(tx, order, {
-          fromStatus: 'pending',
-          actorUserId: order.userId,
+        await refundUndeliveredExternalOrderInTx(tx, order, {
+          action: 'system.faka_bridge.failed_refund',
+          publicNote: '订阅开通失败，积分已退回',
+          internalNote: code,
+          releaseReason: `FakaBridge 开通失败退款: #${order.id} (${code})`,
         })
       } else if (order.status === 'refunded' || order.status === 'closed') {
         // Already refunded — if remote might exist, queue revoke on reconcile

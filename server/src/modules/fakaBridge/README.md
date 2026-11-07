@@ -7,6 +7,7 @@ caching and other infrastructure; it must not import business modules.
 | File | Responsibility |
 | --- | --- |
 | `service.ts` | Public exports for other business modules and application startup. |
+| `provider.ts` | `FulfillmentProvider` registration: refund hooks, welcome-benefit invalidation and Xboard background jobs. |
 | `worker.ts` | Provision-task claiming, remote dispatch, delivery/payment application and cron lifecycle. |
 | `lifecycle.ts` | Refund/revoke scheduling, reconciliation and expiry synchronization. |
 | `outbox.ts` | Transactional task insertion and the post-commit first attempt. |
@@ -25,6 +26,21 @@ Task insertion stays inside the caller's order transaction; initial dispatch is
 scheduled after commit. Provision, reconcile, refund and backfill retain their
 existing order locks, task leases, compare-and-swap checks and accounting calls.
 The relocation changes module ownership, not these transaction boundaries.
+
+## Email provisions (v1): refund only after a revoke tombstone
+
+An order-status 404 or a remote `failed` row is not proof of absence: a timed-out
+`order-paid` can still land and claim the row, and failed rows resume on retry.
+After retry exhaustion (uncertain or definitive), and whenever reconcile sees
+404/`failed`, the task becomes `needs_reconcile` with `revokeStatus=pending` and
+points stay held. The revoke worker's matching `revoked` response (FakaBridge
+≥1.8.1 writes a tombstone for an unknown `order_no` and rejects later
+`order-paid`) is the only v1 refund trigger: it finalizes the task and refunds a
+still-pending order in one transaction. Only a remote `revoked` status refunds
+directly. Older plugins answer 「订单不存在」; that is recorded as
+`FAKA_REVOKE_TOMBSTONE_UNSUPPORTED` and, after five tries, leaves the order held
+for an operator to upgrade the plugin and use force-revoke. Reconcile does not
+probe tasks whose revoke is pending or failed.
 
 ## Stable-account paid resets (B3b2)
 
@@ -67,7 +83,7 @@ may rotate without changing semantic identity. Keep old endpoint/nonce/storage
 available until all old operations settle; do not repoint an instance ID at a
 different Xboard or delete audit/tombstone rows.
 
-Targeted task coverage: `faka-bridge-paid-reset-v2.test.ts`.
+Targeted task coverage: `faka-bridge-paid-reset-v2.test.ts`; v1 refund gate in `faka-bridge-worker.test.ts`.
 
 ## Website checkout (B3b3)
 

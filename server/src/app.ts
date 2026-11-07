@@ -1,3 +1,5 @@
+// Registers fulfillment providers before any route or job can use the registry.
+import './bootstrap/extensions.js'
 import { productVideoRoutes } from './modules/productVideos/routes.js'
 import { timingSafeEqual } from 'node:crypto'
 import express from 'express'
