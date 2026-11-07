@@ -28,10 +28,10 @@ beforeEach(() => {
 describe('createOrder checkout term fields', () => {
   it('threads the stable account and opaque target version through preview and order HTTP', async () => {
     vi.mocked(client.get).mockResolvedValue({ data: {} })
-    await getCheckoutPreview(42, 7, 'account-id')
+    await getCheckoutPreview(42, 7, { xboardAccountLinkId: 'account-id' })
     expect(client.get).toHaveBeenCalledWith('/checkout/preview', { params: { productId: 42, offerId: 7, xboardAccountLinkId: 'account-id' } })
     await createOrder(42, { expectedPrice: 100, idempotencyKey: 'key', expectedProductContentVersion: 1,
-      expectedAssuranceGrantId: null, xboardAccountLinkId: 'account-id', expectedXboardTargetVersion: 'target-version' })
+      expectedAssuranceGrantId: null, orderInput: { xboardAccountLinkId: 'account-id', expectedXboardTargetVersion: 'target-version' } })
     expect(mockPost.mock.calls[0][1]).toMatchObject({ xboardAccountLinkId: 'account-id', expectedXboardTargetVersion: 'target-version' })
   })
   it('POSTs expectedProductContentVersion and expectedAssuranceGrantId: null from the confirmed preview', async () => {

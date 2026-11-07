@@ -4,13 +4,6 @@ import type { PurchaseFormField } from '../types/merchant'
 import type { LegalRequirement } from './legal'
 
 export interface CheckoutPreview {
-  xboardPaidReset?: {
-    accounts: Array<{ id: string; maskedEmail: string }>
-    selectedAccountLinkId: string | null
-    targetVersion: string | null
-    eligible: boolean
-    blockReason: string | null
-  }
   productId: number
   productName: string
   /** 本次报价对应的规格(P4a);单 SKU 为默认 Offer。 */
@@ -32,26 +25,26 @@ export interface CheckoutPreview {
   requiresVerification: boolean
   /** P7b：本规格是否走自动开通。true 时结算弹窗明示表单答案将外发到商家 webhook。与 Faka 路径互斥。 */
   autoProvision: boolean
-  /** FakaBridge：需验证开通邮箱归属；验证后允许升/降级。与 autoProvision 互斥。 */
-  requiresProvisionEmailProof?: boolean
-  fakaCapacity?: {
-    remaining: number | null
-    capacityLimit: number | null
-    sellable: boolean
-    source: 'xboard' | 'unavailable'
-    reason?: string
-  } | null
+  /** Fulfillment provider id (selects the purchase extension); null = none. */
+  fulfillmentProvider?: string | null
   /** SPEC-LEGAL-001：下单必须确认的协议版本（法律页面关闭 = null，隐藏勾选区）。 */
   legalRequirement?: LegalRequirement | null
   /** 商品内容版本；下单必须携带 expectedProductContentVersion。 */
   productContentVersion: number
   /** 当前生效的保障授予 id；无保障为 null。下单必须携带 expectedAssuranceGrantId。 */
   assuranceGrantId: number | null
+  /** Provider-specific preview fields (see src/extensions/*). */
+  [providerField: string]: unknown
 }
 
-export async function getCheckoutPreview(productId: number, offerId?: number, xboardAccountLinkId?: string): Promise<CheckoutPreview> {
+export async function getCheckoutPreview(
+  productId: number,
+  offerId?: number,
+  /** Provider-specific query from the purchase extension (e.g. selected account). */
+  extensionQuery: Record<string, string> = {},
+): Promise<CheckoutPreview> {
   const { data } = await api.get('/checkout/preview', {
-    params: { productId, ...(offerId != null ? { offerId } : {}), ...(xboardAccountLinkId ? { xboardAccountLinkId } : {}) },
+    params: { productId, ...(offerId != null ? { offerId } : {}), ...extensionQuery },
   })
   return data
 }
@@ -82,8 +75,8 @@ export async function createOrder(
     expectedPrice: number
     idempotencyKey: string
     offerId?: number
-    xboardAccountLinkId?: string
-    expectedXboardTargetVersion?: string
+    /** Provider-specific request fields from the purchase extension; the server validates them. */
+    orderInput?: Record<string, unknown>
     formAnswers?: Record<string, string>
     expectedPurchaseFormVersion?: string
     /** P4b：预览返回的 Offer 结算版本;配置变化 → 409 CHECKOUT_CHANGED。 */
@@ -103,8 +96,7 @@ export async function createOrder(
     '/orders',
     {
       productId,
-      ...(options.xboardAccountLinkId ? { xboardAccountLinkId: options.xboardAccountLinkId } : {}),
-      ...(options.expectedXboardTargetVersion ? { expectedXboardTargetVersion: options.expectedXboardTargetVersion } : {}),
+      ...options.orderInput,
       ...(options.offerId != null ? { offerId: options.offerId } : {}),
       expectedPrice: options.expectedPrice,
       ...(options.expectedPurchaseFormVersion

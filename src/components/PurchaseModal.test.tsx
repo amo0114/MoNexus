@@ -55,28 +55,31 @@ function preview(overrides: Partial<CheckoutPreview> = {}): CheckoutPreview {
 
 describe('PurchaseModal checkout preview terms', () => {
   it('lets the buyer explicitly recover from a stale URL account without editing the URL', async () => {
-    getCheckoutPreview.mockImplementation(async (_product, _offer, id) => {
-      if (id === 'stale') throw new Error('套餐账号已失效')
-      return preview({ purchasable: false, xboardPaidReset: { accounts: [{ id: 'owned', maskedEmail: 'o***@panel.test' }],
+    getCheckoutPreview.mockImplementation(async (_product, _offer, query) => {
+      if (query?.xboardAccountLinkId === 'stale') throw new Error('套餐账号已失效')
+      return preview({ fulfillmentProvider: 'faka_bridge', purchasable: false, xboardPaidReset: { accounts: [{ id: 'owned', maskedEmail: 'o***@panel.test' }],
         selectedAccountLinkId: null, targetVersion: null, eligible: false, blockReason: '请选择套餐账号' } })
     })
     const selection = vi.fn()
-    render(<PurchaseModal productId={42} initialAccountLinkId="stale" onAccountSelectionChange={selection} onClose={vi.fn()} onConfirm={vi.fn()} />)
+    render(<PurchaseModal productId={42} initialPreviewQuery={{ xboardAccountLinkId: 'stale' }} onPreviewQueryChange={selection} onClose={vi.fn()} onConfirm={vi.fn()} />)
     fireEvent.click(await screen.findByRole('button', { name: '重新选择账号' }))
     expect(await screen.findByTestId('paid-reset-account')).toHaveValue('')
-    expect(selection).toHaveBeenCalledWith('')
+    expect(selection).toHaveBeenCalledWith({})
     expect(screen.getByRole('button', { name: '确认支付' })).toBeDisabled()
-    expect(getCheckoutPreview).toHaveBeenLastCalledWith(42, undefined)
+    expect(getCheckoutPreview).toHaveBeenLastCalledWith(42, undefined, {})
   })
   it('selects a stable account, skips OTP, and uses a new intent only when the target changes', async () => {
     const accounts = [{ id: 'a', maskedEmail: 'a***@panel.test' }, { id: 'b', maskedEmail: 'b***@panel.test' }]
-    getCheckoutPreview.mockImplementation(async (_product, _offer, id) => preview({
-      chargeType: 'hold', purchasable: Boolean(id), requiresProvisionEmailProof: false,
+    getCheckoutPreview.mockImplementation(async (_product, _offer, query) => {
+      const id = query?.xboardAccountLinkId
+      return preview({
+      fulfillmentProvider: 'faka_bridge', chargeType: 'hold', purchasable: Boolean(id), requiresProvisionEmailProof: false,
       xboardPaidReset: { accounts, selectedAccountLinkId: id ?? null, targetVersion: id ? `${id}-version` : null,
         eligible: Boolean(id), blockReason: id ? null : '请选择套餐账号' },
-    }))
+    })
+    })
     const onConfirm = vi.fn().mockResolvedValue('failed'), selection = vi.fn()
-    render(<PurchaseModal productId={42} onClose={vi.fn()} onConfirm={onConfirm} onAccountSelectionChange={selection} validityDays={30} />)
+    render(<PurchaseModal productId={42} onClose={vi.fn()} onConfirm={onConfirm} onPreviewQueryChange={selection} validityDays={30} />)
     const select = await screen.findByTestId('paid-reset-account')
     expect(screen.getByRole('button', { name: '确认支付' })).toBeDisabled()
     fireEvent.change(select, { target: { value: 'a' } })
@@ -84,7 +87,7 @@ describe('PurchaseModal checkout preview terms', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
     await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1))
     const firstKey = onConfirm.mock.calls[0][1]
-    expect(onConfirm.mock.calls[0][0].xboardPaidReset).toMatchObject({ selectedAccountLinkId: 'a', targetVersion: 'a-version' })
+    expect(onConfirm.mock.calls[0][5]).toEqual({ xboardAccountLinkId: 'a', expectedXboardTargetVersion: 'a-version' })
     expect(screen.queryByTestId('provision-email-proof')).not.toBeInTheDocument()
     expect(screen.queryByTestId('preview-validity-days')).not.toBeInTheDocument()
     expect(getProvisionEmailStatus).not.toHaveBeenCalled()
@@ -96,20 +99,20 @@ describe('PurchaseModal checkout preview terms', () => {
     fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
     await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(3))
     expect(onConfirm.mock.calls[2][1]).not.toBe(firstKey)
-    expect(onConfirm.mock.calls[2][0].xboardPaidReset.selectedAccountLinkId).toBe('b')
-    expect(selection).toHaveBeenCalledWith('b')
+    expect(onConfirm.mock.calls[2][5]).toMatchObject({ xboardAccountLinkId: 'b' })
+    expect(selection).toHaveBeenCalledWith({ xboardAccountLinkId: 'b' })
   })
 
   it('preserves a URL-selected account when re-quoting changed checkout details', async () => {
     const reset = { accounts: [{ id: 'chosen', maskedEmail: 'a***@panel.test' }],
       selectedAccountLinkId: 'chosen', targetVersion: 'target-version', eligible: true, blockReason: null }
-    getCheckoutPreview.mockResolvedValue(preview({ xboardPaidReset: reset }))
+    getCheckoutPreview.mockResolvedValue(preview({ fulfillmentProvider: 'faka_bridge', xboardPaidReset: reset }))
     const onConfirm = vi.fn().mockResolvedValueOnce('price_changed').mockResolvedValue('failed')
-    render(<PurchaseModal productId={42} offerId={7} initialAccountLinkId="chosen" onClose={vi.fn()} onConfirm={onConfirm} />)
+    render(<PurchaseModal productId={42} offerId={7} initialPreviewQuery={{ xboardAccountLinkId: 'chosen' }} onClose={vi.fn()} onConfirm={onConfirm} />)
     await screen.findByTestId('paid-reset-account')
     fireEvent.click(screen.getByRole('button', { name: '确认支付' }))
     await waitFor(() => expect(getCheckoutPreview).toHaveBeenCalledTimes(2))
-    expect(getCheckoutPreview.mock.calls.every(call => call[2] === 'chosen')).toBe(true)
+    expect(getCheckoutPreview.mock.calls.every(call => call[2]?.xboardAccountLinkId === 'chosen')).toBe(true)
     expect(await screen.findByTestId('paid-reset-account')).toHaveValue('chosen')
   })
 
@@ -137,7 +140,7 @@ describe('PurchaseModal checkout preview terms', () => {
     render(<PurchaseModal productId={42} onClose={vi.fn()} onConfirm={vi.fn()} />)
     expect(await screen.findByText('本次冻结积分')).toBeInTheDocument()
     expect(screen.getByText('冻结后可用余额')).toBeInTheDocument()
-    expect(screen.getByTestId('hold-explain')).toHaveTextContent('Xboard 确认开通成功后转为支付扣款')
+    expect(screen.getByTestId('hold-explain')).toHaveTextContent('外部开通确认成功后转为支付扣款')
     expect(screen.queryByText('本次待支付')).not.toBeInTheDocument()
   })
 
@@ -398,6 +401,7 @@ describe('PurchaseModal checkout preview terms', () => {
 
     getCheckoutPreview.mockResolvedValue(
       preview({
+        fulfillmentProvider: 'faka_bridge',
         requiresProvisionEmailProof: true,
         purchaseForm: [
           { key: 'xboardEmail', label: '开通邮箱', type: 'text', required: true },
