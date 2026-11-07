@@ -1,10 +1,8 @@
 import { Prisma } from '@prisma/client'
-import { usesStablePaidReset, withoutProvisionEmail } from '../../lib/fakaBridge/paidResetSku.js'
-import { preflightPaidCheckout, assertPaidCheckoutTarget, type PaidCheckoutTarget } from '../fakaBridge/paidCheckout.js'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
-import { badRequest, notFound, HttpError, provisionEmailUnverified } from '../../lib/httpError.js'
+import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import { runProvisionBatch } from './provisionCron.js'
 import { lockActiveWebhookConfigForShare } from './provisioningConfig.js'
 import { createOrderStatusEvent, transitionOrderStatus, resolveSubscriptionExpiresAt } from './fulfillment.js'
@@ -43,8 +41,8 @@ import {
   structuredContentToJson,
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
-import { fetchFakaCapacityForSku, isFakaBridgeConfigured, isFakaBridgeOffer, resolveFakaProvisionEmail } from '../../lib/fakaBridge/index.js'
-import { assertProvisionEmailTrusted, createFakaBridgeTaskForOrder, scheduleFakaBridgeFirstAttempt } from '../fakaBridge/service.js'
+import { checkoutProviderFor, hasExtensionInput, isProvisionPending } from '../fulfillment/coordination.js'
+import type { ExtensionInput } from '../../extension-contracts/fulfillment.js'
 import {
   recordOrderAcceptances,
   resolveConsentEvidence,
@@ -119,8 +117,12 @@ function resolveOrderFulfillmentStrategy(offer: FulfillmentOfferInput) {
 // P6a：履约 SLA 天数迁入 SystemConfig（fulfillmentSlaDays），下单事务内读取。
 
 export type CreateOrderOptions = {
+  // Legacy Xboard paid-reset fields: kept as-is in the idempotency fingerprint
+  // and forwarded to the provider inside extensionInput.
   xboardAccountLinkId?: string
   expectedXboardTargetVersion?: string
+  /** Provider-specific purchase input; only the Offer's own provider reads it. */
+  extensionInput?: ExtensionInput
   // 购买的规格（P4a）。可选：单 SKU 商品由服务端解析为唯一 active Offer。
   offerId?: number
   // 服务端最终价确认：与商品当前价不一致时拒单（409 PRICE_CHANGED），
@@ -190,6 +192,10 @@ export async function createOrder(
     ...(expectedProductContentVersion != null
       ? { expectedProductContentVersion, expectedAssuranceGrantId: expectedAssuranceGrantId ?? null }
       : {}),
+    // Absent for legacy callers so their stored fingerprints still match.
+    ...(options.extensionInput && hasExtensionInput(options.extensionInput)
+      ? { extensionInput: options.extensionInput }
+      : {}),
   }
 
   // SPEC-LEGAL-001 复审 P1：既有幂等记录的分类（重放 / in-flight）先于协议
@@ -242,6 +248,7 @@ export async function createOrder(
     return await createOrderOnce(userId, productId, {
       xboardAccountLinkId: options.xboardAccountLinkId,
       expectedXboardTargetVersion: options.expectedXboardTargetVersion,
+      extensionInput: options.extensionInput,
       offerId,
       expectedPrice,
       idempotencyKey,
@@ -290,10 +297,6 @@ async function buildReplayResponse(orderId: number, userId: number) {
   if (!order) throw notFound('订单不存在')
 
   const account = await prisma.pointAccount.findUnique({ where: { userId } })
-  const fakaTask = await prisma.fakaBridgeTask.findUnique({
-    where: { orderId },
-    select: { status: true },
-  })
   const replayExpired = order.delivery?.expiresAt != null && order.delivery.expiresAt.getTime() <= Date.now()
   return {
     orderId: order.id,
@@ -312,7 +315,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
     balanceAfter: account?.balance ?? 0,
     merchantId: order.merchantId,
     merchantName: order.merchant?.name ?? null,
-    provisionPending: fakaTask != null && fakaTask.status === 'pending',
+    provisionPending: await isProvisionPending(orderId),
     idempotentReplay: true,
     ...(order.pricingSnapshot
       ? { pricing: serializeSnapshotPricing(order.pricingSnapshot) }
@@ -326,6 +329,7 @@ async function createOrderOnce(
   {
     xboardAccountLinkId,
     expectedXboardTargetVersion,
+    extensionInput: rawExtensionInput,
     offerId,
     expectedPrice,
     idempotencyKey,
@@ -344,77 +348,50 @@ async function createOrderOnce(
 ) {
   // P7b：事务外旁路标记——提交成功后尽力即时首呼（正确性由 cron 兜底）。
   let autoProvisionTaskCreated = false
-  // FakaBridge outbox id — only set when the offer provisions via Xboard.
-  let fakaBridgeTaskId: number | null = null
+  // Post-commit kick for the external provider's task, when one was created.
+  let externalTaskKick = null as (() => void) | null
+  const extensionInput: ExtensionInput = {
+    ...rawExtensionInput,
+    ...(xboardAccountLinkId ? { xboardAccountLinkId } : {}),
+    ...(expectedXboardTargetVersion ? { expectedXboardTargetVersion } : {}),
+  }
 
-  // Faka preflight OUTSIDE the order transaction: email OTP proof + Xboard capacity
-  // HTTP must not run under an open DB transaction.
-  let fakaPreflightEmail: string | null = null
-  let paidTarget: PaidCheckoutTarget | null = null
+  // Provider preflight OUTSIDE the order transaction: remote eligibility,
+  // ownership proofs and capacity must not run under an open DB transaction.
+  let prepared: { providerId: string; value: unknown } | null = null
   {
     const productPeek = await prisma.product.findUnique({
       where: { id: productId },
       select: { status: true, archivedAt: true, purchaseForm: true },
     })
     if (productPeek && productPeek.status === 'active' && !productPeek.archivedAt) {
-      try {
-        const offerPeek = await resolvePurchaseOfferChecked(
-          prisma,
-          productId,
-          offerId,
-          expectedCheckoutVersion
-        )
-        const stableReset = usesStablePaidReset(offerPeek)
-        if ((xboardAccountLinkId || expectedXboardTargetVersion) && !stableReset) {
-          throw badRequest('此规格不支持绑定账号重置')
+      const offerPeek = await resolvePurchaseOfferChecked(
+        prisma,
+        productId,
+        offerId,
+        expectedCheckoutVersion
+      )
+      const provider = checkoutProviderFor(offerPeek.externalIntegration)
+      if (!provider && hasExtensionInput(extensionInput)) {
+        throw badRequest(xboardAccountLinkId || expectedXboardTargetVersion ? '此规格不支持绑定账号重置' : '此规格不支持该购买参数')
+      }
+      // 互斥：规格配置冲突直接拒绝（正常被 DB CHECK 挡住；此处防御）
+      if (provider && offerPeek.autoProvision) {
+        throw badRequest('商品规格配置冲突：不能同时开启商家自动开通与外部开通，请联系商家/管理员')
+      }
+      if (provider) {
+        prepared = {
+          providerId: provider.id,
+          value: await provider.checkout.prepare({
+            userId,
+            offer: offerPeek,
+            purchaseForm: parseStoredPurchaseForm(productPeek.purchaseForm),
+            formAnswers,
+            extensionInput,
+            idempotencyKey,
+            renewalOfOrderId,
+          }),
         }
-        if (stableReset && (!xboardAccountLinkId || !expectedXboardTargetVersion || !idempotencyKey || renewalOfOrderId)) {
-          throw new HttpError(409, 'CHECKOUT_CHANGED', '请选择并确认要重置的套餐账号')
-        }
-        // 互斥：规格配置冲突直接拒绝（正常被 DB CHECK 挡住；此处防御）
-        if (offerPeek.autoProvision && isFakaBridgeOffer(offerPeek)) {
-          throw badRequest(
-            '商品规格配置冲突：不能同时开启商家自动开通与 FakaBridge，请联系商家/管理员'
-          )
-        }
-        if (isFakaBridgeOffer(offerPeek)) {
-          if (!isFakaBridgeConfigured()) {
-            throw badRequest('平台未配置 FakaBridge，暂时无法购买此商品')
-          }
-          if (!offerPeek.externalSku) {
-            throw badRequest('FakaBridge 商品未配置 externalSku')
-          }
-          const buyer = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { email: true, emailVerified: true, status: true },
-          })
-          if (!buyer) throw notFound('用户不存在')
-          if (buyer.status !== '正常') throw badRequest('账号状态异常，无法下单')
-          if (!buyer.emailVerified) {
-            throw badRequest('请先验证邮箱后再购买订阅类商品')
-          }
-          const allFields = parseStoredPurchaseForm(productPeek.purchaseForm)
-          const formFields = stableReset ? withoutProvisionEmail(allFields) : allFields
-          const answers = validatePurchaseFormAnswers(formFields, formAnswers)
-          if (stableReset) {
-            const check = await preflightPaidCheckout(userId, offerPeek, xboardAccountLinkId!)
-            if (check.target.version !== expectedXboardTargetVersion) throw new HttpError(409, 'CHECKOUT_CHANGED', '套餐账号已变化，请重新确认')
-            if (!check.eligible) throw badRequest('当前账号套餐不可购买此重置，请重新查询套餐状态')
-            paidTarget = check.target
-          } else {
-            const resolved = resolveFakaProvisionEmail(answers ?? formAnswers, buyer.email)
-            fakaPreflightEmail = await assertProvisionEmailTrusted(userId, resolved)
-
-            const cap = await fetchFakaCapacityForSku(offerPeek.externalSku)
-            if (cap.source === 'xboard' && !cap.sellable) {
-              throw badRequest(cap.reason ?? 'Xboard 套餐名额已满，请稍后再试或更换规格')
-            }
-          }
-        }
-      } catch (err) {
-        // PRICE_CHANGED / CHECKOUT_CHANGED from offer resolve must surface as-is;
-        // rethrow everything from preflight.
-        throw err
       }
     }
   }
@@ -445,7 +422,12 @@ async function createOrderOnce(
     // P4a：价格与履约配置以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
     // P4b：结算版本终检在解析内完成（与预检同序：版本先于下架判定）。
     const offer = await resolvePurchaseOfferChecked(tx, productId, offerId, expectedCheckoutVersion)
-    if (usesStablePaidReset(offer) !== Boolean(paidTarget)) throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+    const provider = checkoutProviderFor(offer.externalIntegration)
+    if (offer.externalIntegration && !provider) throw badRequest('商品暂不可购买，请联系商家')
+    // The provider prepared outside the transaction must still own the Offer.
+    if ((provider?.id ?? null) !== (prepared?.providerId ?? null)) {
+      throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
+    }
     if (expectedPrice != null && expectedPrice !== offer.price) {
       throw new HttpError(409, 'PRICE_CHANGED', '商品信息已变化，请重新确认')
     }
@@ -469,20 +451,6 @@ async function createOrderOnce(
       expectedValuePolicyId,
     })
 
-    // FakaBridge 终检：集成规格必须是 manual_service + 平台已配置 + 买家邮箱已验证。
-    // 配置缺失时 400（不是静默转人工），避免扣积分却永远开不出订阅。
-    const fakaBridge = isFakaBridgeOffer(offer)
-    if (fakaBridge) {
-      if (offer.deliveryMode !== 'manual_service') {
-        throw badRequest('FakaBridge 商品履约模式配置错误，请联系管理员')
-      }
-      if (!offer.externalSku) {
-        throw badRequest('FakaBridge 商品未配置 externalSku')
-      }
-      if (!isFakaBridgeConfigured()) {
-        throw badRequest('平台未配置 FakaBridge，暂时无法购买此商品')
-      }
-    }
     // 购买前表单：先做版本比对——商家在买家打开弹窗后改动表单（新增必填、
     // 删选项等）时，买家看到的还是旧表单，必须重新报价确认而不是校验失败 400。
     const purchaseFormFields = parseStoredPurchaseForm(product.purchaseForm)
@@ -492,7 +460,7 @@ async function createOrderOnce(
     ) {
       throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
     }
-    const effectiveFormFields = paidTarget ? withoutProvisionEmail(purchaseFormFields) : purchaseFormFields
+    const effectiveFormFields = provider?.checkout.formFields?.(offer, purchaseFormFields) ?? purchaseFormFields
     const purchaseFormAnswers = validatePurchaseFormAnswers(effectiveFormFields, formAnswers)
     // P6c：预约日期列化——取 date 字段（schema 限定至多一个）的已校验答案
     // （YYYY-MM-DD），商家排序与提醒 cron 免查答案 JSON。存储为该日历日的
@@ -581,39 +549,24 @@ async function createOrderOnce(
 
     const isManual = deliveryMode === 'manual_service'
 
-    // FakaBridge 开通邮箱：使用事务前 preflight 已校验归属的邮箱（OTP / 登录邮箱）。
-    // 事务内再比对 resolved 与 preflight，防表单被并发篡改。升/降级均允许。
-    let buyerEmail: string | null = null
-    if (fakaBridge) {
-      const buyer = await tx.user.findUnique({
-        where: { id: userId },
-        select: { email: true, emailVerified: true, status: true },
-      })
-      if (!buyer) throw notFound('用户不存在')
-      if (buyer.status !== '正常') throw badRequest('账号状态异常，无法下单')
-      if (!buyer.emailVerified) {
-        throw badRequest('请先验证邮箱后再购买订阅类商品')
-      }
-      if (paidTarget) {
-        const current = await assertPaidCheckoutTarget(tx, userId, offer, paidTarget, expectedXboardTargetVersion)
-        buyerEmail = current.email
-      } else {
-        const resolved = resolveFakaProvisionEmail(purchaseFormAnswers ?? formAnswers, buyer.email)
-        if (!fakaPreflightEmail || fakaPreflightEmail !== resolved) {
-          throw provisionEmailUnverified('开通邮箱校验已失效，请重新验证后再下单')
-        }
-        buyerEmail = fakaPreflightEmail
-      }
-    }
+    // External provider: re-validate the prepared choice locally and freeze the
+    // target before any debit (e.g. Xboard re-checks the proven provision email).
+    const externalTarget = provider
+      ? await provider.checkout.validateInTx(tx, {
+          userId,
+          offer,
+          prepared: prepared!.value,
+          purchaseFormAnswers,
+          formAnswers,
+        })
+      : null
 
-    // Faka 竞态测试 seam：此刻 resolvePurchaseOfferChecked() 已完成（checkout
-    // 快照已定）、fakaBridge 已判定/校验（含买家邮箱），且尚未插入任何 Order
-    // 外键行、未做扣款写入——事务对 Offer 行仍未持锁。生产路径该 hook 恒为
-    // null（纯 no-op）；测试用它通过事务外 Prisma 更新 externalSku，模拟结算
-    // 后 SKU 被并发改动。置于此可避免 "Order FK KEY SHARE + hook 的 UPDATE 锁"
-    // 在同一事务内自锁。最终 Offer FOR NO KEY UPDATE 重查仍在下方 outbox 创建
-    // 前原位置保留。
-    if (fakaBridge && buyerEmail && offer.externalSku && beforeFakaOfferTaskRecheckHookForTests) {
+    // 外部开通竞态测试 seam：此刻 checkout 快照已定、目标已冻结，且尚未插入任何
+    // Order 外键行、未做扣款写入——事务对 Offer 行仍未持锁。生产路径该 hook 恒为
+    // null（纯 no-op）；测试用它通过事务外 Prisma 更新 externalSku，模拟结算后 SKU
+    // 被并发改动。置于此可避免 "Order FK KEY SHARE + hook 的 UPDATE 锁" 在同一事务
+    // 内自锁。最终 Offer FOR NO KEY UPDATE 重查在 createTaskInTx 内。
+    if (provider && offer.externalSku && beforeFakaOfferTaskRecheckHookForTests) {
       await beforeFakaOfferTaskRecheckHookForTests({
         offerId: offer.id,
         externalSku: offer.externalSku,
@@ -692,7 +645,7 @@ async function createOrderOnce(
       actorRole: 'user',
       fromStatus: null,
       toStatus: order.status,
-      action: fakaBridge ? 'order.created.faka_bridge' : `order.created.${deliveryMode}`,
+      action: provider ? `order.created.${provider.id}` : `order.created.${deliveryMode}`,
     })
 
     // SPEC-LEGAL-001：订单级协议确认快照与订单同事务落库（只插入不更新），
@@ -705,47 +658,16 @@ async function createOrderOnce(
       userAgent,
     })
 
-    // 自动履约 outbox：P7b 与 Faka 互斥——同一订单只创建一条路径。
+    // 自动履约 outbox：P7b 与外部开通互斥——同一订单只创建一条路径。
     // Kind dispatch via resolveFulfillmentStrategy; write order is unchanged.
-    if (fakaBridge && offer.autoProvision) {
+    if (provider && offer.autoProvision) {
       throw badRequest(
-        '商品规格配置冲突：不能同时开启商家自动开通与 FakaBridge，请联系商家/管理员'
+        '商品规格配置冲突：不能同时开启商家自动开通与外部开通，请联系商家/管理员'
       )
     }
-    if (strategy.kind === 'faka_bridge' && buyerEmail && offer.externalSku) {
-      // FakaBridge 的 preflight（邮箱证明、容量）必须在事务外执行，但其 SKU 是
-      // 不可逆外呼的履约合同。最终在同一订单事务内锁 Offer 并重验，避免管理员
-      // 在 resolvePurchaseOfferChecked() 与 outbox create 之间切换 SKU / 集成，
-      // 让买家按旧快照被开通到错误套餐。（测试 seam 已上移至 buyerEmail 解析
-      // 之后、任何扣款/Order 外键写入之前，见上。）
-      const fakaOfferRecheck = await tx.$queryRaw<
-        Array<{
-          externalIntegration: string | null
-          externalSku: string | null
-          autoProvision: boolean
-        }>
-      >`
-        SELECT "externalIntegration", "externalSku", "autoProvision"
-        FROM "Offer"
-        WHERE "id" = ${offer.id}
-        FOR NO KEY UPDATE`
-      if (
-        fakaOfferRecheck.length === 0 ||
-        fakaOfferRecheck[0].externalIntegration !== 'faka_bridge' ||
-        fakaOfferRecheck[0].externalSku !== offer.externalSku ||
-        fakaOfferRecheck[0].autoProvision
-      ) {
-        throw new HttpError(409, 'CHECKOUT_CHANGED', '商品信息已变化，请重新确认')
-      }
-      // FakaBridge outbox：与订单同事务提交；外呼在事务外 worker。
-      const task = await createFakaBridgeTaskForOrder(tx, {
-        orderId: order.id,
-        email: buyerEmail,
-        sku: offer.externalSku,
-        maxAttempts: config.fakaBridge.maxAttempts,
-        ...(paidTarget ? { period: 'reset_traffic', paidReset: { accountLinkId: paidTarget.accountLinkId } } : {}),
-      })
-      fakaBridgeTaskId = task.id
+    if (provider) {
+      // Task row commits with the order; the remote call happens after commit.
+      externalTaskKick = await provider.checkout.createTaskInTx(tx, { orderId: order.id, offer, target: externalTarget })
     } else if (strategy.kind === 'merchant_webhook') {
       // P7b：自动开通任务（transactional outbox）——冻结商家当前 active webhook。
       const webhookConfig = merchantId == null
@@ -761,7 +683,7 @@ async function createOrderOnce(
       if (
         offerRecheck.length === 0 ||
         !offerRecheck[0].autoProvision ||
-        offerRecheck[0].externalIntegration === 'faka_bridge'
+        offerRecheck[0].externalIntegration != null
       ) {
         throw new HttpError(409, 'AUTO_PROVISION_UNAVAILABLE', '商品信息已变化，请重新确认')
       }
@@ -869,7 +791,7 @@ async function createOrderOnce(
         },
       })
     }
-    // manual / merchant_webhook / faka_bridge: freeze path already ran; no instant DeliveryRecord.
+    // manual / merchant_webhook / external provider: freeze path already ran; no instant DeliveryRecord.
 
     await tx.pointLog.create({
       data: {
@@ -959,7 +881,7 @@ async function createOrderOnce(
           deliveryMode,
           status: order.status,
           hasProvisionTask: autoProvisionTaskCreated,
-          hasFakaBridgeTask: fakaBridgeTaskId != null,
+          hasFakaBridgeTask: externalTaskKick != null,
         })
       ) {
         const merchantOwner = merchantId == null
@@ -1013,7 +935,7 @@ async function createOrderOnce(
       merchantId,
       merchantName,
       // 买家可见：订阅开通任务已入队（实际 HTTP 在 M4 worker）。
-      provisionPending: fakaBridge || autoProvisionTaskCreated,
+      provisionPending: externalTaskKick != null || autoProvisionTaskCreated,
       ...(pricing ? { pricing } : {}),
     }
     })
@@ -1036,9 +958,7 @@ async function createOrderOnce(
       void runProvisionBatch().catch(() => {})
     })
   }
-  if (fakaBridgeTaskId != null) {
-    scheduleFakaBridgeFirstAttempt(fakaBridgeTaskId)
-  }
+  externalTaskKick?.()
   return result
 }
 

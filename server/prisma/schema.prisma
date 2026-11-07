@@ -883,6 +883,7 @@ model Order {
   fileGrants     FileGrantLog[]
   provisionTask   ProvisionTask?
   fakaBridgeTask  FakaBridgeTask?
+  fulfillmentJob  FulfillmentJob?
   pricingSnapshot OrderPricingSnapshot?
   xboardAccountSources XboardAccountLink[]
   xboardAccountEvidence XboardAccountEvidence[]
@@ -1090,6 +1091,39 @@ model XboardTrafficResetOperation {
   sourceOrder Order @relation(fields: [sourceOrderId], references: [id], onDelete: Restrict)
   @@unique([userId, requestId])
   @@index([status, nextAttemptAt, leaseUntil])
+}
+
+/// Durable job for providers on the core fulfillment engine (FakaBridge keeps
+/// its own FakaBridgeTask). Created in the order transaction; one per order.
+model FulfillmentJob {
+  id              Int       @id @default(autoincrement())
+  orderId         Int       @unique
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  providerId      String
+  // Idempotency key sent to the provider; never changes across retries.
+  operationKey    String    @unique
+  skuSnapshot     String
+  // Provider-validated input frozen at order time; never re-derived on retry.
+  inputSnapshot   Json?
+  // pending | needs_reconcile | succeeded | failed | cancelled
+  status          String    @default("pending")
+  // Refund requested; the job must not deliver and should cancel if it can.
+  cancelRequested Boolean   @default(false)
+  attempts        Int       @default(0)
+  maxAttempts     Int       @default(3)
+  nextAttemptAt   DateTime  @default(now())
+  leaseUntil      DateTime?
+  leaseToken      String?
+  // Non-secret diagnostic code; never remote bodies or delivery content.
+  lastError       String?
+  // Non-secret remote evidence of the observed terminal result.
+  evidence        Json?
+  note            String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  completedAt     DateTime?
+
+  @@index([status, nextAttemptAt])
 }
 
 model FakaBridgeTask {

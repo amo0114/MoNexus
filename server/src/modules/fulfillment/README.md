@@ -10,6 +10,8 @@ settlement; a provider owns its task tables, remote protocol and evidence.
 | `registry.ts` | Static registry; `bootstrap/extensions.ts` is the only place that registers concrete providers. |
 | `coordination.ts` | Fan-out used by the core: refund (in-tx + post-commit), order status hook, background jobs. |
 | `apply.ts` | Core result application: deliver + capture held points, or refund an undelivered order. |
+| `jobProvider.ts` | Core job engine: `createJobFulfillmentProvider(adapter)` gives an `ExternalFulfillmentAdapter` durable jobs (`FulfillmentJob`), lease, retry, reconcile, refund coordination and delivery. |
+| `offerBinding.ts` | Admin-side validation of `Offer.externalIntegration` / `externalSku` for registered providers. |
 
 Rules:
 
@@ -27,7 +29,31 @@ Rules:
   a benefit). It is not an event bus.
 - Remote calls stay outside database transactions.
 
-`check:architecture` rejects imports of provider implementations from this
-module, the contract, `orders/fulfillment.ts`, admin arbitration and merchant
-reject. Checkout/catalog still know Xboard directly; that moves behind the
-contract in the next batch.
+## Adding a provider
+
+1. Implement `ExternalFulfillmentAdapter` (see `plugins/demoLicense/adapter.ts`):
+   `execute`/`query` must be idempotent on `operationKey` and map remote
+   results to `RemoteObservation`; only `failed_without_effect` /
+   `cancelled_before_effect` refund. Add `cancel` only if the remote can
+   durably block a late execution. `prepare` validates `extensionInput`
+   (sent by the frontend as `extensionInput` on `POST /orders`).
+2. Register it in `bootstrap/extensions.ts` with `createJobFulfillmentProvider`.
+3. Bind an Offer: `externalIntegration = <id>`, `externalSku = <sku>`,
+   `deliveryMode = manual_service` (platform product create API; the template
+   must allow `external_provider`, currently `subscription`).
+4. Optional purchase UI: add a hook to `src/extensions/registry.ts`
+   (contract in `src/extensions/purchase.ts`).
+
+A provider with its own task model (Xboard) implements `FulfillmentProvider`
+with a `checkout` extension directly; it must keep the same rules.
+
+The `demo_license` example (SKUs `demo-license`, `demo-pending`,
+`demo-unknown`, `demo-fail`) is registered outside production only. Engine
+coverage: `__tests__/fulfillment-job-engine.test.ts`.
+
+`check:architecture` rejects imports of provider implementations
+(`modules/fakaBridge`, `trafficReset`, `xboardAccounts`, `lib/fakaBridge`,
+`plugins/`) from this module, the contract, order creation, checkout preview,
+`orders/fulfillment.ts`, admin arbitration and merchant reject. Xboard-only
+features (capacity, catalog import, SKU rebind, bot, admin task pages) still
+live in their own modules and name `faka_bridge` directly.

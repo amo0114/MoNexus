@@ -3,12 +3,19 @@ import { prisma } from '../../lib/prisma.js'
 import { invalidateGrantForOrderInTx } from '../trafficReset/benefits.js'
 import { startResetCron, stopResetCron } from '../trafficReset/worker.js'
 import { startAccountBackfillCron, stopAccountBackfillCron } from '../xboardAccounts/cron.js'
+import { xboardCheckout } from './checkout.js'
 import { onFakaOrderRefundedInTx, scheduleFakaRevokeAttempt } from './lifecycle.js'
 import { startFakaBridgeCron, stopFakaBridgeCron } from './worker.js'
 
 /** Built-in Xboard provider: FakaBridge provisioning plus its free-reset benefit. */
 export const xboardFulfillmentProvider: FulfillmentProvider = {
   id: 'faka_bridge',
+  label: 'Xboard（FakaBridge）',
+  checkout: xboardCheckout,
+  async isProvisionPending(orderId) {
+    const task = await prisma.fakaBridgeTask.findUnique({ where: { orderId }, select: { status: true } })
+    return task?.status === 'pending'
+  },
   onOrderRefundedInTx: onFakaOrderRefundedInTx,
   async afterOrderRefunded(orderId) {
     const task = await prisma.fakaBridgeTask.findUnique({

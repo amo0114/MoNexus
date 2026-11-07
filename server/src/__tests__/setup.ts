@@ -65,6 +65,7 @@ beforeEach(async ({ task }) => {
     "IdempotencyRecord",
     "ExternalCatalogSyncIdempotency",
     "FakaBridgeTask",
+    "FulfillmentJob",
     "FakaProvisionEmailSendBudget",
     "FakaProvisionEmailProof",
     "DeliveryRecord",

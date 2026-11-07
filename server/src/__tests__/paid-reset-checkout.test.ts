@@ -7,12 +7,16 @@ import * as accountBridge from '../lib/fakaBridge/accountV2.js'
 import * as paidBridge from '../lib/fakaBridge/paidResetV2.js'
 import { __clearFakaCapacityCacheForTests, __setFakaCapacityProbeForTests, fetchFakaCapacityForSku } from '../lib/fakaBridge/capacity.js'
 import { __setBeforeFakaOfferTaskRecheckHookForTests, createOrder } from '../modules/orders/service.js'
-import { getCheckoutPreview } from '../modules/checkout/service.js'
+import { getCheckoutPreview, type CheckoutPreview } from '../modules/checkout/service.js'
+import type { PaidCheckoutPreview } from '../modules/fakaBridge/paidCheckout.js'
 import { getProductDetail } from '../modules/products/service.js'
 import { __setFakaClientOverridesForTests, processFakaBridgeTask } from '../modules/fakaBridge/service.js'
 import { api, createTestUser } from './helpers.js'
 import { enableAccountTests, linked } from './xboardAccountFixture.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
+
+// The Xboard provider adds this field to the checkout preview.
+const paidPreview = (preview: CheckoutPreview) => preview.xboardPaidReset as PaidCheckoutPreview
 
 let restore: () => void
 const capacity = vi.fn(async (sku: string) => ({ sku, planId: 3, capacityLimit: 1, activeUsers: 1, remaining: 0,
@@ -31,10 +35,10 @@ async function fixture(sku = 'plan-3-reset_traffic') {
   return { user, link, product, offer, token }
 }
 async function quote(f: Awaited<ReturnType<typeof fixture>>) {
-  const preview = await getCheckoutPreview(f.user.id, f.product.id, f.offer.id, f.link.id)
+  const preview = await getCheckoutPreview(f.user.id, f.product.id, f.offer.id, { xboardAccountLinkId: f.link.id })
   return { offerId: f.offer.id, expectedPrice: preview.price, idempotencyKey: randomUUID(),
-    xboardAccountLinkId: preview.xboardPaidReset!.selectedAccountLinkId!,
-    expectedXboardTargetVersion: preview.xboardPaidReset!.targetVersion!,
+    xboardAccountLinkId: paidPreview(preview).selectedAccountLinkId!,
+    expectedXboardTargetVersion: paidPreview(preview).targetVersion!,
     expectedPurchaseFormVersion: preview.purchaseFormVersion, expectedCheckoutVersion: preview.checkoutVersion }
 }
 async function unchangedFunds(userId: number) {
@@ -114,10 +118,10 @@ describe('stable account paid reset checkout', () => {
     const other = await linked(undefined, '44')
     const preview = await getCheckoutPreview(f.user.id, f.product.id, f.offer.id)
     expect(preview.purchasable).toBe(false)
-    expect(preview.xboardPaidReset?.selectedAccountLinkId).toBeNull()
-    expect(preview.xboardPaidReset?.accounts).toHaveLength(2)
-    expect(preview.xboardPaidReset?.accounts.map(a => a.id)).not.toContain(other.link.id)
-    await expect(getCheckoutPreview(f.user.id, f.product.id, f.offer.id, other.link.id)).rejects.toMatchObject({ status: 404 })
+    expect(paidPreview(preview).selectedAccountLinkId).toBeNull()
+    expect(paidPreview(preview).accounts).toHaveLength(2)
+    expect(paidPreview(preview).accounts.map(a => a.id)).not.toContain(other.link.id)
+    await expect(getCheckoutPreview(f.user.id, f.product.id, f.offer.id, { xboardAccountLinkId: other.link.id })).rejects.toMatchObject({ status: 404 })
   })
 
   it('keeps an explicit owned target visible beyond the bounded account list', async () => {
@@ -127,10 +131,10 @@ describe('stable account paid reset checkout', () => {
       xboardUserId: String(i + 1), currentEmail: `panel-${i}@panel.test`, emailSnapshot: `panel-${i}@panel.test`,
       sourceOrderId: f.link.sourceOrderId, sourceExternalOrderNo: f.link.sourceExternalOrderNo,
     })) })
-    const preview = await getCheckoutPreview(f.user.id, f.product.id, f.offer.id, selected)
-    expect(preview.xboardPaidReset?.accounts).toHaveLength(100)
-    expect(preview.xboardPaidReset?.accounts.map(a => a.id)).toContain(selected)
-    expect(preview.xboardPaidReset?.selectedAccountLinkId).toBe(selected)
+    const preview = await getCheckoutPreview(f.user.id, f.product.id, f.offer.id, { xboardAccountLinkId: selected })
+    expect(paidPreview(preview).accounts).toHaveLength(100)
+    expect(paidPreview(preview).accounts.map(a => a.id)).toContain(selected)
+    expect(paidPreview(preview).selectedAccountLinkId).toBe(selected)
   })
 
   it.each(['blocked', 'foreign', 'missing', 'capability', 'disabled'] as const)('rejects %s target without a hold or v1 fallback', async mode => {
@@ -188,14 +192,14 @@ describe('stable account paid reset checkout', () => {
       const result = await original(...args)
       return result.ok ? { ...result, body: { ...result.body, preview: { ...result.body.preview, eligible: false, block_reason: 'SUBSCRIPTION_INELIGIBLE' } } } : result
     })
-    expect((await getCheckoutPreview(f.user.id, f.product.id, f.offer.id, f.link.id)).purchasable).toBe(false)
+    expect((await getCheckoutPreview(f.user.id, f.product.id, f.offer.id, { xboardAccountLinkId: f.link.id })).purchasable).toBe(false)
     await expect(createOrder(f.user.id, f.product.id, { ...options, expectedCheckoutVersion: undefined })).rejects.toThrow('当前账号套餐不可购买')
     await unchangedFunds(f.user.id)
   })
 
   it('keeps normal subscription email/capacity validation and rejects account-target injection', async () => {
     const f = await fixture('plan-3-monthly')
-    await expect(getCheckoutPreview(f.user.id, f.product.id, f.offer.id, f.link.id)).rejects.toThrow('此规格不支持')
+    await expect(getCheckoutPreview(f.user.id, f.product.id, f.offer.id, { xboardAccountLinkId: f.link.id })).rejects.toThrow('此规格不支持')
     await expect(createOrder(f.user.id, f.product.id, { offerId: f.offer.id, xboardAccountLinkId: f.link.id,
       expectedXboardTargetVersion: 'a'.repeat(64), idempotencyKey: randomUUID() })).rejects.toThrow('此规格不支持')
     await expect(createOrder(f.user.id, f.product.id, { offerId: f.offer.id, formAnswers: { xboardEmail: f.user.email } })).rejects.toThrow('名额已满')

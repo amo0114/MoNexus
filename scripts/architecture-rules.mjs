@@ -45,9 +45,11 @@ const pureDependencies = new Set([...pureRules, `${lib}httpError.ts`, `${lib}bus
 const providerNeutral = [
   'server/src/extension-contracts/', `${modules}fulfillment/`, `${modules}orders/fulfillment.ts`,
   `${modules}admin/orderAdmin.ts`, `${modules}merchant/orderService.ts`,
+  `${modules}orders/service.ts`, `${modules}checkout/service.ts`,
 ]
 const providerImplementations = [
   `${modules}fakaBridge/`, `${modules}trafficReset/`, `${modules}xboardAccounts/`, `${lib}fakaBridge/`,
+  'server/src/plugins/',
 ]
 
 function resolveSource(file, specifier, sources) {

@@ -1,4 +1,6 @@
-// Shared pure commercial evaluation for publication and workbench navigation.
+// Shared commercial evaluation for publication and workbench navigation.
+import { checkoutProviderFor } from '../fulfillment/coordination.js'
+
 export interface ReadinessOffer {
   externalIntegration: string | null
   externalSku: string | null
@@ -34,6 +36,21 @@ export function evaluateActiveOffer(
   // External-integration offers (spec §6.1 #6): DB unique `(externalIntegration,
   // externalSku)` guarantees identity uniqueness; here we only re-check that the
   // local provider config is still valid. NO network call in the publish txn.
+  if (offer.externalIntegration != null && offer.externalIntegration !== 'faka_bridge') {
+    if (!offer.externalSku || !checkoutProviderFor(offer.externalIntegration)) {
+      return {
+        externalInvalid: true,
+        configValid: false,
+        sellable: false,
+        reason: offer.externalSku ? '外部开通供应商未注册' : '外部开通规格缺少 externalSku',
+      }
+    }
+    if (offer.deliveryMode !== 'manual_service') {
+      return { configValid: false, sellable: false, reason: '外部开通规格的履约模式必须为 manual_service' }
+    }
+    const sellable = offer.stockMode === 'unlimited' || offer.stock > 0
+    return { configValid: true, sellable, reason: sellable ? undefined : '该规格当前没有可售名额' }
+  }
   if (offer.externalIntegration === 'faka_bridge') {
     if (!offer.externalSku) {
       return {
