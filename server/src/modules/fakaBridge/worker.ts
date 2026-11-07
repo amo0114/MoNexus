@@ -410,9 +410,15 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
         )
       }
       if (remoteClass === 'not_opened') {
-        await markFailedAndRefund(claimed, code)
-        fakaProvisionTotal.inc({ outcome: 'failed' })
-        return 'failed'
+        // Only a remote revoked row blocks a late order-paid; failed rows can resume.
+        if (xbStatus.toLowerCase() === 'revoked') {
+          await markFailedAndRefund(claimed, code)
+          fakaProvisionTotal.inc({ outcome: 'failed' })
+          return 'failed'
+        }
+        await queueRevokeBeforeRefund(claimed, code, `status probe ${xbStatus} after ${claimed.attempts} attempts`)
+        fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+        return 'retry_scheduled'
       }
       // intermediate (pending / processing-no-trade) → park, do NOT refund
       await parkNeedsReconcile(
@@ -424,9 +430,10 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
       return 'retry_scheduled'
     }
     if (st.httpStatus === 404) {
-      await markFailedAndRefund(claimed, code)
-      fakaProvisionTotal.inc({ outcome: 'failed' })
-      return 'failed'
+      // 404 only means the row is not there yet: the timed-out order-paid may still land.
+      await queueRevokeBeforeRefund(claimed, code, `status 404 after ${claimed.attempts} attempts`)
+      fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+      return 'retry_scheduled'
     }
     // Probe failed / unknown — park for reconcile; do NOT refund yet.
     await parkNeedsReconcile(
@@ -439,10 +446,11 @@ export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutc
   }
 
   if (exhausted) {
-    // Definitive non-retryable / business failure only.
-    await markFailedAndRefund(claimed, code)
-    fakaProvisionTotal.inc({ outcome: 'failed' })
-    return 'failed'
+    // Even a definitive rejection does not prove an earlier timed-out attempt
+    // cannot still open remotely; refund only after the revoke tombstone.
+    await queueRevokeBeforeRefund(claimed, code, `failed after ${claimed.attempts} attempts (${code})`)
+    fakaProvisionTotal.inc({ outcome: 'retry_scheduled' })
+    return 'retry_scheduled'
   }
 
   await clearLeaseKeepPending(claimed, code)
@@ -480,6 +488,32 @@ async function parkNeedsReconcile(
       leaseUntil: null,
       nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000),
       reconcileNote: note,
+    },
+  })
+}
+
+/**
+ * v1 refund gate: hand the task to the revoke worker, whose confirmed remote
+ * `revoked` (tombstone for unknown order_no) is the only proof that a late
+ * order-paid cannot open. Held points stay frozen until then.
+ */
+async function queueRevokeBeforeRefund(
+  claimed: ClaimedTask,
+  code: FakaErrorCode,
+  note: string
+): Promise<void> {
+  await prisma.fakaBridgeTask.updateMany({
+    where: { id: claimed.id, status: 'pending', leaseToken: claimed.leaseToken },
+    data: {
+      status: 'needs_reconcile',
+      cancelRequested: true,
+      revokeStatus: 'pending',
+      lastRevokeError: null,
+      lastError: code,
+      leaseToken: null,
+      leaseUntil: null,
+      nextAttemptAt: new Date(),
+      reconcileNote: `${note}; revoke tombstone before refund`,
     },
   })
 }
