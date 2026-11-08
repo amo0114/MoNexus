@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test'
+import { expect, test, type Locator, type Request } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { API_BASE, E2E_PRODUCT_COVER, SEED_ACCOUNTS, approveGuestEligibility, loginAs, loginAsApi } from './helpers'
 
@@ -220,6 +220,22 @@ test.describe.serial('T-MERCH-QA-003 merchandising smoke', () => {
 
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await loginAs(page, SEED_ACCOUNTS.user)
+    // StorePage commits page 1 as soon as organic arrives and never upgrades a
+    // visible card afterwards, so a slow candidates response renders the
+    // sponsored product as a plain organic card. Hold the organic list until
+    // candidates settle (aborted requests settle too) to pin that order.
+    // Only requests issued after this point count: the post-login page may
+    // still have its own candidates request in flight when goto aborts it.
+    let releaseOrganic = () => {}
+    const candidatesSettled = new Promise<void>((resolve) => { releaseOrganic = resolve })
+    const candidateRequests = new Set<Request>()
+    page.on('request', (req) => { if (req.url().includes('/api/storefront/candidates')) candidateRequests.add(req) })
+    page.on('requestfinished', (req) => { if (candidateRequests.has(req)) releaseOrganic() })
+    page.on('requestfailed', (req) => { if (candidateRequests.has(req)) releaseOrganic() })
+    await page.route(/\/api\/products(\?|$)/, async (route) => {
+      await candidatesSettled
+      await route.continue()
+    })
     await page.goto('/')
 
     // 真实数据渲染：被推广商品以普通商品卡混入统一商品流（SPEC-CMI-UX-001 §4）。
