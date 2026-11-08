@@ -715,7 +715,6 @@ describe('merchant order action completions', () => {
   it.each([
     ['resume', 'processing', '争议已解除，已恢复履约'],
     ['resume', 'delivered', '争议已解除，恢复为已交付'],
-    ['close', 'closed', '争议已处理，订单已关闭'],
   ] as const)('uses the server result for dispute %s → %s', async (resolution, status, title) => {
     merchantApi.respondDispute.mockResolvedValue({ ...disputedOrder(), status })
     await openOrders(disputedOrder())
@@ -726,23 +725,23 @@ describe('merchant order action completions', () => {
     expect(merchantApi.respondDispute).toHaveBeenCalledExactlyOnceWith(77, { resolution })
   })
 
-  it('blocks both dispute choices while pending and permits retry after failure', async () => {
+  it('blocks the dispute action while pending and permits retry after failure', async () => {
     const deferred = createDeferred<MerchantOrder>()
     merchantApi.respondDispute.mockReturnValueOnce(deferred.promise)
-    merchantApi.respondDispute.mockResolvedValueOnce({ ...disputedOrder(), status: 'closed' })
+    merchantApi.respondDispute.mockResolvedValueOnce({ ...disputedOrder(), status: 'processing' })
     await openOrders(disputedOrder())
     fireEvent.click(screen.getByRole('button', { name: '处理争议', exact: true }))
     const resume = screen.getByTestId('merchant-dispute-resume')
     act(() => { fireEvent.click(resume); fireEvent.click(resume) })
     expect(merchantApi.respondDispute).toHaveBeenCalledOnce()
     expect(resume).toBeDisabled()
-    expect(screen.getByTestId('merchant-dispute-close')).toBeDisabled()
+    expect(screen.queryByTestId('merchant-dispute-close')).toBeNull()
     expect(useAppStore.getState().islandNotice).toBeNull()
     await act(async () => deferred.reject(new Error('offline')))
     expect(hasToast('争议处理失败', 'error')).toBe(true)
     expect(resume).toBeEnabled()
-    fireEvent.click(screen.getByTestId('merchant-dispute-close'))
-    await checkCompletion('争议已处理，订单已关闭')
+    fireEvent.click(resume)
+    await checkCompletion('争议已解除，已恢复履约')
   })
 
   it.each(['start', 'reject', 'dispute'] as const)('drops %s responses after a session change', async kind => {
@@ -773,10 +772,10 @@ describe('merchant order action completions', () => {
 
   it('keeps desktop dispute completion as a toast', async () => {
     vi.mocked(window.matchMedia).mockImplementation(media => ({ matches: false, media, addEventListener() {}, removeEventListener() {} }) as MediaQueryList)
-    merchantApi.respondDispute.mockResolvedValue({ ...disputedOrder(), status: 'closed' })
+    merchantApi.respondDispute.mockResolvedValue({ ...disputedOrder(), status: 'processing' })
     await openOrders(disputedOrder())
     fireEvent.click(screen.getByRole('button', { name: '处理争议', exact: true }))
-    fireEvent.click(screen.getByTestId('merchant-dispute-close'))
+    fireEvent.click(screen.getByTestId('merchant-dispute-resume'))
     await waitFor(() => expect(hasToast('争议处理成功', 'success')).toBe(true))
     expect(useAppStore.getState().islandNotice).toBeNull()
   })

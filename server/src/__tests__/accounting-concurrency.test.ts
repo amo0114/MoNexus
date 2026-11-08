@@ -163,7 +163,7 @@ describe('accounting concurrency and terminal settlement', () => {
     })
   })
 
-  it('settles a held order when a merchant closes its dispute', async () => {
+  it('rejects a merchant dispute response on an undisputed order and keeps points held', async () => {
     const { merchant, user: merchantUser } = await createTestMerchant('merchant-close-merchant@test.local', 'pass123', {
       role: 'merchant', status: 'active', name: '争议关闭商家',
     })
@@ -172,19 +172,15 @@ describe('accounting concurrency and terminal settlement', () => {
     const { orderId } = await createOrder(buyer.id, product.id)
     await prisma.order.update({ where: { id: orderId }, data: { status: 'delivered' } })
 
-    await disputeOrder(orderId, buyer.id)
-    await respondToOrderDispute(merchant.id, merchantUser.id, orderId, { resolution: 'close' })
+    // delivered → closed is a legal edge; the dispute endpoint must not be a way to reach it.
+    await expect(respondToOrderDispute(merchant.id, merchantUser.id, orderId, { resolution: 'resume' }))
+      .rejects.toMatchObject({ status: 409 })
 
     expect(await prisma.pointAccount.findUniqueOrThrow({ where: { userId: buyer.id } })).toMatchObject({
       balance: 600,
-      frozenBalance: 0,
+      frozenBalance: 400,
     })
-    expect(await prisma.settlement.findUniqueOrThrow({ where: { orderId } })).toMatchObject({ status: 'pending' })
-    expect(await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).toMatchObject({
-      status: 'closed',
-      holdingPoints: null,
-      fundsHeld: false,
-    })
+    expect(await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).toMatchObject({ status: 'delivered' })
   })
 
   it('keeps concurrent referral registrations held and returns a business error for the losing check-in', async () => {

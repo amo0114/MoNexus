@@ -2694,13 +2694,12 @@
         "required": [
           "resolution"
         ],
-        "description": "商家响应争议。`resume` → 回到 `processing`；`close` → 关单。",
+        "description": "商家响应争议，只能 `resume`：人工服务回到 `processing`，即时交付回到 `delivered`。商家不能单方关闭争议；订单不在争议中返回 409。",
         "properties": {
           "resolution": {
             "type": "string",
             "enum": [
-              "resume",
-              "close"
+              "resume"
             ]
           },
           "publicNote": {
@@ -8693,7 +8692,7 @@
         "tags": [
           "Merchant"
         ],
-        "summary": "商家响应争议（resume 回 processing 或 close 关单）",
+        "summary": "商家响应争议（仅 resume 恢复履约）",
         "security": [
           {
             "bearerAuth": []
@@ -8735,6 +8734,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }
