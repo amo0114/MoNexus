@@ -365,8 +365,8 @@ describe('Merchant product and order flows', () => {
     expect(settlements.body[0].commissionAmount).toBe(100)
     expect(settlements.body[0].settlementAmount).toBe(400)
     expect(settlements.body[0]).toMatchObject({
-      payable: true,
-      blockReason: null,
+      payable: false,
+      blockReason: '订单待买家验收，暂不可结算',
     })
   })
 
