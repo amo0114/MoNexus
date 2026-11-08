@@ -301,6 +301,9 @@ export type CreateProductV2OfferRequest = {
   fixedStructuredContent: unknown | null
   deliveryFields: unknown | null
   autoProvision: boolean
+  /** Admin-only: registered fulfillment provider binding (never sent by merchant builders). */
+  externalIntegration?: string | null
+  externalSku?: string | null
 }
 
 export type DescriptionImageWriteRef = {

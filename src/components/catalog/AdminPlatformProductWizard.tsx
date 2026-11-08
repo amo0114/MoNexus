@@ -5,6 +5,8 @@ import { Loader2 } from 'lucide-react'
 import {
   buildAdminCreateProductV2Request,
   createAdminPlatformProductV2,
+  listAdminFulfillmentProviders,
+  type AdminFulfillmentProvider,
 } from '../../api/adminCatalogV2'
 import {
   catalogApi,
@@ -75,6 +77,9 @@ const EMPTY_FORM = {
   fixedContentType: 'text' as FixedContentType,
   validityDays: '',
   visibility: PRODUCT_VISIBILITY.MEMBERS_ONLY as ProductVisibility,
+  /** Registered provider id for manual_service offers ('' = plain manual service). */
+  externalIntegration: '',
+  externalSku: '',
 }
 
 interface Props {
@@ -101,6 +106,8 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
   const [offerAttributes, setOfferAttributes] = useState<TemplateAttributes>({})
   const [productDetails, setProductDetails] = useState<ProductDetails>(EMPTY_PRODUCT_DETAILS)
   const [purchaseForm, setPurchaseForm] = useState<PurchaseFormField[]>([])
+  // Xboard offers come from the Xboard catalog import, not this wizard.
+  const [providers, setProviders] = useState<AdminFulfillmentProvider[]>([])
   const [submitting, setSubmitting] = useState(false)
   const submitLock = useRef(false)
   const [assistantActive, setAssistantActive] = useState(false)
@@ -136,6 +143,9 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
         }))
       })
       .catch(() => { if (!cancelled) showToast('商品模板加载失败，将使用默认形态', 'error') })
+    listAdminFulfillmentProviders()
+      .then((items) => { if (!cancelled) setProviders(items.filter(item => item.id !== 'faka_bridge')) })
+      .catch(() => { if (!cancelled) setProviders([]) })
     return () => { cancelled = true }
   }, [open, showToast])
 
@@ -148,6 +158,8 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
     [selectedTemplate, productAttributes],
   )
   const allowedModes = useMemo(() => allowedDeliveryModes(allowedConfigs), [allowedConfigs])
+  const canBindProvider = form.deliveryMode === 'manual_service'
+    && allowedConfigs.includes('external_provider') && providers.length > 0
   const allowedFixedTypes = useMemo(() => allowedFixedContentTypes(allowedConfigs), [allowedConfigs])
 
   useEffect(() => {
@@ -179,6 +191,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
       deliveryMode,
       stockMode: deliveryMode === 'instant_inventory' ? 'limited' : current.stockMode,
       fixedContent: deliveryMode === 'instant_fixed' ? current.fixedContent : '',
+      ...(deliveryMode === 'manual_service' ? {} : { externalIntegration: '', externalSku: '' }),
     }))
     setTemplateKey((current) => pickTemplateForDelivery(
       templates,
@@ -258,6 +271,13 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
         return
       }
     }
+    const binding = canBindProvider && form.externalIntegration
+      ? { externalIntegration: form.externalIntegration, externalSku: form.externalSku.trim().toLowerCase() }
+      : null
+    if (binding && !/^[a-z0-9]+(?:[-_][a-z0-9]+)*$/.test(binding.externalSku)) {
+      showToast('外部开通规格必须填写 SKU（小写字母、数字、连字符或下划线）', 'error')
+      return
+    }
     const formError = validatePurchaseFormFields(purchaseForm)
     if (formError) {
       showToast(formError, 'error')
@@ -293,6 +313,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
           fixedContent: form.fixedContent,
           autoProvision: false,
         }],
+        offerBindings: [binding],
       }))
       showToast(`平台商品草稿 #${created.id} 已创建`)
       await onCreated(created.id)
@@ -489,6 +510,29 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
               </div>
             )}
           </div>
+          {canBindProvider && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" data-testid="admin-platform-provider">
+              <div>
+                <label htmlFor="admin-platform-provider-select" className="block text-sm font-bold mb-1.5">外部开通</label>
+                <select id="admin-platform-provider-select" className="input" value={form.externalIntegration}
+                  onChange={(event) => setForm({ ...form, externalIntegration: event.target.value })}
+                  disabled={submitting || videoBusy}>
+                  <option value="">不使用（人工交付）</option>
+                  {providers.map(provider => (
+                    <option key={provider.id} value={provider.id}>{provider.label}</option>
+                  ))}
+                </select>
+              </div>
+              {form.externalIntegration && (
+                <div>
+                  <label htmlFor="admin-platform-provider-sku" className="block text-sm font-bold mb-1.5">供应商 SKU *</label>
+                  <input id="admin-platform-provider-sku" className="input" maxLength={64} value={form.externalSku}
+                    onChange={(event) => setForm({ ...form, externalSku: event.target.value })}
+                    placeholder="如 demo-license" disabled={submitting || videoBusy} />
+                </div>
+              )}
+            </div>
+          )}
           {form.deliveryMode === 'instant_fixed' && (
             <div className="space-y-3">
               <label htmlFor="admin-platform-fixed" className="block text-sm font-bold">固定交付内容 *</label>
