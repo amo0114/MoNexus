@@ -37,7 +37,7 @@ test('URL target, account choice and confirmed target version reach one paid res
       return route.fulfill({ json: { productId: 42, productName: product.name, offerId: 7, offerName: offer.name,
         price: 200, deliveryMode: 'manual_service', chargeType: 'hold', balanceBefore: 1000, balanceAfter: 800,
         sufficient: true, purchasable: true, purchaseForm: [], purchaseFormVersion: 'pf-v1', checkoutVersion: 'co-v1',
-        requiresVerification: false, autoProvision: false, requiresProvisionEmailProof: false, productContentVersion: 1,
+        requiresVerification: false, autoProvision: false, fulfillmentProvider: 'faka_bridge', requiresProvisionEmailProof: false, productContentVersion: 1,
         assuranceGrantId: null, xboardPaidReset: { accounts: [{ id: accountA, maskedEmail: 'a***@panel.test' },
           { id: accountB, maskedEmail: 'b***@panel.test' }], selectedAccountLinkId: id,
           targetVersion: (id === accountB ? 'b' : 'a').repeat(64), eligible: true, blockReason: null } } })
