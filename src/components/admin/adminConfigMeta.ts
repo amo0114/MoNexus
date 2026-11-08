@@ -308,6 +308,16 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     label: '人工服务履约期限',
     description: '人工服务类订单从下单起算的履约时限（1～90 天）；仅对新创建订单生效。',
   },
+  acceptTimeoutHours: {
+    key: 'acceptTimeoutHours',
+    group: 'trade',
+    type: 'integer',
+    min: 1,
+    max: 168,
+    unit: '小时',
+    label: '人工服务接单期限',
+    description: '人工服务类订单下单后商家须接单的时限（1～168 小时），超时系统自动取消并退还积分；仅对新创建订单生效。',
+  },
   subscriptionRemindDays: {
     key: 'subscriptionRemindDays',
     group: 'trade',

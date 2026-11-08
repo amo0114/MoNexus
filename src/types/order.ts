@@ -62,6 +62,11 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
   timeline: OrderStatusEvent[]
   holdingPoints?: number | null
   fulfillmentDeadline?: string | null
+  /** 商家接单期限；null = 旧单或自动开通订单（不支持买家直接取消）。 */
+  acceptBy?: string | null
+  /** 取消已提交但需核对远端时的时间；此时积分仍冻结。 */
+  cancelRequestedAt?: string | null
+  resolutionReason?: string | null
   review?: null | {
     rating: number
     comment: string | null

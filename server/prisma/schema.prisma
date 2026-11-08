@@ -857,6 +857,12 @@ model Order {
   purchaseFormAnswers     Json?
   fundsHeld               Boolean   @default(false) // 仅新模型订单为 true；兼容迁移前未实际扣减的历史订单
   fulfillmentDeadline     DateTime? // manual_service 商家履约截止时间
+  // 接单期限：仅新建的普通人工单写入（下单时冻结 acceptTimeoutHours）；null = 旧单或自动执行路径，不参与超时取消。
+  acceptBy                DateTime?
+  // 取消已请求但需核对远端（reconcile_required）时写入；买家据此看到「取消处理中」。
+  cancelRequestedAt       DateTime?
+  // 退款终态的原因：buyer_cancelled | accept_timeout；null = 其他退款路径。
+  resolutionReason        String?
   confirmedAt             DateTime? // 用户确认关闭订单的时间
   // P6c：预约日期（购买前表单首个 date 字段的答案，下单校验后列化——
   // 商家排序/提醒 cron 免查 JSON）。null = 非预约单。
@@ -904,6 +910,7 @@ model Order {
   @@index([merchantId, bookingDate])
   // PR-3：买家「进行中」订单红点权威计数的支撑索引。
   @@index([userId, status])
+  @@index([status, acceptBy])
 }
 
 // Stable instance identity is pinned to a configured origin. Repointing an

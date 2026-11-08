@@ -81,11 +81,16 @@ export async function transitionOrderStatus(
   const actorRole = assertOrderStatusActorRole(input.actorRole)
   const order = await client.order.findUnique({
     where: { id: input.orderId },
-    select: { id: true, userId: true, productId: true, status: true },
+    select: { id: true, userId: true, productId: true, status: true, acceptBy: true },
   })
   if (!order) throw notFound('订单不存在')
 
   const { from, to } = assertLegalStatusTransition(order.status, input.toStatus)
+  // The deadline holds even before the timeout scan runs: once it passes, the
+  // order may only be cancelled, never accepted by a person.
+  if (from === 'pending' && to === 'processing' && order.acceptBy && order.acceptBy <= new Date()) {
+    throw conflict('接单期限已过，订单将自动取消并退还积分')
+  }
   // A late automatic result or an ordinary delivery must not silently clear a
   // buyer's dispute; the global edges exist only for the resume command.
   if (from === 'disputed' && (to === 'processing' || to === 'delivered') && !input.resumeDispute) {

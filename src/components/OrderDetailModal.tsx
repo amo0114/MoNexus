@@ -19,7 +19,7 @@ import {
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { captureFeedbackOwner, showCompletionActivity } from '../lib/completionFeedback'
-import { disputeOrder, closeOrder } from '../api/orders'
+import { disputeOrder, closeOrder, cancelOrder } from '../api/orders'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
 import DeliveryContent from './DeliveryContent'
@@ -38,7 +38,7 @@ interface OrderDetailModalProps {
   onUpdated?: () => void
 }
 
-type OrderAction = 'dispute' | 'close'
+type OrderAction = 'dispute' | 'close' | 'cancel'
 
 type OrderActionCopy = { title: string; description: string; confirmLabel: string; successTitle: string }
 
@@ -54,6 +54,12 @@ const ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
     description: '确认结束订单吗？之后不可再发起争议。',
     confirmLabel: '确认结束订单',
     successTitle: '订单已结束',
+  },
+  cancel: {
+    title: '取消订单',
+    description: '商家尚未接单。确认取消后冻结积分将退还到你的账户。',
+    confirmLabel: '确认取消订单',
+    successTitle: '订单已取消，积分已退还',
   },
 }
 
@@ -73,6 +79,12 @@ const ACCEPTANCE_ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
     description: '确认验收通过？确认后订单关闭并结算给商家。',
     confirmLabel: '确认验收通过',
     successTitle: '验收已通过',
+  },
+  cancel: {
+    title: '取消订单',
+    description: '商家尚未接单。确认取消后冻结积分将退还到你的账户。',
+    confirmLabel: '确认取消订单',
+    successTitle: '订单已取消，积分已退还',
   },
 }
 
@@ -149,6 +161,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     try {
       if (action === 'dispute') await disputeOrder(order.id)
       if (action === 'close') await closeOrder(order.id)
+      const cancelPending = action === 'cancel' && (await cancelOrder(order.id)) === 'pending'
       if (!isCurrent()) return
       onUpdated?.()
       // PR-3 复审：dispute 仍是关注态、close 移出关注态——realtime 关闭时
@@ -156,7 +169,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       void useAppStore.getState().refreshOrderAttention()
       onClose()
       showCompletionActivity({
-        title: actionCopy[action].successTitle,
+        title: cancelPending ? '取消处理中，核对完成后自动退还积分' : actionCopy[action].successTitle,
         message: '操作成功',
         subtitle: `订单 #${order.id} · ${order.product.name}`,
         groupKey: `buyer:order:${order.id}`,
@@ -173,6 +186,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
   const canDispute = order.status === 'delivered'
   const canClose = order.status === 'delivered' || order.status === 'disputed'
+  const canCancel = order.status === 'pending' && Boolean(order.acceptBy) && !order.cancelRequestedAt
   // P6b：人工服务订单 delivered 阶段以「验收」措辞呈现关闭/争议（disputed 阶段保持原措辞）。
   const isAcceptance = order.deliveryMode === 'manual_service' && order.status === 'delivered'
   const actionCopy = isAcceptance ? ACCEPTANCE_ACTION_COPY : ACTION_COPY
@@ -415,6 +429,13 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   。人工服务订单在创建时冻结积分，确认完成或超时自动关闭后正式扣除；拒单或仲裁退款时退还。
                 </p>
               )}
+              {order.status === 'pending' && order.acceptBy && (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)] leading-relaxed" data-testid="order-accept-deadline">
+                  {order.cancelRequestedAt
+                    ? '取消处理中：核对完成后将自动退还积分。'
+                    : `商家需在 ${formatOrderDate(order.acceptBy)} 前接单，超时将自动取消并退还积分；接单前你也可以随时取消。`}
+                </p>
+              )}
             </div>
           )}
 
@@ -525,6 +546,17 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             >
               关闭
             </button>
+            {canCancel && (
+              <button
+                type="button"
+                onClick={() => setConfirmAction('cancel')}
+                disabled={loadingAction !== null}
+                data-testid="order-cancel-button"
+                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-warning)] hover:underline cursor-pointer py-1 transition-colors whitespace-nowrap"
+              >
+                {loadingAction === 'cancel' ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : '取消订单'}
+              </button>
+            )}
             {canDispute && (
               <button
                 type="button"
@@ -586,7 +618,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       <Dialog open={confirmAction !== null} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
         <DialogContent
           className="!z-[120]"
-          data-testid={confirmAction === 'close' ? 'close-order-dialog' : 'dispute-dialog'}
+          data-testid={confirmAction === 'close' ? 'close-order-dialog' : confirmAction === 'cancel' ? 'cancel-order-dialog' : 'dispute-dialog'}
         >
           <DialogTitle>{confirmAction ? actionCopy[confirmAction].title : ''}</DialogTitle>
           <DialogDescription>
@@ -603,7 +635,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <button
               type="button"
               onClick={() => confirmAction && executeAction(confirmAction)}
-              data-testid={confirmAction === 'close' ? 'close-order-dialog-confirm' : 'dispute-dialog-confirm'}
+              data-testid={confirmAction === 'close' ? 'close-order-dialog-confirm' : confirmAction === 'cancel' ? 'cancel-order-dialog-confirm' : 'dispute-dialog-confirm'}
               className={
                 confirmAction === 'dispute'
                   ? 'btn-secondary px-5 py-2 text-sm border-[var(--color-warning)] text-[var(--color-warning)]'

@@ -32,6 +32,7 @@ export type AdminSystemConfigKey =
   | 'deliveryFileMaxMb'
   | 'autoCloseDays'
   | 'fulfillmentSlaDays'
+  | 'acceptTimeoutHours'
   | 'subscriptionRemindDays'
   | 'autoProvisionMaxAttempts'
   // 库存提醒 (2)
