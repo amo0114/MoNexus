@@ -1,6 +1,11 @@
 import type { Prisma } from '@prisma/client'
 import type { CancellationAssessment } from '../../extension-contracts/fulfillment.js'
-import { afterCancellationAssessed, assessProviderCancellationsInTx } from '../fulfillment/coordination.js'
+import { conflict, notFound } from '../../lib/httpError.js'
+import { prisma } from '../../lib/prisma.js'
+import { afterCancellationAssessed, afterOrderRefunded, assessProviderCancellationsInTx, onOrderRefundedInTx } from '../fulfillment/coordination.js'
+import { releaseHeldOrder } from './accounting.js'
+import { transitionOrderStatus } from './fulfillment.js'
+import { applyRefundInventoryPolicy } from './refundInventory.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -74,4 +79,65 @@ async function assessProvisionTaskInTx(tx: Tx, orderId: number): Promise<Cancell
     })
   }
   return 'unsupported'
+}
+
+export type UnacceptedCancelActor = { kind: 'buyer'; userId: number } | { kind: 'timeout' }
+
+/** `cancelled`: points released now. `cancel_pending`: remote work must converge first (HTTP 202). */
+export type UnacceptedCancelOutcome = 'cancelled' | 'cancel_pending'
+
+const CANCEL_COPY = {
+  buyer: { reason: 'buyer_cancelled', action: 'user.order.cancel', note: '买家取消订单，积分已退还', release: '买家取消释放冻结积分' },
+  timeout: { reason: 'accept_timeout', action: 'system.order.accept_timeout', note: '商家超时未接单，订单已自动取消，积分已退还', release: '接单超时释放冻结积分' },
+} as const
+
+/**
+ * Cancel an order nobody has accepted yet: by its buyer, or by the system once
+ * `acceptBy` passed. Both race the merchant's accept on the same Order lock,
+ * so exactly one wins. Only orders with an accept deadline (new plain manual
+ * orders) qualify; legacy pending orders are handled separately.
+ */
+export async function cancelUnacceptedOrder(orderId: number, actor: UnacceptedCancelActor): Promise<UnacceptedCancelOutcome> {
+  const copy = CANCEL_COPY[actor.kind]
+  const result = await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      select: {
+        id: true, userId: true, status: true, acceptBy: true, cancelRequestedAt: true, resolutionReason: true,
+        holdingPoints: true, fundsHeld: true, productId: true, offerId: true, merchantId: true, deliveryModeSnapshot: true,
+      },
+    })
+    if (!order || (actor.kind === 'buyer' && order.userId !== actor.userId)) throw notFound('订单不存在')
+    // Replays of a finished cancel return the same outcome instead of an error.
+    if (order.status === 'refunded' && order.resolutionReason === copy.reason) return 'cancelled'
+    if (order.status !== 'pending') throw conflict('订单已被接单或已结束，不能取消')
+    if (!order.acceptBy) throw conflict('该订单不支持直接取消，请联系商家或平台处理')
+    if (actor.kind === 'timeout' && order.acceptBy > new Date()) throw conflict('接单期限未到')
+    if (order.cancelRequestedAt) return 'cancel_pending'
+
+    const verdict = await assessAndBlockCancellationInTx(tx, order.id)
+    if (verdict === 'reconcile_required') {
+      await tx.order.update({ where: { id: order.id }, data: { cancelRequestedAt: new Date() } })
+      return 'cancel_pending'
+    }
+    if (verdict !== 'safe_to_finalize') throw conflict('订单可能已在处理，不能直接取消，请联系商家或平台处理')
+
+    await transitionOrderStatus({
+      orderId: order.id,
+      toStatus: 'refunded',
+      actorRole: actor.kind === 'buyer' ? 'user' : 'system',
+      actorUserId: actor.kind === 'buyer' ? actor.userId : null,
+      action: copy.action,
+      publicNote: copy.note,
+    }, tx)
+    await releaseHeldOrder(tx, order, `${copy.release}: #${order.id}`)
+    await applyRefundInventoryPolicy(tx, order, { fromStatus: 'pending', actorUserId: order.userId })
+    await onOrderRefundedInTx(tx, order.id)
+    await tx.order.update({ where: { id: order.id }, data: { resolutionReason: copy.reason } })
+    return 'cancelled'
+  })
+  if (result === 'cancelled') await afterOrderRefunded(orderId)
+  else await afterOrderCancellationAssessed(orderId)
+  return result
 }

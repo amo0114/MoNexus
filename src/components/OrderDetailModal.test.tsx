@@ -7,12 +7,13 @@ import type { UserOrderDetail } from '../types/order'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 
-const { createOrder, getCheckoutPreview, renewOrder, disputeOrder, closeOrder } = vi.hoisted(() => ({
+const { createOrder, getCheckoutPreview, renewOrder, disputeOrder, closeOrder, cancelOrder } = vi.hoisted(() => ({
   createOrder: vi.fn(),
   getCheckoutPreview: vi.fn(),
   renewOrder: vi.fn(),
   disputeOrder: vi.fn(),
   closeOrder: vi.fn(),
+  cancelOrder: vi.fn(),
 }))
 
 vi.mock('./purchaseConfirmArm', () => ({ CONFIRM_ARM_MS: 0 }))
@@ -25,6 +26,7 @@ vi.mock('../api/orders', async (importOriginal) => {
     renewOrder,
     disputeOrder,
     closeOrder,
+    cancelOrder,
     getOrderAttentionCount: vi.fn().mockResolvedValue(0),
     getOrderDetail: vi.fn(),
   }
@@ -266,6 +268,33 @@ describe('OrderDetailModal', () => {
       expect(closeOrder).toHaveBeenCalledOnce()
       expect(close).toHaveBeenCalledOnce()
       expect(useAppStore.getState().islandNotice?.title).toBe('订单已结束')
+    })
+
+    it.each([
+      ['cancelled', '订单已取消，积分已退还'],
+      ['pending', '取消处理中，核对完成后自动退还积分'],
+    ] as const)('cancels an unaccepted order (%s)', async (result, title) => {
+      cancelOrder.mockResolvedValueOnce(result)
+      const close = vi.fn()
+      const pendingOrder = { ...ORDER, status: 'pending', deliveryMode: 'manual_service', holdingPoints: 100, acceptBy: '2026-11-09T08:00:00.000Z' } as UserOrderDetail
+      render(<OrderDetailModal order={pendingOrder} onClose={close} />)
+      expect(screen.getByTestId('order-accept-deadline')).toHaveTextContent('前接单，超时将自动取消并退还积分')
+      fireEvent.click(screen.getByTestId('order-cancel-button'))
+      fireEvent.click(screen.getByTestId('cancel-order-dialog-confirm'))
+      await waitFor(() => expect(close).toHaveBeenCalledOnce())
+      expect(cancelOrder).toHaveBeenCalledExactlyOnceWith(50)
+      expect(useAppStore.getState().islandNotice?.title).toBe(title)
+    })
+
+    it('offers no cancel for legacy or already-requested pending orders', () => {
+      const legacy = { ...ORDER, status: 'pending', deliveryMode: 'manual_service', holdingPoints: 100, acceptBy: null } as UserOrderDetail
+      const { unmount } = render(<OrderDetailModal order={legacy} onClose={vi.fn()} />)
+      expect(screen.queryByTestId('order-cancel-button')).toBeNull()
+      unmount()
+      const requested = { ...legacy, acceptBy: '2026-11-09T08:00:00.000Z', cancelRequestedAt: '2026-11-08T08:00:00.000Z' } as UserOrderDetail
+      render(<OrderDetailModal order={requested} onClose={vi.fn()} />)
+      expect(screen.queryByTestId('order-cancel-button')).toBeNull()
+      expect(screen.getByTestId('order-accept-deadline')).toHaveTextContent('取消处理中')
     })
 
     it('keeps the order and error visible on failure and permits a confirmed retry', async () => {
