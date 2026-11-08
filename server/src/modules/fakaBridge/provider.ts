@@ -4,8 +4,16 @@ import { invalidateGrantForOrderInTx } from '../trafficReset/benefits.js'
 import { startResetCron, stopResetCron } from '../trafficReset/worker.js'
 import { startAccountBackfillCron, stopAccountBackfillCron } from '../xboardAccounts/cron.js'
 import { xboardCheckout } from './checkout.js'
-import { onFakaOrderRefundedInTx, scheduleFakaRevokeAttempt } from './lifecycle.js'
+import { assessFakaCancellationInTx, onFakaOrderRefundedInTx, scheduleFakaRevokeAttempt } from './lifecycle.js'
 import { startFakaBridgeCron, stopFakaBridgeCron } from './worker.js'
+
+async function kickPendingRevoke(orderId: number): Promise<void> {
+  const task = await prisma.fakaBridgeTask.findUnique({
+    where: { orderId },
+    select: { id: true, revokeStatus: true },
+  })
+  if (task?.revokeStatus === 'pending') scheduleFakaRevokeAttempt(task.id)
+}
 
 /** Built-in Xboard provider: FakaBridge provisioning plus its free-reset benefit. */
 export const xboardFulfillmentProvider: FulfillmentProvider = {
@@ -17,13 +25,9 @@ export const xboardFulfillmentProvider: FulfillmentProvider = {
     return task?.status === 'pending'
   },
   onOrderRefundedInTx: onFakaOrderRefundedInTx,
-  async afterOrderRefunded(orderId) {
-    const task = await prisma.fakaBridgeTask.findUnique({
-      where: { orderId },
-      select: { id: true, revokeStatus: true },
-    })
-    if (task?.revokeStatus === 'pending') scheduleFakaRevokeAttempt(task.id)
-  },
+  afterOrderRefunded: kickPendingRevoke,
+  assessCancellationInTx: assessFakaCancellationInTx,
+  afterCancellationAssessed: kickPendingRevoke,
   async onOrderStatusChangedInTx(tx, orderId, toStatus) {
     // The welcome reset grant stays tied to an undisputed delivered purchase.
     if (['refunded', 'disputed', 'processing'].includes(toStatus)) await invalidateGrantForOrderInTx(tx, orderId)
