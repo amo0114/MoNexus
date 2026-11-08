@@ -46,7 +46,8 @@ export interface Offer {
   /** P7b：本规格是否走自动开通。与 FakaBridge 互斥。 */
   autoProvision?: boolean
   /** FakaBridge：是否走外部开通。与 autoProvision 互斥。 */
-  provisionsExternal?: 'faka_bridge' | null
+  /** Fulfillment provider id for externally provisioned offers. */
+  provisionsExternal?: string | null
   /** Offer 结算版本；编辑保存时作为 expectedCheckoutVersion。 */
   checkoutVersion?: string
   /** FakaBridge：Xboard 订阅人数容量快照（商品详情/结算预检）。 */

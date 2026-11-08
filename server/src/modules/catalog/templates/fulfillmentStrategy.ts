@@ -31,9 +31,6 @@ export function resolveFulfillmentStrategy(offer: FulfillmentOfferInput): Fulfil
   const hasDeliveryFields = !isEmptyJson(offer.deliveryFields)
   const hasStructured = !isEmptyJson(offer.fixedStructuredContent)
 
-  if (hasExternal && !isFaka) {
-    return conflict('不支持的外部集成')
-  }
   if (isFaka && offer.autoProvision) {
     return conflict('FakaBridge 与自动开通不能同时开启')
   }
@@ -44,6 +41,17 @@ export function resolveFulfillmentStrategy(offer: FulfillmentOfferInput): Fulfil
     }
     if (offer.fixedContentType !== 'text') return conflict('FakaBridge 的固定内容类型必须为空协议值 text')
     return { ok: true, strategy: { kind: 'faka_bridge' } }
+  }
+  // Whether the provider is registered is checked by the admin write path and
+  // checkout; this pure resolver only enforces the shared external shape.
+  if (hasExternal) {
+    if (offer.autoProvision) return conflict('外部开通与自动开通不能同时开启')
+    if (offer.deliveryMode !== 'manual_service') return conflict('外部开通必须使用人工开通模式')
+    if (hasFile || hasFixedText || hasStructured || hasDeliveryFields) {
+      return conflict('外部开通不能混用固定内容或库存字段')
+    }
+    if (offer.fixedContentType !== 'text') return conflict('外部开通的固定内容类型必须为空协议值 text')
+    return { ok: true, strategy: { kind: 'external_provider', providerId: offer.externalIntegration! } }
   }
   if (offer.autoProvision) {
     if (offer.deliveryMode !== 'manual_service') return conflict('自动开通必须使用人工服务模式')
@@ -125,6 +133,7 @@ export function strategyToConfiguration(strategy: FulfillmentStrategy): Fulfillm
 
 function intendedConfiguration(offer: FulfillmentOfferInput): FulfillmentConfiguration | null {
   if (offer.externalIntegration === 'faka_bridge') return 'faka_bridge'
+  if (offer.externalIntegration) return 'external_provider'
   if (offer.autoProvision) return 'merchant_webhook'
   if (offer.deliveryMode === 'instant_inventory') return 'inventory'
   if (offer.deliveryMode === 'instant_fixed') {
@@ -150,7 +159,10 @@ export function evaluateTemplateFulfillment(input: {
     if (input.mode === 'draft') {
       const intended = intendedConfiguration(input.offer)
       if (intended && allowed.includes(intended)) {
-        return { ok: true, strategy: { kind: intended }, rule }
+        const strategy: FulfillmentStrategy = intended === 'external_provider'
+          ? { kind: intended, providerId: input.offer.externalIntegration! }
+          : { kind: intended }
+        return { ok: true, strategy, rule }
       }
     }
     return { ...resolved, rule }

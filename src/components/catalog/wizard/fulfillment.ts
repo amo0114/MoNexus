@@ -14,6 +14,7 @@ const DELIVERY_MODES = {
   manual: 'manual_service',
   merchant_webhook: 'manual_service',
   faka_bridge: 'manual_service',
+  external_provider: 'manual_service',
 } satisfies Record<FulfillmentConfiguration, DeliveryMode>
 
 const deliveryModes = new Map<string, DeliveryMode>(Object.entries(DELIVERY_MODES))

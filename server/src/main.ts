@@ -1,5 +1,3 @@
-import { startResetCron, stopResetCron } from './modules/trafficReset/worker.js'
-import { startAccountBackfillCron, stopAccountBackfillCron } from './modules/xboardAccounts/cron.js'
 import { startVideoWorker, stopVideoWorker } from './modules/productVideos/worker.js'
 import { app } from './app.js'
 import { config } from './config/index.js'
@@ -14,7 +12,7 @@ import { startSubscriptionRemindCron, stopSubscriptionRemindCron } from './lib/s
 import { startSlaRemindCron, stopSlaRemindCron } from './lib/slaRemind.js'
 import { startBookingRemindCron, stopBookingRemindCron } from './lib/bookingRemind.js'
 import { startProvisionCron, stopProvisionCron } from './modules/orders/provisionCron.js'
-import { startFakaBridgeCron, stopFakaBridgeCron } from './modules/fakaBridge/service.js'
+import { startFulfillmentBackgroundJobs, stopFulfillmentBackgroundJobs } from './modules/fulfillment/coordination.js'
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
 import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
 import { startLegalRetentionCron, stopLegalRetentionCron } from './modules/legal/cron.js'
@@ -50,7 +48,7 @@ const server = app.listen(config.port, () => {
   startSlaRemindCron()
   startBookingRemindCron()
   startProvisionCron()
-  startFakaBridgeCron()
+  startFulfillmentBackgroundJobs()
   startGrowthRewardCron()
   startLeaderboardCron()
   startLegalRetentionCron()
@@ -62,8 +60,6 @@ const server = app.listen(config.port, () => {
   startPaymentWorkers()
   startPaymentPayloadRetentionCron()
   startVideoWorker()
-  startResetCron()
-  startAccountBackfillCron()
   startTrafficCron()
   startRecommendationEventsCron()
   if (config.notificationRealtime.enabled) {
@@ -108,7 +104,6 @@ async function shutdown(signal: NodeJS.Signals) {
   stopSlaRemindCron()
   stopBookingRemindCron()
   stopProvisionCron()
-  stopFakaBridgeCron()
   stopGrowthRewardCron()
   stopLeaderboardCron()
   stopLegalRetentionCron()
@@ -120,8 +115,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopPaymentWorkers()
   stopPaymentPayloadRetentionCron()
   const videoStopPromise = stopVideoWorker()
-  const resetStopPromise = stopResetCron()
-  const accountBackfillStopPromise = stopAccountBackfillCron()
+  const fulfillmentStopPromise = stopFulfillmentBackgroundJobs()
   stopTrafficCron()
   stopRecommendationEventsCron()
 
@@ -144,8 +138,7 @@ async function shutdown(signal: NodeJS.Signals) {
     await listenerStopPromise
     await drainPromise
     await videoStopPromise
-    await accountBackfillStopPromise
-    await resetStopPromise
+    await fulfillmentStopPromise
     await quitRedis()
     clearCacheProcessState()
     await prisma.$disconnect()

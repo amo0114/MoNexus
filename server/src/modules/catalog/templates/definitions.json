@@ -489,7 +489,8 @@
             "fixed_url",
             "manual",
             "merchant_webhook",
-            "faka_bridge"
+            "faka_bridge",
+            "external_provider"
           ],
           "requireStructuredDelivery": "none",
           "requireRequiredDateField": false

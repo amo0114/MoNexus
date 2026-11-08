@@ -244,6 +244,7 @@ router.put(
 )
 router.get('/faka/tasks', validate({ query: listFakaTasksQuerySchema }), controller.listFakaTasks)
 router.get('/faka/tasks/stats', controller.fakaTaskStats)
+router.get('/fulfillment/providers', controller.listFulfillmentProviders)
 router.post('/faka/tasks/:id/retry', validate({ params: idParamSchema }), controller.retryFakaTask)
 router.post('/faka/tasks/:id/revoke', validate({ params: idParamSchema }), controller.forceFakaRevoke)
 // P5：吊销交付文件（违法/恶意内容治理）。

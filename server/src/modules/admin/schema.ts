@@ -125,8 +125,9 @@ const adminProductFieldsSchema = z.object({
   stock: z.number().int().min(0).max(1_000_000).optional(),
   fixedContent: z.string().trim().min(1).max(5000).optional(),
   fixedContentType: productFixedContentTypeSchema.optional(),
-  // FakaBridge on the default Offer (platform self-operated products).
-  externalIntegration: z.enum(['faka_bridge']).nullable().optional(),
+  // External provider on the default Offer (platform self-operated products);
+  // the id must be registered (checked in the service).
+  externalIntegration: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_]{1,31}$/).nullable().optional(),
   externalSku: z
     .string()
     .trim()

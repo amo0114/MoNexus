@@ -16,6 +16,18 @@ import {
   normalizeFakaOfferIntegration,
   assertOfferProvisionMutex,
 } from '../../lib/fakaBridge/index.js'
+import { normalizeProviderOfferBinding } from '../fulfillment/offerBinding.js'
+
+/** FakaBridge keeps its own rules; any other registered provider uses the generic binding. */
+function normalizeOfferIntegration(
+  input: { externalIntegration?: string | null; externalSku?: string | null; deliveryMode?: string | null },
+  options?: { requireConfigured?: boolean },
+) {
+  const id = input.externalIntegration?.trim().toLowerCase()
+  return id && id !== 'faka_bridge'
+    ? normalizeProviderOfferBinding({ ...input, externalIntegration: id })
+    : normalizeFakaOfferIntegration(input, options)
+}
 import {
   assertProductDeliveryConfiguration,
   normalizeProductImageFields,
@@ -88,7 +100,7 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
     fixedContentType,
   })
 
-  const faka = normalizeFakaOfferIntegration({
+  const faka = normalizeOfferIntegration({
     externalIntegration: data.externalIntegration,
     externalSku: data.externalSku,
     deliveryMode,
@@ -243,7 +255,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     const defaultOfferForFaka = await getDefaultOffer(tx, id)
     // SKU rebind is a separate dangerous op; ordinary PUT cannot change it.
     const fakaUpdate = defaultOfferForFaka.externalIntegration != null
-      ? normalizeFakaOfferIntegration(
+      ? normalizeOfferIntegration(
           {
             externalIntegration: defaultOfferForFaka.externalIntegration,
             externalSku: defaultOfferForFaka.externalSku,

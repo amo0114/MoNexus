@@ -5,7 +5,7 @@ import { closeOrder, createOrder, disputeOrder } from '../modules/orders/service
 import { __runAutoCloseBatchForTests } from '../modules/orders/cron.js'
 import { batchSettle, resolveOrder } from '../modules/admin/service.js'
 import { prisma } from '../lib/prisma.js'
-import { __setFakaClientOverridesForTests, processFakaBridgeTask, runFakaBridgeBatch, runFakaReconcileBatch } from '../modules/fakaBridge/service.js'
+import { __setFakaClientOverridesForTests, processFakaBridgeTask, processFakaRevokeTask, runFakaBridgeBatch, runFakaReconcileBatch } from '../modules/fakaBridge/service.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestMerchant, createTestUser } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
@@ -413,7 +413,7 @@ describe('M4 FakaBridge worker', () => {
     expect(await prisma.pointLog.count({ where: { orderId, type: 'out' } })).toBe(0)
   })
 
-  it('refunds points and marks failed on permanent 400', async () => {
+  it('keeps points held on permanent 400 until the revoke tombstone confirms, then refunds', async () => {
     const { user } = await createVerifiedBuyer(500)
     const { product, offer } = await createFakaOffer(100)
     const created = await createOrder(user.id, product.id, {
@@ -424,22 +424,37 @@ describe('M4 FakaBridge worker', () => {
       where: { orderId: created.orderId },
     })
 
+    const revokeBodies: string[] = []
     __setFakaClientOverridesForTests({
       url: 'https://v.uuwu.de/plugin/faka-bridge/order-paid',
       secret: 'unit-test-faka-secret-at-least-32-characters!!',
-      transport: async () => ({
-        status: 400,
-        text: JSON.stringify({ success: false, error: '未配置的 SKU: bad' }),
-      }),
+      transport: async req => {
+        if (req.url.includes('/order-revoke')) {
+          revokeBodies.push(req.body ?? '')
+          return {
+            status: 200,
+            text: JSON.stringify({
+              success: true, order_no: task.requestOrderNo, status: 'revoked',
+              trade_no: null, expired_user: false, tombstone: true,
+            }),
+          }
+        }
+        return { status: 400, text: JSON.stringify({ success: false, error: '未配置的 SKU: bad' }) }
+      },
     })
 
-    const outcome = await processFakaBridgeTask(task.id)
-    expect(outcome).toBe('failed')
+    // An earlier timed-out attempt could still open remotely: no refund yet.
+    expect(await processFakaBridgeTask(task.id)).toBe('retry_scheduled')
+    const parked = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(parked).toMatchObject({ status: 'needs_reconcile', revokeStatus: 'pending', cancelRequested: true })
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })).status).toBe('pending')
+    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).frozenBalance).toBe(100)
+
+    expect(await processFakaRevokeTask(task.id)).toBe('succeeded')
+    expect(revokeBodies).toHaveLength(1)
 
     const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
-    expect(done.status).toBe('failed')
-    expect(done.lastError).toBeTruthy()
-
+    expect(done).toMatchObject({ status: 'cancelled', revokeStatus: 'succeeded' })
     const order = await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })
     expect(order.status).toBe('refunded')
     expect(order.fundsHeld).toBe(false)
@@ -448,6 +463,31 @@ describe('M4 FakaBridge worker', () => {
     expect(account.balance).toBe(500)
     expect(account.frozenBalance).toBe(0)
     expect(await prisma.pointLog.count({ where: { orderId: created.orderId, type: 'out' } })).toBe(0)
+  })
+
+  it('keeps points held when an old plugin cannot write a revoke tombstone', async () => {
+    const { user } = await createVerifiedBuyer(500)
+    const { product, offer } = await createFakaOffer(100)
+    const created = await createOrder(user.id, product.id, { offerId: offer.id, expectedPrice: 100 })
+    const task = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: created.orderId } })
+
+    __setFakaClientOverridesForTests({
+      url: 'https://v.uuwu.de/plugin/faka-bridge/order-paid',
+      secret: 'unit-test-faka-secret-at-least-32-characters!!',
+      transport: async req => {
+        if (req.url.includes('/order-status')) return { status: 404, text: JSON.stringify({ success: false, error: '订单不存在' }) }
+        if (req.url.includes('/order-revoke')) return { status: 400, text: JSON.stringify({ success: false, error: '订单不存在' }) }
+        return { status: 504, text: 'gateway timeout' }
+      },
+    })
+    await prisma.fakaBridgeTask.update({ where: { id: task.id }, data: { maxAttempts: 1 } })
+
+    expect(await processFakaBridgeTask(task.id)).toBe('retry_scheduled')
+    expect(await processFakaRevokeTask(task.id)).toBe('failed')
+    const parked = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
+    expect(parked).toMatchObject({ status: 'needs_reconcile', revokeStatus: 'pending', lastRevokeError: 'FAKA_REVOKE_TOMBSTONE_UNSUPPORTED' })
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })).status).toBe('pending')
+    expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).frozenBalance).toBe(100)
   })
 
   it('schedules retry on 5xx without refunding', async () => {

@@ -16,9 +16,7 @@ import {
 } from '../../lib/fakaBridge/client.js'
 import { classifyFakaRemoteStatus } from '../../lib/fakaBridge/errors.js'
 import { fakaReconcileTotal, fakaRevokeTotal } from '../../lib/metrics.js'
-import { transitionOrderStatus } from '../orders/fulfillment.js'
-import { captureHeldOrder, releaseHeldOrder } from '../orders/accounting.js'
-import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
+import { deliverExternalResultInTx, refundUndeliveredExternalOrderInTx } from '../fulfillment/apply.js'
 import { config } from '../../config/index.js'
 import { isLeaseExpiredUtc, readTaskScheduleUtc } from '../../lib/fakaBridge/scheduleUtc.js'
 import { parseFakaExpiredAt } from '../../lib/fakaBridge/expiredAt.js'
@@ -233,7 +231,7 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
 
   const result = await callFakaOrderRevoke(
     task.requestOrderNo,
-    `MoNexus order #${task.orderId} refunded`,
+    `MoNexus order #${task.orderId} cancelled/refunded`,
     clientOverrides()
   )
 
@@ -268,56 +266,85 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
       )
       return 'failed'
     }
-    await prisma.fakaBridgeTask.updateMany({
-      where: { id: taskId, leaseToken: claimed.leaseToken, revokeStatus: 'pending' },
-      data: {
-        revokeStatus: 'succeeded',
-        revokedAt: new Date(),
-        lastRevokeError: null,
-        leaseToken: null,
-        leaseUntil: null,
-        reconcileNote: result.body.expired_user
-          ? 'revoke: xboard user expired'
-          : 'revoke: marked revoked (user not expired or already inactive)',
-      },
+    const remoteTradeNo = result.body.trade_no != null ? String(result.body.trade_no) : null
+    const expiredUser = result.body.expired_user
+    const applied = await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${task.orderId} FOR UPDATE`
+      const current = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
+      if (!current || current.leaseToken !== claimed.leaseToken || current.revokeStatus !== 'pending') return false
+      // A task still unresolved locally becomes terminal: the remote row is revoked.
+      const unresolved = current.status === 'pending' || current.status === 'needs_reconcile'
+      await tx.fakaBridgeTask.update({
+        where: { id: taskId },
+        data: {
+          revokeStatus: 'succeeded',
+          revokedAt: new Date(),
+          lastRevokeError: null,
+          leaseToken: null,
+          leaseUntil: null,
+          ...(unresolved
+            ? {
+                status: remoteTradeNo ? 'succeeded' : 'cancelled',
+                xboardTradeNo: remoteTradeNo ?? current.xboardTradeNo,
+                completedAt: current.completedAt ?? new Date(),
+              }
+            : {}),
+          reconcileNote: expiredUser
+            ? 'revoke: xboard user expired'
+            : 'revoke: marked revoked (user not expired or already inactive)',
+        },
+      })
+      const order = await tx.order.findUniqueOrThrow({ where: { id: task.orderId } })
+      if (order.status === 'pending') {
+        // Points stayed held until this confirmation (see worker queueRevokeBeforeRefund).
+        await refundUndeliveredExternalOrderInTx(tx, order, {
+          action: 'system.faka_bridge.revoked_refund', publicNote: '订阅开通失败，积分已退回',
+          internalNote: current.lastError ?? undefined, releaseReason: `FakaBridge 撤销确认后退款: #${order.id}`,
+        })
+      }
+      return true
     })
+    if (!applied) {
+      fakaRevokeTotal.inc({ outcome: 'skipped' })
+      return 'skipped'
+    }
     fakaRevokeTotal.inc({ outcome: 'succeeded' })
     logger.info(
-      { taskId, orderId: task.orderId, expiredUser: result.body.expired_user },
+      { taskId, orderId: task.orderId, expiredUser },
       'FakaBridge revoke succeeded'
     )
     return 'succeeded'
   }
 
-  // 404 "订单不存在" → nothing to revoke on Xboard (never provisioned / purged)
+  // "订单不存在" comes from a plugin older than 1.8.1, which leaves no tombstone:
+  // a late order-paid could still open, so it is never proof of absence.
   const errText =
     result.body && typeof result.body === 'object' && 'error' in result.body
       ? String((result.body as { error?: string }).error ?? '')
       : result.code
-  const notFound = result.httpStatus === 404 || /不存在/.test(errText)
+  const revokeError = result.httpStatus === 404 || /不存在/.test(errText)
+    ? 'FAKA_REVOKE_TOMBSTONE_UNSUPPORTED'
+    : result.code
 
-  if (notFound || attempts >= MAX_REVOKE_ATTEMPTS) {
+  if (attempts >= MAX_REVOKE_ATTEMPTS) {
     await prisma.fakaBridgeTask.updateMany({
       where: { id: taskId, leaseToken: claimed.leaseToken, revokeStatus: 'pending' },
       data: {
-        revokeStatus: notFound ? 'skipped' : 'failed',
-        lastRevokeError: result.code,
-        revokedAt: notFound ? new Date() : null,
+        revokeStatus: 'failed',
+        lastRevokeError: revokeError,
         leaseToken: null,
         leaseUntil: null,
-        reconcileNote: notFound
-          ? 'revoke skipped: no faka_orders row on Xboard'
-          : `revoke failed after ${attempts} attempts: ${result.code}`,
+        reconcileNote: `revoke failed after ${attempts} attempts: ${revokeError}; held points retained, operator review required`,
       },
     })
-    fakaRevokeTotal.inc({ outcome: notFound ? 'skipped' : 'failed' })
-    return notFound ? 'skipped' : 'failed'
+    fakaRevokeTotal.inc({ outcome: 'failed' })
+    return 'failed'
   }
 
   await prisma.fakaBridgeTask.updateMany({
     where: { id: taskId, leaseToken: claimed.leaseToken, revokeStatus: 'pending' },
     data: {
-      lastRevokeError: result.code,
+      lastRevokeError: revokeError,
       leaseToken: null,
       leaseUntil: null,
       nextAttemptAt: new Date(Date.now() + revokeBackoffMs(attempts)),
@@ -383,10 +410,10 @@ async function processPaidRevokeClaim(claimed: TaskIdentity & {
       reconcileNote: 'paid reset revoked; original subscription unchanged',
     } })
     if (order.status === 'pending') {
-      await transitionOrderStatus({ orderId: order.id, toStatus: 'refunded', actorRole: 'system',
-        action: 'system.faka_bridge.paid_reset_cancel_refund', publicNote: '流量重置订单已取消，积分已退回' }, tx)
-      await releaseHeldOrder(tx, order, `Xboard 重置撤销退款: #${order.id}`)
-      await applyRefundInventoryPolicy(tx, order, { fromStatus: 'pending', actorUserId: order.userId })
+      await refundUndeliveredExternalOrderInTx(tx, order, {
+        action: 'system.faka_bridge.paid_reset_cancel_refund', publicNote: '流量重置订单已取消，积分已退回',
+        releaseReason: `Xboard 重置撤销退款: #${order.id}`,
+      })
     }
     return true
   })
@@ -437,6 +464,8 @@ export async function selectStuckFakaTasksForReconcile(
     INNER JOIN "Order" o ON o."id" = t."orderId"
     WHERE t."status" IN ('pending', 'succeeded', 'needs_reconcile')
       AND o."status" = 'pending'
+      -- Queued/exhausted revokes are owned by the revoke worker / operator.
+      AND (t."revokeStatus" IS NULL OR t."revokeStatus" NOT IN ('pending', 'failed'))
       AND (t."createdAt" AT TIME ZONE 'UTC') < ${createdCutoff}
       AND (t."nextAttemptAt" AT TIME ZONE 'UTC') <= ${now}
       AND (
@@ -654,7 +683,8 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       fakaBridgeTask: {
         OR: [
           { status: 'pending' },
-          { status: 'needs_reconcile' },
+          // Exhausted revokes wait for an operator; keep them from filling the batch.
+          { status: 'needs_reconcile', OR: [{ revokeStatus: null }, { revokeStatus: { not: 'failed' } }] },
           { status: 'succeeded', revokeStatus: null },
           { status: 'succeeded', revokeStatus: 'pending' },
           { status: 'failed', xboardTradeNo: { not: null }, revokeStatus: null },
@@ -690,6 +720,8 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     // Defer status probes until nextAttemptAt (UTC; 5‑minute park after intermediate).
     // Still process in-flight cancel_requested and pure revoke queue without waiting.
     if ((full.status === 'pending' || full.status === 'needs_reconcile') && !inFlight) {
+      // A queued/exhausted revoke tombstone owns convergence; probing would race it.
+      if (full.revokeStatus === 'pending' || full.revokeStatus === 'failed') continue
       const sched = await readTaskScheduleUtc(prisma, full.id)
       if (sched && !sched.nextAttemptDue) continue
     }
@@ -769,7 +801,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           fakaReconcileTotal.inc({ action: 'queue_revoke_after_remote_open' })
           actions += 1
         }
-      } else if (remoteClass === 'not_opened') {
+      } else if (remoteClass === 'not_opened' && xbStatus === 'revoked') {
         const cancelled = await updateReconcileTaskIfCurrent(
           fullSnapshot,
           {
@@ -779,19 +811,34 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
             lastError: 'ORDER_REFUNDED',
             leaseToken: null,
             leaseUntil: null,
-            revokeStatus: xbStatus === 'revoked' ? 'succeeded' : full.revokeStatus,
-            revokedAt: xbStatus === 'revoked' ? new Date() : full.revokedAt,
-            reconcileNote:
-              xbStatus === 'revoked'
-                ? 'reconcile: Xboard already revoked after refund'
-                : statusRes.httpStatus === 404
-                  ? 'reconcile: cancelled after refund (remote not found)'
-                  : `reconcile: cancelled after refund (remote ${xbStatus || 'not_opened'})`,
+            revokeStatus: 'succeeded',
+            revokedAt: new Date(),
+            reconcileNote: 'reconcile: Xboard already revoked after refund',
           },
           { allowedOrderStatuses: ['refunded'] }
         )
         if (cancelled) {
           fakaReconcileTotal.inc({ action: 'cancel_after_refund' })
+          actions += 1
+        }
+      } else if (remoteClass === 'not_opened') {
+        // 404 / failed can still open later; tombstone it before calling it cancelled.
+        const queued = await updateReconcileTaskIfCurrent(
+          fullSnapshot,
+          {
+            status: 'needs_reconcile',
+            cancelRequested: true,
+            revokeStatus: 'pending',
+            lastRevokeError: null,
+            leaseToken: null,
+            leaseUntil: null,
+            nextAttemptAt: new Date(),
+            reconcileNote: `reconcile: refunded, remote ${statusRes.httpStatus === 404 ? 'not found' : xbStatus}; queued revoke tombstone`,
+          },
+          { allowedOrderStatuses: ['refunded'] }
+        )
+        if (queued) {
+          fakaReconcileTotal.inc({ action: 'queue_revoke_tombstone' })
           actions += 1
         }
       } else {
@@ -860,6 +907,8 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       if (await reconcilePaidTask(full, snapshot)) actions++
       continue
     }
+    // The revoke worker refunds once the tombstone is confirmed; failed needs an operator.
+    if (full.revokeStatus === 'pending' || full.revokeStatus === 'failed') continue
 
     if (full.status === 'succeeded') {
       // Task already succeeded without MN delivery (race). Probe status for
@@ -983,14 +1032,31 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           actions += 1
         }
       }
-    } else if (remoteClass === 'not_opened') {
-      // Definitive remote failure / absence → refund held points.
-      const refunded = await tryRefundPendingOrder(
-        snapshot,
-        xbStatus || (statusRes.httpStatus === 404 ? 'not_found' : 'not_opened')
-      )
+    } else if (remoteClass === 'not_opened' && xbStatus === 'revoked') {
+      // Remote revoked blocks any late order-paid → refund held points.
+      const refunded = await tryRefundPendingOrder(snapshot, xbStatus)
       if (refunded) {
         fakaReconcileTotal.inc({ action: 'refund_from_remote_not_opened' })
+        actions += 1
+      }
+    } else if (remoteClass === 'not_opened') {
+      // 404 / failed is not proof: a late order-paid may still open. Tombstone first.
+      const queued = await updateReconcileTaskIfCurrent(
+        snapshot,
+        {
+          status: 'needs_reconcile',
+          cancelRequested: true,
+          revokeStatus: 'pending',
+          lastRevokeError: null,
+          leaseToken: null,
+          leaseUntil: null,
+          nextAttemptAt: new Date(),
+          reconcileNote: `reconcile: remote ${statusRes.httpStatus === 404 ? 'not found' : xbStatus}; queued revoke tombstone before refund`,
+        },
+        { allowedOrderStatuses: ['pending'] }
+      )
+      if (queued) {
+        fakaReconcileTotal.inc({ action: 'queue_revoke_tombstone' })
         actions += 1
       }
     } else {
@@ -1071,25 +1137,11 @@ async function tryRefundPendingOrder(
       })
       if (taskUpdated.count !== 1) return false
 
-      await transitionOrderStatus(
-        {
-          orderId: order.id,
-          toStatus: 'refunded',
-          actorRole: 'system',
-          action: 'system.faka_bridge.reconcile_refund',
-          publicNote: '订阅开通失败，积分已退回',
-          internalNote: `reconcile remote=${reason}`,
-        },
-        tx
-      )
-      await releaseHeldOrder(
-        tx,
-        order,
-        `FakaBridge 对账开通失败退款: #${order.id} (${reason})`
-      )
-      await applyRefundInventoryPolicy(tx, order, {
-        fromStatus: 'pending',
-        actorUserId: order.userId,
+      await refundUndeliveredExternalOrderInTx(tx, order, {
+        action: 'system.faka_bridge.reconcile_refund',
+        publicNote: '订阅开通失败，积分已退回',
+        internalNote: `reconcile remote=${reason}`,
+        releaseReason: `FakaBridge 对账开通失败退款: #${order.id} (${reason})`,
       })
       return true
     })
@@ -1266,37 +1318,21 @@ async function tryDeliverPendingOrder(
       })
       if (taskUpdated.count !== 1) return false
 
-      if (order.status === 'pending') {
-        await transitionOrderStatus(
-          {
-            orderId,
-            toStatus: 'processing',
-            actorRole: 'system',
-            action: 'system.faka_bridge.reconcile_start',
-            publicNote: '正在开通 Xboard 订阅（对账）',
-          },
-          tx
-        )
-      }
-      const deliveredOrder = await transitionOrderStatus(
-        {
-          orderId,
-          toStatus: 'delivered',
-          actorRole: 'system',
-          action: 'system.faka_bridge.reconcile_deliver',
-          deliveryContent: delivery.content,
-          deliveryStructuredContent: delivery.structuredContent,
-          publicNote: 'Xboard 订阅已开通（对账收敛）',
-          internalNote: tradeNo
-            ? `trade_no=${tradeNo}; reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`
-            : `reconcile${remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''}`,
-          ...(remoteExpiredAt || snapshot.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
-        },
-        tx
-      )
-      // Reconciled success must capture the same reservation as direct success.
-      // The order lock and task CAS keep retries from charging a second time.
-      await captureHeldOrder(tx, deliveredOrder, `Xboard 对账开通成功扣款: #${deliveredOrder.id}`)
+      const expiryNote = remoteExpiredAt ? `; xboard_expired_at=${remoteExpiredAt.toISOString()}` : ''
+      const deliveredOrder = await deliverExternalResultInTx(tx, {
+        orderId,
+        action: { start: 'system.faka_bridge.reconcile_start', deliver: 'system.faka_bridge.reconcile_deliver' },
+        startNote: '正在开通 Xboard 订阅（对账）',
+        publicNote: 'Xboard 订阅已开通（对账收敛）',
+        internalNote: tradeNo ? `trade_no=${tradeNo}; reconcile${expiryNote}` : `reconcile${expiryNote}`,
+        deliveryContent: delivery.content,
+        deliveryStructuredContent: delivery.structuredContent,
+        ...(remoteExpiredAt || snapshot.protocolVersion === 2 ? { expiresAtOverride: remoteExpiredAt } : {}),
+        // The order lock and task CAS keep retries from charging a second time.
+        captureReason: `Xboard 对账开通成功扣款: #${orderId}`,
+      })
+      // The task CAS above must not commit without the delivery it stands for.
+      if (!deliveredOrder) throw new Error('FakaBridge reconcile deliver: order no longer deliverable')
       await grantForOrderInTx(tx, deliveredOrder.id)
       return true
     })
