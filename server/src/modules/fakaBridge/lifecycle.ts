@@ -5,6 +5,7 @@ import { grantForOrderInTx } from '../trafficReset/benefits.js'
  * revoke is scheduled in-tx, executed async by worker/cron.
  */
 import type { FakaBridgeTask, Prisma } from '@prisma/client'
+import type { CancellationAssessment } from '../../extension-contracts/fulfillment.js'
 import { prisma } from '../../lib/prisma.js'
 import { logger } from '../../lib/logger.js'
 import {
@@ -166,6 +167,44 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
       },
     })
   }
+}
+
+/**
+ * Pre-refund cancellation verdict (Order locked by the caller). Claims lock the
+ * Order first and re-check `cancelRequested` before dispatch, so attempts = 0
+ * here proves nothing reached Xboard. Otherwise the revoke tombstone is the
+ * durable cancel: its success refunds a still-pending order (processFakaRevokeTask).
+ */
+export async function assessFakaCancellationInTx(tx: Tx, orderId: number): Promise<CancellationAssessment | null> {
+  const task = await tx.fakaBridgeTask.findUnique({ where: { orderId } })
+  if (!task) return null
+  if (task.status === 'succeeded') return 'already_executed'
+  if (task.status === 'cancelled' || (task.status === 'failed' && task.revokeStatus === 'succeeded')) return 'safe_to_finalize'
+  if (task.status === 'pending' && task.attempts === 0) {
+    await tx.fakaBridgeTask.update({
+      where: { id: task.id },
+      data: {
+        status: 'cancelled', cancelRequested: true, completedAt: new Date(), lastError: 'ORDER_CANCELLED',
+        leaseToken: null, leaseUntil: null, reconcileNote: 'cancelled: order cancelled before any claim/dispatch',
+      },
+    })
+    return 'safe_to_finalize'
+  }
+  const leaseExpired = await isLeaseExpiredUtc(tx, task.id)
+  const inFlight = task.status === 'pending' && !leaseExpired
+  await tx.fakaBridgeTask.update({
+    where: { id: task.id },
+    data: {
+      cancelRequested: true,
+      // An in-flight worker sees cancelRequested on its result and queues the revoke itself.
+      ...(inFlight ? {} : {
+        status: 'needs_reconcile', revokeStatus: 'pending', lastRevokeError: null,
+        leaseToken: null, leaseUntil: null, nextAttemptAt: new Date(),
+      }),
+      reconcileNote: 'cancel_requested: order cancellation after possible dispatch; revoke tombstone before refund',
+    },
+  })
+  return 'reconcile_required'
 }
 
 /** Post-commit kick for pending revokes. */

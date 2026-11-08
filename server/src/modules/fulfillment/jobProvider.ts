@@ -112,7 +112,9 @@ async function applyObservation(claimed: Claimed, observation: RemoteObservation
     if (!job || job.leaseToken !== claimed.leaseToken) return 'stale'
     const order = await tx.order.findUniqueOrThrow({ where: { id: job.orderId } })
     const release = { leaseToken: null, leaseUntil: null }
-    const deliverable = !job.cancelRequested && (order.status === 'pending' || order.status === 'processing')
+    // A cancel request that lost the race to a real remote success still
+    // delivers while the order is open; only a refunded/closed order cannot.
+    const deliverable = order.status === 'pending' || order.status === 'processing'
 
     if (observation.kind === 'succeeded') {
       const evidence = (observation.evidence ?? {}) as Prisma.InputJsonValue
@@ -291,6 +293,32 @@ export function createJobFulfillmentProvider(adapter: ExternalFulfillmentAdapter
         where: { id: job.id },
         data: { cancelRequested: true, ...(leaseActive ? {} : { status: 'needs_reconcile', nextAttemptAt: new Date() }) },
       })
+    },
+    async assessCancellationInTx(tx: Tx, orderId) {
+      const job = await tx.fulfillmentJob.findUnique({ where: { orderId } })
+      if (!job || job.providerId !== adapter.id) return null
+      if (job.status === 'succeeded') return 'already_executed'
+      // failed = adapter proved no effect; cancelled = blocked before any effect.
+      if (job.status === 'failed' || job.status === 'cancelled') return 'safe_to_finalize'
+      // claimJob locks the Order first, so with the Order held here no claim can
+      // be mid-flight; attempts > 0 is the only sign a dispatch may have happened.
+      if (job.status === 'pending' && job.attempts === 0) {
+        await tx.fulfillmentJob.update({
+          where: { id: job.id },
+          data: { status: 'cancelled', cancelRequested: true, completedAt: new Date(), note: 'cancelled before dispatch' },
+        })
+        return 'safe_to_finalize'
+      }
+      const leaseActive = job.leaseUntil != null && job.leaseUntil > new Date()
+      await tx.fulfillmentJob.update({
+        where: { id: job.id },
+        data: { cancelRequested: true, ...(leaseActive ? {} : { status: 'needs_reconcile', nextAttemptAt: new Date() }) },
+      })
+      return 'reconcile_required'
+    },
+    async afterCancellationAssessed(orderId) {
+      const job = await prisma.fulfillmentJob.findUnique({ where: { orderId }, select: { id: true, providerId: true, status: true } })
+      if (job?.providerId === adapter.id && job.status === 'needs_reconcile') kick(job.id)
     },
     async afterOrderRefunded(orderId) {
       const job = await prisma.fulfillmentJob.findUnique({ where: { orderId }, select: { id: true, providerId: true, status: true } })

@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import * as orderService from './service.js'
 import { issueOrderFileDownloadUrl } from './fileAccess.js'
+import { cancelUnacceptedOrder } from './cancellation.js'
 import { idempotencyKeySchema } from './schema.js'
 import { badRequest } from '../../lib/httpError.js'
 
@@ -85,6 +86,19 @@ export async function close(req: Request, res: Response, next: NextFunction) {
       req.user!.userId,
     )
     res.json(order)
+  } catch (err) {
+    next(err)
+  }
+}
+
+// Buyer cancels an order nobody accepted yet. 202 = remote work must converge
+// first; points stay held and the order detail shows the cancel as pending.
+export async function cancel(req: Request, res: Response, next: NextFunction) {
+  try {
+    const orderId = req.params.id as unknown as number
+    const outcome = await cancelUnacceptedOrder(orderId, { kind: 'buyer', userId: req.user!.userId })
+    const order = await orderService.getOrderDetail(orderId, req.user!.userId)
+    res.status(outcome === 'cancelled' ? 200 : 202).json(order)
   } catch (err) {
     next(err)
   }

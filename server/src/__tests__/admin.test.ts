@@ -3,6 +3,14 @@ import { api, createTestUser, createTestProduct, createTestMerchant, getDefaultO
 import { prisma } from '../lib/prisma.js'
 import { computeLifetimeEarnedPoints } from '../lib/memberTier.js'
 
+// Settlement is payable only after the buyer accepts the order (closed).
+async function confirmDeliveredOrders(email: string, accessToken: string) {
+  const orders = await prisma.order.findMany({ where: { user: { email }, status: 'delivered' }, select: { id: true } })
+  for (const order of orders) {
+    await api.post(`/api/orders/${order.id}/close`).set(authHeader(accessToken)).expect(200)
+  }
+}
+
 describe('Admin access control', () => {
   it('should reject unauthenticated access to admin routes', async () => {
     await api.get('/api/admin/stats').expect(401)
@@ -655,8 +663,8 @@ describe('GET /api/admin/settlements', () => {
 
     const item = listRes.body.items.find((s: { orderId: number }) => s.orderId === orderId)
     expect(item).toBeDefined()
-    expect(item.payable).toBe(true)
-    expect(item.blockReason).toBeNull()
+    expect(item.payable).toBe(false)
+    expect(item.blockReason).toBe('订单待买家验收，暂不可结算')
 
     await api
       .post(`/api/orders/${orderId}/dispute`)
@@ -701,6 +709,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
       .send({ productId: product.id })
       .expect(201)
 
+    await confirmDeliveredOrders('settle-buyer-ok@test.local', buyer.accessToken)
     const settlements = await prisma.settlement.findMany({
       where: { merchantId: merchant.id },
       orderBy: { id: 'asc' },
@@ -907,6 +916,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
       .send({ productId: product.id })
       .expect(201)
 
+    await confirmDeliveredOrders('settle-race-buyer@test.local', buyer.accessToken)
     const settlement = await prisma.settlement.findUniqueOrThrow({
       where: { orderId: createRes.body.orderId },
     })
@@ -975,6 +985,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     const o1 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
     const o2 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
 
+    await confirmDeliveredOrders('settle-rev-buyer@test.local', buyer.accessToken)
     const s1 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o1.body.orderId } })
     const s2 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o2.body.orderId } })
 
@@ -1037,6 +1048,7 @@ describe('POST /api/admin/settlements/batch-settle', () => {
     const o3 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
     const o4 = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
 
+    await confirmDeliveredOrders('settle-nonoverlap-buyer@test.local', buyer.accessToken)
     const s1 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o1.body.orderId } })
     const s2 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o2.body.orderId } })
     const s3 = await prisma.settlement.findUniqueOrThrow({ where: { orderId: o3.body.orderId } })

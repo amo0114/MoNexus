@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { prisma } from '../lib/prisma.js'
+import { transitionOrderStatus } from '../modules/orders/fulfillment.js'
 import {
   api,
   createTestUser,
@@ -13,6 +14,26 @@ import {
 } from './helpers.js'
 
 describe('merchant dispute resume by delivery mode', () => {
+  it('does not let a delivery without the resume command clear a dispute', async () => {
+    const { merchant } = await createTestMerchant('dispute-guard@test.local', 'pass123', {
+      role: 'merchant',
+      status: 'active',
+      name: '争议保护商家',
+    })
+    await createTestUser('dispute-guard-buyer@test.local', 'buyer123', 'user', 5000)
+    const product = await createTestProduct('争议保护商品', 100, 1, ['DISPUTE-GUARD-001'], merchant.id)
+    const buyer = await loginAs('dispute-guard-buyer@test.local', 'buyer123')
+    const created = await api.post('/api/orders').set(authHeader(buyer.accessToken)).send({ productId: product.id }).expect(201)
+    const orderId = created.body.orderId
+    await api.post(`/api/orders/${orderId}/dispute`).set(authHeader(buyer.accessToken)).expect(200)
+
+    // e.g. a late auto-provision result arriving after the buyer disputed
+    await expect(transitionOrderStatus({
+      orderId, toStatus: 'delivered', actorRole: 'system', action: 'system.auto_provision.deliver', deliveryContent: 'late',
+    })).rejects.toMatchObject({ status: 409 })
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('disputed')
+  })
+
   it('resumes an instant_inventory disputed order back to delivered with content intact', async () => {
     const { merchant } = await createTestMerchant('dispute-instant@test.local', 'pass123', {
       role: 'merchant',

@@ -1,9 +1,9 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
+import { badRequest, conflict, notFound, HttpError } from '../../lib/httpError.js'
 import { createOrderStatusEvent, transitionOrderStatus } from '../orders/fulfillment.js'
 import { isInstantMode, normalizeOrderStatus, type FulfillmentOrderStatus } from '../orders/statusPolicy.js'
-import { releaseHeldOrder, settleHeldOrder } from '../orders/accounting.js'
+import { releaseHeldOrder } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 import { canonicalDeliveryText, parseStoredDeliveryFields, validateDeliveryValues, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
@@ -347,33 +347,28 @@ export async function respondToOrderDispute(
   merchantId: number,
   actorUserId: number,
   orderId: number,
-  input: { resolution: 'resume' | 'close'; publicNote?: string; internalNote?: string }
+  input: { resolution: 'resume'; publicNote?: string; internalNote?: string }
 ) {
   await prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await assertMerchantOrder(merchantId, orderId, tx)
+    // delivered → closed is a legal edge, so without this check a merchant could
+    // use the dispute endpoint to close an undisputed order and capture its points.
+    if (order.status !== 'disputed') throw conflict('订单不在争议中，不能处理争议')
+    // 商家不能单方关闭争议扣款：结束争议须买家确认或管理员裁决。
     // 即时模式（instant_*）内容已交付，恢复履约直接回到 delivered；人工服务单回 processing 由商家重新交付
     const resumeTarget: FulfillmentOrderStatus =
       isInstantMode(getOrderDeliveryMode(order) ?? '') ? 'delivered' : 'processing'
     await transitionOrderStatus({
       orderId,
-      toStatus: input.resolution === 'resume' ? resumeTarget : 'closed',
+      toStatus: resumeTarget,
       actorRole: 'merchant',
       actorUserId,
       action: `merchant.dispute.${input.resolution}`,
       publicNote: input.publicNote,
       internalNote: input.internalNote,
+      resumeDispute: true,
     }, tx)
-
-    // 商家对人工服务争议选择关闭时，和用户确认关闭、管理员裁决关闭
-    // 使用同一资金结算路径。此前这里只改订单状态，会遗留冻结积分和 holding Settlement。
-    if (input.resolution === 'close') {
-      await settleHeldOrder(tx, order, `商家争议关闭扣款: #${order.id}`)
-      await tx.order.update({
-        where: { id: order.id },
-        data: { confirmedAt: new Date() },
-      })
-    }
   })
 
   return getMyOrderDetail(merchantId, orderId)

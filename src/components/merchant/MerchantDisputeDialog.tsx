@@ -9,15 +9,15 @@ interface Props {
   isOpen: boolean
   onClose: () => void
   order: MerchantOrder | null
-  onSubmit: (resolution: 'resume' | 'close') => Promise<void>
+  onSubmit: (resolution: 'resume') => Promise<void>
 }
 
 export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit }: Props) {
   const showToast = useAppStore((s) => s.showToast)
-  const [submitting, setSubmitting] = useState<'resume' | 'close' | null>(null)
+  const [submitting, setSubmitting] = useState<'resume' | null>(null)
   const pendingRef = useRef(false)
 
-  async function handleResolve(resolution: 'resume' | 'close') {
+  async function handleResolve(resolution: 'resume') {
     if (pendingRef.current) return
     pendingRef.current = true
     const isCurrent = captureFeedbackOwner()
@@ -38,7 +38,7 @@ export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit
       <DialogContent data-testid="merchant-dispute-dialog">
         <DialogTitle>处理争议</DialogTitle>
         <DialogDescription>
-          订单 #{order?.id ?? ''} · {order?.product?.name ?? ''}。选择「关闭争议」将关闭该订单；选择「恢复履约」后，人工服务回到履约中，即时交付恢复为已交付。
+          订单 #{order?.id ?? ''} · {order?.product?.name ?? ''}。选择「恢复履约」后，人工服务回到履约中，即时交付恢复为已交付。商家不能单方关闭争议，如需结束请等待买家确认或平台裁决。
         </DialogDescription>
         <div className="mt-5 flex flex-wrap justify-end gap-3">
           <button
@@ -52,20 +52,11 @@ export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit
           <button
             type="button"
             onClick={() => handleResolve('resume')}
-            className="btn-secondary px-5 py-2 text-sm min-w-[110px]"
+            className="btn-primary px-5 py-2 text-sm min-w-[110px]"
             disabled={submitting !== null}
             data-testid="merchant-dispute-resume"
           >
             {submitting === 'resume' ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '恢复履约'}
-          </button>
-          <button
-            type="button"
-            onClick={() => handleResolve('close')}
-            className="btn-primary px-5 py-2 text-sm min-w-[110px]"
-            disabled={submitting !== null}
-            data-testid="merchant-dispute-close"
-          >
-            {submitting === 'close' ? <Loader2 className="w-4 h-4 animate-spin inline" /> : '关闭争议'}
           </button>
         </div>
       </DialogContent>

@@ -974,6 +974,7 @@
           "lowStockNotifyCooldownHours",
           "autoCloseDays",
           "fulfillmentSlaDays",
+          "acceptTimeoutHours",
           "subscriptionRemindDays",
           "autoProvisionMaxAttempts",
           "registrationEnabled"
@@ -2694,13 +2695,12 @@
         "required": [
           "resolution"
         ],
-        "description": "商家响应争议。`resume` → 回到 `processing`；`close` → 关单。",
+        "description": "商家响应争议，只能 `resume`：人工服务回到 `processing`，即时交付回到 `delivered`。商家不能单方关闭争议；订单不在争议中返回 409。",
         "properties": {
           "resolution": {
             "type": "string",
             "enum": [
-              "resume",
-              "close"
+              "resume"
             ]
           },
           "publicNote": {
@@ -8491,6 +8491,61 @@
         }
       }
     },
+    "/api/orders/{id}/cancel": {
+      "post": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "买家取消未接单订单",
+        "description": "仅限带接单期限（`acceptBy`）且仍为 `pending` 的本人订单。200 = 已取消并退还冻结积分（重复请求返回同一结果）；202 = 取消已受理但需核对远端执行结果，积分暂不退还（`cancelRequestedAt` 已写入）；409 = 已接单/已结束、旧订单不支持直接取消，或可能已在处理。非本人订单 404。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "已取消的订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOrderDetail"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "取消处理中的订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOrderDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
     "/api/orders/{id}/close": {
       "post": {
         "tags": [
@@ -8693,7 +8748,7 @@
         "tags": [
           "Merchant"
         ],
-        "summary": "商家响应争议（resume 回 processing 或 close 关单）",
+        "summary": "商家响应争议（仅 resume 恢复履约）",
         "security": [
           {
             "bearerAuth": []
@@ -8735,6 +8790,9 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }

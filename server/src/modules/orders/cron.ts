@@ -8,7 +8,7 @@ import { transitionOrderStatus } from './fulfillment.js'
 import { settleHeldOrder } from './accounting.js'
 import { cleanupExpiredIdempotencyRecords } from './idempotency.js'
 
-// PRD §4.3.1：delivered 超 7 天自动 closed，积分正式扣减并触发 Settlement
+// PRD §4.3.1：delivered 超 autoCloseDays（默认 7）天自动 closed，积分正式扣减并触发 Settlement
 const AUTO_CLOSE_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 let timer: NodeJS.Timeout | null = null
@@ -22,10 +22,15 @@ type AutoCloseCandidate = {
   fundsHeld: boolean
 }
 
-async function findAutoCloseCandidates(): Promise<AutoCloseCandidate[]> {
+type AutoClosePolicy = { autoCloseDays: number; cutoff: Date }
+
+async function readAutoClosePolicy(): Promise<AutoClosePolicy> {
   // P6a：每轮巡检读取配置（lowStockNotify 范式），管理端改天数即时生效。
   const autoCloseDays = await getSystemConfigValue('autoCloseDays')
-  const cutoff = new Date(Date.now() - autoCloseDays * 24 * 60 * 60 * 1000)
+  return { autoCloseDays, cutoff: new Date(Date.now() - autoCloseDays * 24 * 60 * 60 * 1000) }
+}
+
+async function findAutoCloseCandidates({ cutoff }: AutoClosePolicy): Promise<AutoCloseCandidate[]> {
   return prisma.order.findMany({
     where: {
       status: { in: ['delivered', 'completed'] },
@@ -44,7 +49,7 @@ async function findAutoCloseCandidates(): Promise<AutoCloseCandidate[]> {
   })
 }
 
-async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
+async function autoCloseOrder(order: AutoCloseCandidate, policy: AutoClosePolicy): Promise<void> {
   try {
     const result = await prisma.$transaction(async tx => {
       await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${order.id} FOR UPDATE`
@@ -57,11 +62,16 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
           holdingPoints: true,
           fundsHeld: true,
           status: true,
+          delivery: { select: { deliveredAt: true, createdAt: true } },
         },
       })
       if (!currentOrder || !['delivered', 'completed'].includes(currentOrder.status)) {
         return null
       }
+      // The candidate query ran before the lock: a dispute → resume → redelivery
+      // in between restarts the acceptance window, so re-check the deadline here.
+      const deliveredAt = currentOrder.delivery?.deliveredAt ?? currentOrder.delivery?.createdAt
+      if (!deliveredAt || deliveredAt >= policy.cutoff) return null
 
       const updated = await transitionOrderStatus(
         {
@@ -69,7 +79,7 @@ async function autoCloseOrder(order: AutoCloseCandidate): Promise<void> {
           toStatus: 'closed',
           actorRole: 'system',
           action: 'system.auto_close',
-          publicNote: '系统自动关闭：超过 7 天未确认',
+          publicNote: `系统自动关闭：超过 ${policy.autoCloseDays} 天未确认`,
         },
         tx
       )
@@ -108,14 +118,15 @@ async function runAutoCloseBatch(hooks?: AutoCloseBatchHooks) {
     const cleaned = await cleanupExpiredIdempotencyRecords()
     if (cleaned > 0) logger.info({ count: cleaned }, 'expired idempotency records cleaned')
 
-    const candidates = await findAutoCloseCandidates()
+    const policy = await readAutoClosePolicy()
+    const candidates = await findAutoCloseCandidates(policy)
     if (candidates.length === 0) return
     logger.info({ count: candidates.length }, 'auto-close cron starting batch')
     if (hooks?.afterCandidates) {
       await hooks.afterCandidates(candidates)
     }
     for (const order of candidates) {
-      await autoCloseOrder(order)
+      await autoCloseOrder(order, policy)
     }
   } catch (err) {
     logger.error({ err }, 'auto-close cron batch failed')

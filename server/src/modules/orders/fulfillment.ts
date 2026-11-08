@@ -1,5 +1,5 @@
 import type { Order, Prisma } from '@prisma/client'
-import { badRequest, notFound } from '../../lib/httpError.js'
+import { badRequest, conflict, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import { onOrderStatusChangedInTx } from '../fulfillment/coordination.js'
 import { structuredContentToJson, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
@@ -69,6 +69,8 @@ export async function transitionOrderStatus(
      * 有值时优先于 validityDays 本地推算；未传则保持 resolveSubscriptionExpiresAt。
      */
     expiresAtOverride?: Date | null
+    /** Only the explicit dispute-resume command may move a disputed order back to processing/delivered. */
+    resumeDispute?: true
   },
   client?: OrderStatusTransitionClient
 ): Promise<Order> {
@@ -79,11 +81,21 @@ export async function transitionOrderStatus(
   const actorRole = assertOrderStatusActorRole(input.actorRole)
   const order = await client.order.findUnique({
     where: { id: input.orderId },
-    select: { id: true, userId: true, productId: true, status: true },
+    select: { id: true, userId: true, productId: true, status: true, acceptBy: true },
   })
   if (!order) throw notFound('订单不存在')
 
   const { from, to } = assertLegalStatusTransition(order.status, input.toStatus)
+  // The deadline holds even before the timeout scan runs: once it passes, the
+  // order may only be cancelled, never accepted by a person.
+  if (from === 'pending' && to === 'processing' && order.acceptBy && order.acceptBy <= new Date()) {
+    throw conflict('接单期限已过，订单将自动取消并退还积分')
+  }
+  // A late automatic result or an ordinary delivery must not silently clear a
+  // buyer's dispute; the global edges exist only for the resume command.
+  if (from === 'disputed' && (to === 'processing' || to === 'delivered') && !input.resumeDispute) {
+    throw conflict('订单争议中，不能直接交付或恢复履约')
+  }
 
   // The state that was read above is part of the write predicate.  Without
   // this compare-and-set, two concurrent close/refund requests could both pass
