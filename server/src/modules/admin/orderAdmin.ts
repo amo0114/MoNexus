@@ -1,5 +1,6 @@
 import { resolvePagination } from '../../lib/pagination.js'
 import { Prisma } from '@prisma/client'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { afterOrderRefunded, onOrderRefundedInTx } from '../fulfillment/coordination.js'
@@ -141,6 +142,36 @@ export async function resolveOrder(
     })
     if (!order) throw notFound('订单不存在')
     if (order.status !== 'disputed') throw badRequest('仅争议中的订单可仲裁')
+    const delivery = await tx.deliveryRecord.findUnique({ where: { orderId }, select: { id: true } })
+
+    if (input.result === 'continue') {
+      if (order.deliveryModeSnapshot !== 'manual_service') throw badRequest('只有人工服务订单可以裁决继续履约')
+      const slaDays = await getSystemConfigValue('fulfillmentSlaDays', tx)
+      const publicNote = '管理员仲裁：商家继续履约，履约期限已重新计算'
+      await transitionOrderStatus({
+        orderId,
+        toStatus: 'processing',
+        actorRole: 'admin',
+        actorUserId: adminUserId,
+        action: 'admin.resolve.continue',
+        publicNote: input.note ? `${publicNote}（${input.note}）` : publicNote,
+        internalNote: input.note,
+        resumeDispute: true,
+      }, tx)
+      await tx.order.update({
+        where: { id: orderId },
+        data: { fulfillmentDeadline: new Date(Date.now() + slaDays * 24 * 60 * 60 * 1000) },
+      })
+      await tx.adminLog.create({
+        data: {
+          adminUserId, action: '仲裁继续履约', targetType: 'order', targetId: orderId,
+          detail: input.note ? `仲裁结果: continue，备注: ${input.note}` : '仲裁结果: continue',
+        },
+      })
+      return
+    }
+    // Capturing points needs something that was actually delivered.
+    if (input.result === 'close' && !delivery) throw badRequest('订单从未交付，不能裁决为关闭扣款')
 
     const toStatus = input.result === 'refund' ? 'refunded' : 'closed'
     const action = input.result === 'refund' ? 'admin.resolve.refund' : 'admin.resolve.close'
@@ -154,8 +185,9 @@ export async function resolveOrder(
       await voidRefundableSettlement(tx, order.id)
       // P5.5 T4：仲裁退款的库存侧效果与积分退还/结算作废同事务——已交付
       // （disputed 只能来自 delivered）：卡密报废、销量净减、不回补容量。
+      // A dispute raised before any delivery (overdue complaint) never consumed capacity.
       await applyRefundInventoryPolicy(tx, order, {
-        fromStatus: 'disputed',
+        fromStatus: delivery ? 'disputed' : 'processing',
         actorUserId: adminUserId,
       })
     }

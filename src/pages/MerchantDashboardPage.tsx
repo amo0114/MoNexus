@@ -17,6 +17,7 @@ import {
   deliverOrder,
   respondDispute,
   rejectOrder,
+  reportUnfulfillable,
   postOrderProgress,
   importMerchantInventory,
   getMerchantOffers,
@@ -380,6 +381,8 @@ export default function MerchantDashboardPage() {
   rejectingOrderRef.current = rejectingOrder
   const [rejectNote, setRejectNote] = useState('')
   const [rejecting, setRejecting] = useState(false)
+  // The reject dialog also serves an accepted order that cannot be fulfilled; both refund in full.
+  const [rejectMode, setRejectMode] = useState<'reject' | 'unfulfillable'>('reject')
 
   async function handleToggleProductStatus(product: MerchantProduct) {
     if (publishingInFlightRef.current.has(product.id)) return
@@ -480,7 +483,8 @@ export default function MerchantDashboardPage() {
       setProgressOrder(order)
       return
     }
-    if (action === 'reject') {
+    if (action === 'reject' || action === 'report_unfulfillable') {
+      setRejectMode(action === 'reject' ? 'reject' : 'unfulfillable')
       setRejectingOrder(order)
       setRejectNote('')
       return
@@ -513,14 +517,15 @@ export default function MerchantDashboardPage() {
     const isCurrent = captureFeedbackOwner()
     setRejecting(true)
     try {
-      await rejectOrder(order.id, {
+      const submit = rejectMode === 'reject' ? rejectOrder : reportUnfulfillable
+      await submit(order.id, {
         publicNote: rejectNote.trim() || undefined,
       })
       if (!isCurrent()) return
       setRejectingOrder(null)
       setRejectNote('')
       showCompletionActivity({
-        title: '已拒单，冻结积分已退还',
+        title: rejectMode === 'reject' ? '已拒单，冻结积分已退还' : '已取消订单，冻结积分已退还',
         message: '已拒单，冻结积分已退还；服务名额请先核对库存记录，避免重复补充',
         subtitle: `订单 #${order.id} · 服务名额请先核对库存记录，避免重复补充`,
         groupKey: `merchant:order:${order.id}`, actionLabel: '查看订单',
@@ -533,7 +538,7 @@ export default function MerchantDashboardPage() {
         setRejectingOrder(null)
         setRejectNote('')
       }
-      showToast(e.response?.data?.error?.message || '拒单失败', 'error')
+      showToast(e.response?.data?.error?.message || (rejectMode === 'reject' ? '拒单失败' : '操作失败'), 'error')
     } finally {
       rejectingRef.current = false
       setRejecting(false)
@@ -903,9 +908,9 @@ export default function MerchantDashboardPage() {
 
       <Dialog open={!!rejectingOrder} onOpenChange={(o) => { if (!o && !rejecting) setRejectingOrder(null) }}>
         <DialogContent className="max-w-md" data-testid="merchant-reject-dialog">
-          <DialogTitle className="mb-2">确认拒单</DialogTitle>
+          <DialogTitle className="mb-2">{rejectMode === 'reject' ? '确认拒单' : '确认无法履约'}</DialogTitle>
           <p className="text-sm text-[var(--color-text-muted)] mb-4">
-            拒单后订单将标记为已退款，冻结积分退还用户，结算作废。订单 #{rejectingOrder?.id}（{rejectingOrder?.product?.name}）
+            {rejectMode === 'reject' ? '拒单后' : '确认无法履约后，'}订单将标记为已退款，冻结积分全额退还用户，结算作废。订单 #{rejectingOrder?.id}（{rejectingOrder?.product?.name}）
           </p>
           <p className="text-xs text-[var(--color-text-muted)] mb-4">
             未交付的限量服务名额按退款规则回补。请先核对库存记录，避免重复手动补充。
@@ -931,7 +936,7 @@ export default function MerchantDashboardPage() {
               onClick={handleRejectConfirm}
               data-testid="merchant-reject-confirm"
             >
-              {rejecting ? <Loader2 className="w-4 h-4 animate-spin" /> : '确认拒单'}
+              {rejecting ? <Loader2 className="w-4 h-4 animate-spin" /> : rejectMode === 'reject' ? '确认拒单' : '确认无法履约并退款'}
             </button>
           </div>
         </DialogContent>

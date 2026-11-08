@@ -71,6 +71,8 @@ export async function transitionOrderStatus(
     expiresAtOverride?: Date | null
     /** Only the explicit dispute-resume command may move a disputed order back to processing/delivered. */
     resumeDispute?: true
+    /** Only the explicit "cannot fulfil" command may refund an accepted, undelivered order. */
+    processingRefund?: true
   },
   client?: OrderStatusTransitionClient
 ): Promise<Order> {
@@ -95,6 +97,9 @@ export async function transitionOrderStatus(
   // buyer's dispute; the global edges exist only for the resume command.
   if (from === 'disputed' && (to === 'processing' || to === 'delivered') && !input.resumeDispute) {
     throw conflict('订单争议中，不能直接交付或恢复履约')
+  }
+  if (from === 'processing' && to === 'refunded' && !input.processingRefund) {
+    throw conflict('履约中的订单只能由商家或平台声明无法履约后退款')
   }
 
   // The state that was read above is part of the write predicate.  Without

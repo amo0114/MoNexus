@@ -8,6 +8,7 @@ import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import { serializeMerchantOrder } from '../orders/serializers.js'
 import { canonicalDeliveryText, parseStoredDeliveryFields, validateDeliveryValues, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
 import { afterOrderRefunded, onOrderRefundedInTx } from '../fulfillment/coordination.js'
+import { refundUnfulfillableOrderInTx } from '../orders/cancellation.js'
 import { assertMyDeliveryFile } from './deliveryFilePolicy.js'
 import type { MerchantOrderListQuery } from './schema.js'
 
@@ -70,7 +71,7 @@ function getAvailableActions(order: {
   // 拒单只对 manual_service 有意义，但即时模式创建即 delivered 不会进入 pending
   if (status === 'pending') return ['start_fulfillment', 'reject']
   // P6b：履约中的人工服务单可交付，也可发进度更新（post_progress 不改状态）
-  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver', 'post_progress']
+  if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver', 'post_progress', 'report_unfulfillable']
   if (status === 'disputed') return ['respond_dispute']
   return []
 }
@@ -371,6 +372,28 @@ export async function respondToOrderDispute(
     }, tx)
   })
 
+  return getMyOrderDetail(merchantId, orderId)
+}
+
+export async function reportUnfulfillable(
+  merchantId: number,
+  actorUserId: number,
+  orderId: number,
+  input: { publicNote?: string; internalNote?: string }
+) {
+  await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+    const order = await tx.order.findFirst({
+      where: { id: orderId, merchantId },
+      select: {
+        id: true, userId: true, status: true, holdingPoints: true, fundsHeld: true,
+        productId: true, offerId: true, merchantId: true, deliveryModeSnapshot: true,
+      },
+    })
+    if (!order) throw notFound('订单不存在')
+    await refundUnfulfillableOrderInTx(tx, order, { role: 'merchant', userId: actorUserId, ...input })
+  })
+  await afterOrderRefunded(orderId)
   return getMyOrderDetail(merchantId, orderId)
 }
 

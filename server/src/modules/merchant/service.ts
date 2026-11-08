@@ -29,6 +29,7 @@ export {
   postOrderProgress,
   respondToOrderDispute,
   rejectOrder,
+  reportUnfulfillable,
 } from './orderService.js'
 
 export { listMySettlements, getMyStats } from './dashboardQueries.js'

@@ -307,6 +307,19 @@ export async function rejectOrder(req: Request, res: Response, next: NextFunctio
   } catch (err) { next(err) }
 }
 
+export async function reportUnfulfillable(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await profileService.getMyMerchant(req.user!.userId)
+    const order = await orderService.reportUnfulfillable(
+      merchant.id,
+      req.user!.userId,
+      req.params.id as unknown as number,
+      req.body
+    )
+    res.json(flattenSettlement(order))
+  } catch (err) { next(err) }
+}
+
 // ---- Settlements ----
 
 export async function listSettlements(req: Request, res: Response, next: NextFunction) {

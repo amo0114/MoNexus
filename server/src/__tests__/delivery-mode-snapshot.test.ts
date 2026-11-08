@@ -48,7 +48,7 @@ describe('order delivery-mode snapshot', () => {
 
     const processing = await api.post(`/api/merchant/orders/${orderId}/fulfillment/start`)
       .set(authHeader(merchantLogin.accessToken)).send({}).expect(200)
-    expect(processing.body.availableActions).toEqual(['deliver', 'post_progress'])
+    expect(processing.body.availableActions).toEqual(['deliver', 'post_progress', 'report_unfulfillable'])
 
     await api.post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
       .set(authHeader(merchantLogin.accessToken))
@@ -58,6 +58,6 @@ describe('order delivery-mode snapshot', () => {
     const resumed = await api.post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(merchantLogin.accessToken)).send({ resolution: 'resume' }).expect(200)
     expect(resumed.body.status).toBe('processing')
-    expect(resumed.body.availableActions).toEqual(['deliver', 'post_progress'])
+    expect(resumed.body.availableActions).toEqual(['deliver', 'post_progress', 'report_unfulfillable'])
   })
 })

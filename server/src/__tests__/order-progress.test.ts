@@ -224,7 +224,7 @@ describe('POST /api/merchant/orders/:id/progress', () => {
       .get(`/api/merchant/orders/${orderId}`)
       .set(authHeader(merchantLogin.accessToken))
       .expect(200)
-    expect(processing.body.availableActions).toEqual(['deliver', 'post_progress'])
+    expect(processing.body.availableActions).toEqual(['deliver', 'post_progress', 'report_unfulfillable'])
   })
 
   it('validates the note body (empty / overlong / unknown keys)', async () => {

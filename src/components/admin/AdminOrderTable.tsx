@@ -69,7 +69,7 @@ export default function AdminOrderTable({ active = true }: Props) {
 
   // Dispute arbitration state
   const [resolveTarget, setResolveTarget] = useState<AdminOrderItem | null>(null)
-  const [resolveResult, setResolveResult] = useState<'refund' | 'close'>('refund')
+  const [resolveResult, setResolveResult] = useState<'refund' | 'close' | 'continue'>('refund')
   const [resolveNote, setResolveNote] = useState('')
   const [resolving, setResolving] = useState(false)
 
@@ -179,7 +179,7 @@ export default function AdminOrderTable({ active = true }: Props) {
         result: resolveResult,
         note: resolveNote.trim() || undefined,
       })
-      showToast(resolveResult === 'refund' ? '已仲裁退款' : '已仲裁关闭')
+      showToast(resolveResult === 'refund' ? '已仲裁退款' : resolveResult === 'close' ? '已仲裁关闭' : '已裁决继续履约')
       setResolveTarget(null)
       setResolveNote('')
       void fetchOrders(page, appliedFiltersRef.current)
@@ -404,7 +404,7 @@ export default function AdminOrderTable({ active = true }: Props) {
         <DialogContent className="!z-[120]" data-testid="admin-resolve-dialog">
           <DialogTitle>仲裁争议订单</DialogTitle>
           <DialogDescription>
-            订单 ORD-{resolveTarget?.id}（{resolveTarget?.product?.name}）。选择支持用户退款或支持商家关闭订单。
+            订单 ORD-{resolveTarget?.id}（{resolveTarget?.product?.name}）。选择支持用户退款、支持商家关闭订单，或要求商家继续履约。未交付过的订单不能裁决关闭。
           </DialogDescription>
           <div className="mt-4 space-y-3">
             <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-background)] cursor-pointer">
@@ -439,6 +439,24 @@ export default function AdminOrderTable({ active = true }: Props) {
                 </div>
               </div>
             </label>
+            {resolveTarget?.deliveryModeSnapshot === 'manual_service' && (
+              <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-background)] cursor-pointer">
+                <input
+                  type="radio"
+                  name="resolve-result"
+                  checked={resolveResult === 'continue'}
+                  onChange={() => setResolveResult('continue')}
+                  data-testid="admin-resolve-continue"
+                  className="mt-0.5 accent-[var(--color-primary)]"
+                />
+                <div>
+                  <div className="font-bold text-sm text-[var(--color-text)]">要求商家继续履约</div>
+                  <div className="text-xs text-[var(--color-text-muted)] mt-0.5">
+                    订单回到履约中，积分继续冻结，履约期限重新计算；商家重新交付后买家可再次验收。
+                  </div>
+                </div>
+              </label>
+            )}
             <div>
               <label className="block text-xs font-medium mb-1">备注（可选）</label>
               <textarea
