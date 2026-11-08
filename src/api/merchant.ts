@@ -223,7 +223,7 @@ export async function postOrderProgress(id: number, note: string): Promise<{ ok:
   return data
 }
 
-export async function respondDispute(id: number, payload: { resolution: 'resume' | 'close'; publicNote?: string }): Promise<MerchantOrder> {
+export async function respondDispute(id: number, payload: { resolution: 'resume'; publicNote?: string }): Promise<MerchantOrder> {
   const { data } = await api.post<MerchantOrder>(`/merchant/orders/${id}/fulfillment/respond-dispute`, payload)
   return data
 }

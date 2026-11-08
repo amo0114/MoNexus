@@ -1,5 +1,5 @@
 import type { Order, Prisma } from '@prisma/client'
-import { badRequest, notFound } from '../../lib/httpError.js'
+import { badRequest, conflict, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import { onOrderStatusChangedInTx } from '../fulfillment/coordination.js'
 import { structuredContentToJson, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
@@ -69,6 +69,8 @@ export async function transitionOrderStatus(
      * 有值时优先于 validityDays 本地推算；未传则保持 resolveSubscriptionExpiresAt。
      */
     expiresAtOverride?: Date | null
+    /** Only the explicit dispute-resume command may move a disputed order back to processing/delivered. */
+    resumeDispute?: true
   },
   client?: OrderStatusTransitionClient
 ): Promise<Order> {
@@ -84,6 +86,11 @@ export async function transitionOrderStatus(
   if (!order) throw notFound('订单不存在')
 
   const { from, to } = assertLegalStatusTransition(order.status, input.toStatus)
+  // A late automatic result or an ordinary delivery must not silently clear a
+  // buyer's dispute; the global edges exist only for the resume command.
+  if (from === 'disputed' && (to === 'processing' || to === 'delivered') && !input.resumeDispute) {
+    throw conflict('订单争议中，不能直接交付或恢复履约')
+  }
 
   // The state that was read above is part of the write predicate.  Without
   // this compare-and-set, two concurrent close/refund requests could both pass

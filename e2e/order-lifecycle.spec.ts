@@ -107,7 +107,7 @@ test.describe('manual_service order lifecycle', () => {
   })
 
   // Critical settlement journey: dispute resume → redelivery → dispute close.
-  test('merchant resumes and then closes a manual service dispute through the order entry', async ({ page, request }, testInfo) => {
+  test('merchant can resume but not unilaterally close a manual service dispute', async ({ page, request }, testInfo) => {
     const login = async (account: { email: string; password: string }) => {
       const response = await request.post(`${API_BASE}/api/auth/login`, { data: account })
       expect(response.ok(), await response.text()).toBeTruthy()
@@ -134,33 +134,40 @@ test.describe('manual_service order lifecycle', () => {
     expect(start.ok(), await start.text()).toBeTruthy()
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
-    for (const resolution of ['resume', 'close'] as const) {
+    const deliverAndDispute = async () => {
       const delivered = await request.post(`${merchantOrderUrl}/fulfillment/deliver`, {
         headers: merchantHeaders, data: { deliveryContent: 'private-dispute-delivery' },
       })
       expect(delivered.ok(), await delivered.text()).toBeTruthy()
       const disputed = await request.post(`${API_BASE}/api/orders/${orderId}/dispute`, { headers: buyerHeaders })
       expect(disputed.ok(), await disputed.text()).toBeTruthy()
-      await page.goto(`/merchant/orders/${orderId}`)
-      await page.getByRole('button', { name: '处理争议', exact: true }).click()
-      await page.getByTestId(`merchant-dispute-${resolution}`).click()
-      if ((page.viewportSize()?.width ?? 1280) < 768) {
-        const notice = page.getByTestId('action-island-notice')
-        await expect(notice).toContainText(resolution === 'resume' ? '争议已解除，已恢复履约' : '争议已处理，订单已关闭')
-        await expect(notice).not.toContainText('private-dispute-delivery')
-        await notice.screenshot({ path: testInfo.outputPath(`dispute-${resolution}-island.png`) })
-        await notice.getByRole('button', { name: '查看订单', exact: true }).click()
-        await expect(page).toHaveURL(new RegExp(`/merchant/orders/${orderId}$`))
-      } else await expect(page.getByText('争议处理成功').first()).toBeVisible()
-
-      const detail = await request.get(merchantOrderUrl, { headers: merchantHeaders })
-      expect(detail.ok(), await detail.text()).toBeTruthy()
-      const result = await detail.json()
-      expect(result.status).toBe(resolution === 'resume' ? 'processing' : 'closed')
-      if (resolution === 'close') {
-        expect(result.holdingPoints).toBeNull()
-        expect(result.settlement.status).toBe('pending')
-      }
     }
+
+    await deliverAndDispute()
+    await page.goto(`/merchant/orders/${orderId}`)
+    await page.getByRole('button', { name: '处理争议', exact: true }).click()
+    // 商家不能单方关闭争议扣款，只能恢复履约。
+    await expect(page.getByTestId('merchant-dispute-close')).toHaveCount(0)
+    await page.getByTestId('merchant-dispute-resume').click()
+    if ((page.viewportSize()?.width ?? 1280) < 768) {
+      const notice = page.getByTestId('action-island-notice')
+      await expect(notice).toContainText('争议已解除，已恢复履约')
+      await expect(notice).not.toContainText('private-dispute-delivery')
+      await notice.screenshot({ path: testInfo.outputPath('dispute-resume-island.png') })
+      await notice.getByRole('button', { name: '查看订单', exact: true }).click()
+      await expect(page).toHaveURL(new RegExp(`/merchant/orders/${orderId}$`))
+    } else await expect(page.getByText('争议处理成功').first()).toBeVisible()
+
+    const detail = await request.get(merchantOrderUrl, { headers: merchantHeaders })
+    expect(detail.ok(), await detail.text()).toBeTruthy()
+    expect((await detail.json()).status).toBe('processing')
+
+    await deliverAndDispute()
+    const close = await request.post(`${merchantOrderUrl}/fulfillment/respond-dispute`, {
+      headers: merchantHeaders, data: { resolution: 'close' },
+    })
+    expect(close.status(), await close.text()).toBe(400)
+    const stillDisputed = await request.get(merchantOrderUrl, { headers: merchantHeaders })
+    expect((await stillDisputed.json()).status).toBe('disputed')
   })
 })

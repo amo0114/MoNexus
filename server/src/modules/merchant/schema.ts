@@ -282,7 +282,7 @@ export const merchantWebhookConfigSchema = z.object({
 }).strict()
 
 export const respondDisputeSchema = z.object({
-  resolution: z.enum(['resume', 'close']),
+  resolution: z.literal('resume'),
   publicNote: z.string().trim().max(1000).optional(),
   internalNote: z.string().trim().max(2000).optional(),
 }).strict()
