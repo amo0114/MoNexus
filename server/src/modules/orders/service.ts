@@ -588,9 +588,10 @@ async function createOrderOnce(
       orderHoldingPoints = offer.price
       const slaDays = await getSystemConfigValue('fulfillmentSlaDays', tx)
       orderFulfillmentDeadline = new Date(Date.now() + slaDays * 24 * 60 * 60 * 1000)
-      // Only a plain manual order waits for a person to accept it; automatic
-      // executors (external provider, merchant webhook) start on their own.
-      if (!provider && strategy.kind !== 'merchant_webhook') {
+      // Plain manual orders wait for a person; provider orders for their remote
+      // start. Both can be cancelled safely through the cancellation barrier.
+      // Merchant webhooks have no status/cancel protocol, so they get no deadline.
+      if (strategy.kind !== 'merchant_webhook') {
         const acceptHours = await getSystemConfigValue('acceptTimeoutHours', tx)
         orderAcceptBy = new Date(Date.now() + acceptHours * 60 * 60 * 1000)
       }
