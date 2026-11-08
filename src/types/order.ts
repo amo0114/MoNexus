@@ -75,6 +75,8 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
   remedyRespondBy?: string | null
   /** 已提交平台裁决。 */
   disputeEscalatedAt?: string | null
+  /** 验收期限：到期未确认收货将自动完成订单并结算给商家。 */
+  acceptanceBy?: string | null
   review?: null | {
     rating: number
     comment: string | null

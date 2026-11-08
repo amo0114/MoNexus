@@ -8,7 +8,7 @@ import { transitionOrderStatus } from './fulfillment.js'
 import { settleHeldOrder } from './accounting.js'
 import { cleanupExpiredIdempotencyRecords } from './idempotency.js'
 
-// PRD §4.3.1：delivered 超 autoCloseDays（默认 7）天自动 closed，积分正式扣减并触发 Settlement
+// PRD §4.3.1：delivered 超过验收期限（交付时按 autoCloseDays 冻结，默认 7 天）自动 closed，积分正式扣减并触发 Settlement
 const AUTO_CLOSE_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 let timer: NodeJS.Timeout | null = null
@@ -22,21 +22,24 @@ type AutoCloseCandidate = {
   fundsHeld: boolean
 }
 
-type AutoClosePolicy = { autoCloseDays: number; cutoff: Date }
+// `cutoff` only serves orders delivered before acceptanceBy existed; newer
+// orders carry the deadline frozen at delivery.
+type AutoClosePolicy = { now: Date; cutoff: Date }
 
 async function readAutoClosePolicy(): Promise<AutoClosePolicy> {
-  // P6a：每轮巡检读取配置（lowStockNotify 范式），管理端改天数即时生效。
   const autoCloseDays = await getSystemConfigValue('autoCloseDays')
-  return { autoCloseDays, cutoff: new Date(Date.now() - autoCloseDays * 24 * 60 * 60 * 1000) }
+  const now = new Date()
+  return { now, cutoff: new Date(now.getTime() - autoCloseDays * 24 * 60 * 60 * 1000) }
 }
 
-async function findAutoCloseCandidates({ cutoff }: AutoClosePolicy): Promise<AutoCloseCandidate[]> {
+async function findAutoCloseCandidates({ now, cutoff }: AutoClosePolicy): Promise<AutoCloseCandidate[]> {
   return prisma.order.findMany({
     where: {
       status: { in: ['delivered', 'completed'] },
       OR: [
-        { delivery: { deliveredAt: { lt: cutoff } } },
-        { delivery: { deliveredAt: null, createdAt: { lt: cutoff } } },
+        { acceptanceBy: { lte: now } },
+        { acceptanceBy: null, delivery: { deliveredAt: { lt: cutoff } } },
+        { acceptanceBy: null, delivery: { deliveredAt: null, createdAt: { lt: cutoff } } },
       ],
     },
     select: {
@@ -62,6 +65,7 @@ async function autoCloseOrder(order: AutoCloseCandidate, policy: AutoClosePolicy
           holdingPoints: true,
           fundsHeld: true,
           status: true,
+          acceptanceBy: true,
           delivery: { select: { deliveredAt: true, createdAt: true } },
         },
       })
@@ -70,8 +74,12 @@ async function autoCloseOrder(order: AutoCloseCandidate, policy: AutoClosePolicy
       }
       // The candidate query ran before the lock: a dispute → resume → redelivery
       // in between restarts the acceptance window, so re-check the deadline here.
-      const deliveredAt = currentOrder.delivery?.deliveredAt ?? currentOrder.delivery?.createdAt
-      if (!deliveredAt || deliveredAt >= policy.cutoff) return null
+      if (currentOrder.acceptanceBy) {
+        if (currentOrder.acceptanceBy > policy.now) return null
+      } else {
+        const deliveredAt = currentOrder.delivery?.deliveredAt ?? currentOrder.delivery?.createdAt
+        if (!deliveredAt || deliveredAt >= policy.cutoff) return null
+      }
 
       const updated = await transitionOrderStatus(
         {
@@ -79,7 +87,7 @@ async function autoCloseOrder(order: AutoCloseCandidate, policy: AutoClosePolicy
           toStatus: 'closed',
           actorRole: 'system',
           action: 'system.auto_close',
-          publicNote: `系统自动关闭：超过 ${policy.autoCloseDays} 天未确认`,
+          publicNote: '系统自动关闭：超过验收期限未确认',
         },
         tx
       )

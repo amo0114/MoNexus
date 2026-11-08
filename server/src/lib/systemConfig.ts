@@ -315,7 +315,7 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   fileAccessWindowDays: '从交付时刻起算；0 表示不限窗口',
   deliveryFileMaxMb: '上限 100（与 Nginx 上传路由的 100MB 限制一致，提额需同步修改 Nginx）',
   lowStockNotifyCooldownHours: '规格持续低库存时的邮件重发间隔；0 表示进入低位只发一次；上限 720',
-  autoCloseDays: '买家未确认时交付后自动关闭并结算的天数；1–90，对新一轮巡检生效',
+  autoCloseDays: '买家未确认时交付后自动关闭并结算的天数；1–90，交付时冻结，仅影响之后交付的订单',
   fulfillmentSlaDays: '下单后商家须完成人工履约的天数；1–90，仅影响新订单',
   acceptTimeoutHours: '下单后商家须接单的小时数，超时自动取消并退还积分；1–168，仅影响新订单',
   subscriptionRemindDays: '到期前 N 天邮件提醒买家；0 = 关闭到期前提醒；上限 30',

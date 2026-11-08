@@ -450,6 +450,12 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
+          {order.status === 'delivered' && order.acceptanceBy && (
+            <p className="text-xs text-[var(--color-text-muted)] leading-relaxed px-1" data-testid="order-acceptance-deadline">
+              请在 {formatOrderDate(order.acceptanceBy)} 前确认收货或提出异议，逾期将自动完成订单并结算给商家。
+            </p>
+          )}
+
           {/* 争议进度：谁在等谁、等到什么时候 */}
           {order.status === 'disputed' && (order.disputeRespondBy || order.remedyProposedAt || order.disputeEscalatedAt) && (
             <div
