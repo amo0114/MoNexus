@@ -290,6 +290,11 @@ describe('OrderDetailModal', () => {
       expect(useAppStore.getState().islandNotice?.title).toBe(title)
     })
 
+    it('tells the buyer when a delivered order will be accepted automatically', () => {
+      render(<OrderDetailModal order={{ ...ORDER, acceptanceBy: '2026-11-15T08:00:00.000Z' } as UserOrderDetail} onClose={vi.fn()} />)
+      expect(screen.getByTestId('order-acceptance-deadline')).toHaveTextContent('逾期将自动完成订单并结算给商家')
+    })
+
     it('lets the buyer complain about an overdue order', async () => {
       fileOverdueComplaint.mockResolvedValueOnce(undefined)
       const close = vi.fn()

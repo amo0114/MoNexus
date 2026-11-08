@@ -1,6 +1,7 @@
 import type { Order, Prisma } from '@prisma/client'
 import { badRequest, conflict, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
+import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { onOrderStatusChangedInTx } from '../fulfillment/coordination.js'
 import { structuredContentToJson, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
 import {
@@ -53,6 +54,12 @@ export async function createOrderStatusEvent(
 /** Seller's window to propose a remedy, and buyer's window to answer it. */
 export const DISPUTE_RESPONSE_MS = 48 * 60 * 60 * 1000
 const CLEARED_REMEDY = { remedyNote: null, remedyProposedAt: null, remedyRespondBy: null, disputeEscalatedAt: null }
+
+/** Buyer acceptance deadline for a delivery made now (autoCloseDays snapshot). */
+export async function acceptanceDeadline(tx: Prisma.TransactionClient, now = new Date()): Promise<Date> {
+  const days = await getSystemConfigValue('autoCloseDays', tx)
+  return new Date(now.getTime() + days * 24 * 60 * 60 * 1000)
+}
 
 export async function transitionOrderStatus(
   input: {
@@ -119,9 +126,12 @@ export async function transitionOrderStatus(
   const disputeTimers = to === 'disputed'
     ? { disputeRespondBy: new Date(Date.now() + DISPUTE_RESPONSE_MS), ...CLEARED_REMEDY }
     : from === 'disputed' ? { disputeRespondBy: null, ...CLEARED_REMEDY } : {}
+  // Every (re)delivery freezes a fresh acceptance window; later config changes
+  // only affect later deliveries.
+  const acceptance = to === 'delivered' ? { acceptanceBy: await acceptanceDeadline(client) } : {}
   const transitioned = await client.order.updateMany({
     where: { id: order.id, status: order.status },
-    data: { status: to, ...disputeTimers },
+    data: { status: to, ...disputeTimers, ...acceptance },
   })
   if (transitioned.count !== 1) {
     throw badRequest('订单状态已变化，请刷新后重试')

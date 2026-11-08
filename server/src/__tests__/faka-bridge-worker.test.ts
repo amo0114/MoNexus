@@ -309,6 +309,7 @@ describe('M4 FakaBridge worker', () => {
         where: { orderId },
         data: { deliveredAt: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000) },
       })
+      await prisma.order.update({ where: { id: orderId }, data: { acceptanceBy: new Date(Date.now() - 60_000) } })
       await __runAutoCloseBatchForTests()
     }
 

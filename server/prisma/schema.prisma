@@ -871,6 +871,8 @@ model Order {
   remedyRespondBy         DateTime?
   // 买家拒绝补救或交付后争议商家逾期未回应：等待管理员裁决。
   disputeEscalatedAt      DateTime?
+  // 验收期限：交付时按 autoCloseDays 冻结；到期未确认则自动关闭结算。null = 旧单（按交付时间 + 当前配置计算）。
+  acceptanceBy            DateTime?
   confirmedAt             DateTime? // 用户确认关闭订单的时间
   // P6c：预约日期（购买前表单首个 date 字段的答案，下单校验后列化——
   // 商家排序/提醒 cron 免查 JSON）。null = 非预约单。
@@ -921,6 +923,7 @@ model Order {
   @@index([status, acceptBy])
   @@index([status, disputeRespondBy])
   @@index([status, remedyRespondBy])
+  @@index([status, acceptanceBy])
 }
 
 // Stable instance identity is pinned to a configured origin. Repointing an
