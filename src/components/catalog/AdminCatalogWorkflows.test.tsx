@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   templates: vi.fn(),
   adminCategories: vi.fn(),
   createPlatform: vi.fn(),
+  providers: vi.fn(),
   getCatalog: vi.fn(),
   importFaka: vi.fn(),
   importInventory: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('../../api/adminCatalogV2', async () => {
   return {
     ...actual,
     createAdminPlatformProductV2: mocks.createPlatform,
+    listAdminFulfillmentProviders: mocks.providers,
   }
 })
 vi.mock('../../api/admin', async () => {
@@ -90,7 +92,7 @@ const templateRegistry = {
     stubTemplate('account', '账号商品', ['inventory', 'fixed_text']),
     stubTemplate('digital_file', '数字文件', ['fixed_file']),
     stubTemplate('fixed_content', '固定数字内容', ['fixed_text', 'fixed_url']),
-    stubTemplate('subscription', '订阅与开通', ['inventory', 'fixed_text', 'fixed_url', 'manual', 'merchant_webhook', 'faka_bridge']),
+    stubTemplate('subscription', '订阅与开通', ['inventory', 'fixed_text', 'fixed_url', 'manual', 'merchant_webhook', 'faka_bridge', 'external_provider']),
     stubTemplate('manual_service', '人工服务与代办', ['manual', 'merchant_webhook']),
     stubTemplate('appointment', '预约服务', ['manual']),
   ],
@@ -145,6 +147,7 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
       pageSize: 100,
     })
     mocks.getCatalog.mockResolvedValue(catalog)
+    mocks.providers.mockResolvedValue([])
     mocks.createPlatform.mockResolvedValue({
       id: 9,
       status: 'draft',
@@ -201,6 +204,33 @@ describe('Catalog admin workflows (T-CAT-FE-004)', () => {
     expect(TEMPLATE_KEYS.includes(payload.templateKey as TemplateKey)).toBe(true)
     expect(onCreated).toHaveBeenCalledWith(9)
     expect(screen.queryByText(/认证开关|热卖开关|精选开关/)).not.toBeInTheDocument()
+  })
+
+  it('binds a manual_service subscription offer to a registered non-Xboard provider', async () => {
+    mocks.providers.mockResolvedValue([
+      { id: 'faka_bridge', label: 'Xboard（FakaBridge）' },
+      { id: 'demo_license', label: '示例授权码' },
+    ])
+    render(<AdminPlatformProductWizard open onClose={vi.fn()} onCreated={vi.fn()} />)
+    await screen.findByRole('option', { name: '工具' })
+    fireEvent.change(screen.getByTestId('admin-platform-template'), { target: { value: 'subscription' } })
+    fireEvent.change(screen.getByTestId('admin-platform-delivery'), { target: { value: 'manual_service' } })
+    const provider = await screen.findByLabelText('外部开通')
+    // Xboard offers are created by the catalog import, never here.
+    expect(within(provider).queryByRole('option', { name: 'Xboard（FakaBridge）' })).not.toBeInTheDocument()
+    fireEvent.change(provider, { target: { value: 'demo_license' } })
+    fireEvent.change(screen.getByLabelText('供应商 SKU *'), { target: { value: 'Demo-License' } })
+    fireEvent.change(screen.getByTestId('admin-platform-name'), { target: { value: '授权码' } })
+    fireEvent.change(screen.getByTestId('product-category-select'), { target: { value: '7' } })
+    fireEvent.change(screen.getByTestId('admin-platform-price'), { target: { value: '100' } })
+    fireEvent.click(screen.getByTestId('admin-platform-submit'))
+
+    await waitFor(() => expect(mocks.createPlatform).toHaveBeenCalled())
+    const payload = mocks.createPlatform.mock.calls[0][0] as { templateKey: string; offers: Array<Record<string, unknown>> }
+    expect(payload.templateKey).toBe('subscription')
+    expect(payload.offers[0]).toMatchObject({
+      deliveryMode: 'manual_service', externalIntegration: 'demo_license', externalSku: 'demo-license',
+    })
   })
 
   it('requires explicit Offer preview before admin inventory confirm', async () => {

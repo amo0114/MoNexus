@@ -1,17 +1,11 @@
 import { prisma } from '../../lib/prisma.js'
-import { usesStablePaidReset, withoutProvisionEmail } from '../../lib/fakaBridge/paidResetSku.js'
-import { paidCheckoutPreview, type PaidCheckoutPreview } from '../fakaBridge/paidCheckout.js'
 import { notFound, badRequest } from '../../lib/httpError.js'
 import { getProductFulfillmentMode } from '../orders/statusPolicy.js'
 import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormField } from '../../lib/purchaseForm.js'
 import { resolveVerificationRequirement } from './verification.js'
 import { computeOfferCheckoutVersion, resolvePurchaseOffer } from '../../lib/offers.js'
-import {
-  getFakaCapacityForPublicRead,
-  isFakaBridgeConfigured,
-  isFakaBridgeOffer,
-  type FakaCapacitySnapshot,
-} from '../../lib/fakaBridge/index.js'
+import { checkoutProviderFor, hasExtensionInput } from '../fulfillment/coordination.js'
+import type { ExtensionInput } from '../../extension-contracts/fulfillment.js'
 import { getLegalRequirement, type LegalRequirement } from '../legal/service.js'
 import { quoteOfferPricing, type OrderPricingDto } from '../valuePolicy/service.js'
 import { hasActiveSpendingRestriction } from '../points/spendingPolicy.js'
@@ -22,7 +16,6 @@ import {
 } from '../catalog/productContentSnapshot.js'
 
 export type CheckoutPreview = {
-  xboardPaidReset?: PaidCheckoutPreview
   productId: number
   productName: string
   // 本次报价对应的规格（P4a）；单 SKU 商品为默认 Offer。
@@ -34,6 +27,7 @@ export type CheckoutPreview = {
   // 服务）。前端据此在结算弹窗明示数据外发（硬验收 ⑤）；参与 checkoutVersion，
   // 商家切换开关会使旧预览 409 重新确认。
   autoProvision: boolean
+  fulfillmentProvider: string | null
   // debit = 即时扣除；hold = 冻结，商家履约后扣除，拒单/退款返还
   chargeType: 'debit' | 'hold'
   balanceBefore: number
@@ -54,19 +48,6 @@ export type CheckoutPreview = {
   // 高价值二次验证：true 时前端预渲染登录密码输入框。仅供展示——
   // 下单时服务端会重新计算触发条件，不信任该声明。
   requiresVerification: boolean
-  /** FakaBridge：需验证开通邮箱归属（OTP 或本站已验证登录邮箱）。升/降级均允许。 */
-  requiresProvisionEmailProof: boolean
-  /**
-   * Xboard 容量公开摘要（不暴露 sku / planId / activeUsers）。
-   * null = 非 Faka 商品。
-   */
-  fakaCapacity: {
-    remaining: number | null
-    capacityLimit: number | null
-    sellable: boolean
-    source: 'xboard' | 'unavailable'
-    reason?: string
-  } | null
   /**
    * SPEC-LEGAL-001：下单必须确认的协议版本（法律页面关闭 = null，前端据此
    * 隐藏勾选区）。确认时随 agreementVersions 回传；版本落后 → 409
@@ -82,6 +63,11 @@ export type CheckoutPreview = {
   productContentVersion: number
   assuranceGrantId: number | null
   productContentSnapshot: ProductContentSnapshot
+  /**
+   * Fields added by the Offer's fulfillment provider (Xboard: requiresProvisionEmailProof,
+   * fakaCapacity, xboardPaidReset). Absent for offers without one.
+   */
+  [providerField: string]: unknown
 }
 
 /**
@@ -94,7 +80,7 @@ export async function getCheckoutPreview(
   userId: number,
   productId: number,
   offerId?: number,
-  xboardAccountLinkId?: string
+  extensionInput: ExtensionInput = {}
 ): Promise<CheckoutPreview> {
   const product = await prisma.product.findUnique({
     where: { id: productId },
@@ -117,8 +103,10 @@ export async function getCheckoutPreview(
 
   // P4a：报价以所选 Offer 为准（单 SKU 未传 offerId 时解析默认）。
   const offer = await resolvePurchaseOffer(prisma, productId, offerId)
-  const stableReset = usesStablePaidReset(offer)
-  if (xboardAccountLinkId && !stableReset) throw badRequest('此规格不支持绑定账号重置')
+  const provider = checkoutProviderFor(offer.externalIntegration)
+  if (!provider && hasExtensionInput(extensionInput)) {
+    throw badRequest(extensionInput.xboardAccountLinkId ? '此规格不支持绑定账号重置' : '此规格不支持该购买参数')
+  }
 
   const account = await prisma.pointAccount.findUnique({ where: { userId } })
   if (!account) throw notFound('积分账户不存在')
@@ -152,24 +140,11 @@ export async function getCheckoutPreview(
   }
 
   const purchaseForm = parseStoredPurchaseForm(product.purchaseForm)
-  const paidReset = stableReset ? await paidCheckoutPreview(userId, offer, xboardAccountLinkId) : undefined
-  if (paidReset && !paidReset.eligible) unpurchasableReason ??= paidReset.blockReason ?? '请选择套餐账号'
-
-  let fakaCapacity: FakaCapacitySnapshot | null = null
-  const fakaBridge = isFakaBridgeOffer(offer)
-  if (fakaBridge) {
-    if (!isFakaBridgeConfigured()) {
-      unpurchasableReason = unpurchasableReason ?? '平台未配置 FakaBridge，暂时无法购买此商品'
-    } else if (offer.externalSku && !stableReset) {
-      // Preview is informational.  It must not put an Xboard HTTP call on the
-      // buyer request path; order confirmation still does the authoritative
-      // capacity preflight before it creates an outbox task.
-      fakaCapacity = getFakaCapacityForPublicRead(offer.externalSku)
-      if (fakaCapacity.source === 'xboard' && !fakaCapacity.sellable) {
-        unpurchasableReason = unpurchasableReason ?? (fakaCapacity.reason ?? 'Xboard 套餐名额已满')
-      }
-    }
-  }
+  if (offer.externalIntegration && !provider) unpurchasableReason ??= '商品暂不可购买，请联系商家'
+  const extension = provider?.checkout.preview
+    ? await provider.checkout.preview({ userId, offer, extensionInput })
+    : {}
+  if (extension.unpurchasableReason) unpurchasableReason ??= extension.unpurchasableReason
 
   const pricing = await quoteOfferPricing(prisma, offer.price)
   if (await hasActiveSpendingRestriction(userId)) {
@@ -188,6 +163,8 @@ export async function getCheckoutPreview(
   })
 
   return {
+    // Provider fields first so core fields always win.
+    ...extension.fields,
     productId: product.id,
     productName: product.name,
     offerId: offer.id,
@@ -195,6 +172,8 @@ export async function getCheckoutPreview(
     price: offer.price,
     deliveryMode,
     autoProvision: offer.autoProvision === true,
+    /** Provider id the frontend uses to pick its purchase extension; null = none. */
+    fulfillmentProvider: provider?.id ?? null,
     chargeType: deliveryMode === 'manual_service' ? 'hold' : 'debit',
     balanceBefore: account.balance,
     // 余额不足时仍返回预览（差额为负），前端据此禁用按钮并提示缺口。
@@ -202,21 +181,10 @@ export async function getCheckoutPreview(
     sufficient: account.balance >= offer.price,
     purchasable: unpurchasableReason == null,
     unpurchasableReason,
-    purchaseForm: stableReset ? withoutProvisionEmail(purchaseForm) : purchaseForm,
+    purchaseForm: provider?.checkout.formFields?.(offer, purchaseForm) ?? purchaseForm,
     purchaseFormVersion: computePurchaseFormVersion(purchaseForm),
     checkoutVersion: computeOfferCheckoutVersion(offer),
     requiresVerification: await resolveVerificationRequirement(userId, offer.price),
-    requiresProvisionEmailProof: fakaBridge && !stableReset,
-    ...(paidReset ? { xboardPaidReset: paidReset } : {}),
-    fakaCapacity: fakaCapacity
-      ? {
-          remaining: fakaCapacity.remaining,
-          capacityLimit: fakaCapacity.capacityLimit,
-          sellable: fakaCapacity.sellable,
-          source: fakaCapacity.source,
-          reason: fakaCapacity.reason,
-        }
-      : null,
     legalRequirement: getLegalRequirement('order'),
     ...(pricing ? { pricing } : {}),
     productContentVersion: product.contentVersion,

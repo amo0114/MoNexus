@@ -1,3 +1,4 @@
+import { listSellableProviders } from '../fulfillment/coordination.js'
 import * as guestEligibilityService from './guestEligibilityService.js'
 import type { GuestEligibilityActionInput } from './guestEligibilitySchema.js'
 import * as fakaSync from '../catalog/fakaSync.js'
@@ -435,6 +436,10 @@ export async function listFakaTasks(req: Request, res: Response, next: NextFunct
   } catch (err) {
     next(err)
   }
+}
+
+export function listFulfillmentProviders(_req: Request, res: Response) {
+  res.json({ providers: listSellableProviders() })
 }
 
 export async function fakaTaskStats(_req: Request, res: Response, next: NextFunction) {

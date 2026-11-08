@@ -1,6 +1,6 @@
 import type { ProductDetail as Product } from '../types/product'
 import { useRecommendationTracking } from '../hooks/useRecommendationTracking'
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { Heart, ShieldCheck, Info, Zap } from 'lucide-react'
@@ -74,6 +74,11 @@ export default function ProductDetailPage() {
   const [selectedOfferId, setSelectedOfferId] = useState<number | null>(null)
   const [paidAccountLinkId, setPaidAccountLinkId] = useState(searchParams.get('xboardAccountLinkId') ?? '')
   useEffect(() => { setPaidAccountLinkId(searchParams.get('xboardAccountLinkId') ?? '') }, [id, searchParams])
+  // Keeps the selected paid-reset account in checkout return links (login redirect).
+  const handlePreviewQueryChange = useCallback(
+    (query: Record<string, string>) => setPaidAccountLinkId(query.xboardAccountLinkId ?? ''),
+    [],
+  )
 
   usePageView(`/product/${id}`, !loading && !loginRequired && product?.id === Number(id))
 
@@ -273,7 +278,8 @@ export default function ProductDetailPage() {
     idempotencyKey: string,
     formAnswers: Record<string, string>,
     verificationPassword: string,
-    agreementVersions?: Record<string, string>
+    agreementVersions?: Record<string, string>,
+    orderInput?: Record<string, unknown>
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing || isReferencePreview) return 'failed'
     const purchaseAuthContext = getAuthSessionContext(useAuthStore.getState())
@@ -290,10 +296,7 @@ export default function ProductDetailPage() {
       const data = await createOrder(product.id, {
         expectedPrice: preview.price,
         idempotencyKey,
-        ...(preview.xboardPaidReset?.selectedAccountLinkId && preview.xboardPaidReset.targetVersion ? {
-          xboardAccountLinkId: preview.xboardPaidReset.selectedAccountLinkId,
-          expectedXboardTargetVersion: preview.xboardPaidReset.targetVersion,
-        } : {}),
+        orderInput,
         offerId: selectedOfferId ?? undefined,
         formAnswers,
         expectedPurchaseFormVersion: preview.purchaseFormVersion,
@@ -762,8 +765,8 @@ export default function ProductDetailPage() {
         <PurchaseModal
           productId={product.id}
           offerId={selectedOfferId ?? undefined}
-          initialAccountLinkId={paidAccountLinkId || undefined}
-          onAccountSelectionChange={setPaidAccountLinkId}
+          initialPreviewQuery={paidAccountLinkId ? { xboardAccountLinkId: paidAccountLinkId } : undefined}
+          onPreviewQueryChange={handlePreviewQueryChange}
           validityDays={activeOffer?.validityDays ?? null}
           submitting={purchasing}
           hideWhileSubmitting={isMobileViewport}

@@ -15,6 +15,13 @@ import { claimPaymentEvent, commitPaymentEvent } from '../workers/lease.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const EXPLICIT_CLOSE: readonly PaymentRecoveryCaseStatus[] = ['recovered', 'written_off', 'restored']
+// A refund that returned (or is returning) the payment already reverses this
+// credit; recovering it again from a dispute is an operator decision, not a hold.
+const DISPUTE_BLOCKING_REFUND = ['requested', 'points_held', 'processing', 'manual_review', 'succeeded']
+
+function refundBlocksDispute(refund: { status: string } | null) {
+  return refund != null && DISPUTE_BLOCKING_REFUND.includes(refund.status)
+}
 
 type DisputeObservationPayload = {
   providerDisputeId?: unknown
@@ -129,6 +136,38 @@ export async function applyDisputeObservation(observationId: string) {
         })
         return { observationId, outcome: 'reconcile_required' as const }
       }
+      const disputedOrder = attempt.paymentIntent.rechargeOrder
+      // No credit to recover. A `paid` order is about to be credited, so the
+      // throw from openPaymentDispute retries it; any other state never gets a
+      // credit and would otherwise retry forever.
+      const credit = await prisma.rechargeCredit.findUnique({
+        where: { rechargeOrderId: disputedOrder.id },
+        select: { id: true },
+      })
+      if (!credit && disputedOrder.status !== 'paid') {
+        await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_WITHOUT_CREDIT', {
+          ...detail,
+          mismatchType: 'unknown_provider_transaction',
+          orderId: disputedOrder.id,
+          localStatus: disputedOrder.status,
+          localAmountMinor: disputedOrder.amountMinor,
+        })
+        return { observationId, outcome: 'reconcile_required' as const }
+      }
+      const refund = await prisma.rechargeRefund.findUnique({
+        where: { rechargeOrderId: disputedOrder.id },
+        select: { status: true },
+      })
+      if (refundBlocksDispute(refund)) {
+        await commitDisputeForReconciliation(observation, claimed.leaseToken, 'DISPUTE_AFTER_REFUND', {
+          ...detail,
+          mismatchType: 'refund_mismatch',
+          orderId: disputedOrder.id,
+          localStatus: disputedOrder.status,
+          localAmountMinor: disputedOrder.amountMinor,
+        })
+        return { observationId, outcome: 'reconcile_required' as const }
+      }
       await openPaymentDispute({
         provider: observation.provider,
         providerAccountKey: observation.providerAccountKey,
@@ -216,6 +255,12 @@ export async function openPaymentDispute(input: {
       SELECT "id", "userId", "amountMinor" FROM "RechargeOrder" WHERE "id" = ${input.rechargeOrderId}::uuid FOR UPDATE`
     const order = orders[0]
     if (!order) throw notFound('充值订单不存在')
+    // Re-checked under the order lock, which requestRechargeRefund also takes.
+    const refund = await tx.rechargeRefund.findUnique({
+      where: { rechargeOrderId: order.id },
+      select: { status: true },
+    })
+    if (refundBlocksDispute(refund)) throw conflict('该充值已退款或退款处理中，争议需人工对账')
 
     await tx.$queryRaw`SELECT "userId" FROM "PointAccount" WHERE "userId" = ${order.userId} FOR UPDATE`
     const account = await tx.pointAccount.findUniqueOrThrow({ where: { userId: order.userId } })

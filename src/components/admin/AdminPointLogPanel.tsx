@@ -24,6 +24,7 @@ export const POINT_LOG_TYPE_OPTIONS = [
   { value: 'release', label: '解除冻结' },
   { value: 'refund', label: '退款' },
   { value: 'sandbox_in', label: '沙箱入账' },
+  { value: 'settlement_in', label: '商家结算入账' },
 ]
 
 interface PointLogFilterSnapshot {

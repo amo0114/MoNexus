@@ -90,6 +90,8 @@ Operational invariants:
 - administrator sandbox attempts are excluded from provider query recovery and
   the query-worker backlog because Simulator state is process-local and the
   only authoritative completion path is the MFA-protected administrator action;
+  a production deploy does not mount `POST /api/payment/webhooks/simulator`
+  (its signature is a fixed test string);
 - credited points enter `PointAccount.sandboxBalance` with
   `PointLog.type=sandbox_in`; they are excluded from spending, refund,
   settlement, ranking balances, and real recharge limit buckets;
@@ -144,6 +146,14 @@ Alert: paid more than two minutes without `creditedAt`.
 3. `POST /api/admin/payments/events/:id/retry` resets the lease and calls the
    same apply path (`applyConfirmedPayment` or `applyRefundObservation`).
 4. Duplicate webhooks must ACK 2xx and reuse the existing observation.
+5. A failing observation never blocks the rest of the worker tick. After 30
+   attempts (about 8 minutes at the capped 16s backoff) it is parked as
+   `reconcile_required` with an open `unknown_provider_transaction`
+   reconciliation item (`scopePrefix` `exhausted`); fix the cause, then use the
+   retry endpoint above to re-drive it.
+6. A recharge credit task that exhausts `maxAttempts` (default 8) on retryable
+   balance conflicts parks its order as `reconcile_required`; resolve it with
+   `POST /api/admin/recharge/orders/:id/reconcile/resolve`.
 
 ## Late payment
 
@@ -158,9 +168,20 @@ auto-refund.
    dispute API (`supportsRefunds=false`, `supportsDisputes=false`). Keep
    unpaid and refund the collection-code payment outside MoNexus, then
    record `AdminLog` / points-adjust per `docs/operations/vmqfox-runbook.md`.
-3. Record the decision with an admin reconcile/refund action so `AdminLog`
-   captures the operator, not the payload. Providers that advertise
-   `supportsRefunds=true` may still refund at the provider; VMQFox may not.
+3. Apply the decision with
+   `POST /api/admin/recharge/orders/:id/reconcile/resolve` and body
+   `{"action":"credit"}` or `{"action":"refund"}`. The endpoint re-queries the
+   provider and returns 409 unless the attempt is `succeeded` for the full
+   expected amount and currency; it then resolves the open reconciliation
+   items and writes `AdminLog` `payment.order.resolve_reconcile`.
+   - `credit`: order goes `paid` and through the normal credit path (one
+     `RechargeCredit`, one `PointLog`). If the credit fails again (for example
+     the balance hard cap) the order returns to `reconcile_required`; refund it.
+   - `refund`: order goes `refund_pending` with a `requested` refund that the
+     refund worker submits. A failed provider refund returns the order to
+     `paid`, which the paid-not-credited worker then credits.
+   - `refund` returns `PAYMENT_REFUND_NOT_SUPPORTED` when the provider has
+     `supportsRefunds=false` (VMQFox); handle that refund outside MoNexus.
 
 ## Refund recovery
 
@@ -175,6 +196,11 @@ auto-refund.
    `PAYMENT_REFUND_NOT_SUPPORTED` and increment
    `payment_refund_not_supported_total{provider="vmqfox"}`. Manual cash-path
    refunds stay outside MoNexus; see `docs/operations/vmqfox-runbook.md`.
+6. Refunds and disputes on one recharge are mutually exclusive. A refund is
+   rejected (409) while a dispute is open, lost or closed. A `dispute.opened`
+   on a refunded or refund-in-flight payment does not hold points; it leaves
+   an open `refund_mismatch` reconciliation item for the operator to decide
+   whether the provider really returned the money twice.
 
 ## Reconciliation
 
@@ -183,6 +209,14 @@ auto-refund.
    pending/failed run.
 3. Open items stay until an operator resolves them. Raw payloads for those
    events are retained until 180 days after close.
+4. `GET /api/admin/payments/reconciliation-items?status=open` lists the queue
+   (every `reconcile_required` exit opens one item, each in its own manual
+   run, so the run list is not a usable queue).
+5. `POST /api/admin/payments/reconciliation-items/:id/review` with
+   `{"status":"resolved"|"ignored","reason":"..."}` closes an item and writes
+   `AdminLog` `payment.recon_item.review`. Items whose order is still
+   `reconcile_required` return 409: use the order resolution endpoint, which
+   closes them.
 
 ## Credential rotation
 

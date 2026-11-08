@@ -23,6 +23,7 @@ import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 import { checkProductReadiness, type ProductReadinessResult } from './publicationReadiness.js'
 import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
 import { lockProductRow } from './productLock.js'
+import { normalizeProviderOfferBinding } from '../fulfillment/offerBinding.js'
 import { invalidateGuestEligibilityIfNeeded } from './guestEligibility.js'
 import { isContentCopilotAvailable } from './contentCopilot/service.js'
 
@@ -280,6 +281,20 @@ export async function createProductFromV2(
         allowFileForm: true,
         allowIncompleteFixedContent: true,
       })
+      let binding: { externalIntegration: string; externalSku: string } | null = null
+      if (offerInput.externalIntegration) {
+        if (actor.kind === 'merchant') throw new HttpError(400, 'BAD_REQUEST', '商家商品不能绑定平台外部开通供应商')
+        if (offerInput.externalIntegration === 'faka_bridge') {
+          throw new HttpError(400, 'BAD_REQUEST', 'Xboard 规格请通过 Xboard 目录导入创建')
+        }
+        binding = normalizeProviderOfferBinding({
+          externalIntegration: offerInput.externalIntegration,
+          externalSku: offerInput.externalSku,
+          deliveryMode: offerInput.deliveryMode,
+        })
+      } else if (offerInput.externalSku) {
+        throw new HttpError(400, 'BAD_REQUEST', '设置 externalSku 时必须同时指定 externalIntegration')
+      }
       const fulfillment = evaluateTemplateFulfillment({
         template,
         productAttributes: productAttributes.value,
@@ -291,7 +306,7 @@ export async function createProductFromV2(
           fixedFileId: offerInput.fixedFileId,
           deliveryFields: offerInput.deliveryFields,
           autoProvision: offerInput.autoProvision,
-          externalIntegration: null,
+          externalIntegration: binding?.externalIntegration ?? null,
           fixedStructuredContent: offerInput.fixedStructuredContent,
         },
         mode: 'draft',
@@ -336,6 +351,7 @@ export async function createProductFromV2(
             ? { deliveryFields: offerInput.deliveryFields as Prisma.InputJsonValue }
             : {}),
           autoProvision: offerInput.autoProvision,
+          ...(binding ?? {}),
           attributes: offerAttributes.value as Prisma.InputJsonValue,
           ...(structured
             ? { fixedStructuredContent: structured as unknown as Prisma.InputJsonValue }

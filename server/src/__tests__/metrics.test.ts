@@ -48,4 +48,19 @@ describe('GET /api/metrics', () => {
 
     expect(res.text).toContain('monexus_process_cpu_user_seconds_total')
   })
+
+  it('throttles repeated failed token attempts without counting successful scrapes', async () => {
+    mutableConfig.metricsToken = 'test-metrics-token'
+    // Successful scrapes are skipped by the limiter, so they never trip it.
+    for (let i = 0; i < 25; i += 1) {
+      await api.get('/api/metrics').set('Authorization', 'Bearer test-metrics-token').expect(200)
+    }
+    const statuses: number[] = []
+    for (let i = 0; i < 21; i += 1) {
+      statuses.push((await api.get('/api/metrics').set('Authorization', 'Bearer wrong')).status)
+    }
+    // The previous test already spent two failures of the 20-attempt budget.
+    expect(statuses.indexOf(429)).toBeGreaterThanOrEqual(18)
+    expect(statuses.at(-1)).toBe(429)
+  })
 })

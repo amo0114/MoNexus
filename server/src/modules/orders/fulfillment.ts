@@ -1,7 +1,7 @@
-import { invalidateGrantForOrderInTx } from '../trafficReset/benefits.js'
 import type { Order, Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
+import { onOrderStatusChangedInTx } from '../fulfillment/coordination.js'
 import { structuredContentToJson, type StructuredDeliveryContent } from '../../lib/deliveryFields.js'
 import {
   NotificationDispatcher,
@@ -197,7 +197,7 @@ export async function transitionOrderStatus(
     order: updated,
   })
 
-  if (['refunded','disputed','processing'].includes(to)) await invalidateGrantForOrderInTx(client, order.id)
+  await onOrderStatusChangedInTx(client, order.id, to)
   return {
     ...updated,
     status: normalizeOrderStatus(updated.status),

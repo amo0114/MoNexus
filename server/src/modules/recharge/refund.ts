@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client'
 import {
   conflict,
   HttpError,
+  notFound,
   paymentRefundNotSupported,
   refundBalanceInsufficient,
   refundRequiresReview,
@@ -151,7 +152,7 @@ export async function requestRechargeRefund(input: {
         SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "paymentMethod", "adminSandbox"
         FROM "RechargeOrder" WHERE "id" = ${input.orderId}::uuid FOR UPDATE`
       const order = orders[0]
-      if (!order || order.userId !== input.userId) throw conflict('充值订单不存在')
+      if (!order || order.userId !== input.userId) throw notFound('充值订单不存在')
       if (order.adminSandbox) throw conflict('管理员沙箱充值不支持退款')
       await assertProviderSupportsRefunds(order)
       if (order.status === 'refunded') {
@@ -163,6 +164,13 @@ export async function requestRechargeRefund(input: {
 
       const existing = await tx.rechargeRefund.findUnique({ where: { rechargeOrderId: order.id } })
       if (existing) return existing
+      // An open or lost dispute already claims this payment back; a refund on top
+      // would reverse the same credit twice. Serialized by the order lock above.
+      const dispute = await tx.paymentDispute.findFirst({
+        where: { rechargeOrderId: order.id, status: { not: 'won' } },
+        select: { id: true },
+      })
+      if (dispute) throw conflict('该充值存在支付争议，不能退款')
 
       const intent = await tx.paymentIntent.findUniqueOrThrow({
         where: { rechargeOrderId: order.id },

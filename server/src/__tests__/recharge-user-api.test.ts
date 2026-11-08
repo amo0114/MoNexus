@@ -5,6 +5,7 @@ import request from 'supertest'
 import { config } from '../config/index.js'
 import { errorHandler } from '../middlewares/errorHandler.js'
 import { prisma } from '../lib/prisma.js'
+import { createPaymentWebhookRouter } from '../modules/payment/webhooks/routes.js'
 import { createRechargeRouter } from '../modules/recharge/routes.js'
 import {
   completeRechargeIdempotencyClaim,
@@ -445,6 +446,17 @@ describe('recharge user API', () => {
     expect(res.status).toBe(404)
   })
 
+  it('does not mount the simulator webhook on a production deploy', async () => {
+    const isolated = express()
+    isolated.use('/api/payment/webhooks', createPaymentWebhookRouter({ isProductionDeploy: true }))
+    const res = await request(isolated)
+      .post('/api/payment/webhooks/simulator')
+      .set('X-Simulator-Signature', 'simulator-test-signature')
+      .set('Content-Type', 'application/json')
+      .send(JSON.stringify({ eventType: 'payment.succeeded', providerPaymentId: 'sim_pay_x' }))
+    expect(res.status).toBe(404)
+  })
+
   it('hides another user\'s recharge order', async () => {
     await seedCnyPolicy()
     const alice = await loginUser('recharge-owner@test.local')
@@ -456,6 +468,9 @@ describe('recharge user API', () => {
       .send({ quoteId: quote.body.quoteId }).expect(201)
     const hidden = await api.get(`/api/recharge/orders/${order.body.orderId}`).set(authHeader(bob.accessToken))
     expect(hidden.status).toBe(404)
+    const refund = await api.post(`/api/recharge/orders/${order.body.orderId}/refunds`)
+      .set(authHeader(bob.accessToken)).set('Idempotency-Key', randomUUID()).send({})
+    expect(refund.status).toBe(404)
     const listed = await api.get('/api/recharge/orders').set(authHeader(bob.accessToken)).expect(200)
     expect(listed.body.items).toHaveLength(0)
   })

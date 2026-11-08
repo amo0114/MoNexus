@@ -298,9 +298,8 @@ export function serializePublicOffer(
     validityDays: offer.validityDays,
     // P7b：购前披露——开启表示"购买前表单答案将发送至商家的自动开通服务"。
     autoProvision: offer.autoProvision,
-    // FakaBridge：仅暴露是否外部开通（不公开 internal SKU 映射细节）。
-    provisionsExternal:
-      offer.externalIntegration === 'faka_bridge' ? ('faka_bridge' as const) : null,
+    // 仅暴露外部开通供应商 id（不公开 internal SKU 映射细节）。
+    provisionsExternal: offer.externalIntegration ?? null,
     // P4b：买家购前可见将获得哪些字段；敏感的是字段"值"，不在此处。
     deliveryFields: parseStoredDeliveryFields(offer.deliveryFields),
     attributes: projectPublicTemplateAttributes(offer.attributes, options?.attributeKeys ?? []),

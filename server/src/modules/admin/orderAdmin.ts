@@ -2,7 +2,7 @@ import { resolvePagination } from '../../lib/pagination.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
-import { onFakaOrderRefundedInTx, scheduleFakaRevokeAttempt } from '../fakaBridge/service.js'
+import { afterOrderRefunded, onOrderRefundedInTx } from '../fulfillment/coordination.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
 import { transitionOrderStatus } from '../orders/fulfillment.js'
 import {
@@ -179,8 +179,8 @@ export async function resolveOrder(
       } else {
         await refundPaidOrder(tx, order, `管理员仲裁退款: #${order.id}`)
       }
-      // FakaBridge：取消未开通任务 / 排队撤销已开通 Xboard 订阅
-      await onFakaOrderRefundedInTx(tx, orderId)
+      // 外部履约：取消未开通任务 / 排队撤销已开通资源
+      await onOrderRefundedInTx(tx, orderId)
     } else {
       await settleHeldOrder(tx, order, `管理员仲裁扣款: #${order.id}`)
       await tx.order.update({
@@ -200,16 +200,8 @@ export async function resolveOrder(
     })
   })
 
-  // Kick revoke worker outside the transaction
-  if (input.result === 'refund') {
-    const task = await prisma.fakaBridgeTask.findUnique({
-      where: { orderId },
-      select: { id: true, revokeStatus: true },
-    })
-    if (task?.revokeStatus === 'pending') {
-      scheduleFakaRevokeAttempt(task.id)
-    }
-  }
+  // Kick queued remote cancellations outside the transaction
+  if (input.result === 'refund') await afterOrderRefunded(orderId)
 
   return getOrderDetail(orderId)
 }

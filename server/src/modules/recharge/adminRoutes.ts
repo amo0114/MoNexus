@@ -8,10 +8,13 @@ import {
   adminListEventsQuerySchema,
   adminListOrdersQuerySchema,
   adminListPricePoliciesQuerySchema,
+  adminListReconItemsQuerySchema,
+  adminReviewReconItemSchema,
   adminListRefundsQuerySchema,
   adminPatchPricePolicySchema,
   adminRefundSchema,
   adminResolveDisputeSchema,
+  adminResolveReconcileSchema,
   adminCloseRecoveryCaseSchema,
   adminUuidParamSchema,
 } from './adminSchema.js'
@@ -42,6 +45,11 @@ rechargeAdminRoutes.post(
   '/recharge/orders/:id/reconcile',
   validate({ params: adminUuidParamSchema }),
   controller.reconcileOrder,
+)
+rechargeAdminRoutes.post(
+  '/recharge/orders/:id/reconcile/resolve',
+  validate({ params: adminUuidParamSchema, body: adminResolveReconcileSchema }),
+  controller.resolveReconcileRequired,
 )
 rechargeAdminRoutes.post(
   '/recharge/orders/:id/refunds',
@@ -93,6 +101,16 @@ rechargeAdminRoutes.post(
   '/payments/reconciliation-runs/:id/rerun',
   validate({ params: adminUuidParamSchema }),
   controller.rerunRecon,
+)
+rechargeAdminRoutes.get(
+  '/payments/reconciliation-items',
+  validate({ query: adminListReconItemsQuerySchema }),
+  controller.listReconItems,
+)
+rechargeAdminRoutes.post(
+  '/payments/reconciliation-items/:id/review',
+  validate({ params: adminUuidParamSchema, body: adminReviewReconItemSchema }),
+  controller.reviewReconItem,
 )
 rechargeAdminRoutes.get(
   '/payments/disputes',

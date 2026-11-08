@@ -7,9 +7,10 @@ export const VALID_POINT_LOG_TYPES = new Set([
   'release',
   'refund',
   'sandbox_in',
+  'settlement_in',
 ] as const)
 
-export type PointLogType = 'in' | 'out' | 'hold' | 'release' | 'refund' | 'sandbox_in'
+export type PointLogType = 'in' | 'out' | 'hold' | 'release' | 'refund' | 'sandbox_in' | 'settlement_in'
 
 export interface AdminPointLogUser {
   id: number

@@ -190,6 +190,8 @@ export type FulfillmentConfiguration =
   | 'manual'
   | 'merchant_webhook'
   | 'faka_bridge'
+  /** Any other registered fulfillment provider; offers are bound via the admin API, not the wizard. */
+  | 'external_provider'
 
 export type FulfillmentRule = {
   whenProductAttributes: Record<string, string | number | boolean>

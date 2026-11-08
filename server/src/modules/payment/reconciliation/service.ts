@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto'
-import { conflict, notFound } from '../../../lib/httpError.js'
+import { conflict, notFound, paymentRefundNotSupported } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
 import { getHistoricalProvider } from '../providers/registry.js'
 import { recordNormalizedPaymentFact } from '../observations/record.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
-import { applyRefundObservation } from '../../recharge/refund.js'
+import { applyRefundObservation, providerSupportsRefunds, REFUND_BUSINESS_EVENT_KEY } from '../../recharge/refund.js'
+import { executeRechargeCredit } from '../../recharge/credit.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 import type { PaymentProviderName, ReconciliationScopeType } from '../../recharge/types.js'
 import { PAYMENT_PROVIDER_NAMES } from '../../recharge/types.js'
@@ -357,6 +358,197 @@ export async function reconcileOrder(orderId: string) {
     status: fresh.status,
     observationId: recorded.id,
     apply: applied,
+  }
+}
+
+export type ReconcileResolution = 'credit' | 'refund'
+
+/**
+ * Operator exit for a `reconcile_required` order. Every automatic path refuses to
+ * move such an order (late success, failed credit, unknown create), so without
+ * this the user's payment can be neither credited nor refunded.
+ *
+ * Acts only on a fresh provider query proving the attempt was paid in full;
+ * otherwise the order stays for manual investigation. `credit` re-enters the
+ * normal paid -> credit pipeline (recoverPaidNotCredited covers a crash before
+ * the inline credit); `refund` creates a `requested` refund that
+ * processDueRefunds submits. No points are reversed because none were credited.
+ */
+export async function resolveReconcileRequiredOrder(input: {
+  orderId: string
+  action: ReconcileResolution
+  actorUserId: number
+}) {
+  const order = await prisma.rechargeOrder.findUnique({
+    where: { id: input.orderId },
+    include: { paymentIntent: { include: { attempts: true } } },
+  })
+  if (!order) throw notFound('充值订单不存在')
+  if (order.status !== 'reconcile_required') throw conflict('订单不在待人工对账状态')
+  const intent = order.paymentIntent
+  const attempt = intent?.attempts.find(item => item.providerPaymentId && item.status === 'succeeded')
+    ?? intent?.attempts.find(item => item.providerPaymentId)
+  if (!intent || !attempt?.providerPaymentId) throw conflict('没有可核验的支付尝试')
+
+  const queried = await getHistoricalProvider(asProviderName(order.provider)).queryPayment({
+    providerPaymentId: attempt.providerPaymentId,
+    providerAccountKey: order.providerAccountKey,
+    providerOrderId: attempt.providerOrderId,
+  })
+  if (
+    queried.status !== 'succeeded'
+    || queried.providerPaymentId !== attempt.providerPaymentId
+    || queried.amountMinor !== attempt.expectedProviderAmountMinor
+    || queried.currency !== order.currency
+  ) {
+    throw conflict('渠道未确认该笔全额支付成功，需继续人工核查')
+  }
+  if (input.action === 'refund' && !await providerSupportsRefunds(order)) {
+    throw paymentRefundNotSupported()
+  }
+
+  const now = new Date()
+  await prisma.$transaction(async tx => {
+    const locked = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT "status" FROM "RechargeOrder" WHERE "id" = ${order.id}::uuid FOR UPDATE`
+    if (locked[0]?.status !== 'reconcile_required') throw conflict('订单状态已变化，请刷新后重试')
+
+    await tx.paymentAttempt.update({
+      where: { id: attempt.id },
+      data: {
+        status: 'succeeded',
+        providerCaptureId: queried.providerCaptureId ?? attempt.providerCaptureId,
+        completedAt: attempt.completedAt ?? now,
+      },
+    })
+    await tx.paymentIntent.update({
+      where: { id: intent.id },
+      data: { status: 'succeeded', activeAttemptId: attempt.id },
+    })
+
+    if (input.action === 'credit') {
+      await tx.rechargeOrder.update({
+        where: { id: order.id },
+        data: { status: 'paid', paidAt: order.paidAt ?? now },
+      })
+      // A credit that previously ended in reconcile_required left its task terminal.
+      await tx.rechargeCreditTask.upsert({
+        where: { rechargeOrderId: order.id },
+        create: { rechargeOrderId: order.id, status: 'pending' },
+        update: { status: 'pending', nextAttemptAt: now, leaseToken: null, leaseUntil: null, lastErrorCode: null },
+      })
+    } else {
+      await tx.rechargeOrder.update({
+        where: { id: order.id },
+        data: { status: 'refund_pending', paidAt: order.paidAt ?? now },
+      })
+      await tx.rechargeRefund.create({
+        data: {
+          rechargeOrderId: order.id,
+          paymentAttemptId: attempt.id,
+          requestIdempotencyKey: REFUND_BUSINESS_EVENT_KEY(order.id),
+          amountMinor: order.amountMinor,
+          pointsToReverse: order.totalPoints,
+          status: 'requested',
+          reasonCode: 'reconcile_refund',
+          createdByUserId: input.actorUserId,
+        },
+      })
+    }
+
+    await tx.reconciliationItem.updateMany({
+      where: { rechargeOrderId: order.id, status: 'open' },
+      data: {
+        status: 'resolved',
+        resolutionReason: `manual_${input.action}`,
+        resolvedByUserId: input.actorUserId,
+        resolvedAt: now,
+      },
+    })
+  }, TX)
+
+  if (input.action === 'credit') {
+    await executeRechargeCredit({ rechargeOrderId: order.id })
+  }
+  const fresh = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: order.id } })
+  return { orderId: fresh.id, status: fresh.status }
+}
+
+/**
+ * Operator review of a single reconciliation item (the work queue that every
+ * reconcile_required exit opens). Closing an item starts its raw-payload
+ * retention clock. Items of a reconcile_required order are closed by the
+ * order resolution instead, so the order cannot be left stuck behind a
+ * closed item.
+ */
+export async function reviewReconciliationItem(input: {
+  itemId: string
+  status: 'resolved' | 'ignored'
+  reason: string
+  actorUserId: number
+}) {
+  const item = await prisma.$transaction(async tx => {
+    const locked = await tx.$queryRaw<Array<{ status: string; rechargeOrderId: string | null }>>`
+      SELECT "status", "rechargeOrderId" FROM "ReconciliationItem" WHERE "id" = ${input.itemId}::uuid FOR UPDATE`
+    const row = locked[0]
+    if (!row) throw notFound('对账项不存在')
+    if (row.status !== 'open') throw conflict('对账项已处理')
+    if (row.rechargeOrderId) {
+      const order = await tx.rechargeOrder.findUnique({ where: { id: row.rechargeOrderId }, select: { status: true } })
+      if (order?.status === 'reconcile_required') throw conflict('该订单待人工处置，请使用订单处置接口')
+    }
+    return tx.reconciliationItem.update({
+      where: { id: input.itemId },
+      data: {
+        status: input.status,
+        resolutionReason: input.reason,
+        resolvedByUserId: input.actorUserId,
+        resolvedAt: new Date(),
+      },
+    })
+  }, TX)
+  return serializeReconItem(item)
+}
+
+export function serializeReconItem(item: {
+  id: string
+  reconciliationRunId: string
+  providerEntryKey: string
+  rechargeOrderId: string | null
+  paymentAttemptId: string | null
+  paymentEventId: string | null
+  mismatchType: string
+  providerStatus: string | null
+  localStatus: string | null
+  providerAmountMinor: bigint | null
+  localAmountMinor: bigint | null
+  quotedAmountMinor: bigint | null
+  currency: string | null
+  status: string
+  resolutionReason: string | null
+  resolvedByUserId: number | null
+  resolvedAt: Date | null
+  createdAt: Date
+}) {
+  return {
+    id: item.id,
+    runId: item.reconciliationRunId,
+    providerEntryKey: item.providerEntryKey,
+    rechargeOrderId: item.rechargeOrderId,
+    paymentAttemptId: item.paymentAttemptId,
+    paymentEventId: item.paymentEventId,
+    mismatchType: item.mismatchType,
+    providerStatus: item.providerStatus,
+    localStatus: item.localStatus,
+    providerAmountMinor: item.providerAmountMinor == null ? null : serializeAmountMinor(item.providerAmountMinor),
+    localAmountMinor: item.localAmountMinor == null ? null : serializeAmountMinor(item.localAmountMinor),
+    quotedAmountMinor: item.quotedAmountMinor == null ? null : serializeAmountMinor(item.quotedAmountMinor),
+    currency: item.currency,
+    status: item.status,
+    resolutionReason: item.resolutionReason,
+    resolvedByUserId: item.resolvedByUserId,
+    resolvedAt: item.resolvedAt?.toISOString() ?? null,
+    createdAt: item.createdAt.toISOString(),
   }
 }
 

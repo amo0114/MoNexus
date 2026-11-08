@@ -64,6 +64,8 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
           'bg-[var(--color-cta)]/10 border border-[var(--color-cta)]/25 text-[var(--color-cta)]',
         hint: '订单退款返还',
       }
+    case 'settlement_in':
+      return { ...pointLogVisual('in'), typeLabel: '结算入账', hint: '商家订单结算收入' }
     case 'sandbox_in':
       return {
         typeLabel: '沙箱入账',
@@ -90,6 +92,6 @@ export function formatPointLogAmount(type: PointLogType, amount: number): string
   const formatted = absAmount.toLocaleString('en-US')
   if (type === 'hold') return `冻 ${formatted}`
   if (type === 'out') return `−${formatted}`
-  if (type === 'in' || type === 'release' || type === 'refund' || type === 'sandbox_in') return `+${formatted}`
+  if (type === 'in' || type === 'release' || type === 'refund' || type === 'sandbox_in' || type === 'settlement_in') return `+${formatted}`
   return `${v.amountPrefix}${formatted}`
 }

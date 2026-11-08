@@ -15,6 +15,8 @@ import {
 
 export type AdminCreateProductV2Input = CreateProductV2Input & {
   purchaseForm?: unknown[]
+  /** Per-offer provider binding, by index; platform products only. */
+  offerBindings?: Array<{ externalIntegration: string; externalSku: string } | null>
 }
 
 /**
@@ -29,7 +31,19 @@ export function buildAdminCreateProductV2Request(
   return {
     ...payload,
     purchaseForm: Array.isArray(input.purchaseForm) ? input.purchaseForm : [],
+    offers: payload.offers.map((offer, index) => {
+      const binding = input.offerBindings?.[index]
+      return binding ? { ...offer, ...binding } : offer
+    }),
   }
+}
+
+export type AdminFulfillmentProvider = { id: string; label: string }
+
+/** Providers an Offer may be bound to (registered on the server). */
+export async function listAdminFulfillmentProviders(): Promise<AdminFulfillmentProvider[]> {
+  const { data } = await api.get<{ providers: AdminFulfillmentProvider[] }>('/admin/fulfillment/providers')
+  return data.providers
 }
 
 export async function createAdminPlatformProductV2(

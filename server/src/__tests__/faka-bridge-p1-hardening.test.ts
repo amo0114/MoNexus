@@ -4,7 +4,7 @@ import { config } from '../config/index.js'
 import { createOrder } from '../modules/orders/service.js'
 import { prisma } from '../lib/prisma.js'
 import { isFakaProvisionSuccessStatus, classifyFakaRemoteStatus, assertOfferProvisionMutex, readTaskScheduleUtc, fakaRemoteOrderNoMatches } from '../lib/fakaBridge/index.js'
-import { __setFakaClientOverridesForTests, __setAfterClaimHookForTests, processFakaBridgeTask, onFakaOrderRefundedInTx, runFakaReconcileBatch, selectStuckFakaTasksForReconcile, sendProvisionEmailCode, confirmProvisionEmailCode, processFakaRevokeTask } from '../modules/fakaBridge/service.js'
+import { __setFakaClientOverridesForTests, __setAfterClaimHookForTests, processFakaBridgeTask, onFakaOrderRefundedInTx, runFakaReconcileBatch, selectStuckFakaTasksForReconcile, sendProvisionEmailCode, confirmProvisionEmailCode, processFakaRevokeTask, runFakaRevokeBatch } from '../modules/fakaBridge/service.js'
 import type { FakaTransport } from '../lib/fakaBridge/types.js'
 import { createTestUser } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
@@ -354,17 +354,14 @@ describe('P1 hardening', () => {
     const revokeMayFinish = new Promise<void>(resolve => {
       allowRevokeFinish = resolve
     })
-    let revokeWorker: ReturnType<typeof processFakaRevokeTask> | undefined
+    let statusCalls = 0
 
     __setFakaClientOverridesForTests({
       url: config.fakaBridge.url,
       secret: config.fakaBridge.secret,
       transport: (async ({ url }) => {
         if (String(url).includes('order-status')) {
-          // The reconciler has an idle snapshot.  A revoke worker claims its
-          // own lease before this stale status result is committed.
-          revokeWorker = processFakaRevokeTask(task.id)
-          await revokeStarted
+          statusCalls += 1
           return {
             status: 200,
             text: JSON.stringify({
@@ -383,6 +380,7 @@ describe('P1 hardening', () => {
             text: JSON.stringify({
               success: true,
               order_no: task.requestOrderNo,
+              status: 'revoked',
               expired_user: true,
             }),
           }
@@ -391,18 +389,22 @@ describe('P1 hardening', () => {
       }) as FakaTransport,
     })
 
+    // The revoke worker holds its lease mid-HTTP; a queued revoke owns the row,
+    // so reconcile must neither probe status nor write over that lease.
+    const revokeWorker = processFakaRevokeTask(task.id)
     try {
+      await revokeStarted
       await runFakaReconcileBatch(20)
       const inFlight = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
       expect(inFlight.status).toBe('needs_reconcile')
       expect(inFlight.revokeStatus).toBe('pending')
       expect(inFlight.leaseToken).toMatch(/^revoke-/)
+      expect(statusCalls).toBe(0)
     } finally {
       allowRevokeFinish?.()
     }
 
-    expect(revokeWorker).toBeDefined()
-    expect(await revokeWorker!).toBe('succeeded')
+    expect(await revokeWorker).toBe('succeeded')
     const done = await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })
     expect(done.revokeStatus).toBe('succeeded')
   })
@@ -577,7 +579,7 @@ describe('P1 hardening', () => {
     expect(order.status).toBe('pending')
   })
 
-  it('reconcile: needs_reconcile → remote failed refunds held points', async () => {
+  it('reconcile: needs_reconcile → remote failed queues revoke, refunds only after revoked', async () => {
     const { user } = await verifiedBuyer()
     const { product, offer } = await fakaProduct()
     const created = await createOrder(user.id, product.id, {
@@ -606,12 +608,13 @@ describe('P1 hardening', () => {
     __setFakaClientOverridesForTests({
       url: config.fakaBridge.url,
       secret: config.fakaBridge.secret,
-      transport: (async () => ({
+      transport: (async req => ({
         status: 200,
         text: JSON.stringify({
           success: true,
           order_no: task.requestOrderNo,
-          status: 'failed',
+          // A failed row can still resume on a late order-paid; only revoked is final.
+          status: req.url.includes('/order-revoke') ? 'revoked' : 'failed',
           trade_no: null,
         }),
       })) as FakaTransport,
@@ -619,6 +622,10 @@ describe('P1 hardening', () => {
 
     const actions = await runFakaReconcileBatch(20)
     expect(actions).toBeGreaterThanOrEqual(1)
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })).status).toBe('pending')
+    expect((await prisma.fakaBridgeTask.findUniqueOrThrow({ where: { id: task.id } })).revokeStatus).toBe('pending')
+
+    expect(await runFakaRevokeBatch()).toBe(1)
     const order = await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })
     expect(order.status).toBe('refunded')
     const balAfter = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
