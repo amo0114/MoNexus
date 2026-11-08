@@ -544,3 +544,12 @@ AstrBot 版本 **0.2.0**。安装包 `/tmp/astrbot_plugin_monexus_xboard-0.2.0.z
 - 首轮 PR CI 的后端、前端构建、架构、真实 Redis/对象存储等通过，默认 Playwright 分片 2 的新增付费冒烟失败。原因是 `**/api/**` 同时拦截 Vite `/src/api/auth.ts`，夹具返回 404。已改为 URL pathname 必须以 `/api/` 开头，使用 Vite 开发服务单独执行该用例，1 条通过（12.3s）。没有手动重跑全量测试；更新提交后由现有必需 CI 执行。
 - MoNexus 新版本尚未合入 develop/master 或部署，生产仍为 d4c5032；三个 Prisma 迁移尚未执行。正式流程须同 SHA CI/双架构镜像成功并经过 production Environment reviewer。
 - 真实免费/付费验收仍等待用户指定自有测试账号及允许的实际消费；不对普通用户试重置。性能 P0 浏览器/HAR 与 P3 字体/媒体仍未完成，不宣称整项上线验收完成。
+
+
+### 第十四批后续收口
+
+- 修复提交 `f14f5e3f5d3017765de3b6f5be1b48e472236754` 的全部必需 CI 通过，PR #307 合入 develop，合并提交 `2dcf38af8627698e95dafa0bf9e8eb6ab2626373`。从当前 master 创建独立 release worktree，合并 develop 历史，继续 master 发布 PR，不直接从脏目录发布。
+- 真实签名 v2 capabilities HTTP 200，request_id/buildId 匹配，resolve/subscription=true、free/paid execution=false；旧 v1 plan-catalog HTTP 200。修复 Redis 挂载后持续检查 Web/Horizon restartCount=0，商城 server healthy。
+- AstrBot 4.27.2 对未注册插件调用普通 reload 会退化为重载所有插件，未使用该路径。通过内置上传安装接口只加载新插件，运行登记数 31 → 32，原插件 name/version/activated/root_dir_name 均保持一致；新插件 activated=true、三个配置开关 false。没有重启 AstrBot/NapCat 或发送 QQ 消息。管理请求仅在容器 loopback 内使用短期凭证，未输出/持久化临时 token。
+- 生产 `.env` 已私有备份并原子准备稳定实例 ID、monexus client ID 与独立确认密钥，全部 5 个新增开关显式 false；当前旧容器环境不受影响。新 bot 配置已写入 HTTPS origin 与既有 BOT_SHARED_SECRET，权限 0600；不含 Xboard bridge secret，持久状态目录写权限已核对。配置值/密钥未写入仓库。
+- MoNexus 新部署、Prisma 增量迁移、账号恢复与真实 QQ/赠送/付费验收仍待后续完成；不能把 Xboard 已升级、bot 已加载称为整个功能已对用户开放。
