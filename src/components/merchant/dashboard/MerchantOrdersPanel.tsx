@@ -16,6 +16,7 @@ export type MerchantOrderAction =
   | 'respond_dispute'
   | 'reject'
   | 'post_progress'
+  | 'report_unfulfillable'
 
 export interface MerchantOrdersPanelProps {
   orders: MerchantOrder[]
@@ -210,6 +211,15 @@ export default function MerchantOrdersPanel({
                     {o.availableActions?.includes('deliver') && (
                       <button onClick={() => onOrderAction('deliver', o)} className="btn-primary btn-sm mr-2">
                         发货
+                      </button>
+                    )}
+                    {o.availableActions?.includes('report_unfulfillable') && (
+                      <button
+                        onClick={() => onOrderAction('report_unfulfillable', o)}
+                        className="btn-secondary btn-sm mr-2"
+                        data-testid={`merchant-unfulfillable-${o.id}`}
+                      >
+                        无法履约
                       </button>
                     )}
                     {o.availableActions?.includes('respond_dispute') && (

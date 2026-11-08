@@ -514,7 +514,8 @@ export const listFakaTasksQuerySchema = z.object({
 export type ListFakaTasksQuery = z.infer<typeof listFakaTasksQuerySchema>
 
 export const resolveOrderSchema = z.object({
-  result: z.enum(['refund', 'close']),
+  // continue：人工服务单回到履约中并重算履约期限
+  result: z.enum(['refund', 'close', 'continue']),
   note: z.string().trim().max(1000).optional(),
 }).strict()
 

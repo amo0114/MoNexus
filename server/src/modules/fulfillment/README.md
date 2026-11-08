@@ -41,6 +41,9 @@ Rules:
 
 ## Adding a provider
 
+Full developer guide (contract semantics, binding, purchase UI, lifecycle, tests):
+[`docs/fulfillment-provider-guide.md`](../../../../docs/fulfillment-provider-guide.md).
+
 1. Implement `ExternalFulfillmentAdapter` (see `plugins/demoLicense/adapter.ts`):
    `execute`/`query` must be idempotent on `operationKey` and map remote
    results to `RemoteObservation`; only `failed_without_effect` /

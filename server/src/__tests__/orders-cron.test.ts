@@ -42,7 +42,8 @@ async function ageOrderToPastDelivery(orderId: number, daysAgo: number) {
   })
   await prisma.order.update({
     where: { id: orderId },
-    data: { createdAt: past, status: 'delivered' },
+    // The acceptance window is frozen at delivery (autoCloseDays = 7).
+    data: { createdAt: past, status: 'delivered', acceptanceBy: new Date(past.getTime() + SEVEN_DAYS_MS) },
   })
   await prisma.orderStatusEvent.create({
     data: {

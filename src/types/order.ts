@@ -67,6 +67,16 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
   /** 取消已提交但需核对远端时的时间；此时积分仍冻结。 */
   cancelRequestedAt?: string | null
   resolutionReason?: string | null
+  /** 争议中：商家须在此前提交补救方案。 */
+  disputeRespondBy?: string | null
+  /** 商家补救方案；买家须在 remedyRespondBy 前接受或拒绝，逾期视为接受。 */
+  remedyNote?: string | null
+  remedyProposedAt?: string | null
+  remedyRespondBy?: string | null
+  /** 已提交平台裁决。 */
+  disputeEscalatedAt?: string | null
+  /** 验收期限：到期未确认收货将自动完成订单并结算给商家。 */
+  acceptanceBy?: string | null
   review?: null | {
     rating: number
     comment: string | null

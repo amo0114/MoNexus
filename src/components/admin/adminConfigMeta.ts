@@ -296,7 +296,7 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     max: 90,
     unit: '天',
     label: '交付后自动确认并结算的等待天数',
-    description: '交付后买家未主动确认收货时的超时自动结算天数（1～90 天）；修改对下一轮巡检生效。',
+    description: '交付后买家未主动确认收货时的超时自动结算天数（1～90 天）；在交付时写入订单，修改只影响之后交付的订单。',
   },
   fulfillmentSlaDays: {
     key: 'fulfillmentSlaDays',
