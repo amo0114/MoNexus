@@ -76,4 +76,10 @@ export async function refundUndeliveredExternalOrderInTx(
   }, tx)
   await releaseHeldOrder(tx, order, input.releaseReason)
   await applyRefundInventoryPolicy(tx, order, { fromStatus: 'pending', actorUserId: order.userId })
+  // A buyer/timeout cancel that had to wait for the provider ends here.
+  const { cancelRequestedAt } = await tx.order.findUniqueOrThrow({ where: { id: order.id }, select: { cancelRequestedAt: true } })
+  await tx.order.update({
+    where: { id: order.id },
+    data: { resolutionReason: cancelRequestedAt ? 'cancel_requested' : 'provider_failed' },
+  })
 }

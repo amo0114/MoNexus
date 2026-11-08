@@ -282,7 +282,7 @@ describe('OrderDetailModal', () => {
       const close = vi.fn()
       const pendingOrder = { ...ORDER, status: 'pending', deliveryMode: 'manual_service', holdingPoints: 100, acceptBy: '2026-11-09T08:00:00.000Z' } as UserOrderDetail
       render(<OrderDetailModal order={pendingOrder} onClose={close} />)
-      expect(screen.getByTestId('order-accept-deadline')).toHaveTextContent('前接单，超时将自动取消并退还积分')
+      expect(screen.getByTestId('order-accept-deadline')).toHaveTextContent('前开始处理，超时将自动取消并退还积分')
       fireEvent.click(screen.getByTestId('order-cancel-button'))
       fireEvent.click(screen.getByTestId('cancel-order-dialog-confirm'))
       await waitFor(() => expect(close).toHaveBeenCalledOnce())

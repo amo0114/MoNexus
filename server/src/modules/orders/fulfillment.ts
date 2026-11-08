@@ -102,8 +102,10 @@ export async function transitionOrderStatus(
 
   const { from, to } = assertLegalStatusTransition(order.status, input.toStatus)
   // The deadline holds even before the timeout scan runs: once it passes, the
-  // order may only be cancelled, never accepted by a person.
-  if (from === 'pending' && to === 'processing' && order.acceptBy && order.acceptBy <= new Date()) {
+  // order may only be cancelled, never accepted by a person. A late remote
+  // result (system) still applies: the work already happened and only the
+  // cancellation barrier may decide whether it is delivered or revoked.
+  if (from === 'pending' && to === 'processing' && actorRole !== 'system' && order.acceptBy && order.acceptBy <= new Date()) {
     throw conflict('接单期限已过，订单将自动取消并退还积分')
   }
   // A late automatic result or an ordinary delivery must not silently clear a

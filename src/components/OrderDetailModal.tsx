@@ -57,7 +57,7 @@ const ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
   },
   cancel: {
     title: '取消订单',
-    description: '商家尚未接单。确认取消后冻结积分将退还到你的账户。',
+    description: '订单尚未开始处理。确认取消后冻结积分将退还到你的账户。',
     confirmLabel: '确认取消订单',
     successTitle: '订单已取消，积分已退还',
   },
@@ -100,7 +100,7 @@ const ACCEPTANCE_ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
   },
   cancel: {
     title: '取消订单',
-    description: '商家尚未接单。确认取消后冻结积分将退还到你的账户。',
+    description: '订单尚未开始处理。确认取消后冻结积分将退还到你的账户。',
     confirmLabel: '确认取消订单',
     successTitle: '订单已取消，积分已退还',
   },
@@ -510,7 +510,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 <p className="mt-1 text-xs text-[var(--color-text-muted)] leading-relaxed" data-testid="order-accept-deadline">
                   {order.cancelRequestedAt
                     ? '取消处理中：核对完成后将自动退还积分。'
-                    : `商家需在 ${formatOrderDate(order.acceptBy)} 前接单，超时将自动取消并退还积分；接单前你也可以随时取消。`}
+                    : `订单需在 ${formatOrderDate(order.acceptBy)} 前开始处理，超时将自动取消并退还积分；开始处理前你也可以随时取消。`}
                 </p>
               )}
             </div>

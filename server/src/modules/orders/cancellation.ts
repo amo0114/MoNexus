@@ -109,8 +109,11 @@ export async function cancelUnacceptedOrder(orderId: number, actor: UnacceptedCa
       },
     })
     if (!order || (actor.kind === 'buyer' && order.userId !== actor.userId)) throw notFound('订单不存在')
-    // Replays of a finished cancel return the same outcome instead of an error.
-    if (order.status === 'refunded' && order.resolutionReason === copy.reason) return 'cancelled'
+    // Replays of a finished cancel return the same outcome instead of an error,
+    // including a requested cancel that the provider later converged to a refund.
+    if (order.status === 'refunded' && (order.resolutionReason === copy.reason || order.resolutionReason === 'cancel_requested')) {
+      return 'cancelled'
+    }
     if (order.status !== 'pending') throw conflict('订单已被接单或已结束，不能取消')
     if (!order.acceptBy) throw conflict('该订单不支持直接取消，请联系商家或平台处理')
     if (actor.kind === 'timeout' && order.acceptBy > new Date()) throw conflict('接单期限未到')
