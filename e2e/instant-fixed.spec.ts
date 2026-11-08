@@ -76,7 +76,7 @@ test.describe.serial('instant_fixed delivery flow', () => {
     await expect(orderCard.getByText('争议中')).toBeVisible({ timeout: 10_000 })
   })
 
-  test('merchant resumes the dispute and user sees delivered again', async ({ page }) => {
+  test('merchant proposes a remedy, the buyer accepts it and sees delivered again', async ({ page }) => {
     await loginAs(page, SEED_ACCOUNTS.merchant)
 
     await page.goto('/merchant')
@@ -87,11 +87,13 @@ test.describe.serial('instant_fixed delivery flow', () => {
 
     await orderRow.getByRole('button', { name: '处理争议' }).click()
     await expect(page.getByTestId('merchant-dispute-dialog')).toBeVisible({ timeout: 10_000 })
+    await page.getByTestId('merchant-dispute-note').fill('已更新链接，请重新查看')
     await page.getByTestId('merchant-dispute-resume').click()
-    await expect(page.getByText('争议处理成功')).toBeVisible({ timeout: 10_000 })
-    await expect(orderRow.getByText('已交付')).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText('补救方案已提交').first()).toBeVisible({ timeout: 10_000 })
+    // 商家不能单方结束争议：买家接受前订单保持争议中。
+    await expect(orderRow.getByText('争议中')).toBeVisible({ timeout: 10_000 })
 
-    // 用户侧订单状态回到「已交付」
+    // 买家在订单详情里接受补救方案，订单回到「已交付」
     await loginAs(page, SEED_ACCOUNTS.user)
     await page.goto('/orders')
     const orderCard = page
@@ -99,6 +101,12 @@ test.describe.serial('instant_fixed delivery flow', () => {
       .filter({ hasText: PRODUCT_NAME })
       .first()
     await expect(orderCard).toBeVisible({ timeout: 10_000 })
+    await orderCard.locator('[data-testid^="open-order-detail-"]').click()
+    await expect(page.getByTestId('order-remedy-note')).toContainText('已更新链接，请重新查看', { timeout: 10_000 })
+    await page.getByTestId('order-accept-remedy').click()
+    await page.getByTestId('accept_remedy-dialog-confirm').click()
+    await expect(page.getByText('操作成功')).toBeVisible({ timeout: 10_000 })
+    await page.reload()
     await expect(orderCard.getByText('已交付')).toBeVisible({ timeout: 10_000 })
   })
 })

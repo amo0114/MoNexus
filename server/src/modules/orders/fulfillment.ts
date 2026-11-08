@@ -50,6 +50,10 @@ export async function createOrderStatusEvent(
   })
 }
 
+/** Seller's window to propose a remedy, and buyer's window to answer it. */
+export const DISPUTE_RESPONSE_MS = 48 * 60 * 60 * 1000
+const CLEARED_REMEDY = { remedyNote: null, remedyProposedAt: null, remedyRespondBy: null, disputeEscalatedAt: null }
+
 export async function transitionOrderStatus(
   input: {
     orderId: number
@@ -73,6 +77,8 @@ export async function transitionOrderStatus(
     resumeDispute?: true
     /** Only the explicit "cannot fulfil" command may refund an accepted, undelivered order. */
     processingRefund?: true
+    /** Only the buyer's overdue complaint may dispute an order that was never delivered. */
+    overdueComplaint?: true
   },
   client?: OrderStatusTransitionClient
 ): Promise<Order> {
@@ -101,13 +107,21 @@ export async function transitionOrderStatus(
   if (from === 'processing' && to === 'refunded' && !input.processingRefund) {
     throw conflict('履约中的订单只能由商家或平台声明无法履约后退款')
   }
+  if (from === 'processing' && to === 'disputed' && !input.overdueComplaint) {
+    throw conflict('履约中的订单只能在超过履约期限后投诉')
+  }
 
   // The state that was read above is part of the write predicate.  Without
   // this compare-and-set, two concurrent close/refund requests could both pass
   // validation and each write an event / settle points.
+  // Dispute timers live only while disputed: opening starts the seller's
+  // response window, any exit (arbitration, acceptance, remedy) clears them.
+  const disputeTimers = to === 'disputed'
+    ? { disputeRespondBy: new Date(Date.now() + DISPUTE_RESPONSE_MS), ...CLEARED_REMEDY }
+    : from === 'disputed' ? { disputeRespondBy: null, ...CLEARED_REMEDY } : {}
   const transitioned = await client.order.updateMany({
     where: { id: order.id, status: order.status },
-    data: { status: to },
+    data: { status: to, ...disputeTimers },
   })
   if (transitioned.count !== 1) {
     throw badRequest('订单状态已变化，请刷新后重试')

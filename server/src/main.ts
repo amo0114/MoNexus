@@ -13,6 +13,7 @@ import { startSlaRemindCron, stopSlaRemindCron } from './lib/slaRemind.js'
 import { startBookingRemindCron, stopBookingRemindCron } from './lib/bookingRemind.js'
 import { startProvisionCron, stopProvisionCron } from './modules/orders/provisionCron.js'
 import { startAcceptTimeoutCron, stopAcceptTimeoutCron } from './modules/orders/acceptTimeoutCron.js'
+import { startDisputeTimerCron, stopDisputeTimerCron } from './modules/orders/disputeTimerCron.js'
 import { startFulfillmentBackgroundJobs, stopFulfillmentBackgroundJobs } from './modules/fulfillment/coordination.js'
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
 import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
@@ -50,6 +51,7 @@ const server = app.listen(config.port, () => {
   startBookingRemindCron()
   startProvisionCron()
   startAcceptTimeoutCron()
+  startDisputeTimerCron()
   startFulfillmentBackgroundJobs()
   startGrowthRewardCron()
   startLeaderboardCron()
@@ -107,6 +109,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopBookingRemindCron()
   stopProvisionCron()
   stopAcceptTimeoutCron()
+  stopDisputeTimerCron()
   stopGrowthRewardCron()
   stopLeaderboardCron()
   stopLegalRetentionCron()
