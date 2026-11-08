@@ -16,6 +16,7 @@ router.get('/page', validate({ query: pagedOrdersQuerySchema }), controller.list
 router.get('/attention-count', controller.attentionCount)
 router.post('/:id/dispute', validate({ params: idParamSchema }), controller.dispute)
 router.post('/:id/close', validate({ params: idParamSchema }), controller.close)
+router.post('/:id/cancel', validate({ params: idParamSchema }), controller.cancel)
 // P6a：手动续费预检（买家；只读，无副作用）。
 router.post('/:id/renew', validate({ params: idParamSchema }), controller.renewPrecheck)
 router.post('/:id/review', validate({ params: idParamSchema, body: reviewBodySchema }), requireVerifiedEmail, reviewsController.createForOrder)

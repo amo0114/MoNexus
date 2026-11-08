@@ -31,6 +31,7 @@ export const systemConfigKeys = [
   // P6a 订单计时配置化（原硬编码 7 天）
   'autoCloseDays',
   'fulfillmentSlaDays',
+  'acceptTimeoutHours',
   // P6a 订阅到期前提醒提前天数（0 = 关闭到期前提醒，仅到期时提醒）
   'subscriptionRemindDays',
   // P7b 自动开通外呼最大尝试次数（0 = 运维刹车：只建任务不外呼不转状态）
@@ -107,6 +108,7 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
   lowStockNotifyCooldownHours: 24,
   autoCloseDays: 7,
   fulfillmentSlaDays: 7,
+  acceptTimeoutHours: 24,
   subscriptionRemindDays: 3,
   autoProvisionMaxAttempts: 5,
   // REG-01：缺记录默认开启，保证升级到本版本的站点行为不变。
@@ -161,6 +163,7 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   lowStockNotifyCooldownHours: '低库存邮件重发冷却时长',
   autoCloseDays: '已交付订单自动确认关闭天数',
   fulfillmentSlaDays: '人工服务履约时限天数',
+  acceptTimeoutHours: '人工服务接单期限小时数',
   subscriptionRemindDays: '订阅到期前提醒提前天数',
   autoProvisionMaxAttempts: '自动开通外呼最大尝试次数',
   registrationEnabled: '允许新用户注册',
@@ -212,6 +215,7 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
   lowStockNotifyCooldownHours: '库存',
   autoCloseDays: '订单',
   fulfillmentSlaDays: '订单',
+  acceptTimeoutHours: '订单',
   subscriptionRemindDays: '订单',
   autoProvisionMaxAttempts: '订单',
   registrationEnabled: '账户与注册',
@@ -263,6 +267,7 @@ export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
   lowStockNotifyCooldownHours: '小时',
   autoCloseDays: '天',
   fulfillmentSlaDays: '天',
+  acceptTimeoutHours: '小时',
   subscriptionRemindDays: '天',
   autoProvisionMaxAttempts: '次',
   emailVerificationRequiredForValue: '开关（0/1）',
@@ -312,6 +317,7 @@ export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   lowStockNotifyCooldownHours: '规格持续低库存时的邮件重发间隔；0 表示进入低位只发一次；上限 720',
   autoCloseDays: '买家未确认时交付后自动关闭并结算的天数；1–90，对新一轮巡检生效',
   fulfillmentSlaDays: '下单后商家须完成人工履约的天数；1–90，仅影响新订单',
+  acceptTimeoutHours: '下单后商家须接单的小时数，超时自动取消并退还积分；1–168，仅影响新订单',
   subscriptionRemindDays: '到期前 N 天邮件提醒买家；0 = 关闭到期前提醒；上限 30',
   autoProvisionMaxAttempts: '固定退避档 1m/5m/15m/1h/6h，上限 5；0 = 暂停外呼（只建任务，不转状态），已有任务恢复后按退避继续',
   registrationEnabled: '关闭后仅阻止新账号自助注册；现有账号仍可登录。',
@@ -421,6 +427,7 @@ const RANGE_CONFIG_KEYS = {
   // P6a：0/负值会立即关单或立即超时，超长等于关闭机制——都拒绝。
   autoCloseDays: { min: 1, max: 90, message: '订单计时配置必须在 1–90 天之间' },
   fulfillmentSlaDays: { min: 1, max: 90, message: '订单计时配置必须在 1–90 天之间' },
+  acceptTimeoutHours: { min: 1, max: 168, message: '接单期限必须在 1–168 小时之间' },
   subscriptionRemindDays: { max: 30, message: '订阅到期提醒提前天数必须在 0–30 之间（0 = 关闭到期前提醒）' },
   // P7b：退避表只有五档，放开更大值只会让任务在最后一档上打转（硬验收 ⑥）。
   autoProvisionMaxAttempts: { max: 5, message: '自动开通尝试次数必须在 0–5 之间（0 = 暂停外呼）' },

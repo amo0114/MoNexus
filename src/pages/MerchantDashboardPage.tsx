@@ -578,7 +578,7 @@ export default function MerchantDashboardPage() {
     }
   }
 
-  async function handleDisputeSubmit(resolution: 'resume' | 'close') {
+  async function handleDisputeSubmit(resolution: 'resume') {
     if (!disputeOrder) return
     const isCurrent = captureFeedbackOwner()
     try {
@@ -586,8 +586,7 @@ export default function MerchantDashboardPage() {
       if (!isCurrent()) return
       setDisputeOrder(null)
       showCompletionActivity({
-        title: resolution === 'close' ? '争议已处理，订单已关闭'
-          : result.status === 'delivered' ? '争议已解除，恢复为已交付' : '争议已解除，已恢复履约',
+        title: result.status === 'delivered' ? '争议已解除，恢复为已交付' : '争议已解除，已恢复履约',
         message: '争议处理成功',
         subtitle: `订单 #${disputeOrder.id} · ${disputeOrder.product?.name ?? ''}`,
         groupKey: `merchant:order:${disputeOrder.id}`, actionLabel: '查看订单',

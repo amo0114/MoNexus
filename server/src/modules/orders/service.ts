@@ -578,6 +578,7 @@ async function createOrderOnce(
     // - manual_service：原子地从可用积分转入冻结余额，Settlement 'holding'
     let orderHoldingPoints: number | null = null
     let orderFulfillmentDeadline: Date | null = null
+    let orderAcceptBy: Date | null = null
     let balanceAfter = account.balance
     let settledSettlementStatus: 'pending' | 'holding' = 'pending'
     let fundsHeld = false
@@ -587,6 +588,12 @@ async function createOrderOnce(
       orderHoldingPoints = offer.price
       const slaDays = await getSystemConfigValue('fulfillmentSlaDays', tx)
       orderFulfillmentDeadline = new Date(Date.now() + slaDays * 24 * 60 * 60 * 1000)
+      // Only a plain manual order waits for a person to accept it; automatic
+      // executors (external provider, merchant webhook) start on their own.
+      if (!provider && strategy.kind !== 'merchant_webhook') {
+        const acceptHours = await getSystemConfigValue('acceptTimeoutHours', tx)
+        orderAcceptBy = new Date(Date.now() + acceptHours * 60 * 60 * 1000)
+      }
       settledSettlementStatus = 'holding'
       balanceAfter = await holdAvailablePoints(tx, userId, offer.price)
       fundsHeld = true
@@ -617,6 +624,7 @@ async function createOrderOnce(
         holdingPoints: orderHoldingPoints,
         fundsHeld,
         fulfillmentDeadline: orderFulfillmentDeadline,
+        acceptBy: orderAcceptBy,
         // P6a：订阅时长快照——商家改 Offer.validityDays 不影响本单。
         validityDaysSnapshot: offer.validityDays ?? null,
         bookingDate: orderBookingDate,
