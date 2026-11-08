@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client'
-import type { CheckoutExtension, FulfillmentProvider } from '../../extension-contracts/fulfillment.js'
+import type { CancellationAssessment, CheckoutExtension, FulfillmentProvider } from '../../extension-contracts/fulfillment.js'
 import { getFulfillmentProvider, listFulfillmentProviders } from './registry.js'
 
 type Tx = Prisma.TransactionClient
@@ -17,6 +17,32 @@ export async function onOrderRefundedInTx(tx: Tx, orderId: number): Promise<void
 export async function afterOrderRefunded(orderId: number): Promise<void> {
   for (const provider of listFulfillmentProviders()) {
     await provider.afterOrderRefunded?.(orderId)
+  }
+}
+
+/**
+ * Verdicts of every provider that owns work for the order (Order locked by the
+ * caller). Providers that own work but cannot assess are reported by id so the
+ * caller can answer `unsupported` instead of assuming nothing was dispatched.
+ */
+export async function assessProviderCancellationsInTx(
+  tx: Tx,
+  orderId: number,
+): Promise<{ verdicts: CancellationAssessment[]; assessedProviderIds: string[] }> {
+  const verdicts: CancellationAssessment[] = []
+  const assessedProviderIds: string[] = []
+  for (const provider of listFulfillmentProviders()) {
+    const verdict = await provider.assessCancellationInTx?.(tx, orderId)
+    if (verdict == null) continue
+    verdicts.push(verdict)
+    assessedProviderIds.push(provider.id)
+  }
+  return { verdicts, assessedProviderIds }
+}
+
+export async function afterCancellationAssessed(orderId: number): Promise<void> {
+  for (const provider of listFulfillmentProviders()) {
+    await provider.afterCancellationAssessed?.(orderId)
   }
 }
 

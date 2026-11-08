@@ -55,6 +55,18 @@ export interface CheckoutExtension<Prepared = unknown, Target = unknown> {
 }
 
 /**
+ * Whether an unfinished order can be cancelled now, decided before any refund:
+ * - `safe_to_finalize`: nothing was dispatched and further dispatch is now
+ *   blocked in this transaction (or durable proof of no effect exists).
+ * - `reconcile_required`: work may have been dispatched; the cancel intent and
+ *   a follow-up query/cancel are recorded, the result is not known yet.
+ * - `already_executed`: the effect happened; this is after-sales, not a cancel.
+ * - `unsupported`: no reliable answer (no query/cancel capability, missing
+ *   provider); never refund automatically.
+ */
+export type CancellationAssessment = 'safe_to_finalize' | 'reconcile_required' | 'already_executed' | 'unsupported'
+
+/**
  * Plugs an external fulfillment system into the order core. Core owns order
  * status, points and settlement; a provider owns its task tables, remote
  * protocol and evidence, and never writes points or settlement itself (it uses
@@ -77,6 +89,15 @@ export interface FulfillmentProvider {
   onOrderRefundedInTx(tx: Tx, orderId: number): Promise<void>
   /** After the refund commits: kick any remote cancellation queued above. */
   afterOrderRefunded?(orderId: number): Promise<void>
+  /**
+   * Before the core decides to cancel an unfinished order, inside its
+   * transaction with the Order locked. Local reads/writes only, never network.
+   * Return null when this provider owns no work for the order. A provider that
+   * does own work but omits this hook makes the core answer `unsupported`.
+   */
+  assessCancellationInTx?(tx: Tx, orderId: number): Promise<CancellationAssessment | null>
+  /** After the assessing transaction commits: kick any query/cancel it queued. */
+  afterCancellationAssessed?(orderId: number): Promise<void>
   /** Inside every order status transition, for provider-owned synchronous side effects. */
   onOrderStatusChangedInTx?(tx: Tx, orderId: number, toStatus: string): Promise<void>
   /** Present when Offers may name this provider in `externalIntegration`. */
