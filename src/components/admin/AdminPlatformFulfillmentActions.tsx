@@ -4,6 +4,7 @@ import {
   deliverAdminPlatformOrder,
   postAdminPlatformProgress,
   rejectAdminPlatformOrder,
+  reportAdminPlatformUnfulfillable,
   startAdminPlatformFulfillment,
   type AdminOrderDetail,
 } from '../../api/admin'
@@ -133,6 +134,15 @@ export default function AdminPlatformFulfillmentActions({
               onClick={() => setPanel((current) => (current === 'deliver' ? null : 'deliver'))}
             >
               交付
+            </button>
+            <button
+              type="button"
+              className="btn-secondary btn-sm text-xs px-2.5 py-1 cursor-pointer border-[var(--color-danger)] text-[var(--color-danger)]"
+              disabled={busy}
+              data-testid="admin-platform-unfulfillable"
+              onClick={() => setPanel((current) => (current === 'reject' ? null : 'reject'))}
+            >
+              无法履约
             </button>
           </>
         )}
@@ -310,17 +320,20 @@ export default function AdminPlatformFulfillmentActions({
             e.preventDefault()
             const reason = rejectReason.trim()
             if (!reason) {
-              showToast('请填写拒单原因', 'error')
+              showToast(showProcessing ? '请填写无法履约的原因' : '请填写拒单原因', 'error')
               return
             }
+            // An accepted order uses the same form: cannot fulfil → full refund.
             void runAction(
-              () => rejectAdminPlatformOrder(order.id, { reason }),
-              '已拒单，积分将退还用户',
+              () => (showProcessing
+                ? reportAdminPlatformUnfulfillable(order.id, { reason })
+                : rejectAdminPlatformOrder(order.id, { reason })),
+              showProcessing ? '已取消订单，积分将退还用户' : '已拒单，积分将退还用户',
             )
           }}
         >
           <label className="block text-xs font-semibold text-[var(--color-text)]">
-            拒单原因 <span className="text-red-500">*</span>
+            {showProcessing ? '无法履约原因' : '拒单原因'} <span className="text-red-500">*</span>
           </label>
           <textarea
             className="input min-h-[80px] resize-y text-xs"
@@ -340,7 +353,7 @@ export default function AdminPlatformFulfillmentActions({
               data-testid="admin-platform-reject-submit"
             >
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-              确认拒单
+              {showProcessing ? '确认无法履约并退款' : '确认拒单'}
             </button>
           </div>
         </form>

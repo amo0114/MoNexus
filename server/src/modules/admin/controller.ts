@@ -306,6 +306,13 @@ export async function rejectPlatformOrder(req: Request, res: Response, next: Nex
   } catch (err) { next(err) }
 }
 
+export async function reportPlatformUnfulfillable(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { reportPlatformUnfulfillable } = await import('../catalog/platformFulfillment.js')
+    res.json(await reportPlatformUnfulfillable(req.user!.userId, req.params.id as unknown as number, req.body.reason))
+  } catch (err) { next(err) }
+}
+
 export async function patchOffer(req: Request, res: Response, next: NextFunction) {
   try {
     const { id, offerId } = req.params as unknown as { id: number; offerId: number }

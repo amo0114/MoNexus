@@ -71,6 +71,7 @@ const { merchantApi, catalogApi } = vi.hoisted(() => {
       (id: number, payload: { resolution: 'resume' | 'close'; publicNote?: string }) => Promise<MerchantOrder>
     >(),
     rejectOrder: vi.fn<(id: number, payload?: { publicNote?: string; internalNote?: string }) => Promise<void>>(),
+    reportUnfulfillable: vi.fn<(id: number, payload?: { publicNote?: string }) => Promise<void>>(),
     postOrderProgress: vi.fn<(id: number, note: string) => Promise<{ ok: true }>>(),
     getMerchantOrderDetail: vi.fn<(id: number) => Promise<MerchantOrder>>(),
     getMerchantInventoryLogs: vi.fn<(id: number, params?: { page?: number; pageSize?: number }) => Promise<unknown>>(),
@@ -696,6 +697,18 @@ describe('merchant order action completions', () => {
     await checkCompletion('已开始履约')
   })
 
+  it('lets an accepted order be declared unfulfillable with a full refund', async () => {
+    merchantApi.reportUnfulfillable.mockResolvedValue(undefined)
+    await openOrders({ ...fulfillmentOrder(), status: 'processing', availableActions: ['deliver', 'post_progress', 'report_unfulfillable'] })
+    fireEvent.click(screen.getByTestId('merchant-unfulfillable-77'))
+    expect(screen.getByTestId('merchant-reject-dialog')).toHaveTextContent('确认无法履约')
+    fireEvent.change(screen.getByTestId('merchant-reject-note'), { target: { value: '档期取消' } })
+    fireEvent.click(screen.getByTestId('merchant-reject-confirm'))
+    await checkCompletion('已取消订单，冻结积分已退还')
+    expect(merchantApi.reportUnfulfillable).toHaveBeenCalledExactlyOnceWith(77, { publicNote: '档期取消' })
+    expect(merchantApi.rejectOrder).not.toHaveBeenCalled()
+  })
+
   it('requires reject confirmation and preserves the remark on failure for retry', async () => {
     merchantApi.rejectOrder.mockRejectedValueOnce({ response: { data: { error: { message: '暂时无法拒单' } } } })
     await openOrders(pendingOrder())
@@ -712,17 +725,17 @@ describe('merchant order action completions', () => {
     expect(merchantApi.rejectOrder).toHaveBeenLastCalledWith(77, { publicNote: 'private-reject-note' })
   })
 
-  it.each([
-    ['resume', 'processing', '争议已解除，已恢复履约'],
-    ['resume', 'delivered', '争议已解除，恢复为已交付'],
-  ] as const)('uses the server result for dispute %s → %s', async (resolution, status, title) => {
-    merchantApi.respondDispute.mockResolvedValue({ ...disputedOrder(), status })
+  const fillRemedy = (note = '明天补发') => fireEvent.change(screen.getByTestId('merchant-dispute-note'), { target: { value: note } })
+
+  it('submits a remedy proposal with its note and keeps the dispute open', async () => {
+    merchantApi.respondDispute.mockResolvedValue({ ...disputedOrder(), availableActions: [] })
     await openOrders(disputedOrder())
     fireEvent.click(screen.getByRole('button', { name: '处理争议', exact: true }))
-    expect(merchantApi.respondDispute).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByTestId(`merchant-dispute-${resolution}`))
-    await checkCompletion(title)
-    expect(merchantApi.respondDispute).toHaveBeenCalledExactlyOnceWith(77, { resolution })
+    expect(screen.getByTestId('merchant-dispute-resume')).toBeDisabled()
+    fillRemedy()
+    fireEvent.click(screen.getByTestId('merchant-dispute-resume'))
+    await checkCompletion('补救方案已提交，等待买家确认')
+    expect(merchantApi.respondDispute).toHaveBeenCalledExactlyOnceWith(77, { resolution: 'resume', publicNote: '明天补发' })
   })
 
   it('blocks the dispute action while pending and permits retry after failure', async () => {
@@ -731,6 +744,7 @@ describe('merchant order action completions', () => {
     merchantApi.respondDispute.mockResolvedValueOnce({ ...disputedOrder(), status: 'processing' })
     await openOrders(disputedOrder())
     fireEvent.click(screen.getByRole('button', { name: '处理争议', exact: true }))
+    fillRemedy()
     const resume = screen.getByTestId('merchant-dispute-resume')
     act(() => { fireEvent.click(resume); fireEvent.click(resume) })
     expect(merchantApi.respondDispute).toHaveBeenCalledOnce()
@@ -741,7 +755,7 @@ describe('merchant order action completions', () => {
     expect(hasToast('争议处理失败', 'error')).toBe(true)
     expect(resume).toBeEnabled()
     fireEvent.click(resume)
-    await checkCompletion('争议已解除，已恢复履约')
+    await checkCompletion('补救方案已提交，等待买家确认')
   })
 
   it.each(['start', 'reject', 'dispute'] as const)('drops %s responses after a session change', async kind => {
@@ -757,6 +771,7 @@ describe('merchant order action completions', () => {
       fireEvent.click(screen.getByTestId('merchant-reject-confirm'))
     } else {
       fireEvent.click(screen.getByRole('button', { name: '处理争议', exact: true }))
+      fillRemedy()
       fireEvent.click(screen.getByTestId('merchant-dispute-resume'))
     }
     const loads = merchantApi.getMerchantOrders.mock.calls.length
@@ -775,8 +790,9 @@ describe('merchant order action completions', () => {
     merchantApi.respondDispute.mockResolvedValue({ ...disputedOrder(), status: 'processing' })
     await openOrders(disputedOrder())
     fireEvent.click(screen.getByRole('button', { name: '处理争议', exact: true }))
+    fillRemedy()
     fireEvent.click(screen.getByTestId('merchant-dispute-resume'))
-    await waitFor(() => expect(hasToast('争议处理成功', 'success')).toBe(true))
+    await waitFor(() => expect(hasToast('补救方案已提交', 'success')).toBe(true))
     expect(useAppStore.getState().islandNotice).toBeNull()
   })
 })

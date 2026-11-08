@@ -23,7 +23,9 @@ const actorRoleSet = new Set<string>(ORDER_STATUS_ACTOR_ROLES)
 const legalTransitions: Record<FulfillmentOrderStatus, FulfillmentOrderStatus[]> = {
   // pending → refunded：商家拒绝接单（manual_service），冻结积分立即退还
   pending: ['processing', 'refunded'],
-  processing: ['delivered'],
+  // processing → refunded：商家/平台声明无法履约（仅显式命令，见 transitionOrderStatus）
+  // processing → disputed：履约期限已过，买家投诉超时（仅显式命令）
+  processing: ['delivered', 'refunded', 'disputed'],
   delivered: ['disputed', 'closed'],
   // disputed → delivered：即时模式（instant_*）货已交付，商家驳回争议时直接恢复为已交付，
   // 否则会卡死在 processing（即时单没有商家 deliver 出口）

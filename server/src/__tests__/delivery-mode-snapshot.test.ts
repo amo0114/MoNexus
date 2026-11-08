@@ -48,16 +48,18 @@ describe('order delivery-mode snapshot', () => {
 
     const processing = await api.post(`/api/merchant/orders/${orderId}/fulfillment/start`)
       .set(authHeader(merchantLogin.accessToken)).send({}).expect(200)
-    expect(processing.body.availableActions).toEqual(['deliver', 'post_progress'])
+    expect(processing.body.availableActions).toEqual(['deliver', 'post_progress', 'report_unfulfillable'])
 
     await api.post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
       .set(authHeader(merchantLogin.accessToken))
       .send({ deliveryContent: 'MANUAL-SNAPSHOT-DELIVERY' }).expect(200)
 
     await api.post(`/api/orders/${orderId}/dispute`).set(authHeader(buyer.accessToken)).expect(200)
-    const resumed = await api.post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
-      .set(authHeader(merchantLogin.accessToken)).send({ resolution: 'resume' }).expect(200)
+    await api.post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
+      .set(authHeader(merchantLogin.accessToken)).send({ resolution: 'resume', publicNote: '补救方案' }).expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
+    const resumed = await api.get(`/api/merchant/orders/${orderId}`).set(authHeader(merchantLogin.accessToken)).expect(200)
     expect(resumed.body.status).toBe('processing')
-    expect(resumed.body.availableActions).toEqual(['deliver', 'post_progress'])
+    expect(resumed.body.availableActions).toEqual(['deliver', 'post_progress', 'report_unfulfillable'])
   })
 })

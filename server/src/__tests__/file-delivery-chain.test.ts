@@ -511,8 +511,9 @@ describe('P5 复审回归 — manual attachment across dispute resume', () => {
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(seller.accessToken))
-      .send({ resolution: 'resume' })
+      .send({ resolution: 'resume', publicNote: '补救方案' })
       .expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
 
     // processing：买家不能继续下旧附件（评审 P1）；商家/管理员保留。
     const denied = await api

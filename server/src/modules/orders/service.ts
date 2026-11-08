@@ -5,7 +5,7 @@ import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import { runProvisionBatch } from './provisionCron.js'
 import { lockActiveWebhookConfigForShare } from './provisioningConfig.js'
-import { createOrderStatusEvent, transitionOrderStatus, resolveSubscriptionExpiresAt } from './fulfillment.js'
+import { acceptanceDeadline, createOrderStatusEvent, transitionOrderStatus, resolveSubscriptionExpiresAt } from './fulfillment.js'
 import { getProductFulfillmentMode, isInstantMode, normalizeOrderStatus } from './statusPolicy.js'
 import {
   NotificationDispatcher,
@@ -625,6 +625,8 @@ async function createOrderOnce(
         fundsHeld,
         fulfillmentDeadline: orderFulfillmentDeadline,
         acceptBy: orderAcceptBy,
+        // Instant modes are delivered at checkout, so their acceptance window starts now.
+        acceptanceBy: isInstantMode(deliveryMode) ? await acceptanceDeadline(tx) : null,
         // P6a：订阅时长快照——商家改 Offer.validityDays 不影响本单。
         validityDaysSnapshot: offer.validityDays ?? null,
         bookingDate: orderBookingDate,

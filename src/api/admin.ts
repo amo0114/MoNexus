@@ -47,6 +47,10 @@ export interface AdminOrderItem {
   product?: { name: string } | null
   // P6a：expired 以服务端裁决为准，前端不自行比对时钟
   delivery?: { status: string; expiresAt?: string | null; expired?: boolean } | null
+  deliveryModeSnapshot?: string | null
+  /** 买家拒绝补救方案或商家逾期未回应：等待平台裁决。 */
+  disputeEscalatedAt?: string | null
+  remedyNote?: string | null
   // P7b：自动开通任务的安全投影（脱敏诊断码）；null = 非自动开通单。
   provisionTask?: import('../types/merchant').ProvisionTaskSummary | null
   // Xboard/Faka 任务投影；有值则禁止平台人工替代履约。
@@ -121,7 +125,7 @@ export async function getAdminOrderDetail(id: number): Promise<AdminOrderDetail>
 
 export async function resolveAdminOrder(
   id: number,
-  payload: { result: 'refund' | 'close'; note?: string },
+  payload: { result: 'refund' | 'close' | 'continue'; note?: string },
 ): Promise<unknown> {
   const { data } = await api.post(`/admin/orders/${id}/resolve`, payload)
   return data
@@ -169,6 +173,18 @@ export async function rejectAdminPlatformOrder(
 ): Promise<{ id: number; status: string }> {
   const { data } = await api.post<{ id: number; status: string }>(
     `/admin/orders/${id}/reject`,
+    payload,
+  )
+  return data
+}
+
+/** Accepted platform order that cannot be fulfilled: full refund. */
+export async function reportAdminPlatformUnfulfillable(
+  id: number,
+  payload: { reason: string },
+): Promise<{ id: number; status: string }> {
+  const { data } = await api.post<{ id: number; status: string }>(
+    `/admin/orders/${id}/unfulfillable`,
     payload,
   )
   return data

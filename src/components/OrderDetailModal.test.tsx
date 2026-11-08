@@ -7,13 +7,15 @@ import type { UserOrderDetail } from '../types/order'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 
-const { createOrder, getCheckoutPreview, renewOrder, disputeOrder, closeOrder, cancelOrder } = vi.hoisted(() => ({
+const { createOrder, getCheckoutPreview, renewOrder, disputeOrder, closeOrder, cancelOrder, fileOverdueComplaint, answerRemedy } = vi.hoisted(() => ({
   createOrder: vi.fn(),
   getCheckoutPreview: vi.fn(),
   renewOrder: vi.fn(),
   disputeOrder: vi.fn(),
   closeOrder: vi.fn(),
   cancelOrder: vi.fn(),
+  fileOverdueComplaint: vi.fn(),
+  answerRemedy: vi.fn(),
 }))
 
 vi.mock('./purchaseConfirmArm', () => ({ CONFIRM_ARM_MS: 0 }))
@@ -27,6 +29,8 @@ vi.mock('../api/orders', async (importOriginal) => {
     disputeOrder,
     closeOrder,
     cancelOrder,
+    fileOverdueComplaint,
+    answerRemedy,
     getOrderAttentionCount: vi.fn().mockResolvedValue(0),
     getOrderDetail: vi.fn(),
   }
@@ -283,6 +287,41 @@ describe('OrderDetailModal', () => {
       fireEvent.click(screen.getByTestId('cancel-order-dialog-confirm'))
       await waitFor(() => expect(close).toHaveBeenCalledOnce())
       expect(cancelOrder).toHaveBeenCalledExactlyOnceWith(50)
+      expect(useAppStore.getState().islandNotice?.title).toBe(title)
+    })
+
+    it('tells the buyer when a delivered order will be accepted automatically', () => {
+      render(<OrderDetailModal order={{ ...ORDER, acceptanceBy: '2026-11-15T08:00:00.000Z' } as UserOrderDetail} onClose={vi.fn()} />)
+      expect(screen.getByTestId('order-acceptance-deadline')).toHaveTextContent('逾期将自动完成订单并结算给商家')
+    })
+
+    it('lets the buyer complain about an overdue order', async () => {
+      fileOverdueComplaint.mockResolvedValueOnce(undefined)
+      const close = vi.fn()
+      const overdue = { ...ORDER, status: 'processing', deliveryMode: 'manual_service', fulfillmentDeadline: '2026-01-01T00:00:00.000Z' } as UserOrderDetail
+      render(<OrderDetailModal order={overdue} onClose={close} />)
+      fireEvent.click(screen.getByTestId('order-complain-button'))
+      fireEvent.click(screen.getByTestId('complain-dialog-confirm'))
+      await waitFor(() => expect(close).toHaveBeenCalledOnce())
+      expect(fileOverdueComplaint).toHaveBeenCalledExactlyOnceWith(50)
+      expect(useAppStore.getState().islandNotice?.title).toBe('投诉已提交，等待商家回应')
+    })
+
+    it.each([
+      ['accept_remedy', true, '已接受补救方案'],
+      ['reject_remedy', false, '已提交平台裁决'],
+    ] as const)('answers a remedy proposal (%s)', async (action, accept, title) => {
+      answerRemedy.mockResolvedValueOnce(undefined)
+      const close = vi.fn()
+      const disputed = {
+        ...ORDER, status: 'disputed', remedyNote: '明天补发', remedyProposedAt: '2026-11-08T08:00:00.000Z', remedyRespondBy: '2026-11-10T08:00:00.000Z',
+      } as UserOrderDetail
+      render(<OrderDetailModal order={disputed} onClose={close} />)
+      expect(screen.getByTestId('order-remedy-note')).toHaveTextContent('明天补发')
+      fireEvent.click(screen.getByTestId(action === 'accept_remedy' ? 'order-accept-remedy' : 'order-reject-remedy'))
+      fireEvent.click(screen.getByTestId(`${action}-dialog-confirm`))
+      await waitFor(() => expect(close).toHaveBeenCalledOnce())
+      expect(answerRemedy).toHaveBeenCalledExactlyOnceWith(50, accept)
       expect(useAppStore.getState().islandNotice?.title).toBe(title)
     })
 
