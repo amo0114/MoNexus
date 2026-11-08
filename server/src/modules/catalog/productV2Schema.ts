@@ -35,6 +35,9 @@ const draftOfferV2Schema = z.object({
   fixedStructuredContent: z.unknown().nullable(),
   deliveryFields: deliveryFieldsSchema.nullable(),
   autoProvision: z.boolean(),
+  // Platform-only binding to a registered fulfillment provider (validated in productWrite).
+  externalIntegration: z.string().trim().toLowerCase().regex(/^[a-z][a-z0-9_]{1,31}$/).nullable().optional(),
+  externalSku: z.string().trim().min(1).max(64).nullable().optional(),
 }).strict()
 
 export const createProductV2Schema = z.object({
