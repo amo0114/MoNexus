@@ -107,7 +107,7 @@ test.describe('manual_service order lifecycle', () => {
   })
 
   // Critical settlement journey: dispute resume → redelivery → dispute close.
-  test('merchant can resume but not unilaterally close a manual service dispute', async ({ page, request }, testInfo) => {
+  test('merchant proposes a remedy the buyer accepts and cannot unilaterally close a dispute', async ({ page, request }, testInfo) => {
     const login = async (account: { email: string; password: string }) => {
       const response = await request.post(`${API_BASE}/api/auth/login`, { data: account })
       expect(response.ok(), await response.text()).toBeTruthy()
@@ -148,16 +148,22 @@ test.describe('manual_service order lifecycle', () => {
     await page.getByRole('button', { name: '处理争议', exact: true }).click()
     // 商家不能单方关闭争议扣款，只能恢复履约。
     await expect(page.getByTestId('merchant-dispute-close')).toHaveCount(0)
+    // 商家只能提交补救方案；买家接受后争议才结束。
+    await page.getByTestId('merchant-dispute-note').fill('明天上午补发')
     await page.getByTestId('merchant-dispute-resume').click()
     if ((page.viewportSize()?.width ?? 1280) < 768) {
       const notice = page.getByTestId('action-island-notice')
-      await expect(notice).toContainText('争议已解除，已恢复履约')
+      await expect(notice).toContainText('补救方案已提交，等待买家确认')
       await expect(notice).not.toContainText('private-dispute-delivery')
       await notice.screenshot({ path: testInfo.outputPath('dispute-resume-island.png') })
       await notice.getByRole('button', { name: '查看订单', exact: true }).click()
       await expect(page).toHaveURL(new RegExp(`/merchant/orders/${orderId}$`))
-    } else await expect(page.getByText('争议处理成功').first()).toBeVisible()
+    } else await expect(page.getByText('补救方案已提交').first()).toBeVisible()
 
+    const proposed = await request.get(merchantOrderUrl, { headers: merchantHeaders })
+    expect((await proposed.json()).status).toBe('disputed')
+    const accepted = await request.post(`${API_BASE}/api/orders/${orderId}/remedy/accept`, { headers: buyerHeaders })
+    expect(accepted.ok(), await accepted.text()).toBeTruthy()
     const detail = await request.get(merchantOrderUrl, { headers: merchantHeaders })
     expect(detail.ok(), await detail.text()).toBeTruthy()
     expect((await detail.json()).status).toBe('processing')

@@ -19,7 +19,7 @@ import {
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
 import { captureFeedbackOwner, showCompletionActivity } from '../lib/completionFeedback'
-import { disputeOrder, closeOrder, cancelOrder } from '../api/orders'
+import { disputeOrder, closeOrder, cancelOrder, fileOverdueComplaint, answerRemedy } from '../api/orders'
 import { OwnReview } from '../api/reviews'
 import RegistryPill from './ui/RegistryPill'
 import DeliveryContent from './DeliveryContent'
@@ -38,7 +38,7 @@ interface OrderDetailModalProps {
   onUpdated?: () => void
 }
 
-type OrderAction = 'dispute' | 'close' | 'cancel'
+type OrderAction = 'dispute' | 'close' | 'cancel' | 'complain' | 'accept_remedy' | 'reject_remedy'
 
 type OrderActionCopy = { title: string; description: string; confirmLabel: string; successTitle: string }
 
@@ -60,6 +60,24 @@ const ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
     description: '商家尚未接单。确认取消后冻结积分将退还到你的账户。',
     confirmLabel: '确认取消订单',
     successTitle: '订单已取消，积分已退还',
+  },
+  complain: {
+    title: '投诉履约超时',
+    description: '商家已超过履约期限仍未交付。投诉后订单进入争议，商家须在 48 小时内给出补救方案；逾期未回应将自动全额退款。',
+    confirmLabel: '确认投诉',
+    successTitle: '投诉已提交，等待商家回应',
+  },
+  accept_remedy: {
+    title: '接受补救方案',
+    description: '接受后争议结束，订单回到履约流程，积分继续冻结至完成。',
+    confirmLabel: '确认接受',
+    successTitle: '已接受补救方案',
+  },
+  reject_remedy: {
+    title: '拒绝补救方案',
+    description: '拒绝后争议将提交平台裁决，平台会根据双方情况决定退款或继续履约。',
+    confirmLabel: '确认拒绝',
+    successTitle: '已提交平台裁决',
   },
 }
 
@@ -85,6 +103,24 @@ const ACCEPTANCE_ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
     description: '商家尚未接单。确认取消后冻结积分将退还到你的账户。',
     confirmLabel: '确认取消订单',
     successTitle: '订单已取消，积分已退还',
+  },
+  complain: {
+    title: '投诉履约超时',
+    description: '商家已超过履约期限仍未交付。投诉后订单进入争议，商家须在 48 小时内给出补救方案；逾期未回应将自动全额退款。',
+    confirmLabel: '确认投诉',
+    successTitle: '投诉已提交，等待商家回应',
+  },
+  accept_remedy: {
+    title: '接受补救方案',
+    description: '接受后争议结束，订单回到履约流程，积分继续冻结至完成。',
+    confirmLabel: '确认接受',
+    successTitle: '已接受补救方案',
+  },
+  reject_remedy: {
+    title: '拒绝补救方案',
+    description: '拒绝后争议将提交平台裁决，平台会根据双方情况决定退款或继续履约。',
+    confirmLabel: '确认拒绝',
+    successTitle: '已提交平台裁决',
   },
 }
 
@@ -162,6 +198,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       if (action === 'dispute') await disputeOrder(order.id)
       if (action === 'close') await closeOrder(order.id)
       const cancelPending = action === 'cancel' && (await cancelOrder(order.id)) === 'pending'
+      if (action === 'complain') await fileOverdueComplaint(order.id)
+      if (action === 'accept_remedy' || action === 'reject_remedy') await answerRemedy(order.id, action === 'accept_remedy')
       if (!isCurrent()) return
       onUpdated?.()
       // PR-3 复审：dispute 仍是关注态、close 移出关注态——realtime 关闭时
@@ -187,6 +225,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   const canDispute = order.status === 'delivered'
   const canClose = order.status === 'delivered' || order.status === 'disputed'
   const canCancel = order.status === 'pending' && Boolean(order.acceptBy) && !order.cancelRequestedAt
+  const confirmDialogId = confirmAction === 'close' ? 'close-order-dialog' : confirmAction === 'cancel' ? 'cancel-order-dialog' : `${confirmAction ?? 'dispute'}-dialog`
+  const canComplain = order.status === 'processing' && order.deliveryMode === 'manual_service'
+    && Boolean(order.fulfillmentDeadline) && new Date(order.fulfillmentDeadline!).getTime() < Date.now()
   // P6b：人工服务订单 delivered 阶段以「验收」措辞呈现关闭/争议（disputed 阶段保持原措辞）。
   const isAcceptance = order.deliveryMode === 'manual_service' && order.status === 'delivered'
   const actionCopy = isAcceptance ? ACCEPTANCE_ACTION_COPY : ACTION_COPY
@@ -409,6 +450,36 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             </div>
           )}
 
+          {/* 争议进度：谁在等谁、等到什么时候 */}
+          {order.status === 'disputed' && (order.disputeRespondBy || order.remedyProposedAt || order.disputeEscalatedAt) && (
+            <div
+              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50 space-y-1.5"
+              data-testid="order-dispute-progress"
+            >
+              <h3 className="font-heading text-xs font-bold text-[var(--color-text)]">争议处理进度</h3>
+              {order.disputeEscalatedAt ? (
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">已提交平台裁决，请等待平台处理结果。</p>
+              ) : order.remedyProposedAt ? (
+                <>
+                  <p className="text-xs text-[var(--color-text)] leading-relaxed whitespace-pre-wrap" data-testid="order-remedy-note">商家补救方案：{order.remedyNote}</p>
+                  <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                    请在 {formatOrderDate(order.remedyRespondBy)} 前接受或拒绝，逾期视为接受。
+                  </p>
+                  <div className="flex gap-2 pt-1">
+                    <button type="button" className="btn-primary btn-sm text-xs px-3 py-1.5" disabled={loadingAction !== null}
+                      onClick={() => setConfirmAction('accept_remedy')} data-testid="order-accept-remedy">接受方案</button>
+                    <button type="button" className="btn-secondary btn-sm text-xs px-3 py-1.5" disabled={loadingAction !== null}
+                      onClick={() => setConfirmAction('reject_remedy')} data-testid="order-reject-remedy">拒绝并提交平台裁决</button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-[var(--color-text-muted)] leading-relaxed">
+                  等待商家在 {formatOrderDate(order.disputeRespondBy)} 前给出补救方案；未交付的订单逾期未回应将自动全额退款，已交付的订单将提交平台裁决。
+                </p>
+              )}
+            </div>
+          )}
+
           {/* ④ 积分说明（条件展示） */}
           {(showHolding || isRefunded) && (
             <div
@@ -546,6 +617,17 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             >
               关闭
             </button>
+            {canComplain && (
+              <button
+                type="button"
+                onClick={() => setConfirmAction('complain')}
+                disabled={loadingAction !== null}
+                data-testid="order-complain-button"
+                className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-warning)] hover:underline cursor-pointer py-1 transition-colors whitespace-nowrap"
+              >
+                {loadingAction === 'complain' ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : '投诉履约超时'}
+              </button>
+            )}
             {canCancel && (
               <button
                 type="button"
@@ -618,7 +700,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       <Dialog open={confirmAction !== null} onOpenChange={(open) => { if (!open) setConfirmAction(null) }}>
         <DialogContent
           className="!z-[120]"
-          data-testid={confirmAction === 'close' ? 'close-order-dialog' : confirmAction === 'cancel' ? 'cancel-order-dialog' : 'dispute-dialog'}
+          data-testid={`${confirmDialogId}`}
         >
           <DialogTitle>{confirmAction ? actionCopy[confirmAction].title : ''}</DialogTitle>
           <DialogDescription>
@@ -635,7 +717,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
             <button
               type="button"
               onClick={() => confirmAction && executeAction(confirmAction)}
-              data-testid={confirmAction === 'close' ? 'close-order-dialog-confirm' : confirmAction === 'cancel' ? 'cancel-order-dialog-confirm' : 'dispute-dialog-confirm'}
+              data-testid={`${confirmDialogId}-confirm`}
               className={
                 confirmAction === 'dispute'
                   ? 'btn-secondary px-5 py-2 text-sm border-[var(--color-warning)] text-[var(--color-warning)]'

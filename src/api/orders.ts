@@ -176,6 +176,14 @@ export async function closeOrder(id: number): Promise<void> {
   await api.post(`/orders/${id}/close`)
 }
 
+export async function fileOverdueComplaint(id: number): Promise<void> {
+  await api.post(`/orders/${id}/overdue-complaint`)
+}
+
+export async function answerRemedy(id: number, accept: boolean): Promise<void> {
+  await api.post(`/orders/${id}/remedy/${accept ? 'accept' : 'reject'}`)
+}
+
 /** 'pending' = 取消已受理但需核对远端（HTTP 202），积分暂不退还。 */
 export async function cancelOrder(id: number): Promise<'cancelled' | 'pending'> {
   const res = await api.post(`/orders/${id}/cancel`)

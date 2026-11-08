@@ -48,6 +48,9 @@ export interface AdminOrderItem {
   // P6a：expired 以服务端裁决为准，前端不自行比对时钟
   delivery?: { status: string; expiresAt?: string | null; expired?: boolean } | null
   deliveryModeSnapshot?: string | null
+  /** 买家拒绝补救方案或商家逾期未回应：等待平台裁决。 */
+  disputeEscalatedAt?: string | null
+  remedyNote?: string | null
   // P7b：自动开通任务的安全投影（脱敏诊断码）；null = 非自动开通单。
   provisionTask?: import('../types/merchant').ProvisionTaskSummary | null
   // Xboard/Faka 任务投影；有值则禁止平台人工替代履约。

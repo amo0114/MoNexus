@@ -60,8 +60,9 @@ describe('merchant dispute resume by delivery mode', () => {
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(merchantLogin.accessToken))
-      .send({ resolution: 'resume' })
+      .send({ resolution: 'resume', publicNote: '补救方案' })
       .expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -109,8 +110,9 @@ describe('merchant dispute resume by delivery mode', () => {
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(merchantLogin.accessToken))
-      .send({ resolution: 'resume' })
+      .send({ resolution: 'resume', publicNote: '补救方案' })
       .expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
 
     const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true } })
     expect(order?.status).toBe('processing')
@@ -139,7 +141,8 @@ describe('merchant dispute resume by delivery mode', () => {
     const merchantLogin = await loginAsMerchant('dispute-fixed@test.local', 'pass123')
     await api.post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(merchantLogin.accessToken))
-      .send({ resolution: 'resume' }).expect(200)
+      .send({ resolution: 'resume', publicNote: '补救方案' }).expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
 
     const order = await prisma.order.findUnique({
       where: { id: orderId },
@@ -206,8 +209,9 @@ describe('P6a review P1-2: dispute re-delivery refreshes an already-expired subs
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(merchantLogin.accessToken))
-      .send({ resolution: 'resume' })
+      .send({ resolution: 'resume', publicNote: '补救方案' })
       .expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
     const before = Date.now()
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
@@ -230,8 +234,9 @@ describe('P6a review P1-2: dispute re-delivery refreshes an already-expired subs
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(merchantLogin.accessToken))
-      .send({ resolution: 'resume' })
+      .send({ resolution: 'resume', publicNote: '补救方案' })
       .expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
     await api
       .post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
       .set(authHeader(merchantLogin.accessToken))

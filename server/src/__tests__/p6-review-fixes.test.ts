@@ -219,7 +219,8 @@ describe('P2-1: dispute redelivery of an expired subscription resets the reminde
     // 争议 → 商家恢复履约 → 携新内容重交付：expiresAt 重算 + 提醒复位。
     await api.post(`/api/orders/${orderId}/dispute`).set(authHeader(buyer.accessToken)).expect(200)
     await api.post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
-      .set(authHeader(seller.accessToken)).send({ resolution: 'resume' }).expect(200)
+      .set(authHeader(seller.accessToken)).send({ resolution: 'resume', publicNote: '补救方案' }).expect(200)
+    await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
     await api.post(`/api/merchant/orders/${orderId}/fulfillment/deliver`)
       .set(authHeader(seller.accessToken)).send({ deliveryContent: '补救交付' }).expect(200)
 

@@ -366,6 +366,11 @@ export default function AdminOrderTable({ active = true }: Props) {
                         仲裁
                       </button>
                     )}
+                    {o.status === 'disputed' && o.disputeEscalatedAt && (
+                      <span className="ml-1.5 text-[11px] font-semibold text-[var(--color-warning)]" data-testid={`admin-dispute-escalated-${o.id}`}>
+                        待平台裁决
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -406,6 +411,11 @@ export default function AdminOrderTable({ active = true }: Props) {
           <DialogDescription>
             订单 ORD-{resolveTarget?.id}（{resolveTarget?.product?.name}）。选择支持用户退款、支持商家关闭订单，或要求商家继续履约。未交付过的订单不能裁决关闭。
           </DialogDescription>
+          {resolveTarget?.remedyNote && (
+            <p className="mt-3 text-xs text-[var(--color-text-muted)] whitespace-pre-wrap" data-testid="admin-resolve-remedy-note">
+              商家补救方案：{resolveTarget.remedyNote}
+            </p>
+          )}
           <div className="mt-4 space-y-3">
             <label className="flex items-start gap-2.5 p-3 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-background)] cursor-pointer">
               <input

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import * as orderService from './service.js'
 import { issueOrderFileDownloadUrl } from './fileAccess.js'
 import { cancelUnacceptedOrder } from './cancellation.js'
+import { answerRemedy, fileOverdueComplaint } from './disputes.js'
 import { idempotencyKeySchema } from './schema.js'
 import { badRequest } from '../../lib/httpError.js'
 
@@ -101,6 +102,28 @@ export async function cancel(req: Request, res: Response, next: NextFunction) {
     res.status(outcome === 'cancelled' ? 200 : 202).json(order)
   } catch (err) {
     next(err)
+  }
+}
+
+export async function overdueComplaint(req: Request, res: Response, next: NextFunction) {
+  try {
+    const orderId = req.params.id as unknown as number
+    await fileOverdueComplaint(orderId, req.user!.userId)
+    res.json(await orderService.getOrderDetail(orderId, req.user!.userId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export function remedyAnswer(accept: boolean) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const orderId = req.params.id as unknown as number
+      await answerRemedy(orderId, req.user!.userId, accept)
+      res.json(await orderService.getOrderDetail(orderId, req.user!.userId))
+    } catch (err) {
+      next(err)
+    }
   }
 }
 
