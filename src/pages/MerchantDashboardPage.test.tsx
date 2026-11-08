@@ -71,6 +71,7 @@ const { merchantApi, catalogApi } = vi.hoisted(() => {
       (id: number, payload: { resolution: 'resume' | 'close'; publicNote?: string }) => Promise<MerchantOrder>
     >(),
     rejectOrder: vi.fn<(id: number, payload?: { publicNote?: string; internalNote?: string }) => Promise<void>>(),
+    reportUnfulfillable: vi.fn<(id: number, payload?: { publicNote?: string }) => Promise<void>>(),
     postOrderProgress: vi.fn<(id: number, note: string) => Promise<{ ok: true }>>(),
     getMerchantOrderDetail: vi.fn<(id: number) => Promise<MerchantOrder>>(),
     getMerchantInventoryLogs: vi.fn<(id: number, params?: { page?: number; pageSize?: number }) => Promise<unknown>>(),
@@ -694,6 +695,18 @@ describe('merchant order action completions', () => {
     expect(useAppStore.getState().islandNotice).toBeNull()
     await act(async () => deferred.resolve(undefined))
     await checkCompletion('已开始履约')
+  })
+
+  it('lets an accepted order be declared unfulfillable with a full refund', async () => {
+    merchantApi.reportUnfulfillable.mockResolvedValue(undefined)
+    await openOrders({ ...fulfillmentOrder(), status: 'processing', availableActions: ['deliver', 'post_progress', 'report_unfulfillable'] })
+    fireEvent.click(screen.getByTestId('merchant-unfulfillable-77'))
+    expect(screen.getByTestId('merchant-reject-dialog')).toHaveTextContent('确认无法履约')
+    fireEvent.change(screen.getByTestId('merchant-reject-note'), { target: { value: '档期取消' } })
+    fireEvent.click(screen.getByTestId('merchant-reject-confirm'))
+    await checkCompletion('已取消订单，冻结积分已退还')
+    expect(merchantApi.reportUnfulfillable).toHaveBeenCalledExactlyOnceWith(77, { publicNote: '档期取消' })
+    expect(merchantApi.rejectOrder).not.toHaveBeenCalled()
   })
 
   it('requires reject confirmation and preserves the remark on failure for retry', async () => {

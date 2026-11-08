@@ -14,7 +14,7 @@ export interface RefundInventoryOrder {
 export interface RefundInventoryOptions {
   // 退款前的订单状态决定"是否已交付"：pending = 未交付（可回补容量），
   // disputed = 已交付后争议（容量视为已消耗）。
-  fromStatus: 'pending' | 'disputed'
+  fromStatus: 'pending' | 'processing' | 'disputed'
   actorUserId: number
 }
 
@@ -82,8 +82,8 @@ export async function applyRefundInventoryPolicy(
     return
   }
 
-  if (mode === 'manual_service' && opts.fromStatus === 'pending') {
-    // 3) 未交付的人工服务单：商家拒单时服务名额未被消耗，限量规格回补容量
+  if (mode === 'manual_service' && (opts.fromStatus === 'pending' || opts.fromStatus === 'processing')) {
+    // 3) 未交付的人工服务单：拒单或无法履约时服务名额未被消耗，限量规格回补容量
     //    （镜像下单时的 Offer/Product stock 同事务扣减）。offerId 为空的历史
     //    单无从定位规格容量，只做销量净减。
     if (order.offerId == null) return

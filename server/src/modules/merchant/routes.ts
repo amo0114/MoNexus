@@ -91,6 +91,7 @@ router.post('/orders/:id/fulfillment/deliver', validate({ params: idParamSchema,
 router.post('/orders/:id/progress', validate({ params: idParamSchema, body: orderProgressSchema }), controller.postProgress)
 router.post('/orders/:id/fulfillment/respond-dispute', validate({ params: idParamSchema, body: respondDisputeSchema }), controller.respondDispute)
 router.post('/orders/:id/fulfillment/reject', validate({ params: idParamSchema, body: rejectOrderSchema }), controller.rejectOrder)
+router.post('/orders/:id/fulfillment/unfulfillable', validate({ params: idParamSchema, body: rejectOrderSchema }), controller.reportUnfulfillable)
 
 router.get('/settlements', validate({ query: merchantListQuerySchema }), controller.listSettlements)
 router.get('/stats', controller.stats)

@@ -180,6 +180,7 @@ router.post('/orders/:id/deliver', validate({ params: idParamSchema, body: z.obj
   publicNote: z.string().trim().max(1000).optional(),
 }).strict() }), controller.deliverPlatformOrder)
 router.post('/orders/:id/reject', validate({ params: idParamSchema, body: z.object({ reason: z.string().trim().min(1).max(500) }).strict() }), controller.rejectPlatformOrder)
+router.post('/orders/:id/unfulfillable', validate({ params: idParamSchema, body: z.object({ reason: z.string().trim().min(1).max(500) }).strict() }), controller.reportPlatformUnfulfillable)
 router.post(
   '/products/:id/offers',
   validate({ params: idParamSchema, body: draftOfferV2WriteSchema }),

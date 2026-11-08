@@ -141,3 +141,48 @@ export async function cancelUnacceptedOrder(orderId: number, actor: UnacceptedCa
   else await afterOrderCancellationAssessed(orderId)
   return result
 }
+
+type UnfulfillableOrder = {
+  id: number
+  userId: number
+  status: string
+  holdingPoints: number | null
+  fundsHeld: boolean
+  productId: number
+  offerId: number | null
+  merchantId: number | null
+  deliveryModeSnapshot: string | null
+}
+
+/**
+ * The seller (merchant or platform) declares an accepted manual order cannot be
+ * fulfilled: full refund, held points released, unused capacity restocked. The
+ * caller locked the Order and checked ownership. Refunding is the buyer-favourable
+ * outcome, so only a proven remote execution blocks it; the barrier still runs to
+ * stop any automatic provisioning retries.
+ */
+export async function refundUnfulfillableOrderInTx(
+  tx: Tx,
+  order: UnfulfillableOrder,
+  actor: { role: 'merchant' | 'admin'; userId: number; publicNote?: string; internalNote?: string },
+): Promise<void> {
+  if (order.status !== 'processing') throw conflict('只有履约中的订单可以声明无法履约')
+  if (order.deliveryModeSnapshot !== 'manual_service') throw conflict('只有人工服务订单可以声明无法履约')
+  if (await assessAndBlockCancellationInTx(tx, order.id) === 'already_executed') {
+    throw conflict('订单已自动开通，请走争议或售后处理')
+  }
+  await transitionOrderStatus({
+    orderId: order.id,
+    toStatus: 'refunded',
+    actorRole: actor.role,
+    actorUserId: actor.userId,
+    action: `${actor.role}.fulfillment.unfulfillable`,
+    publicNote: actor.publicNote ?? '商家无法履约，订单已取消，积分已退还',
+    internalNote: actor.internalNote,
+    processingRefund: true,
+  }, tx)
+  await releaseHeldOrder(tx, order, `无法履约释放冻结积分: #${order.id}`)
+  await applyRefundInventoryPolicy(tx, order, { fromStatus: 'processing', actorUserId: actor.userId })
+  await onOrderRefundedInTx(tx, order.id)
+  await tx.order.update({ where: { id: order.id }, data: { resolutionReason: 'seller_unfulfillable' } })
+}

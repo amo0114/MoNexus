@@ -12,6 +12,8 @@ import { createOrderStatusEvent, transitionOrderStatus } from '../orders/fulfill
 import { getProductFulfillmentMode } from '../orders/statusPolicy.js'
 import { releaseHeldOrder } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
+import { refundUnfulfillableOrderInTx } from '../orders/cancellation.js'
+import { afterOrderRefunded } from '../fulfillment/coordination.js'
 import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 
 const EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE = '外部开通订单不能由平台人工替代交付'
@@ -168,5 +170,16 @@ export async function rejectPlatformOrder(
       actorUserId: adminUserId,
     })
   })
+  return { id: orderId, status: 'refunded' }
+}
+
+/** Platform-run accepted order that cannot be fulfilled: full refund (see refundUnfulfillableOrderInTx). */
+export async function reportPlatformUnfulfillable(adminUserId: number, orderId: number, reason: string) {
+  await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+    const order = await assertPlatformOrder(orderId, tx)
+    await refundUnfulfillableOrderInTx(tx, order, { role: 'admin', userId: adminUserId, publicNote: reason })
+  })
+  await afterOrderRefunded(orderId)
   return { id: orderId, status: 'refunded' }
 }
