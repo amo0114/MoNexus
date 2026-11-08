@@ -10,6 +10,8 @@ import type {
   RechargeOrderStatus,
   RechargePricePolicyStatus,
   RechargeRefundStatus,
+  ReconciliationItemStatus,
+  ReconciliationMismatchType,
   ReconciliationScopeType,
 } from './types.js'
 
@@ -84,6 +86,18 @@ export async function reconcileOrder(req: Request, res: Response, next: NextFunc
   }
 }
 
+export async function resolveReconcileRequired(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminPaymentOperations.adminResolveReconcileRequired(
+      String(req.params.id),
+      req.user!.userId,
+      req.body.action,
+    ))
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function requestRefund(req: Request, res: Response, next: NextFunction) {
   try {
     res.status(201).json(await adminPaymentOperations.adminRequestRefund(
@@ -148,6 +162,33 @@ export async function listDisputes(req: Request, res: Response, next: NextFuncti
       status?: PaymentDisputeStatus
     }
     res.json(await adminQueries.adminListDisputes(query))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function listReconItems(req: Request, res: Response, next: NextFunction) {
+  try {
+    const query = req.query as unknown as {
+      page: number
+      pageSize: number
+      status?: ReconciliationItemStatus
+      mismatchType?: ReconciliationMismatchType
+    }
+    res.json(await adminQueries.adminListReconItems(query))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function reviewReconItem(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await adminPaymentOperations.adminReviewReconItem(
+      String(req.params.id),
+      req.user!.userId,
+      req.body.status,
+      req.body.reason,
+    ))
   } catch (err) {
     next(err)
   }

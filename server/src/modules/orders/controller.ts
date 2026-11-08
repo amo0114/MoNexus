@@ -18,6 +18,7 @@ export async function create(req: Request, res: Response, next: NextFunction) {
       offerId: req.body.offerId,
       xboardAccountLinkId: req.body.xboardAccountLinkId,
       expectedXboardTargetVersion: req.body.expectedXboardTargetVersion,
+      extensionInput: req.body.extensionInput,
       expectedPrice: req.body.expectedPrice,
       expectedCheckoutVersion: req.body.expectedCheckoutVersion,
       formAnswers: req.body.formAnswers,

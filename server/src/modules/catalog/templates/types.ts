@@ -33,6 +33,8 @@ export const FULFILLMENT_CONFIGURATIONS = [
   'manual',
   'merchant_webhook',
   'faka_bridge',
+  // Any other registered fulfillment provider (modules/fulfillment).
+  'external_provider',
 ] as const
 
 export type FulfillmentConfiguration = (typeof FULFILLMENT_CONFIGURATIONS)[number]
@@ -108,6 +110,7 @@ export type FulfillmentStrategy =
   | { kind: 'manual' }
   | { kind: 'merchant_webhook' }
   | { kind: 'faka_bridge' }
+  | { kind: 'external_provider'; providerId: string }
 
 export type FulfillmentOfferInput = {
   deliveryMode: string

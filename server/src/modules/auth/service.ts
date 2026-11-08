@@ -7,8 +7,8 @@ import {
 } from './sessionIssuance.js'
 import bcrypt from 'bcryptjs'
 import { Prisma } from '@prisma/client'
-import { config } from '../../config/index.js'
 import { isPresetAvatarUrl } from './avatarPresets.js'
+import { MediaRefResolutionError, resolveLegacyPlatformImageUrl } from '../catalog/platformMedia.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound, sessionRevoked, sessionChanged, unauthenticated } from '../../lib/httpError.js'
 import { getRefreshTokenMaxAgeMs } from '../../lib/systemConfig.js'
@@ -338,25 +338,19 @@ export async function updateUserProfile(userId: number, data: { nickname?: strin
     update.nicknameIsGenerated = false
   }
   if (data.avatarUrl !== undefined) {
-    // 头像仅限已发布预设的精确路径或平台图床上传地址。
-    // - S3 模式:URL 必须以配置的 STORAGE_PUBLIC_URL_BASE 为前缀;
-    // - 内存/开发模式:URL 的路径必须以 /uploads/ 开头(本平台上传路径)。
-    // 禁止任意外部 URL,防止外部图片追踪与隐私泄露。
+    // 头像仅限已发布预设，或本平台登记过的公开上传图片（按对象自身的存储配置
+    // 生成规范 URL 并精确比对 origin+path）。前缀匹配会放过
+    // `https://cdn.example.com.evil.net/…` 之类的外部地址，造成查看者被外部追踪。
     if (data.avatarUrl !== null && !isPresetAvatarUrl(data.avatarUrl)) {
-      let allowed = false
-      if (config.storage.kind === 's3' && config.storage.publicUrlBase) {
-        allowed = data.avatarUrl.startsWith(config.storage.publicUrlBase.replace(/\/$/, ''))
-      } else {
-        try {
-          const u = new URL(data.avatarUrl)
-          allowed = u.pathname.startsWith('/uploads/')
-        } catch {
-          allowed = false
-        }
-      }
-      if (!allowed) throw badRequest('请选择预设头像或使用平台上传的图片')
+      const resolved = await resolveLegacyPlatformImageUrl(data.avatarUrl).catch((err: unknown) => {
+        if (err instanceof MediaRefResolutionError) return null
+        throw err
+      })
+      if (resolved?.source !== 'upload_image') throw badRequest('请选择预设头像或使用平台上传的图片')
+      update.avatarUrl = resolved.canonicalUrl
+    } else {
+      update.avatarUrl = data.avatarUrl
     }
-    update.avatarUrl = data.avatarUrl
   }
   if (Object.keys(update).length === 0) throw badRequest('没有可更新的字段')
   await prisma.user.update({ where: { id: userId }, data: update })

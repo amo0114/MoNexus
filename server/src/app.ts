@@ -1,4 +1,7 @@
+// Registers fulfillment providers before any route or job can use the registry.
+import './bootstrap/extensions.js'
 import { productVideoRoutes } from './modules/productVideos/routes.js'
+import { timingSafeEqual } from 'node:crypto'
 import express from 'express'
 import cors from 'cors'
 import helmet from 'helmet'
@@ -58,7 +61,7 @@ app.set('trust proxy', config.trustProxy)
 
 initErrorReporter()
 
-function observeRateLimit(limiter: 'api' | 'payment_webhook') {
+function observeRateLimit(limiter: 'api' | 'payment_webhook' | 'metrics_auth') {
   return (
     req: express.Request,
     res: express.Response,
@@ -129,13 +132,33 @@ app.use(metricsMiddleware)
 
 app.use('/api/health', healthRoutes)
 
-app.get('/api/metrics', async (req, res) => {
-  if (config.metricsToken) {
-    const auth = req.headers.authorization
-    if (auth !== `Bearer ${config.metricsToken}`) {
-      res.status(401).type('text/plain').send('unauthorized')
-      return
-    }
+// /api/metrics sits before the generic /api limiter so scrapes never compete
+// with user traffic; only failed token attempts count against this budget.
+const metricsAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: observeRateLimit('metrics_auth'),
+  message: {
+    error: {
+      code: 'RATE_LIMITED',
+      message: '请求过于频繁，请稍后再试',
+    },
+  },
+})
+
+function metricsTokenMatches(header: string | undefined, token: string) {
+  const expected = Buffer.from(`Bearer ${token}`)
+  const actual = Buffer.from(header ?? '')
+  return actual.length === expected.length && timingSafeEqual(actual, expected)
+}
+
+app.get('/api/metrics', metricsAuthLimiter, async (req, res) => {
+  if (config.metricsToken && !metricsTokenMatches(req.headers.authorization, config.metricsToken)) {
+    res.status(401).type('text/plain').send('unauthorized')
+    return
   }
 
   try {

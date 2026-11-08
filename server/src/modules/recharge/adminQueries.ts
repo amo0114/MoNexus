@@ -3,7 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
 import { serializeAmountMinor } from './money.js'
 import { providerSupportsRefunds } from './refund.js'
-import { serializeRun } from '../payment/reconciliation/service.js'
+import { serializeReconItem, serializeRun } from '../payment/reconciliation/service.js'
 import { serializeDispute } from '../payment/disputes/service.js'
 import type {
   PaymentDisputeStatus,
@@ -11,6 +11,8 @@ import type {
   PaymentProviderName,
   RechargeOrderStatus,
   RechargeRefundStatus,
+  ReconciliationItemStatus,
+  ReconciliationMismatchType,
 } from './types.js'
 import { parseAndValidateStrictRefundDate } from './adminSchema.js'
 
@@ -351,6 +353,28 @@ export async function adminListReconRuns() {
     include: { items: true },
   })
   return { items: items.map(serializeRun) }
+}
+
+export async function adminListReconItems(query: {
+  page: number
+  pageSize: number
+  status?: ReconciliationItemStatus
+  mismatchType?: ReconciliationMismatchType
+}) {
+  const where = {
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.mismatchType ? { mismatchType: query.mismatchType } : {}),
+  }
+  const [total, items] = await prisma.$transaction([
+    prisma.reconciliationItem.count({ where }),
+    prisma.reconciliationItem.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      skip: (query.page - 1) * query.pageSize,
+      take: query.pageSize,
+    }),
+  ])
+  return { page: query.page, pageSize: query.pageSize, total, items: items.map(serializeReconItem) }
 }
 
 export async function adminListDisputes(query: {

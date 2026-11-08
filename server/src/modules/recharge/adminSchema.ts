@@ -9,6 +9,8 @@ import {
   RECHARGE_ORDER_STATUSES,
   RECHARGE_PRICE_POLICY_STATUSES,
   RECHARGE_REFUND_STATUSES,
+  RECONCILIATION_ITEM_STATUSES,
+  RECONCILIATION_MISMATCH_TYPES,
   RECONCILIATION_SCOPE_TYPES,
 } from './types.js'
 import { parseAmountMinorString, AmountParseError } from './money.js'
@@ -196,6 +198,22 @@ export const RP_CNY_VMQFOX_V1_CREATE_EXAMPLE = {
 export const adminRefundSchema = z.object({
   reasonCode: z.string().min(1).max(64).optional(),
 })
+
+export const adminResolveReconcileSchema = z.object({
+  action: z.enum(['credit', 'refund']),
+})
+
+export const adminListReconItemsQuerySchema = z.object({
+  status: z.enum(RECONCILIATION_ITEM_STATUSES).optional(),
+  mismatchType: z.enum(RECONCILIATION_MISMATCH_TYPES).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export const adminReviewReconItemSchema = z.object({
+  status: z.enum(['resolved', 'ignored']),
+  reason: z.string().trim().min(1).max(160),
+}).strict()
 
 export const adminResolveDisputeSchema = z.object({
   outcome: z.enum(['won', 'lost']),
