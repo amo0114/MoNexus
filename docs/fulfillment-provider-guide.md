@@ -96,6 +96,7 @@ export const myAdapter: ExternalFulfillmentAdapter = {
 
 - **下单**：任务与订单在同一个事务里创建，远端调用发生在提交之后。
 - **取消/超时**：买家取消、管理员退款之前，核心会在订单锁内做取消判断。未派发的任务直接作废；可能已派发的任务被标记为 `cancelRequested`，之后通过 `cancel` 或 `query` 收敛。你不需要处理这些，只要 `query` 如实回答。
+  外部订单与普通人工单一样有开始处理期限（`acceptTimeoutHours`），买家可在待处理时取消，超时自动取消。期限过后远端迟到的成功仍会交付；收敛成退款的取消记为 `resolutionReason=cancel_requested`，开通失败退款记为 `provider_failed`。商家 Webhook 自动开通没有查询/取消协议，不设期限，也不支持买家直接取消。
 - **迟到的结果**：订单已退款或已关闭后才收到 `succeeded` 时，引擎不会再交付，会在任务上记下「需要人工撤销」并打错误日志，由运营在远端撤销。
 - **对账**：重试次数（默认 3 次）用完后，任务转为 `needs_reconcile`，引擎会继续低频查询。目前还没有后台页面展示这类任务，请通过日志和数据库（`FulfillmentJob.status`、`lastError`、`evidence`）排查。
 
