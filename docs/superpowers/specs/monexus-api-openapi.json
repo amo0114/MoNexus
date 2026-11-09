@@ -1394,6 +1394,15 @@
                 }
               }
             }
+          },
+          {
+            "type": "object",
+            "properties": {
+              "externalFulfillment": {
+                "type": "boolean",
+                "description": "外部执行者标记；平台不得人工替代履约。"
+              }
+            }
           }
         ]
       },
@@ -5412,6 +5421,25 @@
             }
           }
         }
+      },
+      "FulfillmentExtensionInput": {
+        "type": "object",
+        "maxProperties": 16,
+        "description": "供应商专属购买输入。键最长 64 字符；值为最长 512 字符的字符串、有限数字或布尔值，由 Offer 绑定的供应商校验语义。非空输入纳入订单幂等指纹。",
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": "string",
+              "maxLength": 512
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        }
       }
     },
     "responses": {
@@ -6505,6 +6533,9 @@
                     "type": "string",
                     "pattern": "^[a-f0-9]{64}$",
                     "description": "本人账号及实例/稳定目标/SKU 的预览版本，纳入幂等指纹；该值本身不授予权限。"
+                  },
+                  "extensionInput": {
+                    "$ref": "#/components/schemas/FulfillmentExtensionInput"
                   }
                 }
               }
@@ -11823,6 +11854,19 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "extensionInput",
+            "in": "query",
+            "required": false,
+            "description": "JSON 编码的供应商输入，例如 extensionInput={\"account\":\"target\"}。现有顶层 xboardAccountLinkId 继续兼容。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FulfillmentExtensionInput"
+                }
+              }
             }
           }
         ],

@@ -224,20 +224,22 @@ function withProvisionStatusForBuyer<T extends Record<string, unknown>>(order: T
 }
 
 /**
- * Xboard/Faka 管理端投影：任务只保留 id；商品只保留 fakaBridge 布尔。
- * 禁止透出 skuSnapshot / leaseToken / sourceHash / ExternalCatalogLink 原文。
+ * Staff executor projection: Faka keeps its legacy id projection; generic jobs
+ * and current Offer bindings become a boolean, without task inputs or leases.
  */
 type FakaBridgeTaskShape = { id?: unknown } & Record<string, unknown>
 type ProductWithCatalogLink = {
   externalCatalogLink?: unknown
 } & Record<string, unknown>
 
-function withFakaBridgeForStaff<T extends Record<string, unknown>>(order: T) {
+function withExternalFulfillmentForStaff<T extends Record<string, unknown>>(order: T) {
   const raw = order as T & {
     fakaBridgeTask?: FakaBridgeTaskShape | null
+    fulfillmentJob?: { id: number } | null
+    offer?: { externalIntegration: string | null } | null
     product?: ProductWithCatalogLink | null
   }
-  const { fakaBridgeTask, product, ...rest } = raw
+  const { fakaBridgeTask, fulfillmentJob, offer, product, ...rest } = raw
 
   let nextProduct = product
   if (product) {
@@ -252,6 +254,7 @@ function withFakaBridgeForStaff<T extends Record<string, unknown>>(order: T) {
 
   return {
     ...rest,
+    externalFulfillment: Boolean(offer?.externalIntegration || fulfillmentJob || fakaBridgeTask),
     ...(product !== undefined ? { product: nextProduct } : {}),
     ...(fakaBridgeTask !== undefined ? { fakaBridgeTask: projectedTask } : {}),
   }
@@ -284,8 +287,8 @@ export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
 
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {
   // P7b：仲裁上下文透出任务态（同商家的安全投影，禁止整表透传）。
-  // Xboard/Faka：fakaBridgeTask.id + product.fakaBridge，剥离 link / 任务密钥。
-  return withFakaBridgeForStaff(
+  // External executors are identified without exposing task payloads or credentials.
+  return withExternalFulfillmentForStaff(
     withProvisionStatusForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))),
   )
 }

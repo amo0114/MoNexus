@@ -55,6 +55,8 @@ export interface AdminOrderItem {
   provisionTask?: import('../types/merchant').ProvisionTaskSummary | null
   // Xboard/Faka 任务投影；有值则禁止平台人工替代履约。
   fakaBridgeTask?: { id?: number } | null
+  /** Server-side external executor marker; task inputs and leases stay private. */
+  externalFulfillment?: boolean
 }
 
 export interface AdminOrderListQuery {

@@ -96,16 +96,20 @@ export async function transitionOrderStatus(
   const actorRole = assertOrderStatusActorRole(input.actorRole)
   const order = await client.order.findUnique({
     where: { id: input.orderId },
-    select: { id: true, userId: true, productId: true, status: true, acceptBy: true },
+    select: { id: true, userId: true, productId: true, status: true, acceptBy: true, cancelRequestedAt: true },
   })
   if (!order) throw notFound('订单不存在')
 
   const { from, to } = assertLegalStatusTransition(order.status, input.toStatus)
+  const manualAccept = from === 'pending' && to === 'processing' && actorRole !== 'system'
+  if (manualAccept && order.cancelRequestedAt) {
+    throw conflict('订单取消处理中，不能接单')
+  }
   // The deadline holds even before the timeout scan runs: once it passes, the
   // order may only be cancelled, never accepted by a person. A late remote
   // result (system) still applies: the work already happened and only the
   // cancellation barrier may decide whether it is delivered or revoked.
-  if (from === 'pending' && to === 'processing' && actorRole !== 'system' && order.acceptBy && order.acceptBy <= new Date()) {
+  if (manualAccept && order.acceptBy && order.acceptBy <= new Date()) {
     throw conflict('接单期限已过，订单将自动取消并退还积分')
   }
   // A late automatic result or an ordinary delivery must not silently clear a
@@ -132,7 +136,7 @@ export async function transitionOrderStatus(
   // only affect later deliveries.
   const acceptance = to === 'delivered' ? { acceptanceBy: await acceptanceDeadline(client) } : {}
   const transitioned = await client.order.updateMany({
-    where: { id: order.id, status: order.status },
+    where: { id: order.id, status: order.status, ...(manualAccept ? { cancelRequestedAt: null } : {}) },
     data: { status: to, ...disputeTimers, ...acceptance },
   })
   if (transitioned.count !== 1) {
