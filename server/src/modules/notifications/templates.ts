@@ -114,6 +114,18 @@ export function renderNotification(
   const category = 'order'
 
   switch (eventType) {
+    case 'order.remedy_proposed_buyer':
+      return {
+        title: '请确认订单补救方案',
+        body: `订单 #${orderId} 已提出补救方案，请在 48 小时内查看并回应；逾期将视为接受。`,
+        payload, deeplink: buyerOrderLink(orderId), level: 'warning', category,
+      }
+    case 'order.remedy_lapsed_buyer':
+      return {
+        title: '补救方案回应期限已过',
+        body: `订单 #${orderId} 的补救方案已按逾期规则接受，请查看订单；如有异议请联系平台。`,
+        payload, deeplink: buyerOrderLink(orderId), level: 'warning', category,
+      }
     case 'order.created_merchant':
       return {
         title: '新的待处理订单',

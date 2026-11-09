@@ -14,9 +14,11 @@ import {
 } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import type { ListOrdersQuery, ResolveOrderInput } from './schema.js'
+import { FULFILLMENT_REVIEW_WHERE } from '../orders/operationalState.js'
 
 function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
   const where: Prisma.OrderWhereInput = {}
+  if (query.fulfillmentReview) where.AND = [FULFILLMENT_REVIEW_WHERE]
 
   if (query.status) {
     // 历史数据存在 legacy 'completed'，与 delivered 等价

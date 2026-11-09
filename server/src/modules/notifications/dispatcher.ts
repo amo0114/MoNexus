@@ -45,6 +45,8 @@ export type NotificationEvent = {
   recipientRole: NotificationRecipientRole
   order: OrderNotificationSnapshot
   context?: Record<string, unknown>
+  /** Server-owned occurrence, e.g. a remedy's creation time, for repeated cycles. */
+  occurrenceKey?: string
 }
 
 type NotificationWriter = Pick<Prisma.TransactionClient, 'notification' | '$queryRaw'>
@@ -153,6 +155,7 @@ export class NotificationDispatcher {
 
     const template = renderNotification(event.type, toRenderContext(event))
     const dedupeKey = buildDedupeKey(event.type, event.order.id)
+      + (event.occurrenceKey ? `:${event.occurrenceKey}` : '')
 
     const result = await tx.notification.createMany({
       data: [{

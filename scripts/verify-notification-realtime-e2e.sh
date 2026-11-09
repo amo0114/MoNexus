@@ -32,7 +32,7 @@ esac
 export TEST_DATABASE_URL
 
 # 1. Migrate + seed the dedicated DB.
-(cd "$SERVER" && DATABASE_URL="$TEST_DATABASE_URL" npx prisma migrate deploy >/dev/null)
+(cd "$SERVER" && DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate:deploy >/dev/null)
 echo "[e2e] migrated dedicated DB"
 
 if [[ "$PREPARE_ONLY" == "true" ]]; then

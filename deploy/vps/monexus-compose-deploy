@@ -219,6 +219,7 @@ validate_monitoring_runtime() {
     --volume "${release_path}/deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
     --volume "${release_path}/docs/operations/value-policy-alerts.rules.yml:/etc/prometheus/rules/value-policy-alerts.rules.yml:ro" \
     --volume "${release_path}/docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro" \
+    --volume "${release_path}/docs/operations/background-alerts.rules.yml:/etc/prometheus/rules/background-alerts.rules.yml:ro" \
     --volume "${release_path}/docs/operations/product-video-alerts.rules.yml:/etc/prometheus/rules/product-video-alerts.rules.yml:ro" \
     --volume "${MONITORING_SECRET_DIR}/metrics_token:/run/secrets/metrics_token:ro" \
     --entrypoint /bin/promtool \
@@ -431,6 +432,15 @@ monitoring_contract_ready() {
     MoNexusValuePolicyUnavailable \
     MoNexusEnabledModeOrderMissingSnapshot \
     MoNexusValuePolicyChangedRateElevated \
+    MoNexusOrderLifecycleFailures \
+    MoNexusOrderCancellationStuck \
+    MoNexusFulfillmentReconciliationStuck \
+    MoNexusFakaRevokeFailed \
+    MoNexusFakaRevokePending \
+    MoNexusOrderDeadlineOverdue \
+    MoNexusAiGenerationFailures \
+    MoNexusAiValidationRejections \
+    MoNexusAiTokenSurge \
     MoNexusPaidRechargeNotCredited \
     MoNexusDuplicateRechargeCreditUniqueConflict \
     MoNexusPaymentAmountOrCurrencyMismatch \

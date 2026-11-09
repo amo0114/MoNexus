@@ -2464,6 +2464,7 @@ model PaymentRecoveryCase {
   consumedPointLog PointLog?      @relation("PaymentRecoveryCaseConsumed", fields: [consumedPointLogId], references: [id], onDelete: Restrict)
   restoredPointLog PointLog?      @relation("PaymentRecoveryCaseRestored", fields: [restoredPointLogId], references: [id], onDelete: Restrict)
 
+  @@index([rechargeCreditId])
   @@index([userId, status])
 }
 

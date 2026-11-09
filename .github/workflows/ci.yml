@@ -769,6 +769,8 @@ jobs:
 
       - name: Check module boundaries and API contract
         run: npm run check:architecture
+      - name: Check new migration safety
+        run: npm run check:migrations
 
   ci-ok:
     # Single required status check for branch protection: succeeds when no

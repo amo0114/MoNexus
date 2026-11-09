@@ -303,6 +303,7 @@ services:
       - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./docs/operations/value-policy-alerts.rules.yml:/etc/prometheus/rules/value-policy-alerts.rules.yml:ro
       - ./docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro
+      - ./docs/operations/background-alerts.rules.yml:/etc/prometheus/rules/background-alerts.rules.yml:ro
       - ./docs/operations/product-video-alerts.rules.yml:/etc/prometheus/rules/product-video-alerts.rules.yml:ro
       - prometheusdata-prod:/prometheus
     healthcheck:

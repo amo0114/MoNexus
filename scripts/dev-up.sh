@@ -135,7 +135,7 @@ fi
 
 echo '[INFO] Preparing backend runtime...'
 (cd "$BACKEND_DIR" && npm run db:generate)
-(cd "$BACKEND_DIR" && npx prisma migrate deploy)
+(cd "$BACKEND_DIR" && npm run db:migrate:deploy)
 
 if [[ "$SEED" == "true" ]]; then
   (cd "$BACKEND_DIR" && npm run db:seed)

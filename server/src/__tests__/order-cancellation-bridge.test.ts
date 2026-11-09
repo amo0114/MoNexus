@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
 import { createOrder } from '../modules/orders/service.js'
-import { assessAndBlockCancellationInTx } from '../modules/orders/cancellation.js'
+import { assessAndBlockCancellationInTx, cancelUnacceptedOrder, refundUnfulfillableOrderInTx } from '../modules/orders/cancellation.js'
 import { processFulfillmentJob } from '../modules/fulfillment/jobProvider.js'
 import { createTestMerchant, createTestUser } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
+import { reportUnfulfillable } from '../modules/merchant/orderService.js'
 
 // The caller of the barrier holds the Order lock, as the cancel command will.
 function assess(orderId: number) {
@@ -49,6 +50,42 @@ async function demoOrder(sku: string) {
 }
 
 describe('order cancellation barrier', () => {
+  it('D2: an unregistered owner can never be assumed to have done nothing', async () => {
+    const { orderId, job } = await demoOrder('demo-license')
+    await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { providerId: 'unregistered_review_owner' } })
+    expect(await assess(orderId)).toBe('unsupported')
+  })
+
+  it('D2: the most conservative executor verdict wins, regardless of safe manual mode', async () => {
+    const { orderId, job } = await demoOrder('demo-pending')
+    await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { attempts: 1 } })
+    const { merchant } = await createTestMerchant(`severity-${randomUUID()}@test.local`, 'pass123', { role: 'merchant', status: 'active' })
+    const hook = await prisma.merchantWebhookConfig.create({ data: { merchantId: merchant.id, url: 'https://merchant.example.test/hook', secretCiphertext: 'unused' } })
+    await prisma.provisionTask.create({ data: { orderId, webhookConfigId: hook.id, attempts: 1 } })
+    expect(await assess(orderId)).toBe('unsupported') // reconcile + unsupported
+    await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { status: 'succeeded' } })
+    expect(await assess(orderId)).toBe('already_executed') // success + unsupported
+  })
+
+  it('R2-02: unknown remote execution cannot refund an accepted order', async () => {
+    const { orderId, job, user } = await demoOrder('demo-pending')
+    await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { attempts: 1 } })
+    const order = await prisma.order.update({ where: { id: orderId }, data: { status: 'processing' } })
+    await expect(prisma.$transaction(tx => refundUnfulfillableOrderInTx(tx, order, { role: 'admin', userId: user.id })))
+      .rejects.toMatchObject({ status: 409 })
+    expect(await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).toMatchObject({ balance: 400, frozenBalance: 100 })
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: orderId } })).status).toBe('processing')
+    expect(await prisma.pointLog.count({ where: { orderId, type: 'release' } })).toBe(0)
+  })
+
+  it('R2-13: legacy pending with uncertain remote execution still waits for proof', async () => {
+    const { orderId, job, user } = await demoOrder('demo-pending')
+    await prisma.order.update({ where: { id: orderId }, data: { acceptBy: null } })
+    await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { attempts: 1 } })
+    expect(await cancelUnacceptedOrder(orderId, { kind: 'buyer', userId: user.id })).toBe('cancel_pending')
+    expect(await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).toMatchObject({ balance: 400, frozenBalance: 100 })
+  })
+
   it('treats a manual order with no executor as safe', async () => {
     const { order } = await manualOrder()
     expect(await assess(order.id)).toBe('safe_to_finalize')
@@ -103,15 +140,20 @@ describe('order cancellation barrier', () => {
   })
 
   it('answers unsupported for a merchant webhook that may have run and stops its retries', async () => {
-    const { merchant } = await createTestMerchant(`cancel-hook-${randomUUID()}@example.com`, 'pass123', {
+    const { merchant, user: seller } = await createTestMerchant(`cancel-hook-${randomUUID()}@example.com`, 'pass123', {
       role: 'merchant', status: 'active', name: '开通商家',
     })
-    const { order } = await manualOrder()
+    const { order, user } = await manualOrder()
     const config = await prisma.merchantWebhookConfig.create({
       data: { merchantId: merchant.id, url: 'https://merchant.example.test/hook', secretCiphertext: 'unused' },
     })
     const task = await prisma.provisionTask.create({ data: { orderId: order.id, webhookConfigId: config.id, attempts: 1 } })
     expect(await assess(order.id)).toBe('unsupported')
     expect((await prisma.provisionTask.findUniqueOrThrow({ where: { id: task.id } })).status).toBe('cancelled')
+    await prisma.order.update({ where: { id: order.id }, data: { status: 'processing', merchantId: merchant.id, holdingPoints: 100, fundsHeld: true } })
+    await prisma.pointAccount.update({ where: { userId: user.id }, data: { balance: 400, frozenBalance: 100 } })
+    await expect(reportUnfulfillable(merchant.id, seller.id, order.id, { publicNote: 'cannot fulfil' })).rejects.toMatchObject({ status: 409 })
+    expect(await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).toMatchObject({ balance: 400, frozenBalance: 100 })
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: order.id } })).status).toBe('processing')
   })
 })

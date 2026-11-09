@@ -26,6 +26,7 @@ interface Props {
 }
 
 interface AppliedFilters {
+  fulfillmentReview: boolean
   q: string
   status: string
   fromDate: string
@@ -45,11 +46,13 @@ export default function AdminOrderTable({ active = true }: Props) {
   // Draft filters
   const [draftSearch, setDraftSearch] = useState('')
   const [draftStatus, setDraftStatus] = useState('')
+  const [draftFulfillmentReview, setDraftFulfillmentReview] = useState(false)
   const [draftFromDate, setDraftFromDate] = useState('')
   const [draftToDate, setDraftToDate] = useState('')
 
   // Applied filters reference
   const appliedFiltersRef = useRef<AppliedFilters>({
+    fulfillmentReview: false,
     q: '',
     status: '',
     fromDate: '',
@@ -78,6 +81,7 @@ export default function AdminOrderTable({ active = true }: Props) {
     setLoading(true)
     try {
       const data = await getAdminOrders({
+        ...(filtersArg.fulfillmentReview ? { fulfillmentReview: true } : {}),
         page: pageArg,
         pageSize: PAGE_SIZE,
         status: filtersArg.status || undefined,
@@ -118,6 +122,7 @@ export default function AdminOrderTable({ active = true }: Props) {
       return
     }
     appliedFiltersRef.current = {
+      fulfillmentReview: draftFulfillmentReview,
       q: draftSearch,
       status: draftStatus,
       fromDate: draftFromDate,
@@ -130,9 +135,11 @@ export default function AdminOrderTable({ active = true }: Props) {
   function handleReset() {
     setDraftSearch('')
     setDraftStatus('')
+    setDraftFulfillmentReview(false)
     setDraftFromDate('')
     setDraftToDate('')
     appliedFiltersRef.current = {
+      fulfillmentReview: false,
       q: '',
       status: '',
       fromDate: '',
@@ -226,6 +233,8 @@ export default function AdminOrderTable({ active = true }: Props) {
                 </option>
               ))}
             </select>
+            <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={draftFulfillmentReview}
+              onChange={event => setDraftFulfillmentReview(event.target.checked)} />仅待核对履约</label>
             <div className="flex items-center gap-1">
               <input
                 type="date"

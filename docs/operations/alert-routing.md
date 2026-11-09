@@ -15,6 +15,8 @@ Review date: 2026-08-18. Scope: alert routing from Sentry and ValuePolicy alert 
 | `payment-p0` | `docs/operations/payment-alerts.md` | P0 urgent | Manual incident-owner escalation (receivers not deployed by this PR) | Backend on-call | Backend on-call | Not deployed |
 | `payment-p1` | `docs/operations/payment-alerts.md` | P1 urgent | Manual incident-owner escalation (receivers not deployed by this PR) | Backend on-call | Backend on-call | Not deployed |
 
+Orders/AI rules added on 2026-11-09 use `orders-p1` and `ai-p1` (see [background alert runbook](background-alerts.md)). These labels still need receiver routing and an operator delivery drill; repository changes do not activate an external receiver. Until confirmed, inspect the admin fulfillment review queue, Faka revocation queue and redacted AI logs manually.
+
 ## Severity Policy
 
 - P0 urgent: alert the incident channel immediately, assign an incident owner, and stop or roll back the affected rollout until the invariant is restored.

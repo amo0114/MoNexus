@@ -19,7 +19,7 @@
     "start": "node dist/main.js",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:deploy": "node scripts/migrate-deploy.mjs",
     "db:seed": "tsx src/prisma/seed.ts",
     "db:seed:force": "tsx src/prisma/seed.ts --force-reset",
     "traffic-reset:reconcile": "tsx src/scripts/reconcileTrafficReset.ts",

@@ -5,6 +5,7 @@ import * as fakaSync from '../catalog/fakaSync.js'
 import * as productLifecycle from './productLifecycle.js'
 import * as auditQueries from './auditQueries.js'
 import * as orderAdmin from './orderAdmin.js'
+import * as fulfillmentReview from './fulfillmentReview.js'
 import * as userAdmin from './userAdmin.js'
 import * as fakaCatalogAdmin from './fakaCatalogAdmin.js'
 import * as inventoryAdmin from './inventoryAdmin.js'
@@ -215,6 +216,12 @@ export async function orderDetail(req: Request, res: Response, next: NextFunctio
   try {
     const id = req.params.id as unknown as number
     res.json(await orderAdmin.getOrderDetail(id))
+  } catch (err) { next(err) }
+}
+
+export async function reviewOrderFulfillment(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await fulfillmentReview.reviewOrderFulfillment(req.user!.userId, req.params.id as unknown as number, req.body))
   } catch (err) { next(err) }
 }
 

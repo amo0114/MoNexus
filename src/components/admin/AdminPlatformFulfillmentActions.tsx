@@ -136,7 +136,7 @@ export default function AdminPlatformFulfillmentActions({
             >
               交付
             </button>
-            <button
+            {!order.delivery?.id && <button
               type="button"
               className="btn-secondary btn-sm text-xs px-2.5 py-1 cursor-pointer border-[var(--color-danger)] text-[var(--color-danger)]"
               disabled={busy}
@@ -144,7 +144,7 @@ export default function AdminPlatformFulfillmentActions({
               onClick={() => setPanel((current) => (current === 'reject' ? null : 'reject'))}
             >
               无法履约
-            </button>
+            </button>}
           </>
         )}
       </div>
