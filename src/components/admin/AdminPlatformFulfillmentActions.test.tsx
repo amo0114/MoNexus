@@ -69,6 +69,13 @@ describe('AdminPlatformFulfillmentActions', () => {
     expect(screen.queryByText('开始履约')).not.toBeInTheDocument()
   })
 
+  it.each(['pending', 'processing'])('ORD-001: hides every manual action for an external %s order', status => {
+    render(<AdminPlatformFulfillmentActions order={platformOrder({ status, externalFulfillment: true })} />)
+    expect(screen.queryByTestId('admin-platform-fulfillment-actions')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('admin-platform-start-fulfillment')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('admin-platform-deliver')).not.toBeInTheDocument()
+  })
+
   it('click calls the admin API mock', async () => {
     render(<AdminPlatformFulfillmentActions order={platformOrder()} />)
     fireEvent.click(screen.getByTestId('admin-platform-start-fulfillment'))

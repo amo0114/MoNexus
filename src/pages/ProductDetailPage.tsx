@@ -1,4 +1,5 @@
 import type { ProductDetail as Product } from '../types/product'
+import type { FulfillmentInput } from '../types/order'
 import { useRecommendationTracking } from '../hooks/useRecommendationTracking'
 import { useCallback, useState, useEffect, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
@@ -279,7 +280,7 @@ export default function ProductDetailPage() {
     formAnswers: Record<string, string>,
     verificationPassword: string,
     agreementVersions?: Record<string, string>,
-    orderInput?: Record<string, unknown>
+    orderInput?: FulfillmentInput
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing || isReferencePreview) return 'failed'
     const purchaseAuthContext = getAuthSessionContext(useAuthStore.getState())

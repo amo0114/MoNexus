@@ -1,5 +1,6 @@
 import api from './client'
 import { UserOrderListItem, UserOrderDetail } from '../types/order'
+import type { FulfillmentInput } from '../types/order'
 import type { PurchaseFormField } from '../types/merchant'
 import type { LegalRequirement } from './legal'
 
@@ -43,8 +44,16 @@ export async function getCheckoutPreview(
   /** Provider-specific query from the purchase extension (e.g. selected account). */
   extensionQuery: Record<string, string> = {},
 ): Promise<CheckoutPreview> {
+  // Keep the existing Xboard query/return-link contract; all other provider
+  // fields use one bounded envelope instead of overriding core query fields.
+  const { xboardAccountLinkId, ...extensionInput } = extensionQuery
   const { data } = await api.get('/checkout/preview', {
-    params: { productId, ...(offerId != null ? { offerId } : {}), ...extensionQuery },
+    params: {
+      productId,
+      ...(offerId != null ? { offerId } : {}),
+      ...(xboardAccountLinkId ? { xboardAccountLinkId } : {}),
+      ...(Object.keys(extensionInput).length ? { extensionInput: JSON.stringify(extensionInput) } : {}),
+    },
   })
   return data
 }
@@ -76,7 +85,7 @@ export async function createOrder(
     idempotencyKey: string
     offerId?: number
     /** Provider-specific request fields from the purchase extension; the server validates them. */
-    orderInput?: Record<string, unknown>
+    orderInput?: FulfillmentInput
     formAnswers?: Record<string, string>
     expectedPurchaseFormVersion?: string
     /** P4b：预览返回的 Offer 结算版本;配置变化 → 409 CHECKOUT_CHANGED。 */
@@ -92,11 +101,14 @@ export async function createOrder(
     agreementVersions?: Record<string, string>
   }
 ): Promise<CreateOrderResult> {
+  const { xboardAccountLinkId, expectedXboardTargetVersion, ...extensionInput } = options.orderInput ?? {}
   const { data } = await api.post(
     '/orders',
     {
       productId,
-      ...options.orderInput,
+      ...(xboardAccountLinkId != null ? { xboardAccountLinkId } : {}),
+      ...(expectedXboardTargetVersion != null ? { expectedXboardTargetVersion } : {}),
+      ...(Object.keys(extensionInput).length ? { extensionInput } : {}),
       ...(options.offerId != null ? { offerId: options.offerId } : {}),
       expectedPrice: options.expectedPrice,
       ...(options.expectedPurchaseFormVersion

@@ -105,6 +105,21 @@ function assertNoFakaSecrets(payload: unknown) {
 }
 
 describe('admin getOrderDetail Faka/Xboard projection', () => {
+  it('ORD-001: projects a generic task as an external marker after its offer is unbound', async () => {
+    const { orderId } = await seedPlatformFakaOrder({ withTask: false, withLink: false })
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    await prisma.offer.update({ where: { id: order.offerId! }, data: { externalIntegration: null, externalSku: null } })
+    await prisma.fulfillmentJob.create({ data: {
+      orderId, providerId: 'unregistered_provider', operationKey: `MN-generic-${orderId}`,
+      skuSnapshot: SECRET_SKU, inputSnapshot: { account: SECRET_SNAPSHOT }, leaseToken: SECRET_LEASE,
+    } })
+    const detail = await getOrderDetail(orderId)
+    expect(detail.externalFulfillment).toBe(true)
+    expect(detail).not.toHaveProperty('fulfillmentJob')
+    expect(detail).not.toHaveProperty('offer')
+    assertNoFakaSecrets(detail)
+  })
+
   it('exposes fakaBridgeTask.id and product.fakaBridge without leaking secrets', async () => {
     const { orderId, taskId, productId } = await seedPlatformFakaOrder({
       withTask: true,
@@ -114,6 +129,7 @@ describe('admin getOrderDetail Faka/Xboard projection', () => {
     const detail = await getOrderDetail(orderId)
 
     expect(detail.fakaBridgeTask).toEqual({ id: taskId })
+    expect(detail.externalFulfillment).toBe(true)
     expect(detail.product).toMatchObject({
       id: productId,
       name: 'Xboard 平台开通',
@@ -151,6 +167,8 @@ describe('admin getOrderDetail Faka/Xboard projection', () => {
         leaseToken: SECRET_LEASE,
         emailSnapshot: 'buyer@test.local',
       },
+      fulfillmentJob: { id: 22, inputSnapshot: SECRET_SNAPSHOT, leaseToken: SECRET_LEASE },
+      offer: { externalIntegration: 'demo_license', externalSku: SECRET_SKU },
       product: {
         id: 7,
         name: 'Xboard 月卡',
@@ -168,6 +186,8 @@ describe('admin getOrderDetail Faka/Xboard projection', () => {
       product: { id: 7, name: 'Xboard 月卡', fakaBridge: true },
     })
     expect(serialized.product).not.toHaveProperty('externalCatalogLink')
+    expect(serialized).not.toHaveProperty('fulfillmentJob')
+    expect(serialized).not.toHaveProperty('offer')
     assertNoFakaSecrets(serialized)
   })
 })

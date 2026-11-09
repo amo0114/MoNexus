@@ -83,6 +83,10 @@ export async function applyRefundInventoryPolicy(
   }
 
   if (mode === 'manual_service' && (opts.fromStatus === 'pending' || opts.fromStatus === 'processing')) {
+    // ORD-002: remedy/arbitration can return a delivered service to processing.
+    // The delivery history, not the current status, decides if capacity was consumed.
+    const delivery = await tx.deliveryRecord.findUnique({ where: { orderId: order.id }, select: { id: true } })
+    if (delivery) return
     // 3) 未交付的人工服务单：拒单或无法履约时服务名额未被消耗，限量规格回补容量
     //    （镜像下单时的 Offer/Product stock 同事务扣减）。offerId 为空的历史
     //    单无从定位规格容量，只做销量净减。

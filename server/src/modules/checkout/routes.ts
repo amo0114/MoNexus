@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { z } from 'zod'
+import { extensionQueryInputSchema } from '../../extension-contracts/fulfillmentInput.js'
 import { authenticate, requireActiveUser } from '../../middlewares/auth.js'
 import { validate } from '../../middlewares/validate.js'
 import * as controller from './controller.js'
@@ -9,6 +10,7 @@ export const previewQuerySchema = z.object({
   // 购买的规格（P4a）。可选：单 SKU 商品由服务端解析为唯一 active Offer。
   offerId: z.coerce.number().int().positive().optional(),
   xboardAccountLinkId: z.string().uuid().optional(),
+  extensionInput: extensionQueryInputSchema.optional(),
 })
 
 const router = Router()

@@ -1,33 +1,22 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, notFound } from '../../lib/httpError.js'
+import { badRequest, conflict, notFound } from '../../lib/httpError.js'
 import {
   canonicalDeliveryText,
   parseStoredDeliveryFields,
   validateDeliveryValues,
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
-import { isFakaBridgeOffer } from '../../lib/fakaBridge/offerIntegration.js'
 import { createOrderStatusEvent, transitionOrderStatus } from '../orders/fulfillment.js'
 import { getProductFulfillmentMode } from '../orders/statusPolicy.js'
 import { releaseHeldOrder } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
-import { refundUnfulfillableOrderInTx } from '../orders/cancellation.js'
-import { afterOrderRefunded } from '../fulfillment/coordination.js'
+import { assessAndBlockCancellationInTx, refundUnfulfillableOrderInTx } from '../orders/cancellation.js'
+import { afterOrderRefunded, onOrderRefundedInTx } from '../fulfillment/coordination.js'
 import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 
-const EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE = '外部开通订单不能由平台人工替代交付'
-
-function isExternalFakaFulfillment(order: {
-  offer: { externalIntegration: string | null } | null
-  fakaBridgeTask: { id: number } | null
-}): boolean {
-  // FakaBridge/Xboard snapshots as manual_service; offer flag, outbox row, or
-  // leftover task after the offer is later unlinked all mean external provision.
-  return isFakaBridgeOffer(order.offer ?? {}) || order.fakaBridgeTask != null
-}
-
 async function assertPlatformOrder(orderId: number, tx: Prisma.TransactionClient) {
+  await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
   const order = await tx.order.findFirst({
     where: { id: orderId, merchantId: null, product: { merchantId: null } },
     select: {
@@ -44,11 +33,14 @@ async function assertPlatformOrder(orderId: number, tx: Prisma.TransactionClient
       product: { select: { deliveryMode: true, merchantId: true } },
       offer: { select: { externalIntegration: true } },
       fakaBridgeTask: { select: { id: true } },
+      fulfillmentJob: { select: { id: true } },
+      provisionTask: { select: { id: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
-  if (isExternalFakaFulfillment(order)) {
-    throw badRequest(EXTERNAL_FAKA_MANUAL_OVERRIDE_MESSAGE)
+  // Durable tasks remain authoritative even after an Offer is unbound.
+  if (order.offer?.externalIntegration || order.fakaBridgeTask || order.fulfillmentJob || order.provisionTask) {
+    throw badRequest('外部开通订单不能由平台人工替代交付')
   }
   return order
 }
@@ -152,6 +144,9 @@ export async function rejectPlatformOrder(
     if (order.status !== 'pending') {
       throw badRequest('仅待接单订单可拒单')
     }
+    if (await assessAndBlockCancellationInTx(tx, orderId) !== 'safe_to_finalize') {
+      throw conflict('订单可能已在处理，请通过售后或争议流程处理')
+    }
     await transitionOrderStatus({
       orderId,
       toStatus: 'refunded',
@@ -161,15 +156,15 @@ export async function rejectPlatformOrder(
       publicNote: reason,
     }, tx)
     await releaseHeldOrder(tx, order, `平台拒单释放冻结积分: #${order.id}`)
-    // Unfilled platform reject (pending only, never delivered) uses
-    // fromStatus pending so limited manual_service quota restocks. disputed
-    // is post-delivery arbitration and is rejected above. Faka is already
-    // forbidden in assertPlatformOrder.
+    // Only unfilled local manual orders reach this path; external executors
+    // are excluded and the cancellation barrier already revoked dispatch.
     await applyRefundInventoryPolicy(tx, order, {
       fromStatus: 'pending',
       actorUserId: adminUserId,
     })
+    await onOrderRefundedInTx(tx, orderId)
   })
+  await afterOrderRefunded(orderId)
   return { id: orderId, status: 'refunded' }
 }
 

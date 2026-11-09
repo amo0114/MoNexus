@@ -102,6 +102,8 @@ export async function getOrderDetail(orderId: number) {
       provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       // Xboard/Faka：只投影任务 id，供前端隐藏平台人工履约入口。
       fakaBridgeTask: { select: { id: true } },
+      fulfillmentJob: { select: { id: true } },
+      offer: { select: { externalIntegration: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
