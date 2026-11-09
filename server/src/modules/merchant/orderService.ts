@@ -66,6 +66,7 @@ function getAvailableActions(order: {
   product?: { deliveryMode?: string | null } | null
   remedyProposedAt?: Date | null
   disputeEscalatedAt?: Date | null
+  disputeRespondBy?: Date | null
 }) {
   const status = normalizeOrderStatus(order.status)
   const deliveryMode = getOrderDeliveryMode(order)
@@ -76,7 +77,10 @@ function getAvailableActions(order: {
   // P6b：履约中的人工服务单可交付，也可发进度更新（post_progress 不改状态）
   if (status === 'processing' && deliveryMode === 'manual_service') return ['deliver', 'post_progress', 'report_unfulfillable']
   // 已提交补救方案（等买家确认）或已升级平台裁决后，商家无需再操作。
-  if (status === 'disputed') return order.remedyProposedAt || order.disputeEscalatedAt ? [] : ['respond_dispute']
+  if (status === 'disputed') {
+    return order.remedyProposedAt || order.disputeEscalatedAt || !order.disputeRespondBy || order.disputeRespondBy <= new Date()
+      ? [] : ['respond_dispute']
+  }
   return []
 }
 

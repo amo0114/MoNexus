@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2, ShieldCheck, Info } from 'lucide-react'
 import PointCoin from './ui/PointCoin'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 import { getCheckoutPreview, type CheckoutPreview } from '../api/orders'
+import type { FulfillmentInput } from '../types/order'
 import { agreementVersionsOf, LEGAL_PAGE_PATHS } from '../api/legal'
 import { getApiErrorMessage } from '../api/error'
 import { newIdempotencyKey } from '../utils/idempotencyKey'
@@ -74,7 +75,7 @@ export default function PurchaseModal({
     // undefined——服务端只留证用户真实确认过的文本。
     agreementVersions: Record<string, string> | undefined,
     // Provider-specific createOrder fields from the purchase extension.
-    orderInput: Record<string, unknown> | undefined
+    orderInput: FulfillmentInput | undefined
   ) => Promise<ConfirmOutcome>
 }) {
   const formId = useId()

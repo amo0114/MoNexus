@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { extensionInputSchema } from '../../extension-contracts/fulfillmentInput.js'
 import { FULFILLMENT_MODES, ORDER_STATUSES, ORDER_STATUS_ACTOR_ROLES, normalizeOrderStatus } from './statusPolicy.js'
 
 export const fulfillmentModeSchema = z.enum(FULFILLMENT_MODES)
@@ -12,9 +13,7 @@ export const createOrderSchema = z.object({
   xboardAccountLinkId: z.string().uuid().optional(),
   expectedXboardTargetVersion: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   // Provider-specific purchase input; the Offer's own provider validates it.
-  extensionInput: z.record(z.string().max(64), z.union([z.string().max(512), z.number(), z.boolean()]))
-    .refine(value => Object.keys(value).length <= 16, '扩展参数过多')
-    .optional(),
+  extensionInput: extensionInputSchema.optional(),
   // 结算确认：客户端从结算预览拿到的价格。与服务端当前价不一致时返回
   // 409 PRICE_CHANGED。可选是为兼容旧客户端，前端更新后始终携带。
   expectedPrice: z.number().int().positive().optional(),

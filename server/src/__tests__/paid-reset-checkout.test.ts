@@ -112,6 +112,23 @@ describe('stable account paid reset checkout', () => {
     expect(await prisma.pointLog.count({ where: { orderId: first.orderId, type: 'hold' } })).toBe(1)
   })
 
+  it('ORD-004: validates Xboard identity fields supplied through the generic envelope', async () => {
+    const f = await fixture()
+    const taskCount = await prisma.fakaBridgeTask.count()
+    const headers = { Authorization: `Bearer ${f.token}` }
+    for (const extensionInput of [
+      { xboardAccountLinkId: 'not-a-uuid', expectedXboardTargetVersion: 'a'.repeat(64) },
+      { xboardAccountLinkId: f.link.id, expectedXboardTargetVersion: 'invalid-version' },
+    ]) {
+      await api.get('/api/checkout/preview').set(headers)
+        .query({ productId: f.product.id, extensionInput: JSON.stringify(extensionInput) }).expect(400)
+      await api.post('/api/orders').set(headers).set('Idempotency-Key', randomUUID())
+        .send({ productId: f.product.id, extensionInput }).expect(400)
+    }
+    await unchangedFunds(f.user.id)
+    expect(await prisma.fakaBridgeTask.count()).toBe(taskCount)
+  })
+
   it('requires explicit selection for multiple accounts and returns only owned masked choices', async () => {
     const f = await fixture()
     await linked(f.user.id, '43')

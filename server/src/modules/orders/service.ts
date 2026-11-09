@@ -193,7 +193,7 @@ export async function createOrder(
       ? { expectedProductContentVersion, expectedAssuranceGrantId: expectedAssuranceGrantId ?? null }
       : {}),
     // Absent for legacy callers so their stored fingerprints still match.
-    ...(options.extensionInput && hasExtensionInput(options.extensionInput)
+    ...(options.extensionInput && Object.keys(options.extensionInput).length > 0
       ? { extensionInput: options.extensionInput }
       : {}),
   }

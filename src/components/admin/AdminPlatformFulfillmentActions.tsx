@@ -22,6 +22,7 @@ type ActionPanel = 'progress' | 'deliver' | 'reject' | null
 export function isPlatformManualFulfillmentOrder(order: AdminOrderDetail): boolean {
   const merchantId = order.merchantId !== undefined ? order.merchantId : (order.merchant?.id ?? null)
   if (merchantId != null) return false
+  if (order.externalFulfillment) return false
   if (order.provisionTask) return false
   if (order.fakaBridgeTask != null) return false
   if (order.product?.fakaBridge) return false

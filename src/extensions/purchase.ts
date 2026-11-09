@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { CheckoutPreview } from '../api/orders'
+import type { FulfillmentInput } from '../types/order'
 
 /**
  * Purchase-modal extension for one fulfillment provider. The modal keeps price,
@@ -29,8 +30,8 @@ export type PurchaseExtensionState = {
   hideValidity?: boolean
   /** Query the server actually quoted with (e.g. an auto-selected account), reported to the page. */
   effectiveQuery?: Record<string, string>
-  /** Merged into the createOrder request (provider-specific fields). */
-  orderInput?: Record<string, unknown>
+  /** Sent as extensionInput; legacy Xboard account/version fields keep their top-level transport. */
+  orderInput?: FulfillmentInput
 }
 
 export type PurchaseExtensionHook = (context: PurchaseExtensionContext) => PurchaseExtensionState

@@ -1,3 +1,6 @@
+/** Provider input uses the same primitive transport values as the server contract. */
+export type FulfillmentInput = Record<string, string | number | boolean>
+
 export interface OrderStatusEvent {
   id?: number | null
   actorRole: 'user' | 'merchant' | 'admin' | 'system'
