@@ -20,6 +20,8 @@ function serializeAnnouncement(a: {
   startsAt: Date
   endsAt: Date | null
   status: string
+  pushEnabled: boolean
+  pushedAt: Date | null
   createdBy: number | null
   createdAt: Date
   updatedAt: Date
@@ -36,6 +38,8 @@ function serializeAnnouncement(a: {
     startsAt: a.startsAt.toISOString(),
     endsAt: a.endsAt ? a.endsAt.toISOString() : null,
     status: a.status,
+    pushEnabled: a.pushEnabled,
+    pushedAt: a.pushedAt ? a.pushedAt.toISOString() : null,
     createdBy: a.createdBy,
     createdAt: a.createdAt.toISOString(),
     updatedAt: a.updatedAt.toISOString(),
@@ -55,6 +59,7 @@ export async function createAnnouncement(adminUserId: number, input: CreateAnnou
         startsAt: input.startsAt,
         endsAt: input.endsAt ?? null,
         status: input.status,
+        pushEnabled: input.pushEnabled,
         createdBy: adminUserId,
       },
     })
@@ -92,6 +97,8 @@ export async function updateAnnouncement(adminUserId: number, id: number, input:
     if (input.startsAt !== undefined) data.startsAt = input.startsAt
     if (input.endsAt !== undefined) data.endsAt = input.endsAt === null ? null : input.endsAt
     if (input.status !== undefined) data.status = input.status
+    // 推送开关不影响用户可见内容，不递增 version；已推送过的公告不会重复推送。
+    if (input.pushEnabled !== undefined) data.pushEnabled = input.pushEnabled
 
     // A version is a user-facing contract: when the message or its delivery
     // policy changes, previously read/confirmed receipts must not suppress the

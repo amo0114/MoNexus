@@ -601,6 +601,17 @@ if [[ "$STRICT_BACKUP" == "true" ]]; then
   require_url RESTORE_TARGET_URL
 fi
 
+# --- SPEC-ENGAGE-001: Web Push needs a complete VAPID identity when enabled. ---
+web_push_enabled="$(get WEB_PUSH_ENABLED)"
+if [[ -n "$web_push_enabled" && "$web_push_enabled" != "true" && "$web_push_enabled" != "false" ]]; then
+  fail "WEB_PUSH_ENABLED must be true or false"
+fi
+if [[ "$web_push_enabled" == "true" ]]; then
+  [[ -n "$(get WEB_PUSH_VAPID_PUBLIC_KEY)" ]] || fail "WEB_PUSH_ENABLED=true requires WEB_PUSH_VAPID_PUBLIC_KEY"
+  [[ -n "$(get WEB_PUSH_VAPID_PRIVATE_KEY)" ]] || fail "WEB_PUSH_ENABLED=true requires WEB_PUSH_VAPID_PRIVATE_KEY"
+  [[ "$(get WEB_PUSH_SUBJECT)" =~ ^(mailto:|https://) ]] || fail "WEB_PUSH_SUBJECT must start with mailto: or https://"
+fi
+
 # --- SPEC-NOTIFY-RT-001: realtime config validation + trust-proxy topology. ---
 realtime_enabled="$(get NOTIFICATION_REALTIME_ENABLED)"
 notification_enabled="$(get NOTIFICATION_ENABLED)"
