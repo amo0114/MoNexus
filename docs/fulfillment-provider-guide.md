@@ -92,6 +92,8 @@ export const myAdapter: ExternalFulfillmentAdapter = {
 
 `orderInput` 是平铺的供应商字段，例如 `{ account: 'target', quantity: 2 }`，请求体会封装为 `extensionInput`。最多 16 个键（每键最长 64 字符），值限字符串（最长 512 字符）、有限数字或布尔值。非空输入参与幂等指纹：相同键重试时改变供应商参数返回 409，键的排列顺序不影响重放。
 
+空对象与不传参数等价；`{ account: '' }` 与不传 `account` 不等价，数字、字符串和布尔值也保留类型区别。供应商应在 `prepare` 内验证字段是否必填及其业务含义。
+
 需要根据选择重新预检时，通过 `setPreviewQuery({ account: 'target' })` 更新；前端把这些字符串字段 JSON 编码为预览接口的 `extensionInput` 查询参数，服务端校验后原样交给 `checkout.preview`。直接调用 HTTP 的客户端也使用此 JSON 查询参数。Xboard 既有顶层账号选择/目标版本字段继续兼容。
 
 没有额外输入的供应商不需要这一步，通用购买弹窗就够用。参考实现：`src/extensions/xboard/useXboardPurchaseExtension.tsx`。
