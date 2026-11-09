@@ -19,5 +19,7 @@
       "type": "image/png",
       "purpose": "any"
     }
-  ]
+  ],
+  "start_url": "/",
+  "scope": "/"
 }

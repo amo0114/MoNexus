@@ -34,6 +34,8 @@ export interface AdminAnnouncement {
   startsAt: string
   endsAt: string | null
   status: AnnouncementStatus
+  pushEnabled: boolean
+  pushedAt: string | null
   createdBy: number | null
   createdAt: string
   updatedAt: string
@@ -56,6 +58,7 @@ export interface CreateAnnouncementRequest {
   startsAt: string
   endsAt?: string | null
   status?: AnnouncementStatus
+  pushEnabled?: boolean
 }
 
 export type UpdateAnnouncementRequest = Partial<CreateAnnouncementRequest>
