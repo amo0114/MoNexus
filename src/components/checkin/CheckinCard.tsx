@@ -68,7 +68,7 @@ function ClaimList({ state }: { state: CheckinState }) {
             onClick={() => void state.claim(reward.id)}
             disabled={state.busy !== null}
             data-testid={`checkin-claim-${reward.id}`}
-            className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)] active:scale-95 disabled:opacity-60 cursor-pointer"
+            className="shrink-0 min-h-10 px-3 rounded-lg text-xs font-semibold bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)] active:scale-95 disabled:opacity-60 cursor-pointer"
           >
             {state.busy === `claim:${reward.id}` ? '领取中…' : '领取'}
           </button>
@@ -103,7 +103,7 @@ export function CheckinCompact({ state }: { state: CheckinState }) {
   )
 }
 
-function MonthCalendar({ status, onMakeup }: { status: CheckinStatus; onMakeup: (date: string) => void }) {
+function MonthCalendar({ status }: { status: CheckinStatus }) {
   const { key, daysInMonth, checked } = status.month
   const checkedByDate = new Map(checked.map(c => [c.date, c.makeup]))
   const eligible = new Set(status.makeup.eligibleDates)
@@ -125,21 +125,6 @@ function MonthCalendar({ status, onMakeup }: { status: CheckinStatus; onMakeup: 
           const isToday = date === status.today
           const canMakeup = eligible.has(date)
           const base = 'aspect-square rounded-lg text-xs sm:text-sm flex flex-col items-center justify-center relative'
-          if (canMakeup) {
-            return (
-              <button
-                key={date}
-                type="button"
-                onClick={() => onMakeup(date)}
-                data-testid={`checkin-makeup-${date}`}
-                title={`补签 ${date}`}
-                className={`${base} border border-dashed border-[var(--color-primary-border-subtle)] text-[var(--color-text-muted)] hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary)] cursor-pointer transition-colors`}
-              >
-                {day}
-                <span className="text-[10px] leading-none text-[var(--color-primary)]">补</span>
-              </button>
-            )
-          }
           return (
             <span
               key={date}
@@ -147,7 +132,9 @@ function MonthCalendar({ status, onMakeup }: { status: CheckinStatus; onMakeup: 
               className={`${base} ${
                 isChecked
                   ? 'bg-[var(--color-primary-tint-strong)] text-[var(--color-primary)] font-semibold'
-                  : date > status.today
+                  : canMakeup
+                    ? 'border border-dashed border-[var(--color-primary-border-subtle)] text-[var(--color-text-muted)]'
+                    : date > status.today
                     ? 'text-[var(--color-text-muted)] opacity-50'
                     : 'text-[var(--color-text-muted)]'
               } ${isToday ? 'ring-2 ring-[var(--color-primary)]' : ''}`}
@@ -222,7 +209,24 @@ export default function CheckinCard({ state }: { state: CheckinState }) {
 
       <MilestoneLadder status={status} />
       <ClaimList state={state} />
-      <MonthCalendar status={status} onMakeup={setMakeupDate} />
+      <MonthCalendar status={status} />
+
+      {makeup.eligibleDates.length > 0 && (
+        // 补签入口独立成一排按钮：320px 下 7 列日历格不足 40px 触控尺寸。
+        <div className="flex flex-wrap gap-2" data-testid="checkin-makeup-dates">
+          {makeup.eligibleDates.map(date => (
+            <button
+              key={date}
+              type="button"
+              onClick={() => setMakeupDate(date)}
+              data-testid={`checkin-makeup-${date}`}
+              className="min-h-10 px-3 rounded-lg border border-dashed border-[var(--color-primary-border-subtle)] text-xs text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] cursor-pointer transition-colors"
+            >
+              补签 {date.slice(5).replace('-', '/')}
+            </button>
+          ))}
+        </div>
+      )}
 
       {makeup.monthlyLimit > 0 && (
         <p className="text-xs text-[var(--color-text-muted)]">

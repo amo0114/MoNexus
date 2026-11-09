@@ -24,7 +24,8 @@ test('admin config tab shows Chinese groups and saves checkinReward', async ({ p
 
   // checkinReward：主标签是中文描述「每日签到基础奖励」，技术键默认折叠，主动展开后可见英文 key
   await expect(rewardGroup.getByText('每日签到基础奖励', { exact: true })).toBeVisible()
-  const keyDetails = rewardGroup.locator('details').filter({ hasText: 'checkinReward' })
+  // 精确匹配：同组还有 checkinRewardClaimDays 等以 checkinReward 开头的键。
+  const keyDetails = rewardGroup.locator('details').filter({ has: page.getByText('checkinReward', { exact: true }) })
   await expect(keyDetails).toBeVisible()
   await expect(keyDetails.getByText('checkinReward')).toBeHidden()
   await keyDetails.locator('summary').click()
