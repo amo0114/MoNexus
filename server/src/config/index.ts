@@ -384,6 +384,11 @@ const envSchema = z.object({
     z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/).optional()),
   /** 定时催签默认启用；插件侧另有开关，这里是服务端总闸。 */
   BOT_REMINDER_ENABLED: z.coerce.boolean().default(true),
+  // SPEC-ENGAGE-001 PW-09：浏览器 Web Push。默认关闭；开启必须配齐 VAPID。
+  WEB_PUSH_ENABLED: booleanEnvSchema.default(false),
+  WEB_PUSH_VAPID_PUBLIC_KEY: optionalStringEnvSchema,
+  WEB_PUSH_VAPID_PRIVATE_KEY: optionalStringEnvSchema,
+  WEB_PUSH_SUBJECT: optionalStringEnvSchema,
   // Test-only escape hatch. Production boot refuses true.
   FAKA_BRIDGE_ALLOW_INSECURE_TARGETS: booleanEnvSchema.default(false),
 
@@ -707,6 +712,13 @@ if (env.NOTIFICATION_EMAIL_ENABLED && !env.NOTIFICATION_ENABLED) {
 // 在 Zod parse 后、config 导出前执行（所有环境一致）。
 if (env.NOTIFICATION_REALTIME_ENABLED && !env.NOTIFICATION_ENABLED) {
   console.error('[Config] NOTIFICATION_REALTIME_ENABLED=true requires NOTIFICATION_ENABLED=true')
+  process.exit(1)
+}
+
+// SPEC-ENGAGE-001 PW-09：开启 Web Push 必须配齐 VAPID 密钥与联系方式。
+if (env.WEB_PUSH_ENABLED && (!env.WEB_PUSH_VAPID_PUBLIC_KEY || !env.WEB_PUSH_VAPID_PRIVATE_KEY
+  || !/^(mailto:|https:\/\/)/.test(env.WEB_PUSH_SUBJECT ?? ''))) {
+  console.error('[Config] WEB_PUSH_ENABLED=true requires WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY and WEB_PUSH_SUBJECT (mailto: or https://)')
   process.exit(1)
 }
 
@@ -1093,6 +1105,14 @@ export const config = {
     previousConfirmSecret: env.TRAFFIC_RESET_PREVIOUS_CONFIRM_SECRET, clientId: env.TRAFFIC_RESET_CLIENT_ID },
   xboardAccounts: { enabled: env.XBOARD_ACCOUNT_QUERY_ENABLED, instanceId: env.XBOARD_INSTANCE_ID,
     paidResetEnabled: env.XBOARD_PAID_RESET_TARGET_V2_ENABLED },
+  webPush: env.WEB_PUSH_ENABLED
+    ? {
+        enabled: true as const,
+        publicKey: env.WEB_PUSH_VAPID_PUBLIC_KEY!,
+        privateKey: env.WEB_PUSH_VAPID_PRIVATE_KEY!,
+        subject: env.WEB_PUSH_SUBJECT!,
+      }
+    : ({ enabled: false as const }),
   chatBot: env.BOT_SHARED_SECRET
     ? {
         enabled: true as const,

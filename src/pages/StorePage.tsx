@@ -5,6 +5,7 @@ import { listStoreProducts, loadStoreCandidates, type StoreProductQuery } from '
 import { getApiErrorCode } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
+import TodayPanel from '../components/home/TodayPanel'
 import { usePageView } from '../hooks/usePageView'
 import {
   getStorePageCache,
@@ -117,6 +118,7 @@ export default function StorePage() {
   }, [category, storedCategory, setStoreCategory, urlCategory, urlCategoryChanged, setParams])
   const { theme } = useTheme()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const showTodayPanel = useAuthStore((s) => s.isLoggedIn && s.user != null && s.user.role !== 'admin')
   const audience: 'guest' | 'member' = isLoggedIn ? 'member' : 'guest'
   const identityKey = useAuthStore(storeIdentityKey)
   const categoryCode = category === '全部' ? undefined
@@ -750,30 +752,34 @@ export default function StorePage() {
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
-      {/* Header — compacted on mobile (V2-M2) */}
-      {/* Header — compacted on mobile, explanatory subtitle preserved */}
-      <div className="flex flex-col items-center justify-center text-center max-md:pt-0 max-md:pb-1 pt-2 pb-2 relative">
-        <div className="mb-2">
-          <FluidOrb
-            size={isMobile ? 44 : 56}
-            color={
-              theme === 'dark'
-                ? '#818CF8'
-                : theme === 'soft'
-                  ? '#F43F5E'
-                  : theme === 'ink'
-                    ? '#475569'
-                    : '#6366F1'
-            }
-          />
+      {/* Header — compacted on mobile (V2-M2), explanatory subtitle preserved.
+          登录用户换成今日面板（SPEC-ENGAGE-001 HM-01）。 */}
+      {showTodayPanel ? (
+        <TodayPanel />
+      ) : (
+        <div className="flex flex-col items-center justify-center text-center max-md:pt-0 max-md:pb-1 pt-2 pb-2 relative">
+          <div className="mb-2">
+            <FluidOrb
+              size={isMobile ? 44 : 56}
+              color={
+                theme === 'dark'
+                  ? '#818CF8'
+                  : theme === 'soft'
+                    ? '#F43F5E'
+                    : theme === 'ink'
+                      ? '#475569'
+                      : '#6366F1'
+              }
+            />
+          </div>
+          <h2 className="font-heading text-xl sm:text-4xl font-bold tracking-tight mb-1 sm:mb-2 text-[var(--color-text)]">
+            发现实用好物。
+          </h2>
+          <p className="text-xs sm:text-base text-[var(--color-text-muted)] max-md:line-clamp-1">
+            做任务赚积分，在这里免费兑换你需要的数字资源。
+          </p>
         </div>
-        <h2 className="font-heading text-xl sm:text-4xl font-bold tracking-tight mb-1 sm:mb-2 text-[var(--color-text)]">
-          发现实用好物。
-        </h2>
-        <p className="text-xs sm:text-base text-[var(--color-text-muted)] max-md:line-clamp-1">
-          做任务赚积分，在这里免费兑换你需要的数字资源。
-        </p>
-      </div>
+      )}
 
       {/* Search & Categories — 全视口常驻，移动端紧凑直出（与顶栏搜索共用 appStore 状态） */}
       <div className="max-w-3xl mx-auto w-full space-y-2.5 md:space-y-4">

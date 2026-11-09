@@ -13,6 +13,8 @@ export type ErrorCode =
   // 结算内容（购买前表单定义）在预览后被商家改动：前端需重新拉取预览、
   // 换新幂等键并让用户针对新表单再次确认。
   | 'CHECKOUT_CHANGED'
+  // SPEC-ENGAGE-001 CK-07：连签 / 全勤奖励超过待领取有效期。
+  | 'REWARD_EXPIRED'
   | 'BAD_REQUEST'
   | 'PAYLOAD_TOO_LARGE'
   | 'INVALID_JSON'
