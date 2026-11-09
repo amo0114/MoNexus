@@ -55,7 +55,7 @@ export CATALOG_OPS_DATABASE_URL
 say "migrate deploy + seed:force"
 (
   cd server
-  DATABASE_URL="$CATALOG_OPS_DATABASE_URL" npx prisma migrate deploy >/dev/null
+  DATABASE_URL="$CATALOG_OPS_DATABASE_URL" npm run db:migrate:deploy >/dev/null
   NODE_ENV=test DATABASE_URL="$CATALOG_OPS_DATABASE_URL" \
     FRONTEND_ORIGIN='http://127.0.0.1:5180' COOKIE_SECURE=false API_RATE_LIMIT_MAX=3000 \
     JWT_SECRET='catalog-ops-e2e-jwt-secret-at-least-32-characters' \

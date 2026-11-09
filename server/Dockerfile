@@ -37,6 +37,7 @@ COPY --from=builder --chown=app:app /app/node_modules ./node_modules
 COPY --from=builder --chown=app:app /app/dist ./dist
 COPY --from=builder --chown=app:app /app/prisma ./prisma
 COPY --chown=app:app package.json package-lock.json ./
+COPY --chown=app:app scripts/migrate-deploy.mjs ./scripts/migrate-deploy.mjs
 
 # Optional CI artifact at /app/build-info.json (non-public). A missing file
 # must not fail the image; runtime reports source=unavailable.
@@ -60,4 +61,4 @@ ENTRYPOINT ["/sbin/tini", "--"]
 # Run migrations then start the server. If migrations fail, the
 # container exits and Docker's restart policy + healthcheck will surface
 # the issue instead of silently starting against an outdated schema.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "node scripts/migrate-deploy.mjs && node dist/main.js"]

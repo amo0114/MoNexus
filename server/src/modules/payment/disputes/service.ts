@@ -19,6 +19,10 @@ const EXPLICIT_CLOSE: readonly PaymentRecoveryCaseStatus[] = ['recovered', 'writ
 // credit; recovering it again from a dispute is an operator decision, not a hold.
 const DISPUTE_BLOCKING_REFUND = ['requested', 'points_held', 'processing', 'manual_review', 'succeeded']
 
+class DisputeCreditCapExceeded extends Error {
+  constructor(readonly rechargeOrderId: string) { super('DISPUTE_CREDIT_CAP_EXCEEDED') }
+}
+
 function refundBlocksDispute(refund: { status: string } | null) {
   return refund != null && DISPUTE_BLOCKING_REFUND.includes(refund.status)
 }
@@ -203,6 +207,17 @@ export async function applyDisputeObservation(observationId: string) {
     await commitPaymentEvent(observationId, claimed.leaseToken, 'processed')
     return { observationId, outcome: 'processed' as const }
   } catch (error) {
+    if (error instanceof DisputeCreditCapExceeded) {
+      const observation = await prisma.paymentEvent.findUniqueOrThrow({ where: { id: observationId } })
+      const payload = disputePayload(observation.normalizedPayload)
+      await commitDisputeForReconciliation(observation, claimed.leaseToken, error.message, {
+        providerDisputeId: typeof payload.providerDisputeId === 'string' ? payload.providerDisputeId : null,
+        amountMinor: typeof payload.amountMinor === 'string' ? BigInt(payload.amountMinor) : null,
+        currency: typeof payload.currency === 'string' ? payload.currency : null,
+        mismatchType: 'amount_mismatch', orderId: error.rechargeOrderId,
+      })
+      return { observationId, outcome: 'reconcile_required' as const }
+    }
     await commitPaymentEvent(
       observationId,
       claimed.leaseToken,
@@ -234,6 +249,11 @@ export async function openPaymentDispute(input: {
   evidenceDueAt?: Date | null
 }) {
   return prisma.$transaction(async tx => {
+    // All cases for a credit share this mutex, also used by recharge refunds.
+    const orders = await tx.$queryRaw<Array<{ id: string; userId: number; amountMinor: bigint }>>`
+      SELECT "id", "userId", "amountMinor" FROM "RechargeOrder" WHERE "id" = ${input.rechargeOrderId}::uuid FOR UPDATE`
+    const order = orders[0]
+    if (!order) throw notFound('充值订单不存在')
     const existing = await tx.paymentDispute.findUnique({
       where: {
         provider_providerAccountKey_providerDisputeId: {
@@ -251,10 +271,6 @@ export async function openPaymentDispute(input: {
     })
     if (!credit) throw conflict('没有可追回的充值入账')
 
-    const orders = await tx.$queryRaw<Array<{ id: string; userId: number; amountMinor: bigint }>>`
-      SELECT "id", "userId", "amountMinor" FROM "RechargeOrder" WHERE "id" = ${input.rechargeOrderId}::uuid FOR UPDATE`
-    const order = orders[0]
-    if (!order) throw notFound('充值订单不存在')
     // Re-checked under the order lock, which requestRechargeRefund also takes.
     const refund = await tx.rechargeRefund.findUnique({
       where: { rechargeOrderId: order.id },
@@ -262,9 +278,24 @@ export async function openPaymentDispute(input: {
     })
     if (refundBlocksDispute(refund)) throw conflict('该充值已退款或退款处理中，争议需人工对账')
 
+    const recoverPoints = disputePointsToRecover(credit.points, input.amountMinor, order.amountMinor)
+    const cases = await tx.paymentRecoveryCase.findMany({
+      where: { rechargeCreditId: credit.id },
+      select: { status: true, pointsToRecover: true, pointsHeld: true, outstandingPoints: true,
+        consumedPointLog: { select: { amount: true } }, restoredPointLog: { select: { amount: true } } },
+    })
+    // Count economic facts, not terminal status labels: lost cases retain their
+    // net debit; won/restored cases release only money actually returned.
+    const committed = cases.reduce((sum, row) => {
+      const ledgerAndHold = row.pointsHeld + row.outstandingPoints
+        + BigInt(row.consumedPointLog?.amount ?? 0) - BigInt(row.restoredPointLog?.amount ?? 0)
+      // An operator's recovered verdict may include recovery outside the point
+      // ledger. Do not silently free that allocation when outstanding is cleared.
+      return sum + (row.status === 'recovered' && row.pointsToRecover > ledgerAndHold ? row.pointsToRecover : ledgerAndHold)
+    }, 0n)
+    if (committed + recoverPoints > credit.points) throw new DisputeCreditCapExceeded(order.id)
     await tx.$queryRaw`SELECT "userId" FROM "PointAccount" WHERE "userId" = ${order.userId} FOR UPDATE`
     const account = await tx.pointAccount.findUniqueOrThrow({ where: { userId: order.userId } })
-    const recoverPoints = disputePointsToRecover(credit.points, input.amountMinor, order.amountMinor)
     const pointsToRecover = Number(recoverPoints)
     if (!Number.isSafeInteger(pointsToRecover) || pointsToRecover <= 0) {
       throw conflict('争议追回积分不合法')
@@ -334,11 +365,14 @@ export async function openPaymentDispute(input: {
 
 /**
  * Serializes outcome/close transitions on one dispute. Lock order is
- * PaymentDispute -> PaymentRecoveryCase -> PointAccount; nothing else locks the
- * first two rows. Everything is re-read after the locks so a concurrent
+ * RechargeOrder -> PaymentDispute -> PaymentRecoveryCase -> PointAccount.
+ * RechargeOrder also serializes other disputes and refunds for this credit. Everything is re-read after the locks so a concurrent
  * webhook, retry or second admin request sees the committed state.
  */
 async function lockDisputeCase(tx: Prisma.TransactionClient, disputeId: string) {
+  const target = await tx.paymentDispute.findUnique({ where: { id: disputeId }, select: { rechargeOrderId: true } })
+  if (!target) return null
+  await tx.$queryRaw`SELECT "id" FROM "RechargeOrder" WHERE "id" = ${target.rechargeOrderId}::uuid FOR UPDATE`
   await tx.$queryRaw`SELECT "id" FROM "PaymentDispute" WHERE "id" = ${disputeId}::uuid FOR UPDATE`
   await tx.$queryRaw`SELECT "id" FROM "PaymentRecoveryCase" WHERE "paymentDisputeId" = ${disputeId}::uuid FOR UPDATE`
   const dispute = await tx.paymentDispute.findUnique({
@@ -402,9 +436,20 @@ export async function resolveDisputeOutcome(input: {
     if (dispute.status !== 'open') return dispute
 
     if (input.outcome === 'won') {
+      let restoredPointLogId: number | undefined
       if (hold?.status === 'active') {
         await releaseHeldPoints(tx, recovery.userId, Number(hold.points))
         await transitionHold(tx, hold.id, 'active', 'released')
+      }
+      // An operator may have consumed the hold before the provider verdict.
+      // A subsequent win must restore the real debit, rather than just relabel it.
+      if (hold?.status === 'consumed') {
+        const points = Number(hold.points)
+        const credited = await creditAvailablePoints(tx, recovery.userId, points)
+        await transitionHold(tx, hold.id, 'consumed', 'released')
+        const log = await tx.pointLog.create({ data: { userId: recovery.userId, type: 'refund',
+          amount: points, balanceAfter: credited.balance, reason: '支付争议胜诉恢复' } })
+        restoredPointLogId = log.id
       }
       await tx.accountRestriction.updateMany({
         where: { sourceType: 'payment_dispute', sourceId: dispute.id, status: 'active' },
@@ -412,6 +457,7 @@ export async function resolveDisputeOutcome(input: {
       })
       await transitionRecoveryCase(tx, recovery, {
         status: 'restored',
+        ...(restoredPointLogId ? { restoredPointLogId } : {}),
         pointsHeld: 0n,
         outstandingPoints: 0n,
         resolutionReason: 'dispute_won',

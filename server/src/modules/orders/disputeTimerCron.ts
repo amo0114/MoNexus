@@ -3,6 +3,7 @@ import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from '../../lib/cronLease.js'
 import { applyDueDisputeTimer } from './disputes.js'
+import { recordLifecycle } from './metrics.js'
 
 const DISPUTE_TIMER_INTERVAL_MS = 5 * 60 * 1000
 const BATCH_SIZE = 50
@@ -34,13 +35,16 @@ async function runDisputeTimerBatch(now = new Date()): Promise<Record<string, nu
     for (const { id } of candidates) {
       try {
         const outcome = await applyDueDisputeTimer(id, now)
+        recordLifecycle('dispute_timer', outcome)
         counts[outcome] = (counts[outcome] ?? 0) + 1
       } catch (err) {
+        recordLifecycle('dispute_timer', 'error')
         logger.warn({ err, orderId: id }, 'dispute timer failed for order')
       }
     }
     if (candidates.length > 0) logger.info({ counts }, 'dispute timers applied')
   } catch (err) {
+    recordLifecycle('dispute_timer', 'error')
     logger.error({ err }, 'dispute timer cron batch failed')
   } finally {
     lease?.release()

@@ -4,6 +4,7 @@ import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from '../../lib/cronLease.js'
 import { cancelUnacceptedOrder } from './cancellation.js'
+import { recordLifecycle } from './metrics.js'
 
 // The deadline is enforced at accept time already; the scan only has to free
 // buyers' points within minutes, not exactly at the deadline.
@@ -30,15 +31,19 @@ async function runAcceptTimeoutBatch(now = new Date()): Promise<number> {
     for (const { id } of candidates) {
       try {
         // Same command as the buyer's cancel; it re-checks status and deadline under the Order lock.
-        if (await cancelUnacceptedOrder(id, { kind: 'timeout' }) === 'cancelled') cancelled += 1
+        const outcome = await cancelUnacceptedOrder(id, { kind: 'timeout' })
+        recordLifecycle('accept_timeout', outcome === 'cancelled' ? 'refunded' : 'reconcile')
+        if (outcome === 'cancelled') cancelled += 1
       } catch (err) {
         // Accepted or finished meanwhile is expected; anything else must not block the batch.
         if (err instanceof HttpError && err.status === 409) continue
+        recordLifecycle('accept_timeout', 'error')
         logger.warn({ err, orderId: id }, 'accept-timeout cancel failed for order')
       }
     }
     if (cancelled > 0) logger.info({ count: cancelled }, 'unaccepted orders cancelled after accept timeout')
   } catch (err) {
+    recordLifecycle('accept_timeout', 'error')
     logger.error({ err }, 'accept-timeout cron batch failed')
   } finally {
     lease?.release()

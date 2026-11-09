@@ -8,6 +8,7 @@ import { assessAndBlockCancellationInTx } from './cancellation.js'
 import { DISPUTE_RESPONSE_MS, transitionOrderStatus } from './fulfillment.js'
 import { applyRefundInventoryPolicy } from './refundInventory.js'
 import { isInstantMode, normalizeOrderStatus } from './statusPolicy.js'
+import { NotificationDispatcher, orderNotificationSnapshot } from '../notifications/dispatcher.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -38,16 +39,17 @@ export async function fileOverdueComplaint(orderId: number, userId: number): Pro
     if (normalizeOrderStatus(order.status) !== 'processing') throw conflict('只有履约中的订单可以投诉超时')
     if (order.deliveryModeSnapshot !== 'manual_service') throw conflict('只有人工服务订单可以投诉超时')
     if (order.fakaBridgeTask || order.fulfillmentJob) throw conflict('自动开通订单请联系平台处理')
-    if (!order.fulfillmentDeadline || order.fulfillmentDeadline > new Date()) throw conflict('尚未超过履约期限')
+    if (!order.delivery && (!order.fulfillmentDeadline || order.fulfillmentDeadline > new Date())) throw conflict('尚未超过履约期限')
     await transitionOrderStatus({
       orderId,
       toStatus: 'disputed',
       actorRole: 'user',
       actorUserId: userId,
-      action: 'user.dispute.overdue',
-      publicNote: '买家投诉：超过履约期限仍未交付',
+      action: order.delivery ? 'user.dispute.remedy_failed' : 'user.dispute.overdue',
+      publicNote: order.delivery ? '买家对补救履约提出异议，提交平台裁决' : '买家投诉：超过履约期限仍未交付',
       overdueComplaint: true,
     }, tx)
+    if (order.delivery) await tx.order.update({ where: { id: orderId }, data: { disputeRespondBy: null, disputeEscalatedAt: new Date() } })
   })
 }
 
@@ -83,6 +85,10 @@ export async function proposeRemedyInTx(
       action: `${actor.role}.dispute.remedy`, publicNote: `补救方案：${note.trim()}`,
     },
   })
+  await NotificationDispatcher.emit({
+    type: 'order.remedy_proposed_buyer', recipientUserId: order.userId, recipientRole: 'user',
+    order: orderNotificationSnapshot(order), occurrenceKey: now.toISOString(),
+  }, tx)
 }
 
 /**
@@ -143,6 +149,10 @@ export async function applyDueDisputeTimer(orderId: number, now = new Date()): P
     if (!order || normalizeOrderStatus(order.status) !== 'disputed' || order.disputeEscalatedAt) return 'skipped'
     if (order.remedyProposedAt && order.remedyRespondBy && order.remedyRespondBy <= now) {
       await acceptRemedyInTx(tx, order, { kind: 'lapse' })
+      await NotificationDispatcher.emit({
+        type: 'order.remedy_lapsed_buyer', recipientUserId: order.userId, recipientRole: 'user',
+        order: orderNotificationSnapshot(order), occurrenceKey: order.remedyProposedAt.toISOString(),
+      }, tx)
       return 'remedy_accepted'
     }
     if (order.remedyProposedAt || !order.disputeRespondBy || order.disputeRespondBy > now) return 'skipped'

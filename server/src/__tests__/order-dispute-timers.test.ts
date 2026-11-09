@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
 import { __runDisputeTimerBatchForTests } from '../modules/orders/disputeTimerCron.js'
 import { api, authHeader, createTestMerchant, createTestProduct, createTestUser, loginAs, loginAsMerchant, makeManualService } from './helpers.js'
+
+import { config } from '../config/index.js'
+
+const notificationEnabled = config.notification.enabled
+beforeEach(() => { config.notification.enabled = true })
+afterEach(() => { config.notification.enabled = notificationEnabled })
 
 const HOUR = 3_600_000
 
@@ -42,6 +48,9 @@ describe('overdue complaint and remedy', () => {
     const proposed = await api.post(`/api/merchant/orders/${orderId}/fulfillment/respond-dispute`)
       .set(authHeader(seller)).send({ resolution: 'resume', publicNote: '明天上午补发' }).expect(200)
     expect(proposed.body).toMatchObject({ status: 'disputed', remedyNote: '明天上午补发', availableActions: [] })
+    const notification = await prisma.notification.findFirst({ where: { relatedOrderId: orderId, eventType: 'order.remedy_proposed_buyer' } })
+    expect(notification).toMatchObject({ recipientUserId: disputed.userId })
+    expect(notification?.body).toContain('48 小时')
 
     await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer)).expect(200)
     const resumed = await order(orderId)
@@ -76,6 +85,7 @@ describe('dispute timers', () => {
     expect(await order(ignored.orderId)).toMatchObject({ status: 'refunded', resolutionReason: 'merchant_no_response' })
     expect(await points(ignored.user.id)).toEqual({ balance: 1000, frozenBalance: 0 })
     expect((await order(answered.orderId)).status).toBe('processing')
+    expect(await prisma.notification.count({ where: { relatedOrderId: answered.orderId, eventType: 'order.remedy_lapsed_buyer' } })).toBe(1)
   })
 
   it('escalates an ignored dispute about a delivered order instead of refunding', async () => {

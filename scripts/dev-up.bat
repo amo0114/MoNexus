@@ -74,7 +74,7 @@ pushd "%BACKEND_DIR%"
 call npm run db:generate
 if errorlevel 1 goto :error
 
-call npx prisma migrate deploy
+call npm run db:migrate:deploy
 if errorlevel 1 goto :error
 
 if /I "%SEED%"=="true" (

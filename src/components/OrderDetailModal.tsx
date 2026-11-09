@@ -57,7 +57,7 @@ const ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
   },
   cancel: {
     title: '取消订单',
-    description: '订单尚未开始处理。确认取消后冻结积分将退还到你的账户。',
+    description: '确认后会核对订单是否已开始处理；未生效或已撤销后退还冻结积分，结果未知时需继续等待核对。',
     confirmLabel: '确认取消订单',
     successTitle: '订单已取消，积分已退还',
   },
@@ -100,7 +100,7 @@ const ACCEPTANCE_ACTION_COPY: Record<OrderAction, OrderActionCopy> = {
   },
   cancel: {
     title: '取消订单',
-    description: '订单尚未开始处理。确认取消后冻结积分将退还到你的账户。',
+    description: '确认后会核对订单是否已开始处理；未生效或已撤销后退还冻结积分，结果未知时需继续等待核对。',
     confirmLabel: '确认取消订单',
     successTitle: '订单已取消，积分已退还',
   },
@@ -207,7 +207,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       void useAppStore.getState().refreshOrderAttention()
       onClose()
       showCompletionActivity({
-        title: cancelPending ? '取消处理中，核对完成后自动退还积分' : actionCopy[action].successTitle,
+        title: cancelPending ? '取消处理中，等待核对履约结果' : actionCopy[action].successTitle,
         message: '操作成功',
         subtitle: `订单 #${order.id} · ${order.product.name}`,
         groupKey: `buyer:order:${order.id}`,
@@ -224,13 +224,18 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
   const canDispute = order.status === 'delivered'
   const canClose = order.status === 'delivered' || order.status === 'disputed'
-  const canCancel = order.status === 'pending' && Boolean(order.acceptBy) && !order.cancelRequestedAt
+  const canCancel = order.status === 'pending' && !order.cancelRequestedAt
   const confirmDialogId = confirmAction === 'close' ? 'close-order-dialog' : confirmAction === 'cancel' ? 'cancel-order-dialog' : `${confirmAction ?? 'dispute'}-dialog`
   const canComplain = order.status === 'processing' && order.deliveryMode === 'manual_service'
-    && Boolean(order.fulfillmentDeadline) && new Date(order.fulfillmentDeadline!).getTime() < Date.now()
+    && (Boolean(order.delivery) || (Boolean(order.fulfillmentDeadline) && new Date(order.fulfillmentDeadline!).getTime() < Date.now()))
   // P6b：人工服务订单 delivered 阶段以「验收」措辞呈现关闭/争议（disputed 阶段保持原措辞）。
   const isAcceptance = order.deliveryMode === 'manual_service' && order.status === 'delivered'
-  const actionCopy = isAcceptance ? ACCEPTANCE_ACTION_COPY : ACTION_COPY
+  const actionCopy = { ...(isAcceptance ? ACCEPTANCE_ACTION_COPY : ACTION_COPY),
+    ...(order.status === 'processing' && order.delivery ? { complain: {
+      title: '申请平台裁决', description: '本单已有交付记录。对补救履约有异议时，可重新提交争议，由平台裁决退款或继续履约。',
+      confirmLabel: '提交平台裁决', successTitle: '已提交平台裁决',
+    } } : {}),
+  }
   // P6b：履约进度（merchant.progress 同态事件）单独倒序展示，避免与状态时间线混排重复。
   const progressEvents = (order.timeline ?? []).filter((e) => e.action === 'merchant.progress')
   const statusTimeline = (order.timeline ?? []).filter((e) => e.action !== 'merchant.progress')
@@ -506,10 +511,10 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                   。人工服务订单在创建时冻结积分，确认完成或超时自动关闭后正式扣除；拒单或仲裁退款时退还。
                 </p>
               )}
-              {order.status === 'pending' && order.acceptBy && (
+              {order.status === 'pending' && (order.acceptBy || order.cancelRequestedAt) && (
                 <p className="mt-1 text-xs text-[var(--color-text-muted)] leading-relaxed" data-testid="order-accept-deadline">
                   {order.cancelRequestedAt
-                    ? '取消处理中：核对完成后将自动退还积分。'
+                    ? '取消处理中：正在核对外部履约结果；确认未生效或已撤销后退还积分，如已开通则按实际结果处理。'
                     : `订单需在 ${formatOrderDate(order.acceptBy)} 前开始处理，超时将自动取消并退还积分；开始处理前你也可以随时取消。`}
                 </p>
               )}
@@ -631,7 +636,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 data-testid="order-complain-button"
                 className="text-xs text-[var(--color-text-muted)] hover:text-[var(--color-warning)] hover:underline cursor-pointer py-1 transition-colors whitespace-nowrap"
               >
-                {loadingAction === 'complain' ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : '投诉履约超时'}
+                {loadingAction === 'complain' ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : actionCopy.complain.title}
               </button>
             )}
             {canCancel && (

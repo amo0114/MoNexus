@@ -477,10 +477,21 @@
           "humanVerification": {
             "type": "object",
             "description": "SEC-02：同一邮箱连续登录失败 5 次后必填（action=`login` 的人机验证证明），否则返回 400 HUMAN_VERIFICATION_REQUIRED；不存在的邮箱行为一致。",
-            "required": ["provider", "payload"],
+            "required": [
+              "provider",
+              "payload"
+            ],
             "properties": {
-              "provider": { "type": "string", "enum": ["altcha", "turnstile"] },
-              "payload": { "type": "string" }
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "altcha",
+                  "turnstile"
+                ]
+              },
+              "payload": {
+                "type": "string"
+              }
             }
           }
         }
@@ -7320,6 +7331,14 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "fulfillmentReview",
+            "in": "query",
+            "description": "仅筛选未结束且取消待核对、履约待对账或撤销失败的订单。已退款的 Xboard 撤销失败请查供应商任务队列。",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -8528,7 +8547,7 @@
           "Orders"
         ],
         "summary": "买家取消未接单订单",
-        "description": "仅限带接单期限（`acceptBy`）且仍为 `pending` 的本人订单。200 = 已取消并退还冻结积分（重复请求返回同一结果）；202 = 取消已受理但需核对远端执行结果，积分暂不退还（`cancelRequestedAt` 已写入）；409 = 已接单/已结束、旧订单不支持直接取消，或可能已在处理。非本人订单 404。",
+        "description": "仍为 pending 的本人订单均可请求取消，包括 acceptBy 为空的历史订单。200 = 已取消并退还积分（重放幂等）；202 = 取消受理，需核对远端结果，积分继续冻结；409 = 已接单/已结束或无法判断远端执行情况。非本人订单 404。自动超时取消仍须有已到期的 acceptBy。",
         "security": [
           {
             "bearerAuth": []
@@ -11996,6 +12015,167 @@
           },
           "503": {
             "description": "XBOARD_PAID_RESET_UNAVAILABLE / XBOARD_CAPABILITY_UNAVAILABLE，或签名防重放服务不可用"
+          }
+        }
+      }
+    },
+    "/api/admin/orders/{id}/fulfillment-review": {
+      "post": {
+        "tags": [
+          "Admin Orders"
+        ],
+        "summary": "核对外部履约取消",
+        "description": "要求管理员及 MFA。仅未结束且无历史交付记录的订单可操作。retry 重新执行取消屏障，未知结果继续冻结；已生效返回 409。confirm_cancelled 是人工证据核对操作：必须已记录取消意图、无在途租约且无开通成功证据，并保存供应商撤销/未生效凭证（超时和404均不构成凭证）。Xboard 必须通过其撤销协议取得 tombstone，不允许用人工备注退款。证据写管理员审计，禁止包含密钥。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "action"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "retry"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "action",
+                      "evidence"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "action": {
+                        "type": "string",
+                        "enum": [
+                          "confirm_cancelled"
+                        ]
+                      },
+                      "evidence": {
+                        "type": "string",
+                        "minLength": 20,
+                        "maxLength": 1000
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "核对结果；cancel_pending 保持积分冻结，refunded 已取消退款。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "orderId",
+                    "outcome"
+                  ],
+                  "properties": {
+                    "orderId": {
+                      "type": "integer"
+                    },
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "refunded",
+                        "cancel_pending"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求结构或证据长度不合法"
+          },
+          "403": {
+            "description": "管理员权限或 MFA 校验不通过"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      }
+    },
+    "/api/orders/{id}/overdue-complaint": {
+      "post": {
+        "tags": [
+          "Orders"
+        ],
+        "summary": "提交履约投诉或补救后的平台裁决申请",
+        "description": "本人 processing 人工订单：尚无交付记录时须超过履约期限，给商家48小时回应；已有交付记录时可立即申请平台裁决，无须再等待补救期限，直接升级至平台，不自动退款。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "更新后的争议订单详情",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOrderDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
           }
         }
       }

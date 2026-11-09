@@ -484,13 +484,22 @@ function validateListField<TItem>(
   return { status: 'suggested', value: accepted as string[] | FaqItem[], rejectedItemCount: rejected }
 }
 
+const MODEL_ISSUE_COPY: Record<IssueKind, string> = {
+  missing: '模型提示可能存在缺失信息，请核对商品资料。',
+  ambiguous: '模型提示可能存在歧义，请核对商品表述。',
+  risky_claim: '模型提示可能存在风险承诺，请核实后修改。',
+  unsupported_fact: '模型提示可能存在缺乏依据的事实，请核对已确认资料。',
+}
+
 function modelIssues(output: ModelOutput): Issue[] {
   return output.issues.slice(0, MAX_MODEL_ISSUES).map(issue => ({
     kind: issue.kind,
     origin: 'model' as const,
     field: issue.field,
-    message: clip(issue.message.trim(), MAX_ISSUE_TEXT),
-    evidence: issue.evidence == null ? null : clip(issue.evidence.trim(), MAX_ISSUE_TEXT),
+    // Model-controlled diagnostics must not become instructions to an admin.
+    // Only schema-validated enums cross this channel; prose stays code-owned.
+    message: MODEL_ISSUE_COPY[issue.kind],
+    evidence: null,
   }))
 }
 

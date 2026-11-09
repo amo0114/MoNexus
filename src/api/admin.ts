@@ -51,6 +51,7 @@ export interface AdminOrderItem {
   /** 买家拒绝补救方案或商家逾期未回应：等待平台裁决。 */
   disputeEscalatedAt?: string | null
   remedyNote?: string | null
+  cancelRequestedAt?: string | null
   // P7b：自动开通任务的安全投影（脱敏诊断码）；null = 非自动开通单。
   provisionTask?: import('../types/merchant').ProvisionTaskSummary | null
   // Xboard/Faka 任务投影；有值则禁止平台人工替代履约。
@@ -60,6 +61,7 @@ export interface AdminOrderItem {
 }
 
 export interface AdminOrderListQuery {
+  fulfillmentReview?: boolean
   status?: string
   q?: string
   page?: number
@@ -131,6 +133,12 @@ export async function resolveAdminOrder(
 ): Promise<unknown> {
   const { data } = await api.post(`/admin/orders/${id}/resolve`, payload)
   return data
+}
+
+export async function reviewAdminOrderFulfillment(id: number,
+  payload: { action: 'retry' } | { action: 'confirm_cancelled'; evidence: string }) {
+  const { data } = await api.post(`/admin/orders/${id}/fulfillment-review`, payload)
+  return data as { orderId: number; outcome: 'refunded' | 'cancel_pending' }
 }
 
 export async function startAdminPlatformFulfillment(
