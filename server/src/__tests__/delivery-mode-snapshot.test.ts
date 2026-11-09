@@ -60,6 +60,7 @@ describe('order delivery-mode snapshot', () => {
     await api.post(`/api/orders/${orderId}/remedy/accept`).set(authHeader(buyer.accessToken)).expect(200)
     const resumed = await api.get(`/api/merchant/orders/${orderId}`).set(authHeader(merchantLogin.accessToken)).expect(200)
     expect(resumed.body.status).toBe('processing')
-    expect(resumed.body.availableActions).toEqual(['deliver', 'post_progress', 'report_unfulfillable'])
+    // The original manual contract survives, but past delivery excludes seller refunds.
+    expect(resumed.body.availableActions).toEqual(['deliver', 'post_progress'])
   })
 })
