@@ -2,7 +2,7 @@ import { AdminSystemConfigKey } from '../../api/adminConfig'
 
 export type ConfigGroupId =
   | 'registration' // 注册与邀请 (10)
-  | 'rewards' // 基础奖励 (4)
+  | 'rewards' // 基础奖励 (12)
   | 'memberTier' // 会员等级 (6)
   | 'trade' // 交易与交付 (9)
   | 'inventory' // 库存提醒 (2)
@@ -20,7 +20,7 @@ export interface ConfigGroupDef {
 
 export const CONFIG_GROUPS: ConfigGroupDef[] = [
   { id: 'registration', title: '注册与邀请', description: '新用户注册通道、邀请码要求与发码门槛配额' },
-  { id: 'rewards', title: '基础奖励', description: '新用户注册、每日签到与邀请新用户的基础积分及冷静期', legacyGroup: '奖励发放' },
+  { id: 'rewards', title: '基础奖励', description: '新用户注册、每日签到、连签与全勤、补签与邀请新用户的积分及冷静期', legacyGroup: '奖励发放' },
   { id: 'memberTier', title: '会员等级', description: '会员升级累计积分门槛与签到/邀请额外加成百分比', legacyGroup: '会员等级' },
   { id: 'trade', title: '交易与交付', description: '订单二次验证、交付文件与自动开通履约规则', legacyGroup: '安全' },
   { id: 'inventory', title: '库存提醒', description: '商品可用库存低位阈值与重发告警冷却', legacyGroup: '库存' },
@@ -178,6 +178,81 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     unit: '天',
     label: '注册与邀请奖励冷静期',
     description: '完成邮箱验证后奖励冻结等待到账的天数（0～30 天）；设为 0 时即时到账。仅对新发放奖励生效。',
+  },
+
+  checkinStreakReward3: {
+    key: 'checkinStreakReward3',
+    group: 'rewards',
+    type: 'integer',
+    min: 0,
+    unit: '积分',
+    label: '连签 3 天奖励',
+    description: '连续签到满 3 天生成待领取奖励，用户需在网站领取；设为 0 时不发放。',
+  },
+  checkinStreakReward7: {
+    key: 'checkinStreakReward7',
+    group: 'rewards',
+    type: 'integer',
+    min: 0,
+    unit: '积分',
+    label: '连签 7 天奖励',
+    description: '连续签到满 7 天生成待领取奖励；设为 0 时不发放。',
+  },
+  checkinStreakReward14: {
+    key: 'checkinStreakReward14',
+    group: 'rewards',
+    type: 'integer',
+    min: 0,
+    unit: '积分',
+    label: '连签 14 天奖励',
+    description: '连续签到满 14 天生成待领取奖励；设为 0 时不发放。',
+  },
+  checkinStreakReward30: {
+    key: 'checkinStreakReward30',
+    group: 'rewards',
+    type: 'integer',
+    min: 0,
+    unit: '积分',
+    label: '连签 30 天奖励',
+    description: '连续签到满 30 天生成待领取奖励，之后每满 30 天再发一次；设为 0 时不发放。',
+  },
+  checkinMonthlyReward: {
+    key: 'checkinMonthlyReward',
+    group: 'rewards',
+    type: 'integer',
+    min: 0,
+    unit: '积分',
+    label: '月度全勤奖励',
+    description: '自然月每天都签到（含补签）后生成待领取奖励；设为 0 时不发放。',
+  },
+  checkinMakeupPrice: {
+    key: 'checkinMakeupPrice',
+    group: 'rewards',
+    type: 'integer',
+    min: 1,
+    unit: '积分',
+    label: '单次补签价格',
+    description: '补签最近 7 天内漏签日期消耗的积分；补签不发当日签到奖励。',
+  },
+  checkinMakeupMonthlyLimit: {
+    key: 'checkinMakeupMonthlyLimit',
+    group: 'rewards',
+    type: 'integer',
+    min: 0,
+    max: 31,
+    unit: '次',
+    label: '每月补签次数',
+    description: '每个自然月可补签的次数上限（0～31）；设为 0 时关闭补签。',
+  },
+  checkinRewardClaimDays: {
+    key: 'checkinRewardClaimDays',
+    group: 'rewards',
+    type: 'integer',
+    min: 1,
+    max: 90,
+    unit: '天',
+    label: '签到奖励领取有效期',
+    description: '连签与全勤奖励生成后可领取的天数（1～90 天），逾期失效。',
   },
 
   // c. 会员等级 (6 项)

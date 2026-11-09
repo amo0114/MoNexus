@@ -21,8 +21,25 @@ export async function history(req: Request, res: Response, next: NextFunction) {
 
 export async function checkinStatus(req: Request, res: Response, next: NextFunction) {
   try {
-    const checked = await pointService.hasCheckedInToday(req.user!.userId)
-    res.json({ hasCheckedIn: checked })
+    res.json(await pointService.getCheckinStatus(req.user!.userId))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function makeup(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { date, expectedPrice } = req.body as { date: string; expectedPrice: number }
+    res.json(await pointService.makeupCheckin(req.user!.userId, date, expectedPrice))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function claimReward(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params as unknown as { id: number }
+    res.json(await pointService.claimCheckinReward(req.user!.userId, Number(id)))
   } catch (err) {
     next(err)
   }

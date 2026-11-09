@@ -16,6 +16,8 @@ export const createAnnouncementSchema = z.object({
   startsAt: z.coerce.date(),
   endsAt: z.coerce.date().nullable().optional(),
   status: z.enum(ANNOUNCEMENT_STATUSES).default('draft'),
+  // SPEC-ENGAGE-001 PW-08：生效时向浏览器推送订阅广播一次。
+  pushEnabled: z.boolean().default(false),
 }).strict().refine(
   (data) => !data.endsAt || data.endsAt >= data.startsAt,
   { message: '结束时间必须晚于开始时间', path: ['endsAt'] }
@@ -33,6 +35,7 @@ export const updateAnnouncementSchema = z.object({
   startsAt: z.coerce.date().optional(),
   endsAt: z.coerce.date().nullable().optional(),
   status: z.enum(ANNOUNCEMENT_STATUSES).optional(),
+  pushEnabled: z.boolean().optional(),
 }).strict().refine(
   (data) => {
     if (data.endsAt !== undefined && data.endsAt !== null && data.startsAt) {

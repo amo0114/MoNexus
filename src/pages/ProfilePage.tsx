@@ -32,6 +32,10 @@ import MemberTierCard from '../components/profile/MemberTierCard'
 import InviteCard from '../components/profile/InviteCard'
 import ProfileOrdersPanel from '../components/profile/ProfileOrdersPanel'
 import ChatBindCard from '../components/ChatBindCard'
+import CheckinCard from '../components/checkin/CheckinCard'
+import PushToggle from '../components/PushToggle'
+import { disablePush, isPushSupported } from '../lib/webPush'
+import { useCheckin } from '../hooks/useCheckin'
 import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
 import UserAvatar from '../components/ui/UserAvatar'
 import { ExperienceProgressBar } from '../components/profile/ExperienceProgressBar'
@@ -98,8 +102,9 @@ export default function ProfilePage() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [orders, setOrders] = useState<UserOrderListItem[]>([])
   const [history, setHistory] = useState<any[]>([])
-  const [hasCheckedIn, setHasCheckedIn] = useState<boolean | null>(null)
-  const [checkingIn, setCheckingIn] = useState(false)
+  const checkinState = useCheckin()
+  const hasCheckedIn = checkinState.status ? checkinState.status.hasCheckedIn : null
+  const checkingIn = checkinState.busy === 'checkin'
 
   // 会员等级与配置统一加载
   const [tierData, setTierData] = useState<TierResponse | null>(null)
@@ -127,7 +132,6 @@ export default function ProfilePage() {
   useEffect(() => {
     Promise.allSettled([
       getOrders().then(setOrders),
-      api.get('/points/checkin/status').then(({ data }) => setHasCheckedIn(data.hasCheckedIn)),
       getMemberTier().then(setTierData),
       getConfigRegistry().then(setRegistry),
     ]).finally(() => {
@@ -147,40 +151,20 @@ export default function ProfilePage() {
       .finally(() => setHistoryLoading(false))
   }, [historyOpen])
 
-  async function handleCheckin() {
-    const checkinAuthContext = getAuthSessionContext(useAuthStore.getState())
-    if (!checkinAuthContext) return
-    setCheckingIn(true)
-    try {
-      const { data } = await api.post('/points/checkin')
-      if (!matchesAuthSessionContext(checkinAuthContext, getAuthSessionContext(useAuthStore.getState()))) return
-      useAuthStore.getState().updatePoints(data.balanceAfter, checkinAuthContext)
-      setHasCheckedIn(true)
-      useAppStore.getState().triggerIslandActivity({
-        kind: 'points',
-        groupKey: 'points:checkin',
-        title: `签到成功 +${data.totalReward} 积分`,
-        message: `打卡成功！积分 +${data.totalReward}`,
-        subtitle: `基础 +${data.baseReward}${data.bonusReward > 0 ? ` · 等级加成 +${data.bonusReward}` : ''}`,
-        type: 'success',
-        actionLabel: '查看积分流水',
-        onAction: () => {
-          if (!matchesAuthSessionContext(checkinAuthContext, getAuthSessionContext(useAuthStore.getState()))) return
-          navigate('/profile')
-          useAppStore.getState().setPointsHistoryOpen(true)
-        },
-      })
-    } catch (err: unknown) {
-      if (matchesAuthSessionContext(checkinAuthContext, getAuthSessionContext(useAuthStore.getState()))) showToast(getApiErrorMessage(err, '签到失败'), 'error')
-    } finally {
-      setCheckingIn(false)
+  // 机器人与推送消息里的「去领取」链接指向 /profile#checkin；卡片异步加载，手动滚动到位。
+  const checkinLoaded = checkinState.status !== null
+  useEffect(() => {
+    if (checkinLoaded && window.location.hash === '#checkin') {
+      document.getElementById('checkin')?.scrollIntoView({ block: 'start' })
     }
-  }
+  }, [checkinLoaded])
 
   async function handleLogout() {
     const logoutAuthContext = getAuthSessionContext(useAuthStore.getState())
     if (!logoutAuthContext) return
     try {
+      // 退出前解绑本设备的推送订阅，避免继续收到上一个账号的提醒（尽力而为）。
+      if (isPushSupported()) await disablePush().catch(() => {})
       await logoutCurrentSession()
     } catch {
       // ignore
@@ -330,7 +314,7 @@ export default function ProfilePage() {
 
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
               <button
-                onClick={handleCheckin}
+                onClick={() => void checkinState.checkin()}
                 disabled={hasCheckedIn !== false || checkingIn}
                 className={`max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-all cursor-pointer ${
                   hasCheckedIn === null
@@ -364,6 +348,8 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      <CheckinCard state={checkinState} />
 
       {/* ─────────────────────────────────────────────────────────────
           2. 中层：流体分段器导航（FluidSegmentedControl 绝佳用武之地）
@@ -569,6 +555,9 @@ export default function ProfilePage() {
 
             {/* 第三方消息通知绑定（QQ 机器人） */}
             <ChatBindCard />
+
+            {/* 浏览器推送（SPEC-ENGAGE-001） */}
+            <PushToggle />
           </div>
 
           {/* 登录设备管理 */}
