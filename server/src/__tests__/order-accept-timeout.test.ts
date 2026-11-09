@@ -63,7 +63,8 @@ describe('unaccepted order cancellation', () => {
     expect(await points(expired.user.id)).toEqual({ balance: 1000, frozenBalance: 0 })
 
     expect((await prisma.order.findUniqueOrThrow({ where: { id: legacy.orderId } })).status).toBe('pending')
-    await api.post(`/api/orders/${legacy.orderId}/cancel`).set(authHeader(legacy.buyer.accessToken)).expect(409)
+    await api.post(`/api/orders/${legacy.orderId}/cancel`).set(authHeader(legacy.buyer.accessToken)).expect(200)
+    expect(await points(legacy.user.id)).toEqual({ balance: 1000, frozenBalance: 0 })
   })
 
   it('hides other buyers orders and refuses to cancel once accepted', async () => {

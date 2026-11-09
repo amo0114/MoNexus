@@ -79,6 +79,8 @@ interface EditorState {
   endsAt: string
   hasEndsAt: boolean
   status: AnnouncementStatus
+  pushEnabled: boolean
+  pushedAt: string | null
 }
 
 const emptyEditor: EditorState = {
@@ -94,6 +96,8 @@ const emptyEditor: EditorState = {
   endsAt: '',
   hasEndsAt: false,
   status: 'draft',
+  pushEnabled: false,
+  pushedAt: null,
 }
 
 export default function AnnouncementsAdmin() {
@@ -148,6 +152,8 @@ export default function AnnouncementsAdmin() {
       startsAt: toDateTimeLocalValue(a.startsAt),
       endsAt: a.endsAt ? toDateTimeLocalValue(a.endsAt) : '',
       hasEndsAt: a.endsAt !== null,
+      pushEnabled: a.pushEnabled,
+      pushedAt: a.pushedAt,
       status: a.status,
     })
   }
@@ -202,6 +208,7 @@ export default function AnnouncementsAdmin() {
       startsAt,
       endsAt,
       status: editor.status,
+      pushEnabled: editor.pushEnabled,
     }
 
     setSubmitting(true)
@@ -473,6 +480,18 @@ export default function AnnouncementsAdmin() {
                   </select>
                 </div>
               </div>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={editor.pushEnabled}
+                  disabled={editor.pushedAt !== null}
+                  onChange={(e) => setEditor({ ...editor, pushEnabled: e.target.checked })}
+                  data-testid="admin-announcement-push"
+                />
+                {editor.pushedAt !== null
+                  ? '已推送到浏览器（每条公告只推送一次）'
+                  : '生效时推送到已开启浏览器推送的用户（仅一次，需服务端开启 Web Push）'}
+              </label>
               {editor.presentation === 'acknowledgement_required' && (
                 <p className="rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/8 px-3 py-2 text-xs leading-relaxed text-[var(--color-danger)]">
                   仅用于必须被用户明确知悉的事项。用户可在公告中心查看全文，点击“我已阅读并确认”后才会停止提示。

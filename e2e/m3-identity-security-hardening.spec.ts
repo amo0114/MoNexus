@@ -81,6 +81,8 @@ async function mockProfileBackgroundRequests(page: Page) {
   } }))
   await page.route(apiRoute('/points/history'), route => route.fulfill({ json: [] }))
   await page.route(apiRoute('/points/checkin/status'), route => route.fulfill({ json: { hasCheckedIn: false } }))
+  // SPEC-ENGAGE-001 推送开关：保持在 fixture 内，避免未签名 token 打到真实后端触发登出。
+  await page.route(apiRoute('/push/public-key'), route => route.fulfill({ json: { enabled: false, publicKey: null } }))
   await page.route(apiRoute('/points/tier'), route => route.fulfill({ json: memberTier }))
   // SPEC-CHAT-BOT-001: ProfilePage mounts ChatBindCard, which reads its chat
   // binding status on mount. Without this stub the intentionally unsigned

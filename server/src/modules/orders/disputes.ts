@@ -8,6 +8,7 @@ import { assessAndBlockCancellationInTx } from './cancellation.js'
 import { DISPUTE_RESPONSE_MS, transitionOrderStatus } from './fulfillment.js'
 import { applyRefundInventoryPolicy } from './refundInventory.js'
 import { isInstantMode, normalizeOrderStatus } from './statusPolicy.js'
+import { NotificationDispatcher, orderNotificationSnapshot } from '../notifications/dispatcher.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -38,16 +39,17 @@ export async function fileOverdueComplaint(orderId: number, userId: number): Pro
     if (normalizeOrderStatus(order.status) !== 'processing') throw conflict('只有履约中的订单可以投诉超时')
     if (order.deliveryModeSnapshot !== 'manual_service') throw conflict('只有人工服务订单可以投诉超时')
     if (order.fakaBridgeTask || order.fulfillmentJob) throw conflict('自动开通订单请联系平台处理')
-    if (!order.fulfillmentDeadline || order.fulfillmentDeadline > new Date()) throw conflict('尚未超过履约期限')
+    if (!order.delivery && (!order.fulfillmentDeadline || order.fulfillmentDeadline > new Date())) throw conflict('尚未超过履约期限')
     await transitionOrderStatus({
       orderId,
       toStatus: 'disputed',
       actorRole: 'user',
       actorUserId: userId,
-      action: 'user.dispute.overdue',
-      publicNote: '买家投诉：超过履约期限仍未交付',
+      action: order.delivery ? 'user.dispute.remedy_failed' : 'user.dispute.overdue',
+      publicNote: order.delivery ? '买家对补救履约提出异议，提交平台裁决' : '买家投诉：超过履约期限仍未交付',
       overdueComplaint: true,
     }, tx)
+    if (order.delivery) await tx.order.update({ where: { id: orderId }, data: { disputeRespondBy: null, disputeEscalatedAt: new Date() } })
   })
 }
 
@@ -65,6 +67,9 @@ export async function proposeRemedyInTx(
   if (order.remedyProposedAt) throw conflict('补救方案已提交，正在等待买家确认')
   if (!note.trim()) throw badRequest('请填写补救方案说明')
   const now = new Date()
+  // NULL identifies pre-timer disputes, which remain under administrator arbitration.
+  if (!order.disputeRespondBy) throw conflict('该争议由平台裁决，请等待处理结果')
+  if (order.disputeRespondBy <= now) throw conflict('争议回应期限已过，请等待系统处理或平台裁决')
   await tx.order.update({
     where: { id: orderId },
     data: {
@@ -80,6 +85,10 @@ export async function proposeRemedyInTx(
       action: `${actor.role}.dispute.remedy`, publicNote: `补救方案：${note.trim()}`,
     },
   })
+  await NotificationDispatcher.emit({
+    type: 'order.remedy_proposed_buyer', recipientUserId: order.userId, recipientRole: 'user',
+    order: orderNotificationSnapshot(order), occurrenceKey: now.toISOString(),
+  }, tx)
 }
 
 /**
@@ -112,6 +121,8 @@ export async function answerRemedy(orderId: number, userId: number, accept: bool
     const order = await lockOrder(tx, orderId)
     if (!order || order.userId !== userId) throw notFound('订单不存在')
     if (normalizeOrderStatus(order.status) !== 'disputed' || !order.remedyProposedAt) throw conflict('当前没有待确认的补救方案')
+    if (order.disputeEscalatedAt || !order.remedyRespondBy) throw conflict('争议已提交平台裁决，请等待处理结果')
+    if (order.remedyRespondBy <= new Date()) throw conflict('补救方案回应期限已过，请刷新订单查看处理结果')
     if (accept) {
       await acceptRemedyInTx(tx, order, { kind: 'buyer', userId })
       return
@@ -138,6 +149,10 @@ export async function applyDueDisputeTimer(orderId: number, now = new Date()): P
     if (!order || normalizeOrderStatus(order.status) !== 'disputed' || order.disputeEscalatedAt) return 'skipped'
     if (order.remedyProposedAt && order.remedyRespondBy && order.remedyRespondBy <= now) {
       await acceptRemedyInTx(tx, order, { kind: 'lapse' })
+      await NotificationDispatcher.emit({
+        type: 'order.remedy_lapsed_buyer', recipientUserId: order.userId, recipientRole: 'user',
+        order: orderNotificationSnapshot(order), occurrenceKey: order.remedyProposedAt.toISOString(),
+      }, tx)
       return 'remedy_accepted'
     }
     if (order.remedyProposedAt || !order.disputeRespondBy || order.disputeRespondBy > now) return 'skipped'

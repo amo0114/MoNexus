@@ -170,6 +170,11 @@ services:
       # 因此只注入到后端容器，且绝不带 VITE_ 前缀（那会打进前端包）。
       BOT_SHARED_SECRET: ${BOT_SHARED_SECRET:-}
       BOT_REMINDER_ENABLED: ${BOT_REMINDER_ENABLED:-true}
+      # SPEC-ENGAGE-001 browser Web Push; VAPID private key stays backend-only.
+      WEB_PUSH_ENABLED: ${WEB_PUSH_ENABLED:-false}
+      WEB_PUSH_VAPID_PUBLIC_KEY: ${WEB_PUSH_VAPID_PUBLIC_KEY:-}
+      WEB_PUSH_VAPID_PRIVATE_KEY: ${WEB_PUSH_VAPID_PRIVATE_KEY:-}
+      WEB_PUSH_SUBJECT: ${WEB_PUSH_SUBJECT:-}
       AUTO_PROVISION_ALLOW_INSECURE_TARGETS: ${AUTO_PROVISION_ALLOW_INSECURE_TARGETS:-false}
       # Optional platform FakaBridge/Xboard integration. Keep all unset until
       # it is enabled; URL and secret are validated as an all-or-nothing pair.
@@ -303,6 +308,7 @@ services:
       - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./docs/operations/value-policy-alerts.rules.yml:/etc/prometheus/rules/value-policy-alerts.rules.yml:ro
       - ./docs/operations/payment-alerts.rules.yml:/etc/prometheus/rules/payment-alerts.rules.yml:ro
+      - ./docs/operations/background-alerts.rules.yml:/etc/prometheus/rules/background-alerts.rules.yml:ro
       - ./docs/operations/product-video-alerts.rules.yml:/etc/prometheus/rules/product-video-alerts.rules.yml:ro
       - prometheusdata-prod:/prometheus
     healthcheck:

@@ -1,4 +1,5 @@
 import type { Offer } from '@prisma/client'
+import { z } from 'zod'
 import type { CheckoutExtension, ExtensionInput } from '../../extension-contracts/fulfillment.js'
 import { config } from '../../config/index.js'
 import { badRequest, HttpError, notFound, provisionEmailUnverified } from '../../lib/httpError.js'
@@ -21,10 +22,10 @@ type Prepared =
 
 type Target = { email: string; sku: string; paidReset?: { accountLinkId: string } }
 
-function text(input: ExtensionInput, key: string): string | undefined {
-  const value = input[key]
-  return typeof value === 'string' && value !== '' ? value : undefined
-}
+const stableAccountInputSchema = z.object({
+  xboardAccountLinkId: z.string().uuid().optional(),
+  expectedXboardTargetVersion: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+})
 
 async function assertBuyerCanProvision(
   client: Pick<typeof prisma, 'user'>,
@@ -41,8 +42,10 @@ async function assertBuyerCanProvision(
 }
 
 function stableResetInput(offer: Offer, input: ExtensionInput) {
-  const accountLinkId = text(input, 'xboardAccountLinkId')
-  const expectedTargetVersion = text(input, 'expectedXboardTargetVersion')
+  // Both the legacy top-level fields and the generic envelope reach this boundary.
+  const parsed = stableAccountInputSchema.safeParse(input)
+  if (!parsed.success) throw badRequest('套餐账号参数无效，请重新确认')
+  const { xboardAccountLinkId: accountLinkId, expectedXboardTargetVersion: expectedTargetVersion } = parsed.data
   const stableReset = usesStablePaidReset(offer)
   if ((accountLinkId || expectedTargetVersion) && !stableReset) throw badRequest('此规格不支持绑定账号重置')
   return { stableReset, accountLinkId, expectedTargetVersion }

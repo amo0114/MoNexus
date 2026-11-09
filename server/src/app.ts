@@ -34,6 +34,7 @@ import { deliveryFileRoutes } from './modules/uploads/deliveryFileRoutes.js'
 import { configRoutes } from './modules/config/routes.js'
 import { announcementRoutes } from './modules/announcements/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
+import { pushRoutes } from './modules/push/routes.js'
 import { portableRestoreBootstrapRoutes } from './modules/portable-backups/bootstrap-routes.js'
 import { fakaBridgeRoutes } from './modules/fakaBridge/routes.js'
 import { legalRoutes } from './modules/legal/routes.js'
@@ -216,6 +217,7 @@ app.use('/api/config', configRoutes)
 app.use('/api/legal', legalRoutes)
 app.use('/api/announcements', announcementRoutes)
 app.use('/api/notifications', notificationRoutes)
+app.use('/api/push', pushRoutes)
 app.use('/api/portable-restore/bootstrap', portableRestoreBootstrapRoutes)
 
 app.use(errorHandler)

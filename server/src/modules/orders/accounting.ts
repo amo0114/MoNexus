@@ -67,6 +67,12 @@ export async function captureHeldOrder(
   const amount = order.holdingPoints ?? 0
   if (amount <= 0) return null
 
+  const claimed = await client.order.updateMany({
+    where: { id: order.id, userId: order.userId, holdingPoints: amount, fundsHeld: order.fundsHeld },
+    data: { holdingPoints: null, fundsHeld: false },
+  })
+  if (claimed.count !== 1) return null
+
   let balanceAfter: number
   if (order.fundsHeld) {
     balanceAfter = (await consumeHeldPoints(client, order.userId, amount)).balance
@@ -83,10 +89,6 @@ export async function captureHeldOrder(
       reason,
       orderId: order.id,
     },
-  })
-  await client.order.update({
-    where: { id: order.id },
-    data: { holdingPoints: null, fundsHeld: false },
   })
   return balanceAfter
 }
@@ -114,6 +116,12 @@ export async function releaseHeldOrder(
   const amount = order.holdingPoints ?? 0
   if (amount <= 0) return null
 
+  const claimed = await client.order.updateMany({
+    where: { id: order.id, userId: order.userId, holdingPoints: amount, fundsHeld: order.fundsHeld },
+    data: { holdingPoints: null, fundsHeld: false },
+  })
+  if (claimed.count !== 1) return null
+
   let balanceAfter: number
   if (order.fundsHeld) {
     balanceAfter = (await releaseHeldPoints(client, order.userId, amount)).balance
@@ -132,10 +140,6 @@ export async function releaseHeldOrder(
       reason,
       orderId: order.id,
     },
-  })
-  await client.order.update({
-    where: { id: order.id },
-    data: { holdingPoints: null, fundsHeld: false },
   })
   await client.settlement.updateMany({
     where: { orderId: order.id, status: 'holding' },

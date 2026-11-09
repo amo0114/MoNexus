@@ -36,6 +36,7 @@ export function idempotencyInFlight(): HttpError {
 }
 
 export type IdempotencyFingerprint = {
+  extensionInput?: Record<string, unknown>
   xboardAccountLinkId?: string
   expectedXboardTargetVersion?: string
   productId: number
@@ -79,6 +80,10 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
     .sort()
     .map(key => [key, (agreements[key] ?? '').trim()])
     .filter(([, value]) => value !== '')
+  const extensionInput = fingerprint.extensionInput ?? {}
+  const canonicalExtension = Object.keys(extensionInput).sort()
+    .filter(key => extensionInput[key] !== undefined)
+    .map(key => [key, extensionInput[key]])
   const canonical = JSON.stringify({
     ...(fingerprint.xboardAccountLinkId != null ? { xboardAccountLinkId: fingerprint.xboardAccountLinkId } : {}),
     ...(fingerprint.expectedXboardTargetVersion != null ? { expectedXboardTargetVersion: fingerprint.expectedXboardTargetVersion } : {}),
@@ -103,6 +108,9 @@ export function computeRequestDigest(fingerprint: IdempotencyFingerprint): strin
           expectedAssuranceGrantId: fingerprint.expectedAssuranceGrantId ?? null,
         }
       : {}),
+    // ORD-004: same key with a different provider target must never replay the old order.
+    // Omit empty input to preserve fingerprints for all existing Xboard/plain callers.
+    ...(canonicalExtension.length > 0 ? { extensionInput: canonicalExtension } : {}),
     answers: canonicalAnswers,
   })
   return createHmac('sha256', config.jwtSecret).update(canonical).digest('hex')

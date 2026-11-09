@@ -22,6 +22,7 @@ type ActionPanel = 'progress' | 'deliver' | 'reject' | null
 export function isPlatformManualFulfillmentOrder(order: AdminOrderDetail): boolean {
   const merchantId = order.merchantId !== undefined ? order.merchantId : (order.merchant?.id ?? null)
   if (merchantId != null) return false
+  if (order.externalFulfillment) return false
   if (order.provisionTask) return false
   if (order.fakaBridgeTask != null) return false
   if (order.product?.fakaBridge) return false
@@ -135,7 +136,7 @@ export default function AdminPlatformFulfillmentActions({
             >
               交付
             </button>
-            <button
+            {!order.delivery?.id && <button
               type="button"
               className="btn-secondary btn-sm text-xs px-2.5 py-1 cursor-pointer border-[var(--color-danger)] text-[var(--color-danger)]"
               disabled={busy}
@@ -143,7 +144,7 @@ export default function AdminPlatformFulfillmentActions({
               onClick={() => setPanel((current) => (current === 'reject' ? null : 'reject'))}
             >
               无法履约
-            </button>
+            </button>}
           </>
         )}
       </div>

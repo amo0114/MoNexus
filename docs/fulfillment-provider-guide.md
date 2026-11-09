@@ -90,11 +90,18 @@ export const myAdapter: ExternalFulfillmentAdapter = {
 2. 在 `src/extensions/registry.ts` 里按供应商 id 注册。
 3. `orderInput` 会作为 `extensionInput` 随 `POST /api/orders` 提交，由服务端你的 `prepare` 校验。**浏览器传来的任何字段都不能信任**，执行方由服务端 Offer 决定，客户端无法指定。
 
+`orderInput` 是平铺的供应商字段，例如 `{ account: 'target', quantity: 2 }`，请求体会封装为 `extensionInput`。最多 16 个键（每键最长 64 字符），值限字符串（最长 512 字符）、有限数字或布尔值。非空输入参与幂等指纹：相同键重试时改变供应商参数返回 409，键的排列顺序不影响重放。
+
+空对象与不传参数等价；`{ account: '' }` 与不传 `account` 不等价，数字、字符串和布尔值也保留类型区别。供应商应在 `prepare` 内验证字段是否必填及其业务含义。
+
+需要根据选择重新预检时，通过 `setPreviewQuery({ account: 'target' })` 更新；前端把这些字符串字段 JSON 编码为预览接口的 `extensionInput` 查询参数，服务端校验后原样交给 `checkout.preview`。直接调用 HTTP 的客户端也使用此 JSON 查询参数。Xboard 既有顶层账号选择/目标版本字段继续兼容。
+
 没有额外输入的供应商不需要这一步，通用购买弹窗就够用。参考实现：`src/extensions/xboard/useXboardPurchaseExtension.tsx`。
 
 ## 6. 订单生命周期里你需要知道的
 
 - **下单**：任务与订单在同一个事务里创建，远端调用发生在提交之后。
+- **人工操作**：有外部供应商绑定或持久任务的订单不能走平台人工接单、拒单或替代交付；解除规格绑定也不会改变已创建任务的执行者。
 - **取消/超时**：买家取消、管理员退款之前，核心会在订单锁内做取消判断。未派发的任务直接作废；可能已派发的任务被标记为 `cancelRequested`，之后通过 `cancel` 或 `query` 收敛。你不需要处理这些，只要 `query` 如实回答。
   外部订单与普通人工单一样有开始处理期限（`acceptTimeoutHours`），买家可在待处理时取消，超时自动取消。期限过后远端迟到的成功仍会交付；收敛成退款的取消记为 `resolutionReason=cancel_requested`，开通失败退款记为 `provider_failed`。商家 Webhook 自动开通没有查询/取消协议，不设期限，也不支持买家直接取消。
 - **迟到的结果**：订单已退款或已关闭后才收到 `succeeded` 时，引擎不会再交付，会在任务上记下「需要人工撤销」并打错误日志，由运营在远端撤销。

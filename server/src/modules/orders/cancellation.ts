@@ -75,7 +75,8 @@ async function assessProvisionTaskInTx(tx: Tx, orderId: number): Promise<Cancell
   if (task.status === 'pending') {
     await tx.provisionTask.update({
       where: { id: task.id },
-      data: { status: 'cancelled', leaseUntil: null, lastError: 'order_cancel_requested' },
+      // Preserve the dispatch lease as evidence of an in-flight external request.
+      data: { status: 'cancelled', lastError: 'order_cancel_requested' },
     })
   }
   return 'unsupported'
@@ -94,8 +95,8 @@ const CANCEL_COPY = {
 /**
  * Cancel an order nobody has accepted yet: by its buyer, or by the system once
  * `acceptBy` passed. Both race the merchant's accept on the same Order lock,
- * so exactly one wins. Only orders with an accept deadline (new plain manual
- * orders) qualify; legacy pending orders are handled separately.
+ * so exactly one wins. Buyers may also cancel legacy pending orders without
+ * a deadline; automated timeout cancellation always requires a due deadline.
  */
 export async function cancelUnacceptedOrder(orderId: number, actor: UnacceptedCancelActor): Promise<UnacceptedCancelOutcome> {
   const copy = CANCEL_COPY[actor.kind]
@@ -115,16 +116,17 @@ export async function cancelUnacceptedOrder(orderId: number, actor: UnacceptedCa
       return 'cancelled'
     }
     if (order.status !== 'pending') throw conflict('订单已被接单或已结束，不能取消')
-    if (!order.acceptBy) throw conflict('该订单不支持直接取消，请联系商家或平台处理')
-    if (actor.kind === 'timeout' && order.acceptBy > new Date()) throw conflict('接单期限未到')
-    if (order.cancelRequestedAt) return 'cancel_pending'
+    if (actor.kind === 'timeout' && (!order.acceptBy || order.acceptBy > new Date())) throw conflict('接单期限未到')
 
     const verdict = await assessAndBlockCancellationInTx(tx, order.id)
     if (verdict === 'reconcile_required') {
       await tx.order.update({ where: { id: order.id }, data: { cancelRequestedAt: new Date() } })
       return 'cancel_pending'
     }
-    if (verdict !== 'safe_to_finalize') throw conflict('订单可能已在处理，不能直接取消，请联系商家或平台处理')
+    if (verdict !== 'safe_to_finalize') {
+      if (order.cancelRequestedAt) return 'cancel_pending'
+      throw conflict('订单可能已在处理，不能直接取消，请联系商家或平台处理')
+    }
 
     await transitionOrderStatus({
       orderId: order.id,
@@ -160,9 +162,8 @@ type UnfulfillableOrder = {
 /**
  * The seller (merchant or platform) declares an accepted manual order cannot be
  * fulfilled: full refund, held points released, unused capacity restocked. The
- * caller locked the Order and checked ownership. Refunding is the buyer-favourable
- * outcome, so only a proven remote execution blocks it; the barrier still runs to
- * stop any automatic provisioning retries.
+ * caller locked the Order and checked ownership. Only proven absence of remote
+ * effects permits a refund; uncertainty must not release the buyer's hold.
  */
 export async function refundUnfulfillableOrderInTx(
   tx: Tx,
@@ -171,8 +172,11 @@ export async function refundUnfulfillableOrderInTx(
 ): Promise<void> {
   if (order.status !== 'processing') throw conflict('只有履约中的订单可以声明无法履约')
   if (order.deliveryModeSnapshot !== 'manual_service') throw conflict('只有人工服务订单可以声明无法履约')
-  if (await assessAndBlockCancellationInTx(tx, order.id) === 'already_executed') {
-    throw conflict('订单已自动开通，请走争议或售后处理')
+  if (await tx.deliveryRecord.findUnique({ where: { orderId: order.id }, select: { id: true } })) {
+    throw conflict('订单已有交付记录，请由买家提交争议并交平台裁决退款')
+  }
+  if (await assessAndBlockCancellationInTx(tx, order.id) !== 'safe_to_finalize') {
+    throw conflict('无法确认外部履约结果，请联系平台核对后处理')
   }
   await transitionOrderStatus({
     orderId: order.id,

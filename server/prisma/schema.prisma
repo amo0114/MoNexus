@@ -67,6 +67,9 @@ model User {
   orders                       Order[]
   pointLogs                    PointLog[]
   checkins                     CheckinRecord[]
+  checkinRewards               CheckinReward[]
+  activeDays                   UserActiveDay[]
+  pushSubscriptions            PushSubscription[]
   refreshTokens                RefreshToken[]
   orderStatusEvents            OrderStatusEvent[]
   invitedBy                    InviteRelation[]              @relation("invitee")
@@ -258,6 +261,9 @@ model Announcement {
   startsAt       DateTime
   endsAt         DateTime? // null 表示长期
   status         String    @default("draft") // draft | published | archived
+  // SPEC-ENGAGE-001 PW-08：管理员勾选后，生效时向浏览器推送订阅广播一次。
+  pushEnabled    Boolean   @default(false)
+  pushedAt       DateTime?
   createdBy      Int?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -1265,12 +1271,63 @@ model CheckinRecord {
   userId    Int
   date      String // YYYY-MM-DD
   createdAt DateTime @default(now())
-  source    String   @default("web") // web | qq — 入口来源，仅用于统计，不参与幂等
+  source    String   @default("web") // web | qq | makeup — 入口来源，仅用于统计，不参与幂等
+  // SPEC-ENGAGE-001 CK-02：截至该日的连续签到天数（含当日）。
+  streak    Int      @default(1)
 
   user User @relation(fields: [userId], references: [id])
 
   @@unique([userId, date])
   @@index([date]) // 机器人定时催签：按日期批量捞「今日未签」
+}
+
+// SPEC-ENGAGE-001 CK-06：连签里程碑 / 月度全勤奖励，只能在网站领取。
+// 过期为惰性判定（读侧以 expiresAt 为准），不建定时任务改状态。
+model CheckinReward {
+  id         Int       @id @default(autoincrement())
+  userId     Int
+  kind       String // streak | monthly
+  milestone  Int // streak：连签天数；monthly：当月天数
+  periodKey  String // streak：该段连签起始日 YYYY-MM-DD；monthly：YYYY-MM
+  amount     Int // 生成时快照（CK-08）
+  state      String    @default("claimable") // claimable | claimed
+  expiresAt  DateTime
+  claimedAt  DateTime?
+  pointLogId Int?      @unique
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, periodKey, milestone])
+  @@index([userId, state, expiresAt])
+}
+
+// SPEC-ENGAGE-001 §2.4：登录用户 × 上海自然日，用于度量人均月活跃天数。
+model UserActiveDay {
+  userId Int
+  day    String // YYYY-MM-DD（Asia/Shanghai）
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, day])
+  @@index([day])
+}
+
+// SPEC-ENGAGE-001 PW-04：浏览器 Web Push 订阅。endpoint 全局唯一；同一浏览器
+// 换账号登录后重新订阅会改绑到当前用户。
+model PushSubscription {
+  id            Int       @id @default(autoincrement())
+  userId        Int
+  endpoint      String    @unique
+  p256dh        String
+  auth          String
+  userAgent     String?
+  createdAt     DateTime  @default(now())
+  lastSuccessAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // ── SPEC-CHAT-BOT-001：QQ/Telegram 机器人账号绑定 ──────────────────────────
@@ -2464,6 +2521,7 @@ model PaymentRecoveryCase {
   consumedPointLog PointLog?      @relation("PaymentRecoveryCaseConsumed", fields: [consumedPointLogId], references: [id], onDelete: Restrict)
   restoredPointLog PointLog?      @relation("PaymentRecoveryCaseRestored", fields: [restoredPointLogId], references: [id], onDelete: Restrict)
 
+  @@index([rechargeCreditId])
   @@index([userId, status])
 }
 

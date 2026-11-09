@@ -21,6 +21,7 @@ import RegistryPill from '../ui/RegistryPill'
 import ProvisionBadge from '../ProvisionBadge'
 import { useAppStore } from '../../stores/appStore'
 import AdminPlatformFulfillmentActions from './AdminPlatformFulfillmentActions'
+import AdminFulfillmentReview from './AdminFulfillmentReview'
 
 export interface AdminOrderDetailDialogProps {
   order: AdminOrderDetail | null
@@ -319,6 +320,7 @@ export default function AdminOrderDetailDialog({
                 order={order}
                 onSuccess={onFulfillmentSuccess}
               />
+              <AdminFulfillmentReview key={order.id} order={order} onSuccess={onFulfillmentSuccess} />
             </div>
           )}
 

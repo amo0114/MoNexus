@@ -11,7 +11,7 @@ import {
   listDeliveryFilesQuerySchema, listFileGrantsQuerySchema, offerReportQuerySchema,
   listAdminAuditQuerySchema, listPointLogsQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema, merchantAgentPilotSchema,
-  listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema,
+  listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema, fulfillmentReviewSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   setFakaCapacitySchema, previewFakaPlanSchema, importFakaPlanSchema, addFakaOffersSchema,
   listAdminProductsQuerySchema, archiveProductSchema, adminOfferPatchSchema,
@@ -257,6 +257,7 @@ router.get('/delivery-files/:id/grants', validate({ params: idParamSchema, query
 router.get('/reports/offers', validate({ query: offerReportQuerySchema }), controller.offerReport)
 router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.orders)
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
+router.post('/orders/:id/fulfillment-review', validate({ params: idParamSchema, body: fulfillmentReviewSchema }), controller.reviewOrderFulfillment)
 router.post('/orders/:id/resolve', validate({ params: idParamSchema, body: resolveOrderSchema }), controller.resolveOrder)
 router.get('/point-logs', validate({ query: listPointLogsQuerySchema }), controller.listPointLogs)
 /** @deprecated Kept for backwards compatibility; use /point-logs */

@@ -5,7 +5,10 @@ import path from 'node:path'
 import { Client } from 'pg'
 import { afterAll, describe, expect, it } from 'vitest'
 
-const ADMIN_URL = 'postgresql://monexus:monexus_dev_2026@localhost:5432/postgres'
+const testUrl = new URL(process.env.TEST_DATABASE_URL!)
+const adminUrl = new URL(testUrl)
+adminUrl.pathname = '/postgres'
+const ADMIN_URL = adminUrl.toString()
 const EMPTY_DB = 'monexus_test_recharge_a_empty'
 const UPGRADE_DB = 'monexus_test_recharge_a_upgrade'
 const FOUNDATION_MIGRATION = '20260819120000_recharge_payment_foundation'
@@ -14,6 +17,7 @@ const ADMIN_SANDBOX_POLICY_MIGRATION = '20260823204000_admin_sandbox_price_polic
 const EXPECTED_PROVIDER_AMOUNT_MIGRATION = '20260901120000_payment_attempt_expected_provider_amount'
 const QUOTED_AMOUNT_MIGRATION = '20260901121000_reconciliation_item_quoted_amount'
 const RECOVERY_POINT_LOGS_MIGRATION = '20261024120000_payment_recovery_point_logs'
+const RECOVERY_CREDIT_INDEX_MIGRATION = '20261109220000_recovery_credit_idx'
 const NEW_MIGRATIONS = [
   FOUNDATION_MIGRATION,
   ADMIN_SANDBOX_MIGRATION,
@@ -21,12 +25,16 @@ const NEW_MIGRATIONS = [
   EXPECTED_PROVIDER_AMOUNT_MIGRATION,
   QUOTED_AMOUNT_MIGRATION,
   RECOVERY_POINT_LOGS_MIGRATION,
+  RECOVERY_CREDIT_INDEX_MIGRATION,
 ] as const
 const SERVER_ROOT = path.resolve(__dirname, '../..')
 const created: string[] = []
 
 function dbUrl(name: string) {
-  return `postgresql://monexus:monexus_dev_2026@localhost:5432/${name}?schema=public`
+  const url = new URL(testUrl)
+  url.pathname = `/${name}`
+  url.searchParams.set('schema', 'public')
+  return url.toString()
 }
 
 async function recreateDatabase(name: string) {
@@ -34,7 +42,7 @@ async function recreateDatabase(name: string) {
   await admin.connect()
   await admin.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`, [name])
   await admin.query(`DROP DATABASE IF EXISTS ${name}`)
-  await admin.query(`CREATE DATABASE ${name} OWNER monexus`)
+  await admin.query(`CREATE DATABASE ${name}`)
   await admin.end()
   created.push(name)
 }
@@ -89,6 +97,7 @@ describe('recharge foundation migration replay', () => {
     expect(result.stdout + result.stderr).toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
+    expect(result.stdout + result.stderr).toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(EMPTY_DB) })
     await client.connect()
@@ -112,7 +121,7 @@ describe('recharge foundation migration replay', () => {
     expect(expectedCol.rows[0]?.is_nullable).toBe('NO')
   }, 180_000)
 
-  it('applies the foundation migration on top of the latest develop schema', async () => {
+  it('applies payment migrations after replaying the schema without payment tables', async () => {
     await recreateDatabase(UPGRADE_DB)
     const historicalSchema = copyPrisma(true)
     const historical = migrateDeploy(dbUrl(UPGRADE_DB), historicalSchema)
@@ -123,6 +132,7 @@ describe('recharge foundation migration replay', () => {
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
 
     const clientBefore = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await clientBefore.connect()
@@ -141,6 +151,7 @@ describe('recharge foundation migration replay', () => {
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(EXPECTED_PROVIDER_AMOUNT_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await client.connect()
@@ -157,6 +168,7 @@ describe('recharge foundation migration replay', () => {
       `SELECT is_nullable FROM information_schema.columns
        WHERE table_name = 'PaymentAttempt' AND column_name = 'expectedProviderAmountMinor'`,
     )
+    const recoveryIndex = await client.query(`SELECT indexname FROM pg_indexes WHERE indexname = 'PaymentRecoveryCase_rechargeCreditId_idx'`)
     const quotedCol = await client.query<{ is_nullable: string }>(
       `SELECT is_nullable FROM information_schema.columns
        WHERE table_name = 'ReconciliationItem' AND column_name = 'quotedAmountMinor'`,
@@ -166,6 +178,7 @@ describe('recharge foundation migration replay', () => {
     expect(check.rowCount).toBe(1)
     expect(expectedAmount.rowCount).toBe(1)
     expect(expectedCol.rows[0]?.is_nullable).toBe('NO')
+    expect(recoveryIndex.rowCount).toBe(1)
     expect(quotedCol.rowCount).toBe(1)
     expect(quotedCol.rows[0]?.is_nullable).toBe('YES')
   }, 180_000)

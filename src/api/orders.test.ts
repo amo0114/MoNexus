@@ -26,6 +26,19 @@ beforeEach(() => {
 })
 
 describe('createOrder checkout term fields', () => {
+  it('ORD-004: envelopes generic preview and purchase input without overriding core fields', async () => {
+    vi.mocked(client.get).mockResolvedValue({ data: {} })
+    await getCheckoutPreview(42, 7, { account: 'chosen-account', productId: '999' })
+    expect(client.get).toHaveBeenLastCalledWith('/checkout/preview', {
+      params: { productId: 42, offerId: 7, extensionInput: JSON.stringify({ account: 'chosen-account', productId: '999' }) },
+    })
+    await createOrder(42, { expectedPrice: 100, idempotencyKey: 'key', expectedProductContentVersion: 1,
+      expectedAssuranceGrantId: null, orderInput: { account: 'chosen-account', quantity: 2, enabled: true, productId: 999 } })
+    const body = mockPost.mock.calls[0][1]
+    expect(body).toMatchObject({ productId: 42, extensionInput: { account: 'chosen-account', quantity: 2, enabled: true, productId: 999 } })
+    expect(body).not.toHaveProperty('account')
+  })
+
   it('threads the stable account and opaque target version through preview and order HTTP', async () => {
     vi.mocked(client.get).mockResolvedValue({ data: {} })
     await getCheckoutPreview(42, 7, { xboardAccountLinkId: 'account-id' })

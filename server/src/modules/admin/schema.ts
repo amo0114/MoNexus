@@ -404,6 +404,7 @@ export const calendarDateSchema = z
 
 export const listOrdersQuerySchema = z
   .object({
+    fulfillmentReview: z.enum(['true', 'false']).transform(value => value === 'true').optional(),
     status: z.enum(ORDER_STATUSES).optional(),
     q: z.string().trim().min(1).max(100).optional(),
     page: z.coerce.number().int().positive('page 必须是正整数').optional(),
@@ -428,6 +429,11 @@ export const listOrdersQuerySchema = z
   )
 
 export type ListOrdersQuery = z.infer<typeof listOrdersQuerySchema>
+
+export const fulfillmentReviewSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('retry') }).strict(),
+  z.object({ action: z.literal('confirm_cancelled'), evidence: z.string().trim().min(20).max(1000) }).strict(),
+])
 
 export const auditDateSchema = z.string().trim().superRefine((val, ctx) => {
   const result = parseAndValidateStrictDate(val)

@@ -7,6 +7,7 @@ import { invalidateProductPublicCache } from '../products/cache.js'
 import { transitionOrderStatus } from './fulfillment.js'
 import { settleHeldOrder } from './accounting.js'
 import { cleanupExpiredIdempotencyRecords } from './idempotency.js'
+import { recordLifecycle } from './metrics.js'
 
 // PRD §4.3.1：delivered 超过验收期限（交付时按 autoCloseDays 冻结，默认 7 天）自动 closed，积分正式扣减并触发 Settlement
 const AUTO_CLOSE_INTERVAL_MS = 24 * 60 * 60 * 1000
@@ -103,10 +104,12 @@ async function autoCloseOrder(order: AutoCloseCandidate, policy: AutoClosePolicy
     })
 
     if (!result) return
+    recordLifecycle('auto_close', 'processed')
 
     await invalidateProductPublicCache(result.productId, { list: 'coalesced' })
     logger.info({ orderId: order.id }, 'order auto-closed by system cron')
   } catch (err) {
+    recordLifecycle('auto_close', 'error')
     logger.warn({ err, orderId: order.id }, 'auto-close failed for order')
   }
 }
@@ -137,6 +140,7 @@ async function runAutoCloseBatch(hooks?: AutoCloseBatchHooks) {
       await autoCloseOrder(order, policy)
     }
   } catch (err) {
+    recordLifecycle('auto_close', 'error')
     logger.error({ err }, 'auto-close cron batch failed')
   } finally {
     lease?.release()

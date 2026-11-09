@@ -252,6 +252,61 @@ describe('partial-amount dispute holds the disputed share', () => {
 })
 
 describe('partial-amount dispute lifecycle', () => {
+  it('R2-03: serializes distinct disputes on one credit and reconciles an over-cap event without freezing more points', async () => {
+    const { user, order, attempt, credit } = await creditedRecharge('r2-cap-race@test.local')
+    const events = await Promise.all([disputeOpened(attempt, { amountMinor: 600n }), disputeOpened(attempt, { amountMinor: 600n })])
+    const outcomes = await Promise.all(events.map(event => applyDisputeObservation(event.id)))
+    expect(outcomes.map(row => row.outcome).sort()).toEqual(['processed', 'reconcile_required'])
+    expect(await prisma.paymentDispute.count({ where: { rechargeOrderId: order.id } })).toBe(1)
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(account.frozenBalance).toBe(900)
+    expect(account.balance + account.frozenBalance).toBe(Number(credit.points))
+    const rejected = events[outcomes.findIndex(row => row.outcome === 'reconcile_required')]
+    expect((await prisma.paymentEvent.findUniqueOrThrow({ where: { id: rejected.id } })).lastErrorCode).toBe('DISPUTE_CREDIT_CAP_EXCEEDED')
+    expect(await prisma.reconciliationItem.count({ where: { paymentEventId: rejected.id, status: 'open' } })).toBe(1)
+  })
+
+  it('R2-03: consumed recovery still occupies the cap; restoring real points releases it', async () => {
+    const { user, order, attempt, credit } = await creditedRecharge('r2-cap-restored@test.local')
+    const event = await disputeOpened(attempt, { amountMinor: 600n })
+    await applyDisputeObservation(event.id)
+    const { dispute, recovery } = await caseFor(order.id)
+    await resolveDisputeOutcome({ disputeId: dispute.id, outcome: 'lost' })
+    const full = await disputeOpened(attempt, { amountMinor: order.amountMinor })
+    expect((await applyDisputeObservation(full.id)).outcome).toBe('reconcile_required')
+    expect(await prisma.pointLog.count({ where: { userId: user.id, type: 'out', reason: '支付争议扣回' } })).toBe(1)
+    await closeRecoveryCase({ recoveryCaseId: recovery.id, status: 'restored', actorUserId: user.id })
+    const retry = await disputeOpened(attempt, { amountMinor: order.amountMinor })
+    expect((await applyDisputeObservation(retry.id)).outcome).toBe('processed')
+    const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
+    expect(account.frozenBalance).toBe(Number(credit.points))
+    expect(account.balance).toBe(0)
+  })
+
+  it('R2-03: operator-confirmed recovery without a point hold still occupies its allocation', async () => {
+    const { user, order, attempt, credit } = await creditedRecharge('r2-cap-external@test.local')
+    await prisma.$transaction(tx => debitAvailablePoints(tx, user.id, Number(credit.points)))
+    await applyDisputeObservation((await disputeOpened(attempt, { amountMinor: 600n })).id)
+    const { recovery } = await caseFor(order.id)
+    expect(recovery.outstandingPoints).toBe(900n)
+    await closeRecoveryCase({ recoveryCaseId: recovery.id, status: 'recovered', actorUserId: user.id })
+    const next = await disputeOpened(attempt, { amountMinor: 600n })
+    expect((await applyDisputeObservation(next.id)).outcome).toBe('reconcile_required')
+    expect(await prisma.paymentDispute.count({ where: { rechargeOrderId: order.id } })).toBe(1)
+  })
+
+  it('R2-03: a provider win restores points already consumed by an operator, once', async () => {
+    const { user, order, attempt, credit } = await creditedRecharge('r2-cap-operator@test.local')
+    await applyDisputeObservation((await disputeOpened(attempt, { amountMinor: 600n })).id)
+    const { dispute, recovery } = await caseFor(order.id)
+    await closeRecoveryCase({ recoveryCaseId: recovery.id, status: 'written_off', actorUserId: user.id })
+    await resolveDisputeOutcome({ disputeId: dispute.id, outcome: 'won' })
+    await resolveDisputeOutcome({ disputeId: dispute.id, outcome: 'won' })
+    expect(await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).toMatchObject({ balance: Number(credit.points), frozenBalance: 0 })
+    expect(await prisma.pointLog.count({ where: { userId: user.id, type: 'refund' } })).toBe(1)
+    expect((await applyDisputeObservation((await disputeOpened(attempt, { amountMinor: order.amountMinor })).id)).outcome).toBe('processed')
+  })
+
   async function openHalfDispute(email: string) {
     const fixture = await creditedRecharge(email)
     const event = await disputeOpened(fixture.attempt, { amountMinor: fixture.order.amountMinor / 2n })

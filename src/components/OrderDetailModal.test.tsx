@@ -276,7 +276,7 @@ describe('OrderDetailModal', () => {
 
     it.each([
       ['cancelled', '订单已取消，积分已退还'],
-      ['pending', '取消处理中，核对完成后自动退还积分'],
+      ['pending', '取消处理中，等待核对履约结果'],
     ] as const)('cancels an unaccepted order (%s)', async (result, title) => {
       cancelOrder.mockResolvedValueOnce(result)
       const close = vi.fn()
@@ -298,7 +298,7 @@ describe('OrderDetailModal', () => {
     it('lets the buyer complain about an overdue order', async () => {
       fileOverdueComplaint.mockResolvedValueOnce(undefined)
       const close = vi.fn()
-      const overdue = { ...ORDER, status: 'processing', deliveryMode: 'manual_service', fulfillmentDeadline: '2026-01-01T00:00:00.000Z' } as UserOrderDetail
+      const overdue = { ...ORDER, delivery: null, status: 'processing', deliveryMode: 'manual_service', fulfillmentDeadline: '2026-01-01T00:00:00.000Z' } as UserOrderDetail
       render(<OrderDetailModal order={overdue} onClose={close} />)
       fireEvent.click(screen.getByTestId('order-complain-button'))
       fireEvent.click(screen.getByTestId('complain-dialog-confirm'))
@@ -325,15 +325,26 @@ describe('OrderDetailModal', () => {
       expect(useAppStore.getState().islandNotice?.title).toBe(title)
     })
 
-    it('offers no cancel for legacy or already-requested pending orders', () => {
+    it('R2-13: offers cancellation for legacy pending orders, hiding it while cancellation is requested', () => {
       const legacy = { ...ORDER, status: 'pending', deliveryMode: 'manual_service', holdingPoints: 100, acceptBy: null } as UserOrderDetail
       const { unmount } = render(<OrderDetailModal order={legacy} onClose={vi.fn()} />)
-      expect(screen.queryByTestId('order-cancel-button')).toBeNull()
+      expect(screen.getByTestId('order-cancel-button')).toBeInTheDocument()
       unmount()
       const requested = { ...legacy, acceptBy: '2026-11-09T08:00:00.000Z', cancelRequestedAt: '2026-11-08T08:00:00.000Z' } as UserOrderDetail
       render(<OrderDetailModal order={requested} onClose={vi.fn()} />)
       expect(screen.queryByTestId('order-cancel-button')).toBeNull()
       expect(screen.getByTestId('order-accept-deadline')).toHaveTextContent('取消处理中')
+    })
+
+    it('R2-01: a delivered remedy in processing can immediately return to platform arbitration', async () => {
+      fileOverdueComplaint.mockResolvedValue({})
+      render(<OrderDetailModal order={{ ...ORDER, status: 'processing', deliveryMode: 'manual_service',
+        delivery: { id: 1, status: 'delivered', content: 'previous delivery' }, fulfillmentDeadline: '2099-01-01T00:00:00Z' } as UserOrderDetail} onClose={vi.fn()} />)
+      expect(screen.getByTestId('order-complain-button')).toHaveTextContent('申请平台裁决')
+      fireEvent.click(screen.getByTestId('order-complain-button'))
+      expect(screen.getByText('本单已有交付记录。对补救履约有异议时，可重新提交争议，由平台裁决退款或继续履约。')).toBeInTheDocument()
+      fireEvent.click(screen.getByTestId('complain-dialog-confirm'))
+      await waitFor(() => expect(fileOverdueComplaint).toHaveBeenCalledWith(50))
     })
 
     it('keeps the order and error visible on failure and permits a confirmed retry', async () => {

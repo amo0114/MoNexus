@@ -118,7 +118,7 @@ describe('product content copilot — happy path and metadata', () => {
     expect(res.body).toMatchObject({
       basedOnContentVersion: 1,
       promptVersion: 'product-content@1',
-      validatorVersion: 'product-content-validator@2',
+      validatorVersion: 'product-content-validator@3',
     })
     expect(res.body.fields.description).toEqual({ status: 'suggested', value: '下单后自动交付的学习指引。', rejectedItemCount: 0 })
     expect(res.body.fields.highlights).toEqual({ status: 'suggested', value: ['内容循序渐进'], rejectedItemCount: 1 })

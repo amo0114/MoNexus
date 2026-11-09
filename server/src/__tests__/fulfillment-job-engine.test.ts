@@ -3,7 +3,8 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
 import { createOrder } from '../modules/orders/service.js'
 import { resolveOrder } from '../modules/admin/service.js'
-import { processFulfillmentJob } from '../modules/fulfillment/jobProvider.js'
+import { processFulfillmentJob, createJobFulfillmentProvider, runFulfillmentJobBatch } from '../modules/fulfillment/jobProvider.js'
+import { registerFulfillmentProvider } from '../modules/fulfillment/registry.js'
 import { cancelUnacceptedOrder } from '../modules/orders/cancellation.js'
 import { __runAcceptTimeoutBatchForTests } from '../modules/orders/acceptTimeoutCron.js'
 import { createTestUser } from './helpers.js'
@@ -26,6 +27,8 @@ async function demoOrder(sku: string) {
     },
   })
   const created = await createOrder(user.id, product.id, { offerId: offer.id, expectedPrice: 100, idempotencyKey: randomUUID() })
+  // Existing jobs retain their input; free the unique catalog binding for another test order.
+  await prisma.offer.update({ where: { id: offer.id }, data: { externalSku: null, externalIntegration: null } })
   const job = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { orderId: created.orderId } })
   return { user, created, job }
 }
@@ -36,6 +39,45 @@ async function points(userId: number) {
 }
 
 describe('core fulfillment job engine (demo_license)', () => {
+  it('D2: worker itself cancels never-dispatched work without calling the remote executor', async () => {
+    const { created, job, user } = await demoOrder('demo-license')
+    // Do not call the cancellation barrier: this specifically exercises claimJob.
+    await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { cancelRequested: true } })
+    expect(await processFulfillmentJob(job.id)).toBe('skipped')
+    expect(await prisma.fulfillmentJob.findUniqueOrThrow({ where: { id: job.id } })).toMatchObject({ status: 'cancelled', attempts: 0 })
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })).status).toBe('pending')
+    expect(await points(user.id)).toEqual({ balance: 400, frozen: 100 })
+  })
+
+  it('R2-09: proven absence refunds a legacy processing external order once', async () => {
+    const { created, job, user } = await demoOrder('demo-fail')
+    await prisma.order.update({ where: { id: created.orderId }, data: { status: 'processing' } })
+    expect(await processFulfillmentJob(job.id)).toBe('refunded')
+    expect(await processFulfillmentJob(job.id)).toBe('skipped')
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: created.orderId } })).status).toBe('refunded')
+    expect(await points(user.id)).toEqual({ balance: 500, frozen: 0 })
+  })
+
+  it('R2-08: a poison result cannot stop later jobs in the batch', async () => {
+    const first = await demoOrder('demo-license')
+    const poison = await demoOrder('demo-license')
+    const last = await demoOrder('demo-license')
+    const providerId = `poison_${randomUUID().replaceAll('-', '').slice(0, 8)}`
+    registerFulfillmentProvider(createJobFulfillmentProvider({
+      id: providerId, label: 'poison test', isConfigured: () => true,
+      execute: async () => ({ kind: 'succeeded', delivery: { content: 'invalid expiry', expiresAt: new Date('invalid') } }),
+      query: async () => ({ kind: 'unknown', code: 'UNKNOWN' }),
+    }))
+    await prisma.fulfillmentJob.update({ where: { id: first.job.id }, data: { nextAttemptAt: new Date(1) } })
+    await prisma.fulfillmentJob.update({ where: { id: poison.job.id }, data: { providerId, nextAttemptAt: new Date(2) } })
+    await prisma.fulfillmentJob.update({ where: { id: last.job.id }, data: { nextAttemptAt: new Date(3) } })
+    expect(await runFulfillmentJobBatch()).toBe(2)
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: first.created.orderId } })).status).toBe('delivered')
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: last.created.orderId } })).status).toBe('delivered')
+    expect((await prisma.order.findUniqueOrThrow({ where: { id: poison.created.orderId } })).status).toBe('pending')
+    expect(await points(poison.user.id)).toEqual({ balance: 400, frozen: 100 })
+  })
+
   it('holds points at checkout, then delivers and captures once', async () => {
     const { user, created, job } = await demoOrder('demo-license')
     expect(created.provisionPending).toBe(true)

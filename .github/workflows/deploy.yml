@@ -107,7 +107,7 @@ jobs:
       - name: Package deploy artifacts
         run: |
           tar -czf artifacts/frontend-dist.tar.gz -C dist .
-          tar -czf artifacts/server-dist.tar.gz -C server dist package.json package-lock.json prisma
+          tar -czf artifacts/server-dist.tar.gz -C server dist package.json package-lock.json prisma scripts/migrate-deploy.mjs
           ls -lh artifacts
 
       - name: Upload deploy artifacts
@@ -275,7 +275,7 @@ jobs:
 
               cd "${release_path}/server"
               npm ci
-              npx prisma migrate deploy
+              npm run db:migrate:deploy
               npm prune --omit=dev
 
               ln -sfn "${release_path}" "${base_path}/candidate"

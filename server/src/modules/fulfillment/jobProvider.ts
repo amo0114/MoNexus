@@ -11,6 +11,7 @@ import { badRequest, HttpError } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import { deliverExternalResultInTx, refundUndeliveredExternalOrderInTx } from './apply.js'
+import { recordLifecycle } from '../orders/metrics.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -152,15 +153,17 @@ async function applyObservation(claimed: Claimed, observation: RemoteObservation
           lastError: code.slice(0, 64), completedAt: new Date(),
         },
       })
-      if (order.status === 'pending') {
+      if ((order.status === 'pending' || order.status === 'processing')
+        && !await tx.deliveryRecord.findUnique({ where: { orderId: order.id }, select: { id: true } })) {
         await refundUndeliveredExternalOrderInTx(tx, order, {
           action: `system.${job.providerId}.failed_refund`,
           publicNote: '开通失败，积分已退回',
           internalNote: code,
           releaseReason: `外部开通失败退款: #${order.id} (${code})`,
         })
+        return 'refunded'
       }
-      return 'refunded'
+      return order.status === 'refunded' ? 'refunded' : 'failure_recorded'
     }
 
     // processing / unknown / not_found: points stay held.
@@ -186,7 +189,9 @@ export async function processFulfillmentJob(jobId: number): Promise<string> {
   const claimed = await claimJob(jobId)
   if (!claimed) return 'skipped'
   const observation = await observe(adapters.get(claimed.providerId)!, claimed)
-  return applyObservation(claimed, observation)
+  const outcome = await applyObservation(claimed, observation)
+  recordLifecycle('fulfillment', outcome)
+  return outcome
 }
 
 export async function runFulfillmentJobBatch(now: Date = new Date()): Promise<number> {
@@ -203,7 +208,12 @@ export async function runFulfillmentJobBatch(now: Date = new Date()): Promise<nu
   })
   let processed = 0
   for (const { id } of due) {
-    if ((await processFulfillmentJob(id)) !== 'skipped') processed += 1
+    try {
+      if ((await processFulfillmentJob(id)) !== 'skipped') processed += 1
+    } catch (err) {
+      recordLifecycle('fulfillment', 'error')
+      logger.error({ err, jobId: id }, 'fulfillment job failed; continuing batch')
+    }
   }
   return processed
 }

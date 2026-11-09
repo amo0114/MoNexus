@@ -58,14 +58,18 @@ export async function deliverExternalResultInTx(tx: Tx, input: ExternalDeliveryI
   return delivered
 }
 
-export type UndeliveredRefundOrder = HeldOrder & RefundInventoryOrder
+export type UndeliveredRefundOrder = HeldOrder & RefundInventoryOrder & { status?: string }
 
-/** Refund a still-pending external order whose remote effect is proven absent or revoked. */
+/** Refund an unfinished external order whose remote effect is proven absent or revoked. */
 export async function refundUndeliveredExternalOrderInTx(
   tx: Tx,
   order: UndeliveredRefundOrder,
   input: { action: string; publicNote: string; internalNote?: string; releaseReason: string }
 ): Promise<void> {
+  const current = await tx.order.findUniqueOrThrow({ where: { id: order.id }, select: { status: true, delivery: { select: { id: true } } } })
+  if ((current.status !== 'pending' && current.status !== 'processing') || current.delivery) {
+    throw new Error('external failure cannot refund an order with a delivery or terminal status')
+  }
   await transitionOrderStatus({
     orderId: order.id,
     toStatus: 'refunded',
@@ -73,9 +77,10 @@ export async function refundUndeliveredExternalOrderInTx(
     action: input.action,
     publicNote: input.publicNote,
     internalNote: input.internalNote,
+    ...(current.status === 'processing' ? { processingRefund: true as const } : {}),
   }, tx)
   await releaseHeldOrder(tx, order, input.releaseReason)
-  await applyRefundInventoryPolicy(tx, order, { fromStatus: 'pending', actorUserId: order.userId })
+  await applyRefundInventoryPolicy(tx, order, { fromStatus: current.status, actorUserId: order.userId })
   // A buyer/timeout cancel that had to wait for the provider ends here.
   const { cancelRequestedAt } = await tx.order.findUniqueOrThrow({ where: { id: order.id }, select: { cancelRequestedAt: true } })
   await tx.order.update({

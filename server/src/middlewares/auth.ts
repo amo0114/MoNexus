@@ -11,6 +11,7 @@ import {
 import { prisma } from '../lib/prisma.js'
 import { getSystemConfigValue } from '../lib/systemConfig.js'
 import { getCached, setCached } from '../lib/userStatusCache.js'
+import { recordActiveDay } from '../lib/activeDay.js'
 
 export interface AuthPayload {
   userId: number
@@ -44,6 +45,7 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
     const token = header.slice(7)
     const payload = jwt.verify(token, config.jwtSecret) as AuthPayload
     req.user = payload
+    recordActiveDay(payload.userId)
     next()
   } catch (err) {
     // Same status/code either way (the client refresh path keys off 401),

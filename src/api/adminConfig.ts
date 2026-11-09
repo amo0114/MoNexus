@@ -12,11 +12,19 @@ export type AdminSystemConfigKey =
   | 'inviteQuotaUserMonthly'
   | 'inviteQuotaMerchantMonthly'
   | 'inviteCodeTtlDays'
-  // 基础奖励 (4)
+  // 基础奖励 (12)
   | 'registerReward'
   | 'checkinReward'
   | 'inviteReward'
   | 'growthRewardHoldDays'
+  | 'checkinStreakReward3'
+  | 'checkinStreakReward7'
+  | 'checkinStreakReward14'
+  | 'checkinStreakReward30'
+  | 'checkinMonthlyReward'
+  | 'checkinMakeupPrice'
+  | 'checkinMakeupMonthlyLimit'
+  | 'checkinRewardClaimDays'
   // 会员等级 (6)
   | 'memberTierSilverThreshold'
   | 'memberTierGoldThreshold'
