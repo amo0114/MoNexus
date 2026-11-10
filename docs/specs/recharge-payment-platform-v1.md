@@ -181,9 +181,10 @@ V1 的 `bonusPoints` 固定为 `0`，但模型保留该字段。未来增加赠�
 
 - 不向现有 `Order` 增加现金支付状态；
 - 不复用 `Settlement` 表示支付渠道结算；
-- 不直接从 controller 调用 `creditAvailablePoints`；
-- 充值入账必须经唯一 `RechargeCredit` 业务凭证；
-- 成功事务可以同时更新 `PointAccount` 和写兼容 `PointLog(type='in')`；
+- 积分只经 `modules/wallet` 写入（修订 2026-11-10，见 `docs/implementation/2026-11-10-commerce-accounting-settlement-closure-plan.md`）；
+- 充值入账必须经唯一 `RechargeCredit` 业务凭证，并在同一事务内建立 `recharge` 来源批次（`PointLot`）；余额不再是不可区分的混池；
+- 充值现金退款只冻结并撤销该笔充值自己的来源批次；该批次已被消费时进入人工审查，不得用同账户其他充值或奖励积分顶替；
+- 成功事务可以同时更新 `PointAccount` 和写兼容 `PointLog(type='in', growthEligible=false)`：充值不计入会员成长；
 - 现有 `IdempotencyRecord` 绑定商品与订单，不用于充值或支付回调。
 
 ## 5. 领域模型
