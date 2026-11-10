@@ -277,11 +277,17 @@
   color: var(--color-success-text, #166534);
   font-size: 0.8125rem;
 }
+.merch-promo-card form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
 .merch-promo-field {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
 }
+.merch-promo-field > label:not(.merch-promo-inline),
 .merch-promo-field-label {
   font-size: 0.8125rem;
   font-weight: 600;
