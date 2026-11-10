@@ -10,6 +10,18 @@ import type {
   FakaUserSubscriptionSnapshot,
 } from './types.js'
 import { parseFakaExpiredAt } from './expiredAt.js'
+import { DELIVERY_FIELDS_MAX } from '../deliveryFields.js'
+
+/** Subscription URLs are bearer credentials; accept only copyable HTTPS URLs. */
+function subscriptionUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 2000 || /[\s\u0000-\u001f\u007f]/.test(value)) return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null
+  } catch {
+    return null
+  }
+}
 
 function asSnap(value: unknown): FakaUserSubscriptionSnapshot | null {
   if (value == null || typeof value !== 'object') return null
@@ -62,8 +74,9 @@ export function extractFakaSubscriptionResult(body: unknown): FakaSubscriptionRe
     null
   const before = asSnap(nested?.before ?? o.before)
   const after = asSnap(nested?.after ?? o.after)
-  if (!action && !period && !before && !after) return null
-  return { action, period, before, after }
+  const subscribe_url = subscriptionUrl(nested?.subscribe_url ?? o.subscribe_url)
+  if (!action && !period && !before && !after && !subscribe_url) return null
+  return { action, period, before, after, subscribe_url }
 }
 
 export function formatTrafficBytes(bytes: number | null | undefined): string {
@@ -79,7 +92,7 @@ export function formatTrafficBytes(bytes: number | null | undefined): string {
   // Prefer compact labels: 1 KB / 1.5 GB (drop trailing zeros).
   const digits = n >= 100 || i === 0 ? 0 : n >= 10 ? 1 : 2
   const raw = n.toFixed(digits)
-  const trimmed = raw.replace(/\.?0+$/, '')
+  const trimmed = raw.includes('.') ? raw.replace(/\.?0+$/, '') : raw
   return `${trimmed} ${units[i]}`
 }
 
@@ -142,6 +155,7 @@ export function buildFakaDeliveryPayload(input: {
   const no = input.tradeNo?.trim() || '(未知)'
   const mail = input.email?.trim() || '(开通邮箱见下单信息)'
   const sub = input.subscription
+  const subscribeUrl = subscriptionUrl(sub?.subscribe_url)
   const action = sub?.action ?? null
   const before = sub?.before ?? null
   const after = sub?.after ?? null
@@ -152,7 +166,7 @@ export function buildFakaDeliveryPayload(input: {
     `类型: ${periodLabel(sub?.period)}`,
     `订单号: ${no}`,
     `开通邮箱: ${mail}`,
-    `面板: ${panel}`,
+    ...(subscribeUrl ? [`订阅链接: ${subscribeUrl}`] : [`面板: ${panel}`]),
   ]
 
   const showExpiry =
@@ -188,7 +202,9 @@ export function buildFakaDeliveryPayload(input: {
     }
   }
 
-  lines.push('请使用上述邮箱登录面板（已有账号直接登录；新账号请用「忘记密码」设置密码）。')
+  lines.push(subscribeUrl
+    ? '请复制订阅链接导入客户端。链接含有访问凭据，请勿分享。'
+    : '订阅链接暂未返回，请联系平台客服获取；请勿重复购买。')
 
   const fields: StructuredDeliveryContent['fields'] = [
     { key: 'action', label: '开通结果', sensitive: false },
@@ -225,11 +241,21 @@ export function buildFakaDeliveryPayload(input: {
   fields.push(
     { key: 'tradeNo', label: 'Xboard 订单号', sensitive: false },
     { key: 'email', label: '开通邮箱', sensitive: false },
-    { key: 'panel', label: '面板地址', sensitive: false }
+    subscribeUrl
+      ? { key: 'subscribeUrl', label: '订阅链接', sensitive: true }
+      : { key: 'panel', label: '面板地址', sensitive: false }
   )
   values.tradeNo = no
   values.email = mail
-  values.panel = panel
+  if (subscribeUrl) values.subscribeUrl = subscribeUrl
+  else values.panel = panel
+
+  // Renewal summaries can exceed the shared eight-field contract. The cycle
+  // remains in the complete text; keep the credential and before/after values.
+  if (fields.length > DELIVERY_FIELDS_MAX) {
+    fields.splice(fields.findIndex(field => field.key === 'period'), 1)
+    delete values.period
+  }
 
   return {
     content: lines.join('\n'),
