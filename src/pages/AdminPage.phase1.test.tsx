@@ -31,6 +31,11 @@ vi.mock('../api/adminMerchant', async (importOriginal) => {
     getAdminMerchants: mocks.getMerchants,
     getAdminSettlements: mocks.getSettlements,
     batchSettle: mocks.batchSettle,
+    previewSettlements: vi.fn((settlementIds: number[]) => Promise.resolve({ items: [], payableCount: settlementIds.length, payableTotal: 0 })),
+    getSettlementBatches: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 10 })),
+    getSettlementBatch: vi.fn(),
+    getMerchantRecoveryCases: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 50 })),
+    actOnMerchantRecovery: vi.fn(),
     approveMerchant: mocks.approveMerchant,
     rejectMerchant: mocks.rejectMerchant,
     suspendMerchant: mocks.suspendMerchant,
@@ -254,7 +259,7 @@ describe('Phase 1: Admin Merchants & Settlements Contract and UX Governance', ()
       // Confirm batch settlement
       fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
       await waitFor(() => {
-        expect(mocks.batchSettle).toHaveBeenCalledWith({ settlementIds: [101, 201] })
+        expect(mocks.batchSettle).toHaveBeenCalledWith({ settlementIds: [101, 201], requestKey: expect.any(String) })
       })
 
       // After settlement: selection is cleared

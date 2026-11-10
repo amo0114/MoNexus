@@ -11,6 +11,7 @@ import {
   resolveReconcileRequiredOrder,
   reviewReconciliationItem,
   type ReconcileResolution,
+  importStatement,
 } from '../payment/reconciliation/service.js'
 import type { PaymentProviderName, ReconciliationScopeType } from './types.js'
 import { writePaymentAdminLog } from '../payment/audit.js'
@@ -185,6 +186,8 @@ export async function adminCreateReconRun(input: {
   providerAccountKey?: string
   scopeType: ReconciliationScopeType
   scopeKey?: string
+  periodStart?: Date
+  periodEnd?: Date
   createdByUserId: number
 }) {
   const run = await createReconciliationRun({
@@ -192,6 +195,8 @@ export async function adminCreateReconRun(input: {
     providerAccountKey: input.providerAccountKey,
     scopeType: input.scopeType,
     scopeKey: input.scopeKey,
+    periodStart: input.periodStart,
+    periodEnd: input.periodEnd,
     createdByUserId: input.createdByUserId,
   })
   await writePaymentAdminLog({
@@ -200,6 +205,25 @@ export async function adminCreateReconRun(input: {
     targetType: 'ReconciliationRun',
     targetKey: run.id,
     extra: { provider: input.provider, scopeType: input.scopeType },
+  })
+  return run
+}
+
+export async function adminImportStatement(input: {
+  provider: PaymentProviderName
+  providerAccountKey: string
+  periodStart: Date
+  periodEnd: Date
+  csv: string
+  createdByUserId: number
+}) {
+  const run = await importStatement(input)
+  await writePaymentAdminLog({
+    adminUserId: input.createdByUserId,
+    action: 'payment.recon.import_statement',
+    targetType: 'ReconciliationRun',
+    targetKey: run.id,
+    extra: { provider: input.provider, sha256: run.sourceSha256 },
   })
   return run
 }

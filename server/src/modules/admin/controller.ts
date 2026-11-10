@@ -13,6 +13,7 @@ import * as productAdmin from './productAdmin.js'
 import { Request, Response, NextFunction } from 'express'
 import * as merchantAdmin from './merchantAdmin.js'
 import * as settlementAdmin from './settlementAdmin.js'
+import * as afterSales from '../orders/afterSales.js'
 import * as deliveryFileAdmin from './deliveryFileAdmin.js'
 import * as fakaTaskAdmin from './fakaTaskAdmin.js'
 import * as adminService from './service.js'
@@ -32,6 +33,12 @@ export async function stats(_req: Request, res: Response, next: NextFunction) {
 export async function users(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await userAdmin.listUsers(req.query as unknown as ListUsersQuery))
+  } catch (err) { next(err) }
+}
+
+export async function userPointSources(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await userAdmin.getUserPointSources(req.params.id as unknown as number))
   } catch (err) { next(err) }
 }
 
@@ -554,11 +561,66 @@ export async function listSettlements(req: Request, res: Response, next: NextFun
 
 export async function batchSettle(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await settlementAdmin.batchSettle(req.user!.userId, req.body.settlementIds))
+    res.json(await settlementAdmin.batchSettle(req.user!.userId, req.body.settlementIds, req.body.requestKey))
+  } catch (err) { next(err) }
+}
+
+export async function previewSettlements(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await settlementAdmin.previewSettlements(req.body.settlementIds))
+  } catch (err) { next(err) }
+}
+
+export async function listSettlementBatches(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { page, pageSize } = req.query as unknown as { page: number; pageSize: number }
+    res.json(await settlementAdmin.listBatches(page, pageSize))
+  } catch (err) { next(err) }
+}
+
+export async function settlementBatchDetail(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await settlementAdmin.getBatch(req.params.id as unknown as number))
+  } catch (err) { next(err) }
+}
+
+export async function listMerchantRecoveryCases(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await settlementAdmin.listMerchantRecoveryCases(req.query as never))
+  } catch (err) { next(err) }
+}
+
+export async function actOnMerchantRecovery(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await settlementAdmin.actOnMerchantRecovery(req.user!.userId, req.params.id as unknown as number, req.body))
   } catch (err) { next(err) }
 }
 
 // ---- Order Arbitration ----
+
+export async function listOrderAfterSales(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await afterSales.listOrderAfterSalesCases(req.params.id as unknown as number))
+  } catch (err) { next(err) }
+}
+
+export async function createOrderAfterSales(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await afterSales.createAfterSalesCase(req.user!.userId, req.params.id as unknown as number, req.body))
+  } catch (err) { next(err) }
+}
+
+export async function executeOrderAfterSales(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await afterSales.executeAfterSalesCase(req.user!.userId, req.params.id as unknown as number, req.body.note))
+  } catch (err) { next(err) }
+}
+
+export async function rejectOrderAfterSales(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await afterSales.rejectAfterSalesCase(req.user!.userId, req.params.id as unknown as number, req.body.note))
+  } catch (err) { next(err) }
+}
 
 export async function resolveOrder(req: Request, res: Response, next: NextFunction) {
   try {

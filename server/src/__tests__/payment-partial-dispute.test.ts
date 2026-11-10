@@ -12,8 +12,7 @@ import {
 import { applyConfirmedPayment } from '../modules/payment/events/applyConfirmedPayment.js'
 import { hashNormalizedPayload, recordPaymentObservation } from '../modules/payment/observations/record.js'
 import { resetSimulatorState } from '../modules/payment/providers/simulator/index.js'
-import { debitAvailablePoints } from '../modules/points/checkedMutation.js'
-import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { api, authHeader, createTestUser, loginAs, spendTestPoints } from './helpers.js'
 
 const SIM_TOKEN = 'recharge-simulator-test-token'
 const ACCOUNT = 'simulator:sandbox:default'
@@ -186,7 +185,7 @@ describe('partial-amount dispute holds the disputed share', () => {
     const disputed = 333n
     const partial = (credit.points * disputed) / order.amountMinor
     expect(partial * order.amountMinor).not.toBe(credit.points * disputed) // the floor actually truncates
-    await prisma.$transaction(tx => debitAvailablePoints(tx, user.id, Number(credit.points) - 100))
+    await spendTestPoints(user.id, Number(credit.points) - 100)
     expect((await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })).balance).toBe(100)
 
     const event = await disputeOpened(attempt, { amountMinor: disputed })
@@ -203,7 +202,7 @@ describe('partial-amount dispute holds the disputed share', () => {
 
   it('opens an outstanding-only case without a hold when the balance is empty', async () => {
     const { user, order, attempt, credit } = await creditedRecharge('partial-empty@test.local')
-    await prisma.$transaction(tx => debitAvailablePoints(tx, user.id, Number(credit.points)))
+    await spendTestPoints(user.id, Number(credit.points))
 
     const event = await disputeOpened(attempt, { amountMinor: order.amountMinor / 2n })
     expect((await applyDisputeObservation(event.id)).outcome).toBe('processed')
@@ -285,7 +284,7 @@ describe('partial-amount dispute lifecycle', () => {
 
   it('R2-03: operator-confirmed recovery without a point hold still occupies its allocation', async () => {
     const { user, order, attempt, credit } = await creditedRecharge('r2-cap-external@test.local')
-    await prisma.$transaction(tx => debitAvailablePoints(tx, user.id, Number(credit.points)))
+    await spendTestPoints(user.id, Number(credit.points))
     await applyDisputeObservation((await disputeOpened(attempt, { amountMinor: 600n })).id)
     const { recovery } = await caseFor(order.id)
     expect(recovery.outstandingPoints).toBe(900n)
@@ -331,14 +330,16 @@ describe('partial-amount dispute lifecycle', () => {
     expect(recovery.consumedPointLogId).toBe(logs[0]!.id)
   })
 
-  it('won releases only the partial hold without a ledger row', async () => {
+  it('won releases only the partial hold and ledgers the release', async () => {
     const { user, dispute, partial, logsBefore, opened } = await openHalfDispute('partial-won@test.local')
     await resolveDisputeOutcome({ disputeId: dispute.id, outcome: 'won' })
 
     const account = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(account.balance).toBe(opened.balance + Number(partial))
     expect(account.frozenBalance).toBe(opened.frozenBalance - Number(partial))
-    expect(await prisma.pointLog.count({ where: { userId: user.id } })).toBe(logsBefore)
+    // Every freeze movement is ledgered by wallet; a release is not an earning.
+    const logs = await prisma.pointLog.findMany({ where: { userId: user.id }, orderBy: { id: 'asc' }, skip: logsBefore })
+    expect(logs.map(log => [log.type, log.amount, log.growthEligible])).toEqual([['release', Number(partial), false]])
     const { hold, recovery } = await caseFor(dispute.rechargeOrderId)
     expect(hold?.status).toBe('released')
     expect(recovery.status).toBe('restored')

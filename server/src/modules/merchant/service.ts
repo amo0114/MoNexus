@@ -33,4 +33,4 @@ export {
 } from './orderService.js'
 
 export { listMySettlements, getMyStats } from './dashboardQueries.js'
-export { getSettlementEligibility } from '../orders/settlementPolicy.js'
+export { getSettlementEligibility } from '../merchantFinance/index.js'

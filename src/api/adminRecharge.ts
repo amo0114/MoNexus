@@ -84,14 +84,32 @@ export interface AdminReconItem {
   quotedAmountMinor: string | null
   currency: string | null
   status: string
+  /** Present on paged item listings: what the backend accepts for this item. */
+  allowedActions?: Array<'requery_order' | 'resolve' | 'ignore' | 'resolve_order'>
+  resolutionReason?: string | null
+}
+
+/** What a run actually covered; a local-only scan is not a provider reconciliation. */
+export interface AdminReconCoverage {
+  statementSource: 'provider_api' | 'imported_file' | 'unsupported'
+  formatVersion: string | null
+  providerEntries: number
+  localScanned: number
+  periodStart: string | null
+  periodEnd: string | null
 }
 
 export interface AdminReconRun {
   id: string
   provider: string
+  providerAccountKey?: string
   environment: string
   scopeType: string
   scopeKey: string
+  periodStart?: string | null
+  periodEnd?: string | null
+  sourceSha256?: string | null
+  coverage?: AdminReconCoverage | null
   status: string
   itemCount: number
   mismatchCount: number
@@ -169,8 +187,50 @@ export async function retryAdminPaymentEvent(eventId: string): Promise<unknown> 
   return data
 }
 
-export async function listAdminReconRuns(): Promise<{ items: AdminReconRun[] }> {
-  const { data } = await api.get<{ items: AdminReconRun[] }>('/admin/payments/reconciliation-runs')
+export async function listAdminReconRuns(params?: { page?: number; pageSize?: number }): Promise<AdminPaged<AdminReconRun>> {
+  const { data } = await api.get<AdminPaged<AdminReconRun>>('/admin/payments/reconciliation-runs', { params })
+  return data
+}
+
+export async function listAdminReconItems(params: { runId?: string; status?: string; page?: number; pageSize?: number }): Promise<AdminPaged<AdminReconItem>> {
+  const { data } = await api.get<AdminPaged<AdminReconItem>>('/admin/payments/reconciliation-items', { params })
+  return data
+}
+
+/** Operator judgment only; never changes points or payment state. */
+export async function reviewAdminReconItem(id: string, body: { status: 'resolved' | 'ignored'; reason: string }): Promise<AdminReconItem> {
+  const { data } = await api.post<AdminReconItem>(`/admin/payments/reconciliation-items/${id}/review`, body)
+  return data
+}
+
+export interface AdminStatementPreview {
+  formatVersion: string
+  sha256: string
+  validRows: number
+  invalidRows: Array<{ line: number; error: string }>
+  duplicateLines: number[]
+  totals: Record<string, string>
+}
+
+export async function previewAdminStatement(body: { periodStart: string; periodEnd: string; csv: string }): Promise<AdminStatementPreview> {
+  const { data } = await api.post<AdminStatementPreview>('/admin/payments/reconciliation-imports/preview', body)
+  return data
+}
+
+export async function importAdminStatement(body: {
+  provider: string
+  providerAccountKey: string
+  periodStart: string
+  periodEnd: string
+  csv: string
+}): Promise<AdminReconRun> {
+  const { data } = await api.post<AdminReconRun>('/admin/payments/reconciliation-imports', body)
+  return data
+}
+
+/** recovered / written_off consume any held points; restored returns them. */
+export async function closeAdminPaymentRecoveryCase(id: string, body: { status: 'recovered' | 'written_off' | 'restored'; resolutionReason?: string }): Promise<unknown> {
+  const { data } = await api.post(`/admin/payments/recovery-cases/${id}/close`, body)
   return data
 }
 

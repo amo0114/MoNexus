@@ -131,6 +131,11 @@ vi.mock('../api/client', () => ({
 }))
 
 vi.mock('../api/adminMerchant', () => ({
+  previewSettlements: vi.fn((settlementIds: number[]) => Promise.resolve({ items: [], payableCount: settlementIds.length, payableTotal: 0 })),
+  getSettlementBatches: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 10 })),
+  getSettlementBatch: vi.fn(),
+  getMerchantRecoveryCases: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 50 })),
+  actOnMerchantRecovery: vi.fn(),
   getAdminMerchants: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 20 })),
   approveMerchant: vi.fn(),
   rejectMerchant: vi.fn(),
@@ -220,7 +225,7 @@ describe('AdminPage Phase 0 verification', () => {
 
     // Click confirm in dialog
     fireEvent.click(screen.getByTestId('confirm-dialog-confirm'))
-    await waitFor(() => expect(mocks.batchSettle).toHaveBeenCalledWith({ settlementIds: [11, 12] }))
+    await waitFor(() => expect(mocks.batchSettle).toHaveBeenCalledWith({ settlementIds: [11, 12], requestKey: expect.any(String) }))
     expect(useAppStore.getState().toasts.some((t) => t.message.includes('成功结算 2 笔订单'))).toBe(true)
   })
 

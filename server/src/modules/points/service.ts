@@ -2,8 +2,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
-import { applyTierBonus } from '../../lib/memberTier.js'
-import { creditAvailablePoints, debitAvailablePoints } from './checkedMutation.js'
+import { applyTierBonus, GROWTH_LOG_WHERE } from '../../lib/memberTier.js'
+import { creditInTx, spendInTx } from '../wallet/index.js'
 import { assertSpendingNotRestricted } from './spendingPolicy.js'
 import { sendPushToUser } from '../../lib/webPush.js'
 import {
@@ -57,7 +57,7 @@ export async function checkin(userId: number, source: CheckinSource = 'web') {
       if (!account) throw notFound('积分账户不存在')
 
       const lifetimeResult = await tx.pointLog.aggregate({
-        where: { userId, type: 'in' },
+        where: { userId, ...GROWTH_LOG_WHERE },
         _sum: { amount: true },
       })
       const lifetimeBefore = lifetimeResult._sum.amount ?? 0
@@ -65,19 +65,13 @@ export async function checkin(userId: number, source: CheckinSource = 'web') {
       const tier = resolveTier(lifetimeBefore, tierConfig.thresholds)
       const { base, bonus, total } = applyTierBonus(baseReward, tier, tierConfig.bonusBps)
 
-      const balanceAfter = total > 0
-        ? (await creditAvailablePoints(tx, userId, total)).balance
-        : account.balance
-
-      await tx.pointLog.create({
-        data: {
-          userId,
-          type: 'in',
-          amount: total,
-          balanceAfter,
-          reason: bonus > 0 ? `每日打卡签到 (tier:${tier} +${bonus})` : '每日打卡签到',
-        },
-      })
+      const { balance: balanceAfter } = await creditInTx(tx, {
+        operationKey: `checkin:${userId}:${dateStr}`,
+        userId,
+        source: { kind: 'checkin', id: `${userId}:${dateStr}` },
+        reasonCode: 'checkin_daily',
+        log: { reason: bonus > 0 ? `每日打卡签到 (tier:${tier} +${bonus})` : '每日打卡签到', growthEligible: true },
+      }, { amount: total, origin: 'reward' })
 
       const newRewards = await grantCheckinRewards(tx, userId, {
         runEndDate: dateStr,
@@ -151,10 +145,14 @@ export async function makeupCheckin(userId: number, date: string, expectedPrice:
     if (existing) throw badRequest('该日已签到')
 
     await assertSpendingNotRestricted(userId, tx)
-    const { balance: balanceAfter } = await debitAvailablePoints(tx, userId, price)
-    await tx.pointLog.create({
-      data: { userId, type: 'out', amount: price, balanceAfter, reason: `补签 ${date}` },
-    })
+    const { balance: balanceAfter } = (await spendInTx(tx, {
+      operationKey: `checkin-makeup:${userId}:${date}`,
+      userId,
+      source: { kind: 'checkin_makeup', id: `${userId}:${date}` },
+      reasonCode: 'checkin_makeup',
+      actorUserId: userId,
+      log: { reason: `补签 ${date}` },
+    }, { amount: price }))!
 
     const prefix = await previousStreak(tx, userId, date)
     await tx.checkinRecord.create({ data: { userId, date, source: 'makeup', streak: prefix + 1 } })
@@ -184,21 +182,21 @@ export async function claimCheckinReward(userId: number, rewardId: number) {
     }
     if (reward.expiresAt.getTime() <= Date.now()) throw badRequest('奖励已过期', 'REWARD_EXPIRED')
 
-    const { balance: balanceAfter } = await creditAvailablePoints(tx, userId, reward.amount)
-    const log = await tx.pointLog.create({
-      data: {
-        userId,
-        type: 'in',
-        amount: reward.amount,
-        balanceAfter,
+    const { balance: balanceAfter, pointLogId } = await creditInTx(tx, {
+      operationKey: `checkin-reward:${reward.id}`,
+      userId,
+      source: { kind: 'checkin_reward', id: reward.id },
+      reasonCode: reward.kind === 'monthly' ? 'checkin_monthly' : 'checkin_streak',
+      log: {
         reason: reward.kind === 'monthly'
           ? `${reward.periodKey} 月度全勤奖励`
           : `连签 ${reward.milestone} 天奖励`,
+        growthEligible: true,
       },
-    })
+    }, { amount: reward.amount, origin: 'reward' })
     await tx.checkinReward.update({
       where: { id: reward.id },
-      data: { state: 'claimed', claimedAt: new Date(), pointLogId: log.id },
+      data: { state: 'claimed', claimedAt: new Date(), pointLogId },
     })
     return { id: reward.id, amount: reward.amount, balanceAfter, alreadyClaimed: false }
   })

@@ -12,6 +12,8 @@ import {
   listAdminAuditQuerySchema, listPointLogsQuerySchema,
   listMerchantsQuerySchema, reviewMerchantSchema, updateCommissionSchema, merchantAgentPilotSchema,
   listSettlementsQuerySchema, batchSettleSchema, resolveOrderSchema, fulfillmentReviewSchema,
+  previewSettlementsSchema, listSettlementBatchesQuerySchema, listRecoveryCasesQuerySchema, merchantRecoveryActionSchema,
+  createAfterSalesSchema, decideAfterSalesSchema, rejectAfterSalesSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
   setFakaCapacitySchema, previewFakaPlanSchema, importFakaPlanSchema, addFakaOffersSchema,
   listAdminProductsQuerySchema, archiveProductSchema, adminOfferPatchSchema,
@@ -143,6 +145,7 @@ router.post(
   storageController.disableStorageProvider,
 )
 router.get('/users', validate({ query: listUsersQuerySchema }), controller.users)
+router.get('/users/:id/point-sources', validate({ params: idParamSchema }), controller.userPointSources)
 router.post('/users/:id/adjust', validate({ params: idParamSchema, body: adjustPointsSchema }), controller.adjustPoints)
 router.put('/users/:id/ban', validate({ params: idParamSchema, body: banUserSchema }), controller.banUser)
 router.put('/users/:id/unban', validate({ params: idParamSchema }), controller.unbanUser)
@@ -259,6 +262,10 @@ router.get('/orders', validate({ query: listOrdersQuerySchema }), controller.ord
 router.get('/orders/:id', validate({ params: idParamSchema }), controller.orderDetail)
 router.post('/orders/:id/fulfillment-review', validate({ params: idParamSchema, body: fulfillmentReviewSchema }), controller.reviewOrderFulfillment)
 router.post('/orders/:id/resolve', validate({ params: idParamSchema, body: resolveOrderSchema }), controller.resolveOrder)
+router.get('/orders/:id/after-sales', validate({ params: idParamSchema }), controller.listOrderAfterSales)
+router.post('/orders/:id/after-sales', validate({ params: idParamSchema, body: createAfterSalesSchema }), controller.createOrderAfterSales)
+router.post('/after-sales/:id/execute', validate({ params: idParamSchema, body: decideAfterSalesSchema }), controller.executeOrderAfterSales)
+router.post('/after-sales/:id/reject', validate({ params: idParamSchema, body: rejectAfterSalesSchema }), controller.rejectOrderAfterSales)
 router.get('/point-logs', validate({ query: listPointLogsQuerySchema }), controller.listPointLogs)
 /** @deprecated Kept for backwards compatibility; use /point-logs */
 router.get('/logs', controller.logs)
@@ -279,6 +286,11 @@ router.put('/merchants/:id/agent-pilot', validate({ params: idParamSchema, body:
 // Settlements
 router.get('/settlements', validate({ query: listSettlementsQuerySchema }), controller.listSettlements)
 router.post('/settlements/batch-settle', validate(batchSettleSchema), controller.batchSettle)
+router.post('/settlements/preview', validate(previewSettlementsSchema), controller.previewSettlements)
+router.get('/settlement-batches', validate({ query: listSettlementBatchesQuerySchema }), controller.listSettlementBatches)
+router.get('/settlement-batches/:id', validate({ params: idParamSchema }), controller.settlementBatchDetail)
+router.get('/merchant-recovery-cases', validate({ query: listRecoveryCasesQuerySchema }), controller.listMerchantRecoveryCases)
+router.post('/merchant-recovery-cases/:id/actions', validate({ params: idParamSchema, body: merchantRecoveryActionSchema }), controller.actOnMerchantRecovery)
 
 // Announcements
 router.get('/announcements', validate({ query: listAnnouncementsQuerySchema }), announcementController.listAnnouncementsRoute)

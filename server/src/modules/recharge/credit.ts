@@ -2,11 +2,7 @@ import { Prisma } from '@prisma/client'
 import { HttpError, pointBalanceHardCap } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
-import {
-  POINT_ACCOUNT_HARD_CAP,
-  creditAvailablePoints,
-  creditSandboxPoints,
-} from '../points/checkedMutation.js'
+import { creditInTx, creditSandboxInTx, POINT_ACCOUNT_HARD_CAP } from '../wallet/index.js'
 import { tripWriteHook } from '../payment/events/hooks.js'
 import { commitCreditTask } from '../payment/workers/lease.js'
 import { serializeAmountMinor } from './money.js'
@@ -14,6 +10,7 @@ import { observeCreditLatency, recordRechargeCredit } from '../payment/metrics.j
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 export const CREDIT_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:credit:v1`
+export const rechargeCreditWalletKey = (orderId: string) => `recharge-credit:${orderId}`
 
 export type CreditApplyResult =
   | { kind: 'credited'; creditId: string; alreadyExisted: boolean }
@@ -161,20 +158,23 @@ async function executeRechargeCreditOnce(input: {
       }
       tripWriteHook('after_points_check')
 
-      const balanceAfter = order.adminSandbox
-        ? (await creditSandboxPoints(tx, order.userId, points)).sandboxBalance
-        : (await creditAvailablePoints(tx, order.userId, points)).balance
+      // The recharge lot is the source a later cash refund may reverse; it is
+      // not a reward and never counts toward growth.
+      const walletCtx = {
+        operationKey: rechargeCreditWalletKey(order.id),
+        userId: order.userId,
+        source: { kind: 'recharge_order', id: order.id },
+        reasonCode: order.adminSandbox ? 'recharge_sandbox' : 'recharge',
+        log: { reason: order.adminSandbox ? '管理员沙箱充值入账' : '充值入账' },
+      }
+      const credited = order.adminSandbox
+        ? await creditSandboxInTx(tx, walletCtx, { amount: points })
+        : await creditInTx(tx, walletCtx, { amount: points, origin: 'recharge' })
       tripWriteHook('after_balance')
-
-      const log = await tx.pointLog.create({
-        data: {
-          userId: order.userId,
-          type: order.adminSandbox ? 'sandbox_in' : 'in',
-          amount: points,
-          balanceAfter,
-          reason: order.adminSandbox ? '管理员沙箱充值入账' : '充值入账',
-        },
-      })
+      const balanceAfter = order.adminSandbox
+        ? (await tx.pointLog.findUniqueOrThrow({ where: { id: credited.pointLogId! }, select: { balanceAfter: true } })).balanceAfter
+        : credited.balance
+      const log = { id: credited.pointLogId! }
       tripWriteHook('after_point_log')
 
       const credit = await tx.rechargeCredit.create({

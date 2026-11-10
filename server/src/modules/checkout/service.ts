@@ -1,6 +1,7 @@
 import { prisma } from '../../lib/prisma.js'
 import { notFound, badRequest } from '../../lib/httpError.js'
 import { getProductFulfillmentMode } from '../orders/statusPolicy.js'
+import { buyerRestrictionReason } from '../orders/purchasePolicy.js'
 import { parseStoredPurchaseForm, computePurchaseFormVersion, type PurchaseFormField } from '../../lib/purchaseForm.js'
 import { resolveVerificationRequirement } from './verification.js'
 import { computeOfferCheckoutVersion, resolvePurchaseOffer } from '../../lib/offers.js'
@@ -95,7 +96,7 @@ export async function getCheckoutPreview(
       templateVersion: true,
       attributes: true,
       details: true,
-      merchant: { select: { status: true } },
+      merchant: { select: { status: true, userId: true } },
     },
   })
   if (!product) throw notFound('商品不存在')
@@ -115,8 +116,12 @@ export async function getCheckoutPreview(
 
   // 与 createOrder 事务内前置校验一致的顺序与文案（只读版本，无锁）。
   let unpurchasableReason: string | undefined
+  const buyer = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, role: true } })
+  const buyerRestriction = buyerRestrictionReason(buyer, product.merchant?.userId ?? null)
   if (product.merchant && product.merchant.status !== 'active') {
     unpurchasableReason = '商家暂不可用'
+  } else if (buyerRestriction) {
+    unpurchasableReason = buyerRestriction
   } else if (deliveryMode === 'instant_fixed' && offer.fixedContentType === 'file') {
     // P5：file 形态的"内容"是挂载文件；吊销/清理即停售（与下单事务同判定）。
     const file = offer.fixedFileId == null

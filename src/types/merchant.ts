@@ -273,6 +273,11 @@ export interface Settlement {
   order?: { id: number; price: number; createdAt: string; status?: string }
   payable: boolean
   blockReason: string | null
+  /** Earned after voids and after-sales reversals. */
+  netAmount?: number
+  /** How the payout is evidenced; legacy rows predate settlement batches. */
+  credit?: { kind: 'batch'; batchId: number; walletOperationId: number | null } | { kind: 'legacy_incomplete' } | null
+  adjustments?: SettlementAdjustmentSummary[]
 }
 
 export interface MerchantStats {
@@ -280,6 +285,7 @@ export interface MerchantStats {
   orderCount: number
   totalRevenue: number
   pendingSettlement: number
+  finance?: MerchantFinanceSummary
   todo?: {
     pending: number
     processing: number
@@ -343,13 +349,93 @@ export interface UpdateCommissionRequest {
   commissionRate: number
 }
 
+export interface SettlementAdjustmentSummary {
+  id: number
+  settlementDelta: number
+  commissionDelta: number
+  clawbackPoints: number
+  createdAt: string
+  recovery: { id: number; status: 'open' | 'closed'; outstanding: number } | null
+}
+
+/** Merchant earnings in points (not withdrawable cash). */
+export interface MerchantFinanceSummary {
+  unit: 'points'
+  netEarned: number
+  awaitingCompletion: number
+  settleable: number
+  credited: number
+  legacyCreditedWithoutVoucher: number
+  clawedBack: number
+  outstandingRecovery: number
+  walletBalance: number
+  walletFrozen: number
+}
+
 export interface BatchSettleRequest {
   settlementIds: number[]
+  requestKey?: string
+}
+
+export interface SettlementBatchItem {
+  settlementId: number
+  orderId: number
+  merchantId: number
+  amount: number
+  destination: string
+  walletOperationId: number | null
 }
 
 export interface BatchSettleResponse {
+  batchId?: number
   settled: number
   creditedTotal: number
+  replayed?: boolean
+  items?: SettlementBatchItem[]
+}
+
+export interface SettlementPreviewItem {
+  settlementId: number
+  orderId?: number
+  merchantName?: string
+  amount: number
+  payable: boolean
+  reason: string | null
+  message: string | null
+}
+
+export interface SettlementPreview {
+  items: SettlementPreviewItem[]
+  payableCount: number
+  payableTotal: number
+}
+
+export interface SettlementBatchSummary {
+  id: number
+  requestKey: string
+  createdByUserId: number
+  itemCount: number
+  totalPoints: number
+  createdAt: string
+}
+
+export type MerchantRecoveryActionKind = 'wallet_clawback' | 'offline_received' | 'waived'
+
+export interface MerchantRecoveryCase {
+  id: number
+  merchantId: number
+  orderId: number
+  settlementId: number
+  afterSalesCaseId: number
+  amountDue: number
+  amountCollected: number
+  amountWaived: number
+  outstanding: number
+  status: 'open' | 'closed'
+  createdAt: string
+  closedAt: string | null
+  allowedActions: MerchantRecoveryActionKind[]
+  actions: Array<{ id: number; kind: MerchantRecoveryActionKind; amount: number; evidence: string | null; note: string | null; createdAt: string }>
 }
 
 export interface MerchantDetail extends Merchant {

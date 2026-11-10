@@ -139,6 +139,7 @@ function eligibleLogsSql(startUtc: Date | null, endUtc: Date) {
     FROM "PointLog" pl
     INNER JOIN "User" u ON u."id" = pl."userId"
     WHERE pl."type" = 'in'
+      AND pl."growthEligible"
       AND pl."amount" > 0
       AND pl."createdAt" < ${boundAsStoredUtc(endUtc)}
       ${lowerBound}

@@ -18,6 +18,8 @@ const EXPECTED_PROVIDER_AMOUNT_MIGRATION = '20260901120000_payment_attempt_expec
 const QUOTED_AMOUNT_MIGRATION = '20260901121000_reconciliation_item_quoted_amount'
 const RECOVERY_POINT_LOGS_MIGRATION = '20261024120000_payment_recovery_point_logs'
 const RECOVERY_CREDIT_INDEX_MIGRATION = '20261109220000_recovery_credit_idx'
+// Backfills growth eligibility from RechargeCredit and extends ReconciliationRun.
+const WALLET_FINANCE_MIGRATION = '20261110120000_wallet_finance_after_sales'
 const NEW_MIGRATIONS = [
   FOUNDATION_MIGRATION,
   ADMIN_SANDBOX_MIGRATION,
@@ -26,6 +28,7 @@ const NEW_MIGRATIONS = [
   QUOTED_AMOUNT_MIGRATION,
   RECOVERY_POINT_LOGS_MIGRATION,
   RECOVERY_CREDIT_INDEX_MIGRATION,
+  WALLET_FINANCE_MIGRATION,
 ] as const
 const SERVER_ROOT = path.resolve(__dirname, '../..')
 const created: string[] = []
@@ -133,6 +136,7 @@ describe('recharge foundation migration replay', () => {
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(WALLET_FINANCE_MIGRATION))
 
     const clientBefore = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await clientBefore.connect()
@@ -152,6 +156,7 @@ describe('recharge foundation migration replay', () => {
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(WALLET_FINANCE_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await client.connect()

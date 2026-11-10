@@ -5,6 +5,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '../../../lib/prisma.js'
 import { HttpError } from '../../../lib/httpError.js'
+import { creditInTx } from '../../wallet/index.js'
 import { CAMPAIGN_STATUS } from '../constants.js'
 import { PROMOTION_ERROR_CODES } from '../promotions/constants.js'
 import { createCampaign } from '../promotions/service.js'
@@ -156,7 +157,14 @@ realPg('promotions — billing and lifecycle (REAL-PG)', () => {
     expect(failed.campaign.status).toBe(CAMPAIGN_STATUS.PAYMENT_FAILED)
     expect(await prisma.pointLog.count({ where: { userId: fx.merchant.userId } })).toBe(0)
 
-    await prisma.pointAccount.update({ where: { userId: fx.merchant.userId }, data: { balance: 500 } })
+    // Top up through wallet: a direct balance write would break lot conservation.
+    await prisma.$transaction(tx => creditInTx(tx, {
+      operationKey: 'test-grant:promotion-retry',
+      userId: fx.merchant.userId,
+      source: { kind: 'test', id: fx.merchant.userId },
+      reasonCode: 'test_grant',
+      log: { reason: '测试发放' },
+    }, { amount: 500, origin: 'admin_adjustment' }))
     await prisma.promotionPackage.update({ where: { id: fx.packageId }, data: { status: 'inactive', pricePoints: 999 } })
     const retried = await retryCampaignPayment(fx.merchant.id, fx.merchant.userId, campaign.id)
     expect(retried.kind).toBe('charged')

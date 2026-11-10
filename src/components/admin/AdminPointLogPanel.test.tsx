@@ -44,6 +44,7 @@ const mockPointLogs: apiModule.AdminPointLogItem[] = [
 describe('AdminPointLogPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(apiModule.getAdminUserPointSources).mockResolvedValue({ balance: 0, frozenBalance: 0, sources: [] })
   })
 
   it('renders table with items, thousand-separator amounts, and Chinese type labels', async () => {

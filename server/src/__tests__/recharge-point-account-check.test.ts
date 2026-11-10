@@ -5,7 +5,7 @@ import {
   POINT_ACCOUNT_HARD_CAP,
   classifyPointAccountWriteError,
   creditAvailablePoints,
-} from '../modules/points/checkedMutation.js'
+} from '../modules/wallet/balance.js'
 
 const CAP = POINT_ACCOUNT_HARD_CAP
 let serial = 0

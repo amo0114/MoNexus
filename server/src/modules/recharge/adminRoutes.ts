@@ -4,6 +4,9 @@ import * as controller from './adminController.js'
 import {
   adminCreatePricePolicySchema,
   adminCreateReconSchema,
+  adminImportStatementSchema,
+  adminListReconRunsQuerySchema,
+  adminPreviewStatementSchema,
   adminListDisputesQuerySchema,
   adminListEventsQuerySchema,
   adminListOrdersQuerySchema,
@@ -91,7 +94,21 @@ rechargeAdminRoutes.post(
   validate({ params: adminUuidParamSchema }),
   controller.retryEvent,
 )
-rechargeAdminRoutes.get('/payments/reconciliation-runs', controller.listReconRuns)
+rechargeAdminRoutes.get(
+  '/payments/reconciliation-runs',
+  validate({ query: adminListReconRunsQuerySchema }),
+  controller.listReconRuns,
+)
+rechargeAdminRoutes.post(
+  '/payments/reconciliation-imports/preview',
+  validate(adminPreviewStatementSchema),
+  controller.previewStatement,
+)
+rechargeAdminRoutes.post(
+  '/payments/reconciliation-imports',
+  validate(adminImportStatementSchema),
+  controller.importStatement,
+)
 rechargeAdminRoutes.post(
   '/payments/reconciliation-runs',
   validate(adminCreateReconSchema),
