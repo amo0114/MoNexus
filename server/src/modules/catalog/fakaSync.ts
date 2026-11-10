@@ -4,7 +4,7 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
 import { syncProductProjection } from '../../lib/offers.js'
 import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/index.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { lockProductRow } from './productLock.js'
 import { assertOriginalPrice } from './offerPolicy.js'
 import {
@@ -14,7 +14,7 @@ import {
   validateExternalCatalogIdempotencyKey,
   type NormalizedFakaSource,
 } from './externalCatalog.js'
-import { CATALOG_ERROR_CODES, EXTERNAL_CATALOG_PROVIDER, PRODUCT_STATUS } from './constants.js'
+import { CATALOG_ERROR_CODES, EXTERNAL_CATALOG_PROVIDER, PRODUCT_STATUS } from '../../lib/productCatalog/constants.js'
 import { sourceDescriptionObservation } from './sourceDescription.js'
 
 const PERIOD_OFFER_LABELS: Record<string, string> = {

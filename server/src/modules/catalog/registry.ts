@@ -28,13 +28,13 @@ import {
   wrapCache,
 } from '../../lib/cache.js'
 import { prisma } from '../../lib/prisma.js'
-import { CATEGORY_STATUS } from './constants.js'
+import { CATEGORY_STATUS } from '../../lib/productCatalog/constants.js'
 import type { CategoryRegistryItem, LegacyProductTypeCompat } from './contracts.js'
 import {
   CATEGORY_GUEST_VISIBILITY,
   type CategoryGuestVisibility,
   type ProductAudience,
-} from '../products/visibility.js'
+} from '../../lib/productCatalog/visibility.js'
 
 export const CATEGORY_REGISTRY_CACHE_TTL_SEC = 60
 

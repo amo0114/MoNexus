@@ -3,7 +3,7 @@ import { prisma } from '../../lib/prisma.js'
 import { makeCacheKey, wrapCache } from '../../lib/cache.js'
 import { addCalendarDays, businessDateString, businessDayStartUtc, calendarDayToUtc } from '../../lib/businessTime.js'
 import { notFound } from '../../lib/httpError.js'
-import { guestVisibilitySql, merchantVisibleSql, publicVisibilityWhere, type ProductAudience } from '../products/visibility.js'
+import { guestVisibilitySql, merchantVisibleSql, publicVisibilityWhere, type ProductAudience } from '../../lib/productCatalog/visibility.js'
 import type { TrafficEventInput, TrafficRange } from './schema.js'
 
 export const TRAFFIC_RETENTION_DAYS = 90

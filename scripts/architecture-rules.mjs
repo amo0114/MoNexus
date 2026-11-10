@@ -73,6 +73,12 @@ export function checkBoundaries(sources) {
       if (file.startsWith(modules) && !file.startsWith(`${modules}admin/`) && target.startsWith(`${modules}admin/`)) fail('imports admin internals')
       if (file.startsWith(modules) && !file.startsWith(`${modules}merchant/`)
         && target.startsWith(`${modules}merchant/`) && target !== `${modules}merchant/identity.ts`) fail('imports merchant self-service internals')
+      // Shared product definitions live in lib/productCatalog; the write side must
+      // not reach back into the public read module.
+      if (dependency.runtime && file.startsWith(`${modules}catalog/`)
+        && target.startsWith(`${modules}products/`)) fail('catalog must not import the products read module')
+      // Chat binding mounts its own routes from app.ts; points stays independent of the bot channel.
+      if (file.startsWith(`${modules}points/`) && target.startsWith(`${modules}chatbot/`)) fail('points must not import chatbot')
       for (const facade of facades) {
         const controller = path.join(path.dirname(facade), facade.endsWith('/adminService.ts') ? 'adminController.ts' : 'controller.ts')
         if (file !== controller && file.startsWith(path.dirname(facade) + '/') && target === facade) fail('implementation imports its own public service facade')

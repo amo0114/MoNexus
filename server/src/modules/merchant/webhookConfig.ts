@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import {
   decryptWebhookSecret,
   encryptWebhookSecret,

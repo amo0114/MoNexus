@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeProductListParams } from './cache.js'
+import { normalizeProductListParams } from './publicCache.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §3.4 / §8.1 —— 缓存键必须区分 audience。

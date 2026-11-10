@@ -22,10 +22,10 @@ test('logged-in user can claim daily check-in', async ({ page }) => {
 
   await expect(page.getByRole('button', { name: '今日已打卡' })).toBeVisible({ timeout: 10_000 })
 
-  // SPEC-ENGAGE-001：签到卡显示连签与月历，首页今日面板同步为已签到。
+  // SPEC-ENGAGE-001：签到卡显示连签与近几天签到条，首页今日面板同步为已签到。
   const card = page.getByTestId('checkin-card')
   await expect(card).toContainText('已连续签到 1 天')
-  await expect(card.getByTestId('checkin-calendar').locator('[data-checked]')).toHaveCount(1)
+  await expect(card.getByTestId('checkin-recent').locator('[data-checked]')).toHaveCount(1)
 
   await page.goto('/')
   const today = page.getByTestId('today-panel')

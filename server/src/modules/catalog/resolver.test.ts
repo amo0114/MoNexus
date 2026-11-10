@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { ensureSeedCategories } from './bootstrap.js'
 import { resolveProductCategory } from './resolver.js'
-import { SEED_CATEGORY_CODE } from './constants.js'
+import { SEED_CATEGORY_CODE } from '../../lib/productCatalog/constants.js'
 
 /**
  * B_CAT — legacy type → categoryId resolver Red tests

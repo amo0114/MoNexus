@@ -4,7 +4,7 @@ import { createTestUser } from '../../__tests__/helpers.js'
 import { getActiveNetworkNodeCategoryId } from '../../__tests__/catalogFixture.js'
 import { serializeAdminOrderDetail } from '../orders/serializers.js'
 import { getOrderDetail } from './service.js'
-import { EXTERNAL_CATALOG_PROVIDER } from '../catalog/constants.js'
+import { EXTERNAL_CATALOG_PROVIDER } from '../../lib/productCatalog/constants.js'
 
 const SECRET_SKU = 'SECRET-SKU-MUST-NOT-LEAK'
 const SECRET_LEASE = 'SECRET-LEASE-MUST-NOT-LEAK'

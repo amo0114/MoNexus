@@ -16,7 +16,7 @@
 
 import { Router, type RequestHandler } from 'express'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
-import { CATALOG_ERROR_CODES } from './constants.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 import { categoryHttpError } from './categoryService.js'
 import {
   createCategorySchema,

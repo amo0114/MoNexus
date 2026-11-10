@@ -4,7 +4,7 @@ import { getActiveCategoryIdByLabel } from '../../__tests__/catalogFixture.js'
 import { computeOfferCheckoutVersion } from '../../lib/offers.js'
 import { prisma } from '../../lib/prisma.js'
 import { resolvePlatformPublicImage } from './platformMedia.js'
-import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../../lib/productCatalog/templates/types.js'
 
 let mediaSerial = 0
 function uniqueObjectKey(prefix: string): string {

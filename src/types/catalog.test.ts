@@ -16,7 +16,7 @@ import {
  * Contract tests for the frozen catalog constants (T-CAT-FE-001A).
  *
  * Expected literals below are the exact values of the Foundation-frozen
- * `server/src/modules/catalog/constants.ts`; any drift fails this suite.
+ * `server/src/lib/productCatalog/constants.ts`; any drift fails this suite.
  */
 describe('catalog frozen seed codes (spec §5.1)', () => {
   it('matches the seeded category codes exactly', () => {

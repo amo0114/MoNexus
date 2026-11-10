@@ -4,13 +4,13 @@
 // never read into the context even when the caller loaded them.
 
 import { markAiSafe, type AiSafe } from '../../../lib/ai/safe.js'
-import { productDetailsSchema } from '../templates/productDetails.js'
+import { productDetailsSchema } from '../../../lib/productCatalog/templates/productDetails.js'
 import {
   EMPTY_PRODUCT_DETAILS,
   type ProductDetails,
   type ProductTemplateDefinition,
   type TemplateKey,
-} from '../templates/types.js'
+} from '../../../lib/productCatalog/templates/types.js'
 import {
   GENERATION_LIMITS,
   MAX_CONTEXT_CHARS,

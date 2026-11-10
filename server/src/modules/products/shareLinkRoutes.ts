@@ -2,7 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
 import { authenticateIfPresent, requireActiveUserIfPresent } from '../../middlewares/auth.js'
 import { idParamSchema, validate } from '../../middlewares/validate.js'
-import { resolveProductAudience } from './visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 import { createProductShareLink } from './shareLinks.js'
 
 const emptyBodySchema = z.object({}).strict()

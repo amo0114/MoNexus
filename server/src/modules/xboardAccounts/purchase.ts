@@ -5,7 +5,7 @@ import { HttpError } from '../../lib/httpError.js'
 import { callFakaV2Subscription } from '../../lib/fakaBridge/accountV2.js'
 import { paidResetPlanId } from '../../lib/fakaBridge/paidResetSku.js'
 import { preflightPaidCheckout } from '../fakaBridge/paidCheckout.js'
-import { isCurrentlyPubliclyVisible } from '../products/visibility.js'
+import { isCurrentlyPubliclyVisible } from '../../lib/productCatalog/visibility.js'
 import { assertActor, assertSelectedAccount, selectedAccount, type AccountActor } from './queries.js'
 import { unavailable } from './settings.js'
 

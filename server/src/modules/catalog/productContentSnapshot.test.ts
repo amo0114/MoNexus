@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { computeRequestDigest } from '../orders/idempotency.js'
 import { api, authHeader, createTestProduct, createTestUser, loginAs } from '../../__tests__/helpers.js'
 import { prisma } from '../../lib/prisma.js'
-import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../../lib/productCatalog/templates/types.js'
 
 describe('product content snapshot and checkout terms (SPEC-PRODUCT-COMMERCE-002 §3.3)', () => {
   it('keeps the idempotency digest byte-stable when the new term fields are omitted', () => {

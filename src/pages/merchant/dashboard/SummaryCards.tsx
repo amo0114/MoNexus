@@ -17,7 +17,7 @@ export default function SummaryCards({ data, loading }: { data?: DashboardSummar
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6">
       {renderCard('本月订单数', data?.monthOrderCount)}
       {renderCard('本月积分流水', data?.monthPointsRevenue, 'cta')}
       {renderCard('在售商品', data?.onSaleProductCount)}

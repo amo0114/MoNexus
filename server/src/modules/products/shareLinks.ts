@@ -7,12 +7,12 @@ import {
   getShortlinkClient,
   type ShortlinkClient,
 } from '../../lib/shortlinkClient.js'
-import { CATALOG_ERROR_CODES } from '../catalog/constants.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 import {
   assertPublicProductAccess,
   type ProductAudience,
   type PublicProductAccessRow,
-} from './visibility.js'
+} from '../../lib/productCatalog/visibility.js'
 
 export const SHARE_LINK_LEASE_MS = 30_000
 

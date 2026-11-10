@@ -25,12 +25,12 @@ import {
   CATEGORY_STATUS,
   type CatalogErrorCode,
   type CategoryStatus,
-} from './constants.js'
+} from '../../lib/productCatalog/constants.js'
 import type { CategoryAdminDto } from './contracts.js'
 import {
   CATEGORY_GUEST_VISIBILITY,
   type CategoryGuestVisibility,
-} from '../products/visibility.js'
+} from '../../lib/productCatalog/visibility.js'
 import { normalizeCategoryLabel, type CreateCategoryInput, type ListCategoriesQuery, type UpdateCategoryInput } from './categorySchema.js'
 import { bumpCategoryRegistryCacheVersion } from './registry.js'
 import { bumpProductListVersionCoalesced } from '../../lib/cache.js'

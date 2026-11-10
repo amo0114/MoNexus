@@ -15,6 +15,8 @@ export interface CheckinStatus {
   /** done = 今日已签；pending = 昨日已签、今天还没签；broken = 已断签 */
   streakState: 'done' | 'pending' | 'broken'
   month: { key: string; daysInMonth: number; checked: Array<{ date: string; makeup: boolean }> }
+  /** 补签窗口内（含今天）的签到记录，可跨月；旧版后端不返回。 */
+  recent?: Array<{ date: string; makeup: boolean }>
   milestones: Array<{ days: number; reward: number; reached: boolean }>
   repeatEveryDays: number
   nextMilestone: { days: number; reward: number } | null

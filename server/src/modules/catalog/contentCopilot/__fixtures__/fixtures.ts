@@ -7,8 +7,8 @@
 // All data here is synthetic. Real product samples must be manually
 // de-identified and reviewed before being added (SPEC-AI-001 §10.3).
 
-import { getProductTemplate, listTemplateExamples } from '../../templates/registry.js'
-import { EMPTY_PRODUCT_DETAILS, TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../../templates/types.js'
+import { getProductTemplate, listTemplateExamples } from '../../../../lib/productCatalog/templates/registry.js'
+import { EMPTY_PRODUCT_DETAILS, TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../../../../lib/productCatalog/templates/types.js'
 import { CONTENT_FIELDS, type ContentField } from '../constants.js'
 import type { Claim, ModelOutput } from '../outputSchema.js'
 import type { ContentCopilotDomainInput } from '../projection.js'

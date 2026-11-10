@@ -20,6 +20,8 @@ import { authRoutes } from './modules/auth/routes.js'
 import { productRoutes } from './modules/products/routes.js'
 import { shareLinkRoutes } from './modules/products/shareLinkRoutes.js'
 import { pointRoutes } from './modules/points/routes.js'
+import { chatBindRoutes } from './modules/chatbot/bindRoutes.js'
+import { orderReviewRoutes, productReviewRoutes } from './modules/reviews/routes.js'
 import { orderRoutes } from './modules/orders/routes.js'
 import { checkoutRoutes } from './modules/checkout/routes.js'
 import { valuePolicyRoutes } from './modules/valuePolicy/routes.js'
@@ -184,10 +186,15 @@ app.use('/api/products', publicSponsoredRouter)
 app.use('/api/products', publicEditorialRouter)
 app.use('/api/products', shareLinkRoutes)
 app.use('/api', productVideoRoutes)
+// Reviews and chat binding own their routes; they share a prefix with the
+// product / order / points routers, so each must mount before that router.
+app.use('/api/products', productReviewRoutes)
 app.use('/api/products', productRoutes)
+app.use('/api/points', chatBindRoutes)
 app.use('/api/points', pointRoutes)
 app.use('/api/leaderboard', leaderboardRoutes)
 app.use('/api/invites', inviteRoutes)
+app.use('/api/orders', orderReviewRoutes)
 app.use('/api/orders', orderRoutes)
 app.use('/api/checkout', checkoutRoutes)
 app.use('/api/value-policy', valuePolicyRoutes)

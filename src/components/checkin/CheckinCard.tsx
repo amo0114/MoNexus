@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { CalendarCheck, Check, Flame, Gift } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { CalendarCheck, Check, ChevronDown, Flame, Gift } from 'lucide-react'
 import { hasStreakDetails, type CheckinStatus } from '../../api/checkin'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PointCoin from '../ui/PointCoin'
@@ -103,12 +103,128 @@ export function CheckinCompact({ state }: { state: CheckinState }) {
   )
 }
 
-function MonthCalendar({ status }: { status: CheckinStatus }) {
-  const { key, daysInMonth, checked } = status.month
-  const checkedByDate = new Map(checked.map(c => [c.date, c.makeup]))
+// 纯日期字符串按 UTC 运算，与宿主时区无关。
+function addDays(date: string, n: number) {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** 周一 = 0 */
+function weekdayIndex(date: string) {
+  return (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7
+}
+
+type DayState = 'checked' | 'makeup' | 'eligible' | 'today' | 'missed' | 'future'
+
+function dayStateResolver(status: CheckinStatus) {
+  const checked = new Map([...status.month.checked, ...(status.recent ?? [])].map(c => [c.date, c.makeup]))
   const eligible = new Set(status.makeup.eligibleDates)
-  // 该月 1 号是周几（周一 = 0）；用 UTC 计算，与宿主时区无关。
-  const firstWeekday = (new Date(`${key}-01T00:00:00Z`).getUTCDay() + 6) % 7
+  return (date: string): DayState => {
+    if (checked.has(date)) return checked.get(date) ? 'makeup' : 'checked'
+    if (eligible.has(date)) return 'eligible'
+    if (date === status.today) return 'today'
+    return date > status.today ? 'future' : 'missed'
+  }
+}
+
+const DAY_TONE: Record<DayState, string> = {
+  checked: 'bg-[var(--color-primary-tint-strong)] text-[var(--color-primary)] font-semibold',
+  makeup: 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] font-semibold',
+  eligible: 'border border-dashed border-[var(--color-primary-border-subtle)] text-[var(--color-text)] hover:bg-[var(--color-primary-tint)] active:scale-95 cursor-pointer transition-all',
+  today: 'text-[var(--color-text)] font-semibold',
+  missed: 'text-[var(--color-text-muted)]',
+  future: 'text-[var(--color-text-muted)] opacity-50',
+}
+
+/** 正常签到实心勾，补签空心勾。 */
+function CheckMark({ makeup, small, pop }: { makeup: boolean; small?: boolean; pop?: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-full ${small ? 'w-4 h-4' : 'w-5 h-5'} ${
+        makeup
+          ? 'border-[1.5px] border-[var(--color-primary)] text-[var(--color-primary)]'
+          : 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
+      } ${pop ? 'animate-[numberPopIn_0.35s_cubic-bezier(0.22,1,0.36,1)]' : ''}`}
+    >
+      <Check className={small ? 'w-2.5 h-2.5' : 'w-3 h-3'} strokeWidth={3} />
+    </span>
+  )
+}
+
+function DayCell({ date, state, isToday, compact, pop, onMakeup }: {
+  date: string
+  state: DayState
+  isToday: boolean
+  /** 月历格只放日期数字；近几天条额外带星期。 */
+  compact?: boolean
+  pop?: boolean
+  onMakeup: (date: string) => void
+}) {
+  const isChecked = state === 'checked' || state === 'makeup'
+  const [, month, day] = date.split('-').map(Number)
+  const className = `relative rounded-lg flex flex-col items-center justify-center gap-0.5 ${
+    compact ? 'h-11 sm:h-12 text-xs sm:text-sm' : 'h-[4.5rem] text-sm'
+  } ${DAY_TONE[state]} ${isToday ? 'ring-2 ring-inset ring-[var(--color-primary)]' : ''}`
+  const body = (
+    <>
+      {!compact && (
+        <span className="text-[11px] leading-none font-normal opacity-80">
+          {isToday ? '今天' : `周${WEEKDAYS[weekdayIndex(date)]}`}
+        </span>
+      )}
+      <span className="leading-tight tabular-nums">{compact ? day : `${month}/${day}`}</span>
+      {isChecked ? (
+        <CheckMark makeup={state === 'makeup'} small={compact} pop={pop} />
+      ) : state === 'eligible' ? (
+        <span className="text-[11px] leading-none text-[var(--color-primary)] font-medium">补签</span>
+      ) : !compact && (
+        <span className="h-5 flex items-center text-[11px] leading-none font-normal opacity-70">
+          {state === 'today' ? '待签' : ''}
+        </span>
+      )}
+      {state === 'makeup' && (
+        // 窄屏月历格只有 30px 宽，角标会压住日期；空心勾已足够区分。
+        <span className={`absolute top-0.5 right-1 text-[10px] leading-none font-normal opacity-80 ${compact ? 'max-sm:hidden' : ''}`}>补</span>
+      )}
+    </>
+  )
+  if (state === 'eligible') {
+    return (
+      <button
+        type="button"
+        onClick={() => onMakeup(date)}
+        aria-label={`补签 ${date}`}
+        data-testid={`${compact ? 'checkin-month-makeup' : 'checkin-makeup'}-${date}`}
+        className={className}
+      >
+        {body}
+      </button>
+    )
+  }
+  return <span data-checked={isChecked || undefined} className={className}>{body}</span>
+}
+
+/** 补签窗口 + 今天。可补日期全部落在这一条里，跨月也能补。 */
+function RecentStrip({ status, pop, onMakeup }: { status: CheckinStatus; pop: boolean; onMakeup: (date: string) => void }) {
+  const stateOf = dayStateResolver(status)
+  const days = status.makeup.windowDays
+  return (
+    // 手机上 8 格折成两行，保证每格 ≥40px 触控尺寸。
+    <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5" data-testid="checkin-recent">
+      {Array.from({ length: days + 1 }, (_, i) => {
+        const date = addDays(status.today, i - days)
+        const isToday = date === status.today
+        return <DayCell key={date} date={date} state={stateOf(date)} isToday={isToday} pop={pop && isToday} onMakeup={onMakeup} />
+      })}
+    </div>
+  )
+}
+
+function MonthCalendar({ status, onMakeup }: { status: CheckinStatus; onMakeup: (date: string) => void }) {
+  const { key, daysInMonth } = status.month
+  const stateOf = dayStateResolver(status)
+  const firstWeekday = weekdayIndex(`${key}-01`)
 
   return (
     <div>
@@ -118,33 +234,8 @@ function MonthCalendar({ status }: { status: CheckinStatus }) {
       <div className="grid grid-cols-7 gap-1.5" data-testid="checkin-calendar">
         {Array.from({ length: firstWeekday }, (_, i) => <span key={`pad-${i}`} />)}
         {Array.from({ length: daysInMonth }, (_, i) => {
-          const day = i + 1
-          const date = `${key}-${String(day).padStart(2, '0')}`
-          const isChecked = checkedByDate.has(date)
-          const isMakeup = checkedByDate.get(date) === true
-          const isToday = date === status.today
-          const canMakeup = eligible.has(date)
-          const base = 'aspect-square rounded-lg text-xs sm:text-sm flex flex-col items-center justify-center relative'
-          return (
-            <span
-              key={date}
-              data-checked={isChecked || undefined}
-              className={`${base} ${
-                isChecked
-                  ? 'bg-[var(--color-primary-tint-strong)] text-[var(--color-primary)] font-semibold'
-                  : canMakeup
-                    ? 'border border-dashed border-[var(--color-primary-border-subtle)] text-[var(--color-text-muted)]'
-                    : date > status.today
-                    ? 'text-[var(--color-text-muted)] opacity-50'
-                    : 'text-[var(--color-text-muted)]'
-              } ${isToday ? 'ring-2 ring-[var(--color-primary)]' : ''}`}
-            >
-              {day}
-              {isChecked && (isMakeup
-                ? <span className="text-[10px] leading-none">补</span>
-                : <Check className="w-3 h-3" />)}
-            </span>
-          )
+          const date = `${key}-${String(i + 1).padStart(2, '0')}`
+          return <DayCell key={date} date={date} state={stateOf(date)} isToday={date === status.today} compact onMakeup={onMakeup} />
         })}
       </div>
     </div>
@@ -182,56 +273,61 @@ function MilestoneLadder({ status }: { status: CheckinStatus }) {
   )
 }
 
-/** Profile 页完整签到卡：月历 + 阶梯 + 待领取 + 补签。签到按钮在 Profile 顶部卡片里，这里不重复。 */
+/** Profile 页完整签到卡：近几天签到条（可展开整月）+ 阶梯 + 待领取 + 补签。签到按钮在 Profile 顶部卡片里，这里不重复。 */
 export default function CheckinCard({ state }: { state: CheckinState }) {
   const [makeupDate, setMakeupDate] = useState<string | null>(null)
+  const [monthOpen, setMonthOpen] = useState(false)
+  // 只有在本次会话里亲眼见过「未签」再变成「已签」，才给今天的勾播放弹出动效。
+  const sawUnchecked = useRef(false)
   const status = state.status
+  if (status?.hasCheckedIn === false) sawUnchecked.current = true
   if (!status) {
     return state.loadFailed ? null : <div className="card h-40 animate-pulse" aria-hidden />
   }
   if (!hasStreakDetails(status)) return null
   const { makeup } = status
   const makeupLeft = Math.max(0, makeup.monthlyLimit - makeup.usedThisMonth)
+  const [year, month] = status.month.key.split('-').map(Number)
 
   return (
     <section id="checkin" className="card space-y-4 scroll-mt-24" data-testid="checkin-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="font-heading font-bold text-base sm:text-lg text-[var(--color-text)] flex items-center gap-2">
-            <Flame className="w-5 h-5 text-[var(--color-warning)]" />
+            <Flame className="w-5 h-5 text-[var(--color-warning)] shrink-0" />
             {streakHint(status)}
           </h3>
           <p className="text-xs text-[var(--color-text-muted)] mt-1">
             QQ 签到也计入连签；连签与全勤奖励需在网站领取，逾期失效。
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setMonthOpen(open => !open)}
+          aria-expanded={monthOpen}
+          data-testid="checkin-month-toggle"
+          className="shrink-0 min-h-10 inline-flex items-center gap-1 px-3 rounded-lg border border-[var(--color-border)] text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-background)] cursor-pointer transition-colors"
+        >
+          {monthOpen ? '收起' : '本月'}
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${monthOpen ? 'rotate-180' : ''}`} />
+        </button>
       </div>
 
       <MilestoneLadder status={status} />
       <ClaimList state={state} />
-      <MonthCalendar status={status} />
-
-      {makeup.eligibleDates.length > 0 && (
-        // 补签入口独立成一排按钮：320px 下 7 列日历格不足 40px 触控尺寸。
-        <div className="flex flex-wrap gap-2" data-testid="checkin-makeup-dates">
-          {makeup.eligibleDates.map(date => (
-            <button
-              key={date}
-              type="button"
-              onClick={() => setMakeupDate(date)}
-              data-testid={`checkin-makeup-${date}`}
-              className="min-h-10 px-3 rounded-lg border border-dashed border-[var(--color-primary-border-subtle)] text-xs text-[var(--color-primary)] hover:bg-[var(--color-primary-tint)] cursor-pointer transition-colors"
-            >
-              补签 {date.slice(5).replace('-', '/')}
-            </button>
-          ))}
-        </div>
-      )}
+      <RecentStrip status={status} pop={sawUnchecked.current} onMakeup={setMakeupDate} />
 
       {makeup.monthlyLimit > 0 && (
         <p className="text-xs text-[var(--color-text-muted)]">
-          补签卡：{makeup.price} 积分 / 次，可补最近 {makeup.windowDays} 天，本月剩余 {makeupLeft} 次。补签恢复连签，不发当日签到奖励。
+          点虚线日期可补签：{makeup.price} 积分 / 次，本月剩余 {makeupLeft} 次；补签恢复连签，不发当日签到奖励。
         </p>
+      )}
+
+      {monthOpen && (
+        <div className="space-y-2 border-t border-[var(--color-border)] pt-4">
+          <p className="text-sm font-semibold text-[var(--color-text)]">{year} 年 {month} 月</p>
+          <MonthCalendar status={status} onMakeup={setMakeupDate} />
+        </div>
       )}
 
       <ConfirmDialog

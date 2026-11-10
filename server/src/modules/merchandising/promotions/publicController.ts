@@ -5,7 +5,7 @@
 import { Request, Response, NextFunction } from 'express'
 import type { SponsoredPlacement } from '../constants.js'
 import { listSponsoredItems, normalizeSponsoredLimit, type SponsoredQueryInput } from './publicSponsored.js'
-import { resolveProductAudience } from '../../products/visibility.js'
+import { resolveProductAudience } from '../../../lib/productCatalog/visibility.js'
 
 export async function listSponsored(req: Request, res: Response, next: NextFunction) {
   try {

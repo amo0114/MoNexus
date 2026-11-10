@@ -281,7 +281,7 @@ export async function invalidateGuestEligibilityForNewOffer(
 
 /**
  * SPEC-CATALOG-VIS-001 §4.6（P1.5-B）——列表展示用的准入状态，供管理端待审队列
- * 与商家商品列表共用。只做展示，不参与授权；门禁仍以 products/visibility.ts 为准。
+ * 与商家商品列表共用。只做展示，不参与授权；门禁仍以 lib/productCatalog/visibility.ts 为准。
  */
 export type GuestReviewState =
   | 'members_only'

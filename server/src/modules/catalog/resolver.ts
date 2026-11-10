@@ -25,7 +25,7 @@ import { HttpError, type ErrorCode } from '../../lib/httpError.js'
 import {
   CATALOG_ERROR_CODES,
   CATEGORY_STATUS,
-} from './constants.js'
+} from '../../lib/productCatalog/constants.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 

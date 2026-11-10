@@ -2,7 +2,7 @@ import { businessRegistry } from '../../lib/businessRegistry.js'
 import { getSystemConfigValues } from '../../lib/systemConfig.js'
 import { getPublicCategoryRegistry } from '../catalog/registry.js'
 import { config } from '../../config/index.js'
-import type { ProductAudience } from '../products/visibility.js'
+import type { ProductAudience } from '../../lib/productCatalog/visibility.js'
 
 export async function getConfigRegistry(
   audience: ProductAudience = 'guest',

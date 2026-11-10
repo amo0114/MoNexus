@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma.js'
 import { resolveUserByPlatformId } from './service.js'
-import type { ProductAudience } from '../products/visibility.js'
+import type { ProductAudience } from '../../lib/productCatalog/visibility.js'
 
 /**
  * SPEC-CHAT-BOT-001 / BOT-1b —— 机器人商品查询的视角判定。

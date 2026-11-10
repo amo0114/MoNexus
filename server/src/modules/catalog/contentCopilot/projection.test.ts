@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assertNoSentinel, assertUnknownPreserved, collectKeyPaths } from '../../../__tests__/aiProjection.js'
-import { EMPTY_PRODUCT_DETAILS } from '../templates/types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../../../lib/productCatalog/templates/types.js'
 import { FIXTURE_SENSITIVE_SKU, domainInput, offer } from './__fixtures__/fixtures.js'
 import { MAX_CONTEXT_CHARS } from './constants.js'
 import { ContentContextTooLargeError, buildProductContentAiContext, deriveXboardPeriod } from './projection.js'

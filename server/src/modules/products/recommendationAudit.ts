@@ -9,7 +9,7 @@ import {
   type RecommendationAdmission,
   type RecommendationCandidate,
 } from './recommendations.js'
-import { merchantVisibleSql } from './visibility.js'
+import { merchantVisibleSql } from '../../lib/productCatalog/visibility.js'
 
 /**
  * Read-only recommendation data-quality audit (PLAN-PRODUCT-AVAILABILITY-001 §9 PR2).
@@ -363,7 +363,7 @@ async function compareAdmissions(rows: ScopeRow[], sampleLimit: number) {
     //
     // 不影响线上权限：本文件的唯一入口是 `npm run recommendation:audit`
     // （scripts/auditRecommendationData.ts），无 HTTP 路由，输出只给运维看。
-    // 真实的游客可见性由 products/visibility.ts 的四条路径决定，那些路径
+    // 真实的游客可见性由 lib/productCatalog/visibility.ts 的四条路径决定，那些路径
     // 已包含分类条件（见 visibility.equivalence.test.ts）。
     //
     // 按 P1-B 评审意见保留现状，不改代码；若日后需要精确口径，应改为复用

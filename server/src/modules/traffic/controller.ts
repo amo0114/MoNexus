@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import { unauthenticated } from '../../lib/httpError.js'
-import { resolveProductAudience } from '../products/visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 import type { TrafficRange } from './schema.js'
 import { getTrafficReport, recordTrafficEvent } from './service.js'
 

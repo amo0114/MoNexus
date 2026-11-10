@@ -5,9 +5,9 @@ import { usesStablePaidReset } from '../../lib/fakaBridge/paidResetSku.js'
 import { wrapCache } from '../../lib/cache.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
 import { projectPublicTemplateAttributes, serializePublicOffer } from '../../lib/offers.js'
-import { getProductTemplate } from '../catalog/templates/registry.js'
-import { emptyProductDetails } from '../catalog/templates/productDetails.js'
-import { TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../catalog/templates/types.js'
+import { getProductTemplate } from '../../lib/productCatalog/templates/registry.js'
+import { emptyProductDetails } from '../../lib/productCatalog/templates/productDetails.js'
+import { TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../../lib/productCatalog/templates/types.js'
 import {
   getFakaCapacityForPublicRead,
   getCachedFakaCapacityByPlanId,
@@ -17,7 +17,7 @@ import {
 import {
   buildProductDetailCacheKey,
   buildProductListCacheKey,
-} from './cache.js'
+} from '../../lib/productCatalog/publicCache.js'
 import {
   assertPublicProductAccess,
   guestVisibilitySql,
@@ -25,7 +25,7 @@ import {
   merchantVisibleSql,
   publicVisibilityWhere,
   type ProductAudience,
-} from './visibility.js'
+} from '../../lib/productCatalog/visibility.js'
 import {
   assertCursorFilterMatches,
   computeFilterHash,
@@ -52,7 +52,7 @@ interface ProductListParams {
   cursor?: string
   page?: number
   pageSize?: number
-  audience?: import('./visibility.js').ProductAudience
+  audience?: import('../../lib/productCatalog/visibility.js').ProductAudience
   /** Internal shop scope; never accepted from the public `/api/products` query. */
   merchantId?: number
 }

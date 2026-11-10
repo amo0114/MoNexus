@@ -14,7 +14,7 @@ import {
   productStockModeSchema,
   productTypeSchema,
   validateProductCommercialFields,
-} from '../products/schema.js'
+} from '../../lib/productCatalog/fieldSchemas.js'
 import { inventoryImportPayloadSchema } from '../../lib/inventoryImport.js'
 import { purchaseFormSchema } from '../../lib/purchaseForm.js'
 import { deliveryFieldsSchema } from '../../lib/deliveryFields.js'

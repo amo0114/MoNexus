@@ -9,8 +9,8 @@ import type {
   CategoryApplicationStatus,
   CategoryCode,
   CategoryStatus,
-} from './constants.js'
-import type { CategoryGuestVisibility } from '../products/visibility.js'
+} from '../../lib/productCatalog/constants.js'
+import type { CategoryGuestVisibility } from '../../lib/productCatalog/visibility.js'
 
 /** Public product category projection (spec §7.4). */
 export interface CategoryDto {
@@ -94,6 +94,6 @@ export type {
   TemplateAttributes,
   TemplateKey,
   TemplateWidget,
-} from './templates/types.js'
+} from '../../lib/productCatalog/templates/types.js'
 
-export { EMPTY_PRODUCT_DETAILS, TEMPLATE_KEYS, TEMPLATE_WIDGETS } from './templates/types.js'
+export { EMPTY_PRODUCT_DETAILS, TEMPLATE_KEYS, TEMPLATE_WIDGETS } from '../../lib/productCatalog/templates/types.js'

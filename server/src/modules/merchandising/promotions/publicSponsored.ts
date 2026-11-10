@@ -27,7 +27,7 @@ import {
   CATEGORY_GUEST_VISIBILITY,
   isCurrentlyPubliclyVisible,
   type ProductAudience,
-} from '../../products/visibility.js'
+} from '../../../lib/productCatalog/visibility.js'
 
 type Db = typeof prisma | Prisma.TransactionClient
 

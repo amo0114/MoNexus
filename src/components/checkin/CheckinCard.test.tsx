@@ -94,6 +94,26 @@ describe('CheckinCard', () => {
     expect(celebrate).toHaveBeenCalledTimes(1)
   })
 
+  it('shows a rolling strip across the month boundary and expands the month on demand', async () => {
+    vi.mocked(getCheckinStatus).mockResolvedValue(status({
+      today: '2026-11-02',
+      month: { key: '2026-11', daysInMonth: 30, checked: [{ date: '2026-11-01', makeup: false }] },
+      recent: [{ date: '2026-10-31', makeup: true }, { date: '2026-11-01', makeup: false }],
+      makeup: { price: 20, monthlyLimit: 2, usedThisMonth: 1, windowDays: 7, eligibleDates: ['2026-10-30'] },
+    }))
+    renderCard()
+
+    const strip = await screen.findByTestId('checkin-recent')
+    expect(strip.children).toHaveLength(8)
+    expect(strip).toHaveTextContent('周六10/31')
+    expect(strip.querySelectorAll('[data-checked]')).toHaveLength(2)
+    expect(screen.getByTestId('checkin-makeup-2026-10-30')).toHaveTextContent('周五')
+    expect(screen.queryByTestId('checkin-calendar')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('checkin-month-toggle'))
+    expect(screen.getByTestId('checkin-calendar').querySelectorAll('[data-checked]')).toHaveLength(1)
+  })
+
   it('keeps only the check-in button when an older backend omits streak details', async () => {
     vi.mocked(getCheckinStatus).mockResolvedValue({ hasCheckedIn: false } as CheckinStatus)
     renderCard()
