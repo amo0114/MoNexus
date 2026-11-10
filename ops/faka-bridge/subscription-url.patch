@@ -1,0 +1,66 @@
+--- a/Services/FakaOrderService.php
++++ b/Services/FakaOrderService.php
+@@ -9,6 +9,7 @@
+ use App\Services\OrderService;
+ use App\Services\PlanService;
+ use App\Services\UserService;
++use App\Utils\Helper;
+ use Illuminate\Database\QueryException;
+ use Illuminate\Support\Facades\DB;
+ use Illuminate\Support\Facades\Log;
+@@ -486,8 +487,42 @@
+             'before' => $before,
+             'after' => $after,
+         ];
++        $subscribeUrl = $this->subscribeUrlForOrder($faka);
++        if ($subscribeUrl !== null) {
++            $payload['subscription']['subscribe_url'] = $subscribeUrl;
++        }
+ 
+         return $payload;
++    }
++
++    /** Return a bearer credential only for a completed, order-bound account. */
++    public function subscribeUrlForOrder(FakaOrder $faka): ?string
++    {
++        if (!$faka->isTerminalSuccess()) {
++            return null;
++        }
++        $order = Order::where('trade_no', $faka->xboard_trade_no)->first();
++        if (!$order || !in_array((int) $order->status, [Order::STATUS_COMPLETED, Order::STATUS_DISCOUNTED], true)) {
++            return null;
++        }
++        $user = User::find($order->user_id);
++        if (!$user || !$user->token || $user->banned
++            || strtolower((string) $user->email) !== strtolower((string) $faka->email)) {
++            return null;
++        }
++        try {
++            $url = Helper::getSubscribeUrl((string) $user->token);
++            if (!is_string($url) || strlen($url) > 2000 || !filter_var($url, FILTER_VALIDATE_URL)
++                || parse_url($url, PHP_URL_SCHEME) !== 'https'
++                || parse_url($url, PHP_URL_USER) !== null || parse_url($url, PHP_URL_PASS) !== null) {
++                return null;
++            }
++            return $url;
++        } catch (\Throwable $e) {
++            // Never log the credential, or turn a completed purchase into a retry.
++            Log::warning('[FakaBridge] subscription URL unavailable', ['exception' => $e::class]);
++            return null;
++        }
+     }
+ 
+     /**
+--- a/Controllers/WebhookController.php
++++ b/Controllers/WebhookController.php
+@@ -138,6 +138,10 @@
+                     'before' => null,
+                     'after' => $after,
+                 ];
++                $subscribeUrl = $this->orderService->subscribeUrlForOrder($fakaOrder);
++                if ($subscribeUrl !== null) {
++                    $json['subscription']['subscribe_url'] = $subscribeUrl;
++                }
+             }
+ 
+             return response()->json($json);

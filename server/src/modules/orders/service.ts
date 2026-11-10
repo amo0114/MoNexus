@@ -12,7 +12,10 @@ import {
   orderNotificationSnapshot,
   shouldNotifyMerchantNewOrder,
 } from '../notifications/dispatcher.js'
-import { debitAvailablePoints, holdAvailablePoints, settleHeldOrder } from './accounting.js'
+import { chargeOrderInTx, settleHeldOrder } from './accounting.js'
+import { createSettlementInTx } from '../merchantFinance/index.js'
+import { orderPaymentComposition } from '../wallet/index.js'
+import { buyerRestrictionReason } from './purchasePolicy.js'
 import { assertSpendingNotRestricted } from '../points/spendingPolicy.js'
 import {
   claimIdempotencyKey,
@@ -403,6 +406,7 @@ async function createOrderOnce(
     const account = await tx.pointAccount.findUnique({ where: { userId } })
     if (!account) throw notFound('积分账户不存在')
     await assertSpendingNotRestricted(userId, tx)
+    const buyer = await tx.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, role: true } })
 
     await tx.$queryRaw`SELECT "id" FROM "Product" WHERE "id" = ${productId} FOR UPDATE`
     const product = await tx.product.findUnique({ where: { id: productId } })
@@ -531,6 +535,11 @@ async function createOrderOnce(
       }
     }
 
+    if (product.merchantId == null) {
+      const restriction = buyerRestrictionReason(buyer, null)
+      if (restriction) throw badRequest(restriction, 'PURCHASE_NOT_ALLOWED')
+    }
+
     let merchantId: number | null = null
     let merchantName: string | null = null
     let commissionRate = 0
@@ -539,6 +548,8 @@ async function createOrderOnce(
     if (product.merchantId != null) {
       const merchant = await tx.merchant.findUnique({ where: { id: product.merchantId } })
       if (!merchant || merchant.status !== 'active') throw badRequest('商家暂不可用')
+      const restriction = buyerRestrictionReason(buyer, merchant.userId)
+      if (restriction) throw badRequest(restriction, 'PURCHASE_NOT_ALLOWED')
 
       merchantId = merchant.id
       merchantName = merchant.name
@@ -579,8 +590,6 @@ async function createOrderOnce(
     let orderHoldingPoints: number | null = null
     let orderFulfillmentDeadline: Date | null = null
     let orderAcceptBy: Date | null = null
-    let balanceAfter = account.balance
-    let settledSettlementStatus: 'pending' | 'holding' = 'pending'
     let fundsHeld = false
 
     if (isManual) {
@@ -595,12 +604,7 @@ async function createOrderOnce(
         const acceptHours = await getSystemConfigValue('acceptTimeoutHours', tx)
         orderAcceptBy = new Date(Date.now() + acceptHours * 60 * 60 * 1000)
       }
-      settledSettlementStatus = 'holding'
-      balanceAfter = await holdAvailablePoints(tx, userId, offer.price)
       fundsHeld = true
-    } else {
-      // 即时模式：带余额条件的原子扣减，禁止并发下单透支。
-      balanceAfter = await debitAvailablePoints(tx, userId, offer.price)
     }
 
     const order = await tx.order.create({
@@ -639,6 +643,15 @@ async function createOrderOnce(
         productContentSnapshot: productContentSnapshot as unknown as Prisma.InputJsonValue,
       },
     })
+
+    // 积分流转经 wallet：即时模式带余额条件原子扣减，人工模式冻结——禁止并发
+    // 下单透支；来源分配在同一事务内固定，退款按原来源返还。
+    const { balance: balanceAfter } = await chargeOrderInTx(
+      tx,
+      { id: order.id, userId, price: offer.price },
+      isManual ? 'reserve' : 'spend',
+      isManual ? `订单冻结积分: #${order.id}` : `兑换商品: ${product.name}`,
+    )
 
     let pricing: OrderPricingDto | undefined
     if (pricingContext) {
@@ -804,28 +817,14 @@ async function createOrderOnce(
     }
     // manual / merchant_webhook / external provider: freeze path already ran; no instant DeliveryRecord.
 
-    await tx.pointLog.create({
-      data: {
-        userId,
-        type: isManual ? 'hold' : 'out',
-        amount: offer.price,
-        balanceAfter,
-        reason: isManual ? `订单冻结积分: #${order.id}` : `兑换商品: ${product.name}`,
-        orderId: order.id,
-      },
-    })
-
     if (merchantId != null) {
-      await tx.settlement.create({
-        data: {
-          merchantId,
-          orderId: order.id,
-          orderAmount: offer.price,
-          commissionRate,
-          commissionAmount,
-          settlementAmount: offer.price - commissionAmount,
-          status: settledSettlementStatus,
-        },
+      await createSettlementInTx(tx, {
+        merchantId,
+        orderId: order.id,
+        orderAmount: offer.price,
+        commissionRate,
+        commissionAmount,
+        held: isManual,
       })
     }
 
@@ -1029,6 +1028,8 @@ export async function getOrderDetail(orderId: number, userId: number) {
     canReview: !order.review && (normalized === 'delivered' || normalized === 'closed'),
     // 已有未退款续费单——前端隐藏「续费」按钮（仅详情，列表行不带）。
     hasActiveRenewal: renewals.length > 0,
+    // Which point sources paid for this order (null = pre-wallet order).
+    paymentComposition: await orderPaymentComposition(prisma, order.id),
   }
 }
 

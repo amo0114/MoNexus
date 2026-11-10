@@ -79,12 +79,19 @@ export function tierLabel(tier: MemberTier): string {
   return tierMeta[tier].label
 }
 
+/**
+ * The one growth-eligibility rule (tier, invite threshold, leaderboard): only
+ * reward-like credits flagged at write time. Recharge, merchant settlement,
+ * refunds and unknown legacy sources never count.
+ */
+export const GROWTH_LOG_WHERE = { type: 'in', growthEligible: true } as const satisfies Prisma.PointLogWhereInput
+
 export async function computeLifetimeEarnedPoints(userId: number): Promise<number> {
   // LB-01：口径与 leaderboard/service.ts aggregateWindow 字面一致（含
   // `amount > 0` 排除非正流水）——两处修改必须同步，否则总榜与会员等级会
   // 给出两个"累计获得"。
   const result = await prisma.pointLog.aggregate({
-    where: { userId, type: 'in', amount: { gt: 0 } },
+    where: { userId, ...GROWTH_LOG_WHERE, amount: { gt: 0 } },
     _sum: { amount: true },
   })
   return result._sum.amount ?? 0

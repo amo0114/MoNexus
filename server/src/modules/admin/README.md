@@ -39,8 +39,20 @@ Privileged surface for the platform operator: user / merchant / product / settle
 ### Settlement processing
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET | `/api/admin/settlements?status=` | All Settlement rows. |
-| POST | `/api/admin/settlements/batch-settle` | Mark a batch of `pending` rows as `settled`. Any non-pending id in the batch causes a 400 — the batch must be uniformly pending. |
+| GET | `/api/admin/settlements?status=` | All Settlement rows with settleability and payout vouchers. |
+| POST | `/api/admin/settlements/preview` | Per-item verdicts for a selection (read-only). |
+| POST | `/api/admin/settlements/batch-settle` | All-or-nothing batch with optional `requestKey`; any non-settleable id causes a 400 with per-item details. |
+| GET | `/api/admin/settlement-batches`, `/api/admin/settlement-batches/:id` | Executed batches and their wallet vouchers. |
+| GET / POST | `/api/admin/merchant-recovery-cases`, `/:id/actions` | Merchant shortfalls after after-sales reversals. |
+
+Rules, locks and replay semantics: `../merchantFinance/README.md`.
+
+### Order after-sales
+| Method | Path | Notes |
+| --- | --- | --- |
+| GET / POST | `/api/admin/orders/:id/after-sales` | List / open a full-refund case for a `closed` order (one active case per order). |
+| POST | `/api/admin/after-sales/:id/execute` | Refund to original sources, void or reverse the earning, claw back merchant settlement points, open a recovery case for any shortfall. Order stays `closed`. Blocked until external entitlements are provably revoked. |
+| POST | `/api/admin/after-sales/:id/reject` | Requires a note. |
 
 ### Order browsing
 | Method | Path | Notes |
@@ -119,7 +131,7 @@ payload, or stack trace.
 
 ### `PointLog`
 
-Every mutation to `PointAccount.balance` writes one `PointLog` row in the same transaction. The admin module triggers this through `adjustUserPoints` and through orders / settlements indirectly.
+Every balance change and its `PointLog` row are written by `../wallet/` in the same transaction. `adjustUserPoints` credits an `admin_adjustment` lot or spends FIFO; an administrator cannot adjust their own account. `GET /api/admin/users/:id/point-sources` shows the balance by origin.
 
 ### User status sentinels
 
@@ -155,7 +167,7 @@ catalog preview/import, period offers and remote capacity). These modules depend
 directly on shared catalog/lib rules and do not call each other through `service.ts`.
 Their legacy exports remain
 available through `service.ts`. Settlement eligibility belongs to
-`orders/settlementPolicy.ts`, shared with merchant queries; admin services must not
+`merchantFinance/settlementPolicy.ts`, shared with merchant queries; admin services must not
 depend on merchant self-service implementations. Transaction and row-lock boundaries
 stay inside each use case.
 

@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import * as adminQueries from './adminQueries.js'
 import * as adminPaymentOperations from './adminPaymentOperations.js'
 import * as pricePolicyAdmin from './pricePolicyAdmin.js'
+import { previewStatementImport } from '../payment/reconciliation/service.js'
 import type {
   PaymentDisputeStatus,
   PaymentEventStatus,
@@ -121,9 +122,9 @@ export async function confirmSandboxOrder(req: Request, res: Response, next: Nex
   }
 }
 
-export async function listReconRuns(_req: Request, res: Response, next: NextFunction) {
+export async function listReconRuns(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await adminQueries.adminListReconRuns())
+    res.json(await adminQueries.adminListReconRuns(req.query as never))
   } catch (err) {
     next(err)
   }
@@ -136,11 +137,29 @@ export async function createReconRun(req: Request, res: Response, next: NextFunc
       providerAccountKey?: string
       scopeType: ReconciliationScopeType
       scopeKey?: string
+      periodStart?: Date
+      periodEnd?: Date
     }
     res.status(201).json(await adminPaymentOperations.adminCreateReconRun({
       ...body,
       createdByUserId: req.user!.userId,
     }))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function previewStatement(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(previewStatementImport(req.body))
+  } catch (err) {
+    next(err)
+  }
+}
+
+export async function importStatement(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.status(201).json(await adminPaymentOperations.adminImportStatement({ ...req.body, createdByUserId: req.user!.userId }))
   } catch (err) {
     next(err)
   }
@@ -172,6 +191,7 @@ export async function listReconItems(req: Request, res: Response, next: NextFunc
     const query = req.query as unknown as {
       page: number
       pageSize: number
+      runId?: string
       status?: ReconciliationItemStatus
       mismatchType?: ReconciliationMismatchType
     }

@@ -66,7 +66,8 @@ async function makeUser(
 
 async function log(userId: number, type: string, amount: number, when: Date) {
   await prisma.pointLog.create({
-    data: { userId, type, amount, balanceAfter: 0, reason: '排行榜测试流水', createdAt: when },
+    // Fixtures stand in for reward credits; recharge-style rows set growthEligible=false.
+    data: { userId, type, amount, balanceAfter: 0, reason: '排行榜测试流水', createdAt: when, growthEligible: type === 'in' },
   })
 }
 
@@ -523,7 +524,7 @@ describe('GET /api/leaderboard', () => {
   async function seedCurrent(entries: Array<{ userId: number; points: number }>) {
     await prisma.pointLog.createMany({
       data: entries.map(entry => ({
-        userId: entry.userId, type: 'in', amount: entry.points, balanceAfter: 0,
+        userId: entry.userId, type: 'in', amount: entry.points, balanceAfter: 0, growthEligible: true,
         reason: '排行榜 API 测试', createdAt: businessDayStartUtc(businessDateString(new Date())),
       })),
     })

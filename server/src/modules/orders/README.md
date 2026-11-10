@@ -69,16 +69,14 @@ Requests without the header behave as before (no idempotency) — compatibility 
 `createOrder` runs the entire redeem flow inside a single `prisma.$transaction` (`server/src/modules/orders/service.ts`). All of the following succeed atomically or none of them happen:
 
 1. Load `PointAccount` and `Product`; reject if product isn't `active` or the account is missing.
-2. Reject if `balance < product.price` (`积分不足`).
-3. Pick one `InventoryItem` with `status = 'available'`, ordered by `id ASC` (FIFO).
-4. If the product belongs to a merchant: require `merchant.status = 'active'`; compute `commissionAmount = floor(price * commissionRate)`.
-5. Decrement `PointAccount.balance` by `price`.
-6. Create the `Order` row.
-7. **Atomic claim**: `UPDATE InventoryItem SET status='sold', orderId=…, soldToUserId=…, soldAt=now() WHERE id = X AND status = 'available'`. If the affected row count is not exactly 1 (race lost), throw `库存不足，请稍后再试` and roll back the transaction.
-8. Create the `DeliveryRecord` with the inventory item's `content`.
-9. Write `PointLog` (`type='out'`, `balanceAfter`, `orderId`).
-10. If merchant product: insert one `Settlement(status='pending')`.
-11. Decrement `Product.stock` by 1 and increment `sales` by 1.
+2. Reject buyers who may not trade (`purchasePolicy.ts`, `400 PURCHASE_NOT_ALLOWED`): a merchant buying its own shop's goods (fake sales and reviews, other points laundered into settlement income), and administrator accounts (they can grant points and operate the platform; test with a normal account). Checkout preview shows the same reason.
+3. If the product belongs to a merchant: require `merchant.status = 'active'`; compute `commissionAmount = floor(price * commissionRate)`.
+4. Create the `Order` row.
+5. Charge through wallet (`chargeOrderInTx`): instant modes spend (`order:<id>:spend`), manual modes reserve (`order:<id>:reserve`); the account row's conditional update rejects `积分不足`, and the lot allocation is fixed here — later capture/release/refund use exactly these allocations.
+6. **Atomic claim**: `UPDATE InventoryItem SET status='sold', orderId=…, soldToUserId=…, soldAt=now() WHERE id = X AND status = 'available'`. If the affected row count is not exactly 1 (race lost), throw `库存不足，请稍后再试` and roll back the transaction.
+7. Create the `DeliveryRecord` with the inventory item's `content`.
+8. If merchant product: `merchantFinance.createSettlementInTx` (`pending`, or `holding` for reserved manual orders).
+9. Decrement `Product.stock` by 1 and increment `sales` by 1.
 
 If any step throws, the whole transaction rolls back. No partial debit, no orphan settlement, no double-spent inventory item.
 
@@ -102,7 +100,17 @@ When `Product.merchantId IS NOT NULL`, the order transaction also creates one `S
 
 Platform-owned products (`merchantId IS NULL`) do **not** produce a settlement row. The full price stays on the platform.
 
-Batch-settling is owned by `admin/settlementAdmin.ts → batchSettle`; see `../admin/README.md`.
+Batch-settling, settleability and reversals are owned by `../merchantFinance/` (`README.md` there).
+
+## After-sales (`afterSales.ts`)
+
+A closed order is terminal; a later full refund is an `OrderAfterSalesCase`, not a
+status change. Executing it refunds the buyer to the original sources under the
+same `order:<id>:refund` key arbitration uses (one refund per order), voids an
+unsettled earning or has merchantFinance reverse a settled one, and records an
+order status event without changing the status. External entitlements (Xboard
+tasks, plugin jobs) must be provably revoked first; a note is not a revocation.
+Partial refunds are not supported in this batch.
 
 ## Delivery content exposure rules
 

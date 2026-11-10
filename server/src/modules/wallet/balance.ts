@@ -15,7 +15,7 @@ export const POINT_ACCOUNT_HARD_CAP = 2_000_000_000
 /** Prisma Int column upper bound (PostgreSQL INTEGER). */
 const PRISMA_INT_MAX = 2_147_483_647
 
-export type PointMutationClient = Prisma.TransactionClient | typeof prisma
+type PointMutationClient = Prisma.TransactionClient | typeof prisma
 
 export type PointAccountBalances = {
   balance: number

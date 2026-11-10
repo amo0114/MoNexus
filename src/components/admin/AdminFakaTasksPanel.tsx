@@ -232,7 +232,7 @@ export default function AdminFakaTasksPanel() {
                   </td>
                   <td data-label="操作">
                     <div className="flex flex-wrap gap-1">
-                      {(t.status === 'failed' || t.status === 'cancelled') && (
+                      {(t.allowedActions ? t.allowedActions.includes('retry') : t.status === 'failed' || t.status === 'cancelled') && (
                         <button
                           type="button"
                           className="btn-secondary btn-sm text-xs px-2.5 py-1"
@@ -242,7 +242,7 @@ export default function AdminFakaTasksPanel() {
                           重试开通
                         </button>
                       )}
-                      {t.status === 'succeeded' && t.revokeStatus !== 'succeeded' && (
+                      {(t.allowedActions ? t.allowedActions.includes('revoke') : t.status === 'succeeded' && t.revokeStatus !== 'succeeded') && (
                         <button
                           type="button"
                           className="btn-secondary btn-sm text-xs px-2.5 py-1 text-red-500"

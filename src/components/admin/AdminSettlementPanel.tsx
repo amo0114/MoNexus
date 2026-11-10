@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { DollarSign } from 'lucide-react'
-import { getAdminSettlements, batchSettle } from '../../api/adminMerchant'
+import { getAdminSettlements, batchSettle, previewSettlements } from '../../api/adminMerchant'
 import { getApiErrorMessage } from '../../api/error'
-import { Settlement } from '../../types/merchant'
+import { Settlement, SettlementPreview } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import RegistryPill from '../ui/RegistryPill'
 import ConfirmDialog from '../ui/ConfirmDialog'
@@ -13,6 +13,8 @@ import AdminPagination from './AdminPagination'
 import AdminPanelHeader from './AdminPanelHeader'
 import { blockReasonToUserMessage } from '../../utils/settlementCopy'
 import { formatCommissionRate } from '../../utils/adminRechargeDisplay'
+import AdminSettlementBatches from './AdminSettlementBatches'
+import AdminMerchantRecoveryPanel from './AdminMerchantRecoveryPanel'
 
 interface Props {
   active?: boolean
@@ -36,6 +38,10 @@ export default function AdminSettlementPanel({ active = true }: Props) {
   const [showBatchSettleConfirm, setShowBatchSettleConfirm] = useState(false)
   const [showSelectionDetail, setShowSelectionDetail] = useState(false)
   const [settling, setSettling] = useState(false)
+  const [preview, setPreview] = useState<SettlementPreview | null>(null)
+  const [batchesVersion, setBatchesVersion] = useState(0)
+  // One key per confirmed submission: a retry after a timeout replays the same batch.
+  const requestKeyRef = useRef<string | null>(null)
 
   const settlementsReqSeqRef = useRef(0)
   const headerCheckboxRef = useRef<HTMLInputElement>(null)
@@ -170,27 +176,43 @@ export default function AdminSettlementPanel({ active = true }: Props) {
     0,
   )
 
-  function handleBatchSettleClick() {
+  async function openBatchSettleConfirm() {
     if (selectedSettlementsMap.size === 0) {
       showToast('请选择待结算（pending）记录', 'error')
       return
     }
+    requestKeyRef.current = crypto.randomUUID()
+    setPreview(null)
     setShowBatchSettleConfirm(true)
+    try {
+      setPreview(await previewSettlements(Array.from(selectedSettlementsMap.keys())))
+    } catch (err: any) {
+      showToast(getApiErrorMessage(err, '结算预览失败'), 'error')
+    }
   }
+
+  function handleBatchSettleClick() {
+    void openBatchSettleConfirm()
+  }
+
+  const previewBlocked = preview ? preview.items.filter((item) => !item.payable) : []
 
   async function confirmBatchSettle() {
     if (settling || selectedSettlementsMap.size === 0) return
     setSettling(true)
     const idsToSettle = Array.from(selectedSettlementsMap.keys())
     try {
-      const { settled, creditedTotal } = await batchSettle({
+      const { settled, creditedTotal, batchId } = await batchSettle({
         settlementIds: idsToSettle,
+        requestKey: requestKeyRef.current ?? undefined,
       })
       showToast(
-        `成功结算 ${settled} 笔订单，入账合计 ${creditedTotal ?? pendingSelectedAmount} 积分`,
+        `${batchId ? `批次 #${batchId}：` : ''}成功结算 ${settled} 笔订单，入账合计 ${creditedTotal ?? pendingSelectedAmount} 积分`,
       )
+      requestKeyRef.current = null
       setShowBatchSettleConfirm(false)
       setSelectedSettlementsMap(new Map())
+      setBatchesVersion((v) => v + 1)
       void fetchSettlements(settlementPage, settlementStatusFilter)
     } catch (err: any) {
       showToast(getApiErrorMessage(err, '批量结算失败'), 'error')
@@ -383,6 +405,15 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                     </td>
                     <td className="font-bold text-[var(--color-cta)]" data-label="商家应得积分">
                       {s.settlementAmount.toLocaleString()} 积分
+                      {s.netAmount != null && s.netAmount !== s.settlementAmount && s.status !== 'voided' && (
+                        <div className="text-[11px] font-normal text-[var(--color-danger)]">冲正后 {s.netAmount.toLocaleString()} 积分</div>
+                      )}
+                      {s.credit?.kind === 'batch' && (
+                        <div className="text-[11px] font-normal text-[var(--color-text-muted)]">批次 #{s.credit.batchId}</div>
+                      )}
+                      {s.credit?.kind === 'legacy_incomplete' && (
+                        <div className="text-[11px] font-normal text-[var(--color-text-muted)]">历史入账凭证不完整</div>
+                      )}
                     </td>
                     <td data-label="结算状态">
                       <div className="flex flex-col items-start gap-1">
@@ -424,6 +455,9 @@ export default function AdminSettlementPanel({ active = true }: Props) {
         onPageChange={handleSettlementPageChange}
         testId="admin-settlements-pagination"
       />
+
+      <AdminSettlementBatches active={active} version={batchesVersion} />
+      <AdminMerchantRecoveryPanel active={active} onChanged={() => void fetchSettlements(settlementPage, settlementStatusFilter)} />
 
       {/* 跨页已选结算单明细弹窗 */}
       <Dialog open={showSelectionDetail} onOpenChange={setShowSelectionDetail}>
@@ -478,7 +512,7 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                 type="button"
                 onClick={() => {
                   setShowSelectionDetail(false)
-                  setShowBatchSettleConfirm(true)
+                  void openBatchSettleConfirm()
                 }}
                 className="btn-cta btn-sm text-xs"
               >
@@ -496,8 +530,14 @@ export default function AdminSettlementPanel({ active = true }: Props) {
           if (!open && !settling) setShowBatchSettleConfirm(false)
         }}
         title="批量结算确认"
-        description={`确定对选中的 ${selectedSettlementsMap.size} 笔待结算订单执行批量结算？合计应结金额为 ${pendingSelectedAmount.toLocaleString()} 积分。结算后将真实为对应商户账户入账，不可逆撤回。`}
+        description={
+          previewBlocked.length > 0
+            ? `有 ${previewBlocked.length} 笔当前不可结算（${previewBlocked.map((item) => `#${item.settlementId}：${blockReasonToUserMessage(item.message) ?? '不可结算'}`).join('；')}），请取消选择后重试。`
+            // The preview is advisory; execution re-checks every item under locks.
+            : `确定对选中的 ${selectedSettlementsMap.size} 笔待结算订单执行批量结算？合计应结金额为 ${pendingSelectedAmount.toLocaleString()} 积分（商家结算积分，非现金）。整批全部成功或全部不执行，入账后只能通过售后冲正调整。`
+        }
         confirmLabel={settling ? '结算中…' : `确认结算 (${selectedSettlementsMap.size} 笔)`}
+        confirmDisabled={previewBlocked.length > 0}
         tone="primary"
         loading={settling}
         onConfirm={confirmBatchSettle}

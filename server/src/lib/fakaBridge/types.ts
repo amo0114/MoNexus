@@ -24,6 +24,8 @@ export interface FakaUserSubscriptionSnapshot {
 export type FakaSubscriptionAction = 'new' | 'renew' | 'onetime' | 'reset_traffic' | string
 
 export interface FakaSubscriptionResult {
+  /** Bearer credential: authorized delivery only; never log or expose in lists. */
+  subscribe_url?: string | null
   action?: FakaSubscriptionAction | null
   period?: string | null
   before?: FakaUserSubscriptionSnapshot | null
@@ -31,6 +33,7 @@ export interface FakaSubscriptionResult {
 }
 
 export interface FakaOrderPaidSuccess {
+  subscribe_url?: string | null
   success: true
   trade_no: string | null
   order_no?: string
@@ -56,6 +59,7 @@ export interface FakaOrderPaidFailure {
 export type FakaOrderPaidResponse = FakaOrderPaidSuccess | FakaOrderPaidFailure
 
 export interface FakaOrderStatusSuccess {
+  subscribe_url?: string | null
   success: true
   order_no: string
   status: string

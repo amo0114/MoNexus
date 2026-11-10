@@ -87,6 +87,29 @@ export const adminCreateReconSchema = z.object({
   providerAccountKey: z.string().min(1).max(128).optional(),
   scopeType: z.enum(RECONCILIATION_SCOPE_TYPES).default('provider_query'),
   scopeKey: z.string().min(1).max(128).optional(),
+  periodStart: z.coerce.date().optional(),
+  periodEnd: z.coerce.date().optional(),
+})
+
+const statementBase = {
+  periodStart: z.coerce.date(),
+  periodEnd: z.coerce.date(),
+  // Raw statement text (monexus-statement-v1); bounded by the 1 MB JSON limit.
+  csv: z.string().min(1).max(900_000),
+}
+
+export const adminPreviewStatementSchema = z.object(statementBase).strict()
+
+export const adminImportStatementSchema = z.object({
+  provider: z.enum(PAYMENT_PROVIDER_NAMES),
+  providerAccountKey: z.string().min(1).max(128),
+  ...statementBase,
+}).strict()
+
+export const adminListReconRunsQuerySchema = z.object({
+  provider: z.enum(PAYMENT_PROVIDER_NAMES).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
 
 const amountMinorSchema = z.string().superRefine((value, ctx) => {
@@ -204,6 +227,7 @@ export const adminResolveReconcileSchema = z.object({
 })
 
 export const adminListReconItemsQuerySchema = z.object({
+  runId: z.string().uuid().optional(),
   status: z.enum(RECONCILIATION_ITEM_STATUSES).optional(),
   mismatchType: z.enum(RECONCILIATION_MISMATCH_TYPES).optional(),
   page: z.coerce.number().int().positive().default(1),

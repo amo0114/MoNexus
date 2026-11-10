@@ -63,7 +63,7 @@ test('rejects points importing chatbot but allows chatbot to use points', () => 
 
 test('keeps pure policy dependencies separate from query services', () => {
   const errors = checkBoundaries(new Map([
-    ['server/src/modules/orders/settlementPolicy.ts', "import { normalize } from './fulfillment.js'"],
+    ['server/src/modules/merchantFinance/settlementPolicy.ts', "import { normalize } from '../orders/fulfillment.js'"],
   ]))
   assert.match(errors.join('\n'), /pure rules/)
   assert.match(checkBoundaries(new Map([
@@ -79,4 +79,13 @@ test('rejects static cycles and permits type-only reverse edges', () => {
   assert.match(checkBoundaries(sources).join('\n'), /dependency cycle/)
   sources.set('server/src/lib/b.ts', "import type { A } from './a.js'")
   assert.deepEqual(checkBoundaries(sources), [])
+})
+
+test('only wallet writes point balances and ledger rows', () => {
+  assert.match(checkBoundaries(new Map([
+    ['server/src/modules/orders/service.ts', 'await tx.pointLog.create({ data })'],
+  ])).join('\n'), /outside wallet/)
+  assert.deepEqual(checkBoundaries(new Map([
+    ['server/src/modules/wallet/commands.ts', 'await tx.pointLog.create({ data })'],
+  ])), [])
 })

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { resolvePagination } from '../../lib/pagination.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -5,7 +6,7 @@ import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
-import { creditAvailablePoints, debitAvailablePoints } from '../orders/accounting.js'
+import { accountSources, creditInTx, spendInTx, type WalletContext } from '../wallet/index.js'
 import type { ListUsersQuery } from './schema.js'
 
 export async function listUsers(query: ListUsersQuery = {}) {
@@ -39,6 +40,13 @@ export async function listUsers(query: ListUsersQuery = {}) {
   return { items, total, page, pageSize }
 }
 
+/** Current balance by origin; points are not cash and legacy_unknown stays unknown. */
+export async function getUserPointSources(userId: number) {
+  const account = await prisma.pointAccount.findUnique({ where: { userId }, select: { balance: true, frozenBalance: true } })
+  if (!account) throw notFound('积分账户不存在')
+  return { ...account, sources: await accountSources(prisma, userId) }
+}
+
 export async function adjustUserPoints(
   adminUserId: number,
   targetUserId: number,
@@ -46,16 +54,27 @@ export async function adjustUserPoints(
   amount: number,
   reason: string
 ) {
+  // An operator must not mint or move points for their own account.
+  if (adminUserId === targetUserId) throw badRequest('不能调整自己的积分')
   return prisma.$transaction(async tx => {
     const account = await tx.pointAccount.findUnique({ where: { userId: targetUserId } })
     if (!account) throw notFound('目标用户积分账户不存在')
 
+    const ctx: WalletContext = {
+      operationKey: `admin-adjust:${randomUUID()}`,
+      userId: targetUserId,
+      source: { kind: 'admin_adjustment', id: adminUserId },
+      reasonCode: type === 'add' ? 'admin_credit' : 'admin_debit',
+      actorUserId: adminUserId,
+      // Admin grants keep counting toward growth as before; they are not recharge.
+      log: { reason: `后台调整: ${reason}`, growthEligible: type === 'add' },
+    }
     let newBalance: number
     if (type === 'add') {
-      newBalance = await creditAvailablePoints(tx, targetUserId, amount)
+      newBalance = (await creditInTx(tx, ctx, { amount, origin: 'admin_adjustment' })).balance
     } else {
       try {
-        newBalance = await debitAvailablePoints(tx, targetUserId, amount)
+        newBalance = (await spendInTx(tx, ctx, { amount }))!.balance
       } catch (error) {
         if (error instanceof HttpError && error.code === 'POINT_INSUFFICIENT') {
           throw badRequest('扣除数量不能大于用户当前余额', 'POINT_INSUFFICIENT')
@@ -63,16 +82,6 @@ export async function adjustUserPoints(
         throw error
       }
     }
-
-    await tx.pointLog.create({
-      data: {
-        userId: targetUserId,
-        type: type === 'add' ? 'in' : 'out',
-        amount,
-        balanceAfter: newBalance,
-        reason: `后台调整: ${reason}`,
-      },
-    })
 
     await tx.adminLog.create({
       data: {

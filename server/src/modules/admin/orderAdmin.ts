@@ -103,8 +103,8 @@ export async function getOrderDetail(orderId: number) {
       // P7b：仲裁上下文透出自动开通任务态 + 脱敏诊断码（安全投影）。
       provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
       // Xboard/Faka：只投影任务 id，供前端隐藏平台人工履约入口。
-      fakaBridgeTask: { select: { id: true } },
-      fulfillmentJob: { select: { id: true } },
+      fakaBridgeTask: { select: { id: true, status: true, attempts: true, cancelRequested: true, revokeStatus: true, revokedAt: true, leaseUntil: true } },
+      fulfillmentJob: { select: { id: true, status: true, attempts: true, cancelRequested: true, leaseUntil: true, providerId: true } },
       offer: { select: { externalIntegration: true } },
     },
   })

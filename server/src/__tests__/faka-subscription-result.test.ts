@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { parseStoredStructuredContent } from '../lib/deliveryFields.js'
 import {
   actionLabel,
   buildFakaDeliveryPayload,
@@ -12,6 +13,10 @@ describe('formatTrafficBytes', () => {
     expect(formatTrafficBytes(0)).toBe('0 B')
     expect(formatTrafficBytes(1024)).toBe('1 KB')
     expect(formatTrafficBytes(1073741824)).toBe('1 GB')
+    expect(formatTrafficBytes(100)).toBe('100 B')
+    expect(formatTrafficBytes(100 * 1024 ** 3)).toBe('100 GB')
+    expect(formatTrafficBytes(1000 * 1024 ** 3)).toBe('1000 GB')
+    expect(formatTrafficBytes(1.5 * 1024 ** 3)).toBe('1.5 GB')
   })
 })
 
@@ -98,7 +103,31 @@ describe('extractFakaSubscriptionResult + buildFakaDeliveryPayload', () => {
     expect(payload.content).toContain('流量包开通')
     expect(payload.content).toContain('购买前流量')
     expect(payload.content).toContain('购买后流量')
+    expect(payload.content).toContain('总量 100 GB')
     expect(payload.structuredContent.values.trafficBefore).toContain('剩余')
     expect(payload.structuredContent.values.trafficAfter).toContain('剩余')
+    expect(payload.structuredContent.values.trafficAfter).toBe('剩余 100 GB（总量 100 GB）')
+  })
+
+  it('delivers a masked subscription credential within the stored field contract', () => {
+    const sub = extractFakaSubscriptionResult({ subscription: {
+      action: 'renew', period: 'monthly', subscribe_url: 'https://subscription.example.test/api/subscribe?token=fixture',
+      before: { expired_at: 1800000000, transfer_enable: 50 * 1024 ** 3 },
+      after: { expired_at: 1802592000, transfer_enable: 100 * 1024 ** 3 },
+    } })
+    const payload = buildFakaDeliveryPayload({ tradeNo: 'T3', panelUrl: 'https://panel.example.test', subscription: sub })
+    expect(payload.structuredContent.fields.find(field => field.key === 'subscribeUrl')?.sensitive).toBe(true)
+    expect(parseStoredStructuredContent(payload.structuredContent)?.values.subscribeUrl).toBe(sub?.subscribe_url)
+    expect(payload.content).toContain('复制订阅链接')
+    expect(payload.content).not.toContain('忘记密码')
+    expect(payload.content).not.toContain('https://panel.example.test')
+  })
+
+  it.each(['javascript:alert(1)', 'http://subscription.example.test/token', 'https://user:pass@example.test/', 'https://example.test/\nsecret'])('rejects unsafe subscription URL %s', value => {
+    const sub = extractFakaSubscriptionResult({ action: 'new', subscribe_url: value })
+    expect(sub?.subscribe_url).toBeNull()
+    const payload = buildFakaDeliveryPayload({ tradeNo: 'T4', panelUrl: 'https://panel.example.test', subscription: sub })
+    expect(payload.structuredContent.values.subscribeUrl).toBeUndefined()
+    expect(payload.content).toContain('请勿重复购买')
   })
 })

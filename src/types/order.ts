@@ -91,6 +91,8 @@ export interface UserOrderDetail extends Omit<UserOrderListItem, 'delivery'> {
   canReview?: boolean
   /** 已有未退款的续费单——续费入口应隐藏，指引买家到最新订单操作。 */
   hasActiveRenewal?: boolean
+  /** Points by source that paid this order; refunds return to the same sources. */
+  paymentComposition?: Partial<Record<'recharge' | 'reward' | 'merchant_settlement' | 'admin_adjustment' | 'legacy_unknown', number>> | null
   /** 购买前填写信息：下单时的字段定义与答案快照（仅本人订单详情可见）。 */
   purchaseFormSnapshot?: Array<{ key: string; label: string; type: string }> | null
   purchaseFormAnswers?: Record<string, string> | null

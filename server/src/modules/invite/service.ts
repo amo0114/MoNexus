@@ -8,6 +8,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../lib/httpError.j
 import { generateInviteCode } from '../../lib/inviteCode.js'
 import {
   getCurrentTierConfig,
+  GROWTH_LOG_WHERE,
   resolveTier,
   tierByRank,
   tierLabel,
@@ -92,7 +93,7 @@ function currentInvitePeriod(now: Date) {
 
 async function lifetimeEarnedPoints(client: ConfigClient, userId: number) {
   const result = await client.pointLog.aggregate({
-    where: { userId, type: 'in' },
+    where: { userId, ...GROWTH_LOG_WHERE },
     _sum: { amount: true },
   })
   return result._sum.amount ?? 0

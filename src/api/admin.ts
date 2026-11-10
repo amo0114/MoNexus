@@ -58,6 +58,68 @@ export interface AdminOrderItem {
   fakaBridgeTask?: { id?: number } | null
   /** Server-side external executor marker; task inputs and leases stay private. */
   externalFulfillment?: boolean
+  /** Whitelisted task state for triage (no payloads, SKUs or credentials). */
+  fulfillmentDiagnostics?: {
+    kind: 'xboard' | 'plugin'
+    taskId: number | null
+    status: string
+    attempts: number | null
+    cancelRequested: boolean
+    revokeStatus: string | null
+    revokedAt: string | null
+    leaseActive: boolean
+    providerId?: string
+  } | null
+  /** Actions the fulfillment-review endpoint would accept right now. */
+  fulfillmentReviewActions?: Array<'recheck_cancel' | 'confirm_cancelled'>
+}
+
+export type AfterSalesSourceComposition = Partial<Record<'recharge' | 'reward' | 'merchant_settlement' | 'admin_adjustment' | 'legacy_unknown', number>>
+
+export interface AdminAfterSalesCase {
+  id: number
+  orderId: number
+  kind: 'full_refund'
+  status: 'open' | 'executed' | 'rejected'
+  reason: string
+  evidence: string | null
+  decisionNote: string | null
+  createdAt: string
+  decidedAt: string | null
+  refundOperationId: number | null
+  refundAmount: number
+  paymentComposition: AfterSalesSourceComposition | null
+  settlement: { id: number; status: string; settlementAmount: number; commissionAmount: number; batchId: number | null } | null
+  estimatedShortfall: number | null
+  adjustment: {
+    id: number
+    settlementDelta: number
+    commissionDelta: number
+    clawbackPoints: number
+    recoveryCase: { id: number; amountDue: number; status: string } | null
+  } | null
+  blocker: string | null
+  allowedActions: Array<'execute' | 'reject'>
+}
+
+export async function listAdminOrderAfterSales(orderId: number): Promise<AdminAfterSalesCase[]> {
+  const { data } = await api.get<AdminAfterSalesCase[]>(`/admin/orders/${orderId}/after-sales`)
+  return data
+}
+
+export async function createAdminOrderAfterSales(orderId: number, body: { reason: string; evidence?: string }): Promise<AdminAfterSalesCase> {
+  const { data } = await api.post<AdminAfterSalesCase>(`/admin/orders/${orderId}/after-sales`, body)
+  return data
+}
+
+export async function executeAdminAfterSales(caseId: number, note?: string): Promise<AdminAfterSalesCase> {
+  const { data } = await api.post<AdminAfterSalesCase>(`/admin/after-sales/${caseId}/execute`, note ? { note } : {})
+  return data
+}
+
+export async function rejectAdminAfterSales(caseId: number, note: string): Promise<AdminAfterSalesCase> {
+  const { data } = await api.post<AdminAfterSalesCase>(`/admin/after-sales/${caseId}/reject`, { note })
+  return data
 }
 
 export interface AdminOrderListQuery {
@@ -932,6 +994,8 @@ export interface AdminFakaTask {
     productNameSnapshot: string | null
     user: { id: number; email: string }
   }
+  /** Actions the backend accepts for this task (lease freshness re-checked on use). */
+  allowedActions?: Array<'sync_expiry' | 'retry' | 'revoke'>
 }
 
 export async function getAdminFakaTaskStats(): Promise<{

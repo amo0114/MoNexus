@@ -11,7 +11,8 @@ function user(nickname: string) {
 }
 
 function earn(userId: number, amount: number, createdAt: Date, type = 'in') {
-  return prisma.pointLog.create({ data: { userId, amount, type, createdAt, balanceAfter: 0, reason: 'current board test' } })
+  // Fixtures stand in for reward credits: only growth-eligible 'in' rows rank.
+  return prisma.pointLog.create({ data: { userId, amount, type, createdAt, balanceAfter: 0, reason: 'current board test', growthEligible: type === 'in' } })
 }
 
 describe('current leaderboard — calendar periods including today', () => {

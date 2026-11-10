@@ -504,8 +504,47 @@ export const listSettlementsQuerySchema = z.object({
 })
 
 export const batchSettleSchema = z.object({
-  settlementIds: z.array(z.number().int().positive()).min(1, '至少选择一条结算记录'),
+  settlementIds: z.array(z.number().int().positive()).min(1, '至少选择一条结算记录').max(100, '单批最多结算 100 笔'),
+  // Optional for older clients; only an explicit key makes a retry replay the batch.
+  requestKey: z.string().trim().min(8).max(100).optional(),
 })
+
+export const previewSettlementsSchema = z.object({
+  settlementIds: z.array(z.number().int().positive()).min(1, '至少选择一条结算记录').max(100, '单批最多结算 100 笔'),
+})
+
+export const listSettlementBatchesQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export const listRecoveryCasesQuerySchema = z.object({
+  merchantId: z.coerce.number().int().positive().optional(),
+  status: z.enum(['open', 'closed']).optional(),
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export const createAfterSalesSchema = z.object({
+  reason: z.string().trim().min(1).max(500),
+  evidence: z.string().trim().max(1000).optional(),
+}).strict()
+
+export const decideAfterSalesSchema = z.object({
+  note: z.string().trim().max(500).optional(),
+}).strict()
+
+export const rejectAfterSalesSchema = z.object({
+  note: z.string().trim().min(1).max(500),
+}).strict()
+
+export const merchantRecoveryActionSchema = z.object({
+  kind: z.enum(['wallet_clawback', 'offline_received', 'waived']),
+  amount: z.number().int().positive().max(2_000_000_000),
+  requestKey: z.string().trim().min(8).max(100),
+  evidence: z.string().trim().max(1000).optional(),
+  note: z.string().trim().max(500).optional(),
+}).strict()
 
 export const listFakaTasksQuerySchema = z.object({
   status: z

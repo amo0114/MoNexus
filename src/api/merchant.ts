@@ -13,7 +13,8 @@ import {
   OfferWriteRequest,
   Settlement,
   ListEnvelope,
-  MerchantWebhookConfig
+  MerchantWebhookConfig,
+  MerchantFinanceSummary,
 } from '../types/merchant'
 
 export async function applyMerchant(payload: ApplyMerchantRequest): Promise<Merchant> {
@@ -242,6 +243,12 @@ export async function rejectOrder(
 
 export async function getMerchantSettlements(params?: { page?: number; pageSize?: number; status?: string }): Promise<Settlement[]> {
   const { data } = await api.get<Settlement[]>('/merchant/settlements', { params })
+  return data
+}
+
+/** Earnings in one vocabulary: net earned, settleable, credited, clawed back, outstanding. */
+export async function getMerchantFinanceSummary(): Promise<MerchantFinanceSummary> {
+  const { data } = await api.get<MerchantFinanceSummary>('/merchant/finance/summary')
   return data
 }
 
