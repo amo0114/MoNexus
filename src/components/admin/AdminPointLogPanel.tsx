@@ -3,8 +3,7 @@ import { Activity, RefreshCw, RotateCcw, Search } from 'lucide-react'
 import {
   listAdminPointLogs,
   type AdminPointLogItem,
-  type ListAdminPointLogsParams,
-} from '../../api/adminPointLogs'
+  type ListAdminPointLogsParams, getAdminUserPointSources, type AdminUserPointSources } from '../../api/adminPointLogs'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import AdminPagination from './AdminPagination'
@@ -41,6 +40,14 @@ export interface AdminPointLogPanelProps {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+const POINT_ORIGIN_LABELS: Record<string, string> = {
+  recharge: '充值',
+  reward: '奖励',
+  merchant_settlement: '商家结算',
+  admin_adjustment: '后台调整',
+  legacy_unknown: '历史未知来源',
+}
+
 export default function AdminPointLogPanel({ active = true }: AdminPointLogPanelProps) {
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminPointLogItem[]>([])
@@ -60,6 +67,7 @@ export default function AdminPointLogPanel({ active = true }: AdminPointLogPanel
   const [userIdError, setUserIdError] = useState<string | null>(null)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [dateError, setDateError] = useState<string | null>(null)
+  const [sources, setSources] = useState<AdminUserPointSources | null>(null)
 
   // Active filter snapshot & race condition sequence ref
   const appliedFiltersRef = useRef<PointLogFilterSnapshot>({})
@@ -101,6 +109,12 @@ export default function AdminPointLogPanel({ active = true }: AdminPointLogPanel
 
       const data = await listAdminPointLogs(queryParams)
       if (seq !== reqSeqRef.current) return
+      setSources(null)
+      if (queryParams.userId) {
+        getAdminUserPointSources(queryParams.userId)
+          .then(result => { if (seq === reqSeqRef.current) setSources(result) })
+          .catch(() => undefined)
+      }
 
       setItems(data.items)
       setTotal(data.total)
@@ -202,6 +216,14 @@ export default function AdminPointLogPanel({ active = true }: AdminPointLogPanel
 
   return (
     <div className="space-y-4" data-testid="admin-point-log-panel">
+      {sources && (
+        <div className="p-3 rounded-xl border border-[var(--color-border)] text-xs flex flex-wrap gap-x-4 gap-y-1" data-testid="admin-point-sources">
+          <span className="font-semibold">可用 {sources.balance} / 冻结 {sources.frozenBalance}</span>
+          {sources.sources.map(source => (
+            <span key={source.origin}>{POINT_ORIGIN_LABELS[source.origin] ?? source.origin}：可用 {source.available}，冻结 {source.frozen}</span>
+          ))}
+        </div>
+      )}
       <AdminPanelHeader
         title="积分流水"
         description="全平台用户积分收支流水记录与实时余额跟踪"

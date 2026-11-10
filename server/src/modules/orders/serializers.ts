@@ -228,6 +228,57 @@ function withProvisionStatusForBuyer<T extends Record<string, unknown>>(order: T
  * and current Offer bindings become a boolean, without task inputs or leases.
  */
 type FakaBridgeTaskShape = { id?: unknown } & Record<string, unknown>
+type TaskDiagnosticsShape = {
+  id?: number
+  status?: string
+  attempts?: number
+  cancelRequested?: boolean
+  revokeStatus?: string | null
+  revokedAt?: Date | null
+  leaseUntil?: Date | null
+  providerId?: string
+}
+
+/**
+ * Whitelisted task state for staff triage. Payloads, SKUs, emails, lease
+ * tokens and supplier credentials never leave the task row.
+ */
+function taskDiagnostics(kind: 'xboard' | 'plugin', task: TaskDiagnosticsShape | null | undefined) {
+  if (!task || task.status === undefined) return null
+  return {
+    kind,
+    taskId: task.id ?? null,
+    status: task.status,
+    attempts: task.attempts ?? null,
+    cancelRequested: task.cancelRequested ?? false,
+    revokeStatus: task.revokeStatus ?? null,
+    revokedAt: task.revokedAt ?? null,
+    leaseActive: task.leaseUntil != null && task.leaseUntil > new Date(),
+    ...(task.providerId ? { providerId: task.providerId } : {}),
+  }
+}
+
+/**
+ * Mirrors admin/fulfillmentReview.ts guards so the page shows only actions the
+ * backend can accept. "recheck_cancel" re-assesses cancellation; it never
+ * re-runs delivery.
+ */
+export function fulfillmentReviewActions(order: {
+  status?: unknown
+  delivery?: { id?: unknown } | null
+  cancelRequestedAt?: unknown
+  fakaBridgeTask?: TaskDiagnosticsShape | null
+  fulfillmentJob?: TaskDiagnosticsShape | null
+  provisionTask?: { status?: string } | null
+}): Array<'recheck_cancel' | 'confirm_cancelled'> {
+  if (!['pending', 'processing'].includes(String(order.status)) || order.delivery?.id) return []
+  if (!order.cancelRequestedAt && !order.fakaBridgeTask && !order.fulfillmentJob && !order.provisionTask) return []
+  const tasks = [order.fakaBridgeTask, order.fulfillmentJob]
+  const canConfirm = Boolean(order.cancelRequestedAt) && !order.fakaBridgeTask
+    && order.fulfillmentJob?.status !== 'succeeded' && order.provisionTask?.status !== 'succeeded'
+    && !tasks.some(task => task?.leaseUntil != null && task.leaseUntil > new Date())
+  return canConfirm ? ['recheck_cancel', 'confirm_cancelled'] : ['recheck_cancel']
+}
 type ProductWithCatalogLink = {
   externalCatalogLink?: unknown
 } & Record<string, unknown>
@@ -235,7 +286,7 @@ type ProductWithCatalogLink = {
 function withExternalFulfillmentForStaff<T extends Record<string, unknown>>(order: T) {
   const raw = order as T & {
     fakaBridgeTask?: FakaBridgeTaskShape | null
-    fulfillmentJob?: { id: number } | null
+    fulfillmentJob?: ({ id: number } & TaskDiagnosticsShape) | null
     offer?: { externalIntegration: string | null } | null
     product?: ProductWithCatalogLink | null
   }
@@ -255,6 +306,13 @@ function withExternalFulfillmentForStaff<T extends Record<string, unknown>>(orde
   return {
     ...rest,
     externalFulfillment: Boolean(offer?.externalIntegration || fulfillmentJob || fakaBridgeTask),
+    fulfillmentDiagnostics: taskDiagnostics('xboard', fakaBridgeTask as TaskDiagnosticsShape | null)
+      ?? taskDiagnostics('plugin', fulfillmentJob as TaskDiagnosticsShape | null),
+    fulfillmentReviewActions: fulfillmentReviewActions({
+      ...(raw as Record<string, unknown>),
+      fakaBridgeTask: fakaBridgeTask as TaskDiagnosticsShape | null,
+      fulfillmentJob: fulfillmentJob as TaskDiagnosticsShape | null,
+    } as Parameters<typeof fulfillmentReviewActions>[0]),
     ...(product !== undefined ? { product: nextProduct } : {}),
     ...(fakaBridgeTask !== undefined ? { fakaBridgeTask: projectedTask } : {}),
   }

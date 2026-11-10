@@ -4,6 +4,11 @@ import AdminSettlementPanel from './AdminSettlementPanel'
 import * as adminMerchantApi from '../../api/adminMerchant'
 
 vi.mock('../../api/adminMerchant', () => ({
+  previewSettlements: vi.fn((settlementIds: number[]) => Promise.resolve({ items: [], payableCount: settlementIds.length, payableTotal: 0 })),
+  getSettlementBatches: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 10 })),
+  getSettlementBatch: vi.fn(),
+  getMerchantRecoveryCases: vi.fn(() => Promise.resolve({ items: [], total: 0, page: 1, pageSize: 50 })),
+  actOnMerchantRecovery: vi.fn(),
   getAdminSettlements: vi.fn(),
   batchSettle: vi.fn(),
 }))

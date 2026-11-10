@@ -137,3 +137,14 @@ export async function listAdminPointLogs(
 
   return data
 }
+
+export interface AdminUserPointSources {
+  balance: number
+  frozenBalance: number
+  sources: Array<{ origin: string; available: number; frozen: number; issued: number }>
+}
+
+export async function getAdminUserPointSources(userId: number): Promise<AdminUserPointSources> {
+  const { data } = await api.get<AdminUserPointSources>(`/admin/users/${userId}/point-sources`)
+  return data
+}

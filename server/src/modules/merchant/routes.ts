@@ -95,6 +95,8 @@ router.post('/orders/:id/fulfillment/unfulfillable', validate({ params: idParamS
 
 router.get('/settlements', validate({ query: merchantListQuerySchema }), controller.listSettlements)
 router.get('/stats', controller.stats)
+router.get('/finance/summary', controller.financeSummary)
+router.get('/finance/entries', validate({ query: merchantListQuerySchema }), controller.financeEntries)
 
 // P7b：自动开通 webhook 配置（secret 明文仅在 PUT 响应一次性返回）
 router.get('/webhook-config', controller.getWebhookConfig)

@@ -16,6 +16,7 @@ export default function ConfirmDialog({
   tone = 'danger',
   loading = false,
   loadingLabel = '处理中…',
+  confirmDisabled = false,
   onConfirm,
   testId,
   confirmTestId = 'confirm-dialog-confirm',
@@ -30,6 +31,7 @@ export default function ConfirmDialog({
   tone?: 'danger' | 'primary'
   loading?: boolean
   loadingLabel?: string
+  confirmDisabled?: boolean
   onConfirm: () => void
   testId?: string
   confirmTestId?: string
@@ -74,7 +76,7 @@ export default function ConfirmDialog({
                 ? 'btn-secondary px-4 py-2 text-sm border-[var(--color-danger)] text-[var(--color-danger)]'
                 : 'btn-primary px-4 py-2 text-sm'
             }
-            disabled={loading}
+            disabled={loading || confirmDisabled}
             onClick={onConfirm}
             data-testid={confirmTestId}
           >

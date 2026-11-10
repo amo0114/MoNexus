@@ -132,6 +132,22 @@ function formatOrderDate(iso?: string | null) {
   return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** Buyer-facing source wording: only recharge vs reward is meaningful to a buyer. */
+function paymentSourceText(composition: UserOrderDetail['paymentComposition']): string | null {
+  if (!composition) return null
+  const recharge = composition.recharge ?? 0
+  const reward = composition.reward ?? 0
+  const other = Object.entries(composition)
+    .filter(([origin]) => origin !== 'recharge' && origin !== 'reward')
+    .reduce((sum, [, points]) => sum + (points ?? 0), 0)
+  const parts = [
+    recharge ? `充值积分 ${recharge}` : null,
+    reward ? `奖励积分 ${reward}` : null,
+    other ? `其他积分 ${other}` : null,
+  ].filter(Boolean)
+  return parts.length > 1 || (parts.length === 1 && !other) ? parts.join('，') : null
+}
+
 export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
   const navigate = useNavigate()
   const isMobileViewport = useIsMobileViewport()
@@ -331,6 +347,11 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 <span>
                   实付 <strong className="text-[var(--color-cta)] font-semibold">{order.price}</strong> 积分
                 </span>
+                {paymentSourceText(order.paymentComposition) && (
+                  <span className="text-[var(--color-text-muted)]" data-testid="order-payment-sources">
+                    （{paymentSourceText(order.paymentComposition)}）
+                  </span>
+                )}
               </>
             )}
             {order.createdAt && (

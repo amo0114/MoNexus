@@ -346,22 +346,33 @@ export async function adminListEvents(query: {
   }
 }
 
-export async function adminListReconRuns() {
-  const items = await prisma.reconciliationRun.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 50,
-    include: { items: true },
-  })
-  return { items: items.map(serializeRun) }
+export async function adminListReconRuns(query: { provider?: string; page?: number; pageSize?: number } = {}) {
+  const page = query.page ?? 1
+  const pageSize = query.pageSize ?? 20
+  const where = query.provider ? { provider: query.provider } : {}
+  const [total, items] = await prisma.$transaction([
+    prisma.reconciliationRun.count({ where }),
+    prisma.reconciliationRun.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      // Items are paged separately (runId filter); runs carry a short preview.
+      include: { items: { take: 20, orderBy: { createdAt: 'asc' } } },
+    }),
+  ])
+  return { page, pageSize, total, items: items.map(serializeRun) }
 }
 
 export async function adminListReconItems(query: {
   page: number
   pageSize: number
+  runId?: string
   status?: ReconciliationItemStatus
   mismatchType?: ReconciliationMismatchType
 }) {
   const where = {
+    ...(query.runId ? { reconciliationRunId: query.runId } : {}),
     ...(query.status ? { status: query.status } : {}),
     ...(query.mismatchType ? { mismatchType: query.mismatchType } : {}),
   }

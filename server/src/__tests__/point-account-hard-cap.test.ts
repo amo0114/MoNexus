@@ -12,7 +12,7 @@ import {
   releaseHeldPoints,
   POINT_ACCOUNT_HARD_CAP,
   classifyPointAccountWriteError,
-} from '../modules/points/checkedMutation.js'
+} from '../modules/wallet/balance.js'
 import { checkin } from '../modules/points/service.js'
 import {
   creditPointsForPromotionRefund,
@@ -316,16 +316,16 @@ describe('PointAccount hard-cap mutations', () => {
   it('fails promotion refund at the cap and still charges a normal debit', async () => {
     const merchant = await userWithBalances(CAP)
     const before = await snapshot(merchant.id)
-    await expect(prisma.$transaction(tx => creditPointsForPromotionRefund(tx, merchant.id, 1)))
+    await expect(prisma.$transaction(tx => creditPointsForPromotionRefund(tx, 1, merchant.id, 1)))
       .rejects.toSatisfy(
         (error: unknown) => error instanceof HttpError && error.code === 'POINT_BALANCE_HARD_CAP',
       )
     expect(await snapshot(merchant.id)).toEqual(before)
 
     const payer = await userWithBalances(500)
-    const charged = await prisma.$transaction(tx => debitPointsForPromotionCharge(tx, payer.id, 120))
+    const charged = await prisma.$transaction(tx => debitPointsForPromotionCharge(tx, 1, payer.id, 120))
     expect(charged).toMatchObject({ ok: true, balanceAfter: 380 })
-    const insufficient = await prisma.$transaction(tx => debitPointsForPromotionCharge(tx, payer.id, 10_000))
+    const insufficient = await prisma.$transaction(tx => debitPointsForPromotionCharge(tx, 2, payer.id, 10_000))
     expect(insufficient).toMatchObject({ ok: false, balance: 380 })
     expect(await snapshot(payer.id)).toMatchObject({ balance: 380, frozenBalance: 0 })
   })

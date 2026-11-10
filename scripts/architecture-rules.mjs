@@ -36,7 +36,7 @@ const lib = 'server/src/lib/'
 const facades = ['admin', 'merchant', 'auth', 'recharge', 'fakaBridge'].map(name => `${modules}${name}/service.ts`)
 facades.push(`${modules}recharge/adminService.ts`)
 const pureRules = new Set([
-  `${modules}orders/statusPolicy.ts`, `${modules}orders/settlementPolicy.ts`,
+  `${modules}orders/statusPolicy.ts`, `${modules}merchantFinance/settlementPolicy.ts`,
   `${modules}catalog/offerPolicy.ts`, `${lib}paginationPolicy.ts`, `${lib}businessTime.ts`,
 ])
 const pureDependencies = new Set([...pureRules, `${lib}httpError.ts`, `${lib}businessRegistry.ts`])
@@ -58,10 +58,18 @@ function resolveSource(file, specifier, sources) {
   return [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`].find(target => sources.has(target)) ?? `${base}.ts`
 }
 
+// wallet is the single writer of real balances, lots, allocations and PointLog
+// rows; the dev seed is not financial history and is the only exception.
+const walletWrites = /\.pointLog\.create(?:Many)?\(|\.pointAccount\.(?:update|updateMany|upsert)\(|UPDATE\s+"PointAccount"|\.pointLot\.(?:create|update|delete)|\.walletAllocation\.(?:create|update|delete)|\.walletOperation\.(?:create|update|delete)/
+const walletOwners = [`${modules}wallet/`, 'server/src/prisma/seed.ts']
+
 export function checkBoundaries(sources) {
   const failures = []
   const graph = new Map([...sources.keys()].map(file => [file, []]))
   for (const [file, source] of sources) {
+    if (file.startsWith('server/src/') && !walletOwners.some(owner => file.startsWith(owner)) && walletWrites.test(source)) {
+      failures.push(`${file} writes point balances or ledger rows outside wallet`)
+    }
     for (const dependency of readDependencies(source, file)) {
       const target = resolveSource(file, dependency.specifier, sources)
       const fail = message => failures.push(`${file}:${dependency.line} ${message}: ${dependency.specifier}`)

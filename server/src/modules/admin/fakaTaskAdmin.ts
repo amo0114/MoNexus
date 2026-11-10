@@ -7,6 +7,24 @@ import { syncFakaExpiresAtFromRemote, processFakaBridgeTask, processFakaRevokeTa
 
 // ---- FakaBridge task ops (admin MFA) ----
 
+/**
+ * The actions retry/revoke would accept (lease freshness is re-checked when the
+ * action runs). The page renders these instead of re-deriving the rules.
+ */
+export function fakaTaskAllowedActions(
+  task: { status: string; revokeStatus: string | null; cancelRequested: boolean; xboardTradeNo: string | null },
+  orderStatus: string,
+): Array<'sync_expiry' | 'retry' | 'revoke'> {
+  const actions: Array<'sync_expiry' | 'retry' | 'revoke'> = []
+  if (task.status === 'succeeded' && orderStatus === 'delivered') actions.push('sync_expiry')
+  else if ((task.status === 'failed' || task.status === 'cancelled')
+    && !task.cancelRequested && orderStatus !== 'refunded' && orderStatus !== 'closed') actions.push('retry')
+  const revocable = task.status === 'succeeded' || task.status === 'needs_reconcile'
+    || (task.status === 'failed' && Boolean(task.xboardTradeNo)) || task.cancelRequested
+  if (revocable && task.revokeStatus !== 'succeeded') actions.push('revoke')
+  return actions
+}
+
 export async function listFakaBridgeTasks(query: {
   status?: string
   revokeStatus?: string
@@ -62,6 +80,7 @@ export async function listFakaBridgeTasks(query: {
       completedAt: t.completedAt,
       nextAttemptAt: t.nextAttemptAt,
       order: t.order,
+      allowedActions: fakaTaskAllowedActions(t, t.order.status),
     })),
     total,
     page,

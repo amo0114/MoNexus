@@ -2,11 +2,15 @@ import type { Prisma } from '@prisma/client'
 import { conflict, forbidden, notFound } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
 import {
-  consumeHeldPoints,
-  creditAvailablePoints,
-  holdAvailablePoints,
-  releaseHeldPoints,
-} from '../../points/checkedMutation.js'
+  findOperationByKey,
+  lockAccountsInTx,
+  refundInTx,
+  releaseInTx,
+  reserveInTx,
+  reverseReservedInTx,
+  type WalletContext,
+} from '../../wallet/index.js'
+import { rechargeCreditWalletKey } from '../../recharge/credit.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 import type { PaymentRecoveryCaseStatus, ReconciliationMismatchType } from '../../recharge/types.js'
 import { writeOpenReconItem } from '../events/applyConfirmedPayment.js'
@@ -21,6 +25,29 @@ const DISPUTE_BLOCKING_REFUND = ['requested', 'points_held', 'processing', 'manu
 
 class DisputeCreditCapExceeded extends Error {
   constructor(readonly rechargeOrderId: string) { super('DISPUTE_CREDIT_CAP_EXCEEDED') }
+}
+
+const disputeWalletKey = (disputeId: string, step: 'reserve' | 'reversal' | 'release' | 'restore') =>
+  `payment-dispute:${disputeId}:${step}`
+
+function disputeCtx(userId: number, disputeId: string, step: 'reserve' | 'reversal' | 'release' | 'restore', reason: string, actorUserId?: number | null): WalletContext {
+  return {
+    operationKey: disputeWalletKey(disputeId, step),
+    userId,
+    source: { kind: 'payment_dispute', id: disputeId },
+    reasonCode: `payment_dispute_${step}`,
+    actorUserId,
+    log: { reason },
+  }
+}
+
+/** Restore a consumed dispute hold to the lots it was taken from (pre-wallet: legacy_unknown). */
+async function restoreConsumedHold(tx: Prisma.TransactionClient, userId: number, disputeId: string, points: number, reason: string, actorUserId?: number | null) {
+  const restored = await refundInTx(tx, disputeCtx(userId, disputeId, 'restore', reason, actorUserId), {
+    originalKey: disputeWalletKey(disputeId, 'reversal'),
+    legacyAmount: points,
+  })
+  return restored.pointLogId!
 }
 
 function refundBlocksDispute(refund: { status: string } | null) {
@@ -294,16 +321,13 @@ export async function openPaymentDispute(input: {
       return sum + (row.status === 'recovered' && row.pointsToRecover > ledgerAndHold ? row.pointsToRecover : ledgerAndHold)
     }, 0n)
     if (committed + recoverPoints > credit.points) throw new DisputeCreditCapExceeded(order.id)
-    await tx.$queryRaw`SELECT "userId" FROM "PointAccount" WHERE "userId" = ${order.userId} FOR UPDATE`
+    await lockAccountsInTx(tx, [order.userId])
     const account = await tx.pointAccount.findUniqueOrThrow({ where: { userId: order.userId } })
     const pointsToRecover = Number(recoverPoints)
     if (!Number.isSafeInteger(pointsToRecover) || pointsToRecover <= 0) {
       throw conflict('争议追回积分不合法')
     }
     const holdPoints = Math.min(account.balance, pointsToRecover)
-    if (holdPoints > 0) {
-      await holdAvailablePoints(tx, order.userId, holdPoints)
-    }
 
     const dispute = await tx.paymentDispute.create({
       data: {
@@ -323,6 +347,13 @@ export async function openPaymentDispute(input: {
     recordPaymentDispute(input.provider, 'open')
 
     if (holdPoints > 0) {
+      // A chargeback is a debt: the disputed recharge's own lot is frozen first,
+      // the remainder from other lots; allocations record exactly which.
+      const creditOp = await findOperationByKey(tx, rechargeCreditWalletKey(order.id))
+      await reserveInTx(tx, disputeCtx(order.userId, dispute.id, 'reserve', '支付争议冻结积分'), {
+        amount: holdPoints,
+        preferSourceOperationIds: creditOp ? [creditOp.id] : [],
+      })
       await tx.pointHold.create({
         data: {
           userId: order.userId,
@@ -380,7 +411,7 @@ async function lockDisputeCase(tx: Prisma.TransactionClient, disputeId: string) 
     include: { recoveryCase: true },
   })
   if (!dispute || !dispute.recoveryCase) return null
-  await tx.$queryRaw`SELECT "userId" FROM "PointAccount" WHERE "userId" = ${dispute.recoveryCase.userId} FOR UPDATE`
+  await lockAccountsInTx(tx, [dispute.recoveryCase.userId])
   const hold = await tx.pointHold.findUnique({
     where: { sourceType_sourceId: { sourceType: 'payment_dispute', sourceId: dispute.id } },
   })
@@ -393,14 +424,21 @@ async function transitionHold(tx: Prisma.TransactionClient, holdId: string, from
 }
 
 /** Consumes the active hold and records the ledger row; returns its PointLog id. */
-async function consumeDisputeHold(tx: Prisma.TransactionClient, userId: number, hold: { id: string; points: bigint }) {
-  const points = Number(hold.points)
-  const consumed = await consumeHeldPoints(tx, userId, points)
-  await transitionHold(tx, hold.id, 'active', 'consumed')
-  const log = await tx.pointLog.create({
-    data: { userId, type: 'out', amount: points, balanceAfter: consumed.balance, reason: '支付争议扣回' },
+async function consumeDisputeHold(tx: Prisma.TransactionClient, userId: number, hold: { id: string; sourceId: string; points: bigint }) {
+  const consumed = await reverseReservedInTx(tx, disputeCtx(userId, hold.sourceId, 'reversal', '支付争议扣回'), {
+    reserveKey: disputeWalletKey(hold.sourceId, 'reserve'),
+    legacyAmount: Number(hold.points),
   })
-  return log.id
+  await transitionHold(tx, hold.id, 'active', 'consumed')
+  return consumed.pointLogId!
+}
+
+async function releaseDisputeHold(tx: Prisma.TransactionClient, userId: number, hold: { id: string; sourceId: string; points: bigint }, actorUserId?: number | null) {
+  await releaseInTx(tx, disputeCtx(userId, hold.sourceId, 'release', '支付争议释放冻结积分', actorUserId), {
+    reserveKey: disputeWalletKey(hold.sourceId, 'reserve'),
+    legacyAmount: Number(hold.points),
+  })
+  await transitionHold(tx, hold.id, 'active', 'released')
 }
 
 async function transitionRecoveryCase(
@@ -438,18 +476,13 @@ export async function resolveDisputeOutcome(input: {
     if (input.outcome === 'won') {
       let restoredPointLogId: number | undefined
       if (hold?.status === 'active') {
-        await releaseHeldPoints(tx, recovery.userId, Number(hold.points))
-        await transitionHold(tx, hold.id, 'active', 'released')
+        await releaseDisputeHold(tx, recovery.userId, hold, input.actorUserId)
       }
       // An operator may have consumed the hold before the provider verdict.
       // A subsequent win must restore the real debit, rather than just relabel it.
       if (hold?.status === 'consumed') {
-        const points = Number(hold.points)
-        const credited = await creditAvailablePoints(tx, recovery.userId, points)
+        restoredPointLogId = await restoreConsumedHold(tx, recovery.userId, hold.sourceId, Number(hold.points), '支付争议胜诉恢复', input.actorUserId)
         await transitionHold(tx, hold.id, 'consumed', 'released')
-        const log = await tx.pointLog.create({ data: { userId: recovery.userId, type: 'refund',
-          amount: points, balanceAfter: credited.balance, reason: '支付争议胜诉恢复' } })
-        restoredPointLogId = log.id
       }
       await tx.accountRestriction.updateMany({
         where: { sourceType: 'payment_dispute', sourceId: dispute.id, status: 'active' },
@@ -519,17 +552,11 @@ export async function closeRecoveryCase(input: {
     let consumedPointLogId: number | undefined
     let restoredPointLogId: number | undefined
     if (input.status === 'restored' && hold?.status === 'active') {
-      await releaseHeldPoints(tx, recovery.userId, Number(hold.points))
-      await transitionHold(tx, hold.id, 'active', 'released')
+      await releaseDisputeHold(tx, recovery.userId, hold, input.actorUserId)
     }
     if (input.status === 'restored' && hold?.status === 'consumed') {
-      const points = Number(hold.points)
-      const credited = await creditAvailablePoints(tx, recovery.userId, points)
+      restoredPointLogId = await restoreConsumedHold(tx, recovery.userId, hold.sourceId, Number(hold.points), '支付争议恢复', input.actorUserId)
       await transitionHold(tx, hold.id, 'consumed', 'released')
-      const log = await tx.pointLog.create({
-        data: { userId: recovery.userId, type: 'refund', amount: points, balanceAfter: credited.balance, reason: '支付争议恢复' },
-      })
-      restoredPointLogId = log.id
     }
     if ((input.status === 'recovered' || input.status === 'written_off') && hold?.status === 'active') {
       consumedPointLogId = await consumeDisputeHold(tx, recovery.userId, hold)

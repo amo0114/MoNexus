@@ -11,6 +11,7 @@ import type { PaymentProviderName, ReconciliationScopeType } from '../../recharg
 import { PAYMENT_PROVIDER_NAMES } from '../../recharge/types.js'
 import { providerEnvironment } from '../../recharge/gates.js'
 import { recordAmountMismatch, recordReconciliationMismatch } from '../metrics.js'
+import { parseStatementCsv } from './statementImport.js'
 
 const TX = { timeout: 20_000, maxWait: 5_000 } as const
 
@@ -39,6 +40,7 @@ export async function createReconciliationRun(input: {
       currency: 'CNY',
       paymentMethod: 'card',
     })).providerAccountKey
+  if (input.scopeType === 'statement') throw conflict('账单对账请使用账单导入')
   const scopeKey = input.scopeKey ?? `${input.scopeType}:${new Date().toISOString().slice(0, 10)}:${randomUUID()}`
 
   const run = await prisma.reconciliationRun.upsert({
@@ -67,154 +69,131 @@ export async function createReconciliationRun(input: {
   return executeReconciliationRun(run.id)
 }
 
-export async function executeReconciliationRun(runId: string) {
+/**
+ * Preview a statement file: what would be matched, rejected and deduplicated.
+ * Nothing is stored; the import call re-parses the same bytes.
+ */
+export function previewStatementImport(input: { csv: string; periodStart: Date; periodEnd: Date }) {
+  if (input.periodEnd <= input.periodStart) throw conflict('账单区间无效')
+  const parsed = parseStatementCsv(input.csv, { start: input.periodStart, end: input.periodEnd })
+  return {
+    formatVersion: parsed.formatVersion,
+    sha256: parsed.sha256,
+    validRows: parsed.entries.length,
+    invalidRows: parsed.invalid,
+    duplicateLines: parsed.duplicates,
+    totals: parsed.totals,
+  }
+}
+
+/**
+ * Import a statement as a run keyed by its SHA-256: the same file for the same
+ * account/environment maps to the same run, so a retry resumes it instead of
+ * producing a second set of items. The raw file is not retained.
+ */
+export async function importStatement(input: {
+  provider: string
+  providerAccountKey: string
+  periodStart: Date
+  periodEnd: Date
+  csv: string
+  createdByUserId: number
+}) {
+  const providerName = asProviderName(input.provider)
+  if (input.periodEnd <= input.periodStart) throw conflict('账单区间无效')
+  const parsed = parseStatementCsv(input.csv, { start: input.periodStart, end: input.periodEnd })
+  if (parsed.invalid.length > 0) throw conflict(`账单存在 ${parsed.invalid.length} 行无效数据，请先修正`)
+  if (parsed.entries.length === 0) throw conflict('账单没有可导入的行')
+  const environment = providerEnvironment()
+  const scopeKey = `sha256:${parsed.sha256}`
+  const run = await prisma.reconciliationRun.upsert({
+    where: {
+      provider_providerAccountKey_environment_scopeType_scopeKey: {
+        provider: providerName,
+        providerAccountKey: input.providerAccountKey,
+        environment,
+        scopeType: 'statement',
+        scopeKey,
+      },
+    },
+    create: {
+      provider: providerName,
+      providerAccountKey: input.providerAccountKey,
+      environment,
+      scopeType: 'statement',
+      scopeKey,
+      periodStart: input.periodStart,
+      periodEnd: input.periodEnd,
+      sourceSha256: parsed.sha256,
+      status: 'pending',
+      createdByUserId: input.createdByUserId,
+    },
+    update: {},
+  })
+  return executeReconciliationRun(run.id, { entries: parsed.entries, formatVersion: parsed.formatVersion })
+}
+
+type ReconEntry = {
+  providerEntryKey: string
+  providerPaymentId?: string | null
+  status: string
+  amountMinor: bigint
+  currency: string
+}
+
+type StatementSource = 'provider_api' | 'imported_file' | 'unsupported'
+
+export async function executeReconciliationRun(
+  runId: string,
+  statement?: { entries: ReconEntry[]; formatVersion: string },
+) {
   const run = await prisma.reconciliationRun.findUnique({ where: { id: runId } })
   if (!run) throw notFound('对账批次不存在')
+  if (run.scopeType === 'statement' && !statement) throw conflict('账单对账需重新上传原账单文件')
   const claimed = await prisma.reconciliationRun.updateMany({
     where: { id: runId, status: { in: ['pending', 'failed'] } },
     data: { status: 'running', startedAt: new Date(), lastErrorCode: null },
   })
   if (claimed.count !== 1 && run.status !== 'running') {
-    return serializeRun(await prisma.reconciliationRun.findUniqueOrThrow({ where: { id: runId }, include: { items: true } }))
+    return serializeRun(await prisma.reconciliationRun.findUniqueOrThrow({ where: { id: runId }, include: { items: { take: RUN_ITEM_PREVIEW } } }))
   }
 
   try {
     const adapter = getHistoricalProvider(asProviderName(run.provider))
     let itemCount = 0
     let mismatchCount = 0
+    let providerEntries = 0
 
-    if (adapter.listReconciliationEntries) {
-      for await (const entry of adapter.listReconciliationEntries({
+    // Only rows the provider itself listed may drive a payment fact directly;
+    // an uploaded file only opens items, compensated through a fresh query.
+    let source: StatementSource
+    let entries: AsyncIterable<ReconEntry> | Iterable<ReconEntry> | null
+    if (statement) {
+      source = 'imported_file'
+      entries = statement.entries
+    } else if (adapter.listReconciliationEntries) {
+      source = 'provider_api'
+      entries = adapter.listReconciliationEntries({
         providerAccountKey: run.providerAccountKey,
         environment: run.environment as 'sandbox' | 'live',
         periodStart: run.periodStart ?? undefined,
         periodEnd: run.periodEnd ?? undefined,
-      })) {
+      })
+    } else {
+      source = 'unsupported'
+      entries = null
+    }
+    if (entries) {
+      for await (const entry of entries) {
+        providerEntries += 1
         itemCount += 1
-        const attempt = entry.providerPaymentId
-          ? await prisma.paymentAttempt.findFirst({
-            where: {
-              provider: run.provider,
-              providerAccountKey: run.providerAccountKey,
-              providerPaymentId: entry.providerPaymentId,
-            },
-            include: { paymentIntent: { include: { rechargeOrder: true } } },
-          })
-          : null
-        const order = attempt?.paymentIntent.rechargeOrder
-        const expectedProviderAmountMinor = attempt?.expectedProviderAmountMinor ?? order?.amountMinor ?? null
-        const quotedAmountMinor = order?.amountMinor ?? null
-        const providerPaid = entry.status === 'succeeded' || entry.status === 'paid'
-        if (providerPaid && (!order || !['paid', 'credited', 'refund_pending', 'refunded'].includes(order.status))) {
-          mismatchCount += 1
-          await upsertItem(run.id, {
-            providerEntryKey: entry.providerEntryKey,
-            rechargeOrderId: order?.id ?? null,
-            paymentAttemptId: attempt?.id ?? null,
-            mismatchType: order ? 'provider_paid_local_unpaid' : 'unknown_provider_transaction',
-            providerStatus: entry.status,
-            localStatus: order?.status ?? null,
-            providerAmountMinor: entry.amountMinor,
-            localAmountMinor: expectedProviderAmountMinor,
-            quotedAmountMinor,
-            currency: entry.currency,
-          })
-          if (attempt && providerPaid) {
-            const recorded = await recordNormalizedPaymentFact({
-              source: 'reconciliation',
-              provider: run.provider,
-              providerAccountKey: run.providerAccountKey,
-              paymentAttemptId: attempt.id,
-              payment: {
-                status: 'succeeded',
-                providerPaymentId: entry.providerPaymentId ?? entry.providerEntryKey,
-                amountMinor: entry.amountMinor,
-                currency: entry.currency,
-                immutableStateVersion: `recon:${entry.status}`,
-              },
-            })
-            await applyConfirmedPayment(recorded.id)
-          }
-        } else if (order && ['paid', 'credited'].includes(order.status) && !providerPaid) {
-          mismatchCount += 1
-          await upsertItem(run.id, {
-            providerEntryKey: entry.providerEntryKey,
-            rechargeOrderId: order.id,
-            paymentAttemptId: attempt?.id ?? null,
-            mismatchType: 'local_paid_provider_not_paid',
-            providerStatus: entry.status,
-            localStatus: order.status,
-            providerAmountMinor: entry.amountMinor,
-            localAmountMinor: expectedProviderAmountMinor,
-            quotedAmountMinor,
-            currency: entry.currency,
-          })
-        } else if (order && order.status === 'paid' && !order.creditedAt) {
-          mismatchCount += 1
-          await upsertItem(run.id, {
-            providerEntryKey: entry.providerEntryKey,
-            rechargeOrderId: order.id,
-            paymentAttemptId: attempt?.id ?? null,
-            mismatchType: 'paid_not_credited',
-            providerStatus: entry.status,
-            localStatus: order.status,
-            providerAmountMinor: entry.amountMinor,
-            localAmountMinor: expectedProviderAmountMinor,
-            quotedAmountMinor,
-            currency: entry.currency,
-          })
-        } else if (order && expectedProviderAmountMinor != null && entry.amountMinor !== expectedProviderAmountMinor) {
-          mismatchCount += 1
-          await upsertItem(run.id, {
-            providerEntryKey: entry.providerEntryKey,
-            rechargeOrderId: order.id,
-            paymentAttemptId: attempt?.id ?? null,
-            mismatchType: 'amount_mismatch',
-            providerStatus: entry.status,
-            localStatus: order.status,
-            providerAmountMinor: entry.amountMinor,
-            localAmountMinor: expectedProviderAmountMinor,
-            quotedAmountMinor,
-            currency: entry.currency,
-          })
-        } else if (order && entry.currency !== order.currency) {
-          mismatchCount += 1
-          await upsertItem(run.id, {
-            providerEntryKey: entry.providerEntryKey,
-            rechargeOrderId: order.id,
-            paymentAttemptId: attempt?.id ?? null,
-            mismatchType: 'currency_mismatch',
-            providerStatus: entry.status,
-            localStatus: order.status,
-            providerAmountMinor: entry.amountMinor,
-            localAmountMinor: expectedProviderAmountMinor,
-            quotedAmountMinor,
-            currency: entry.currency,
-          })
-        }
+        mismatchCount += await matchProviderEntry(run, entry, source === 'provider_api')
       }
     }
 
-    const paidNotCredited = await prisma.rechargeOrder.findMany({
-      where: { status: 'paid', creditedAt: null, provider: run.provider },
-      take: 100,
-    })
-    for (const order of paidNotCredited) {
-      mismatchCount += 1
-      itemCount += 1
-      await upsertItem(run.id, {
-        providerEntryKey: `paid-not-credited:${order.id}`,
-        rechargeOrderId: order.id,
-        paymentAttemptId: null,
-        mismatchType: 'paid_not_credited',
-        providerStatus: null,
-        localStatus: order.status,
-        providerAmountMinor: null,
-        localAmountMinor: order.amountMinor,
-        quotedAmountMinor: order.amountMinor,
-        currency: order.currency,
-      })
-    }
+    const local = await scanPaidNotCredited(run)
+    itemCount += local.mismatches
+    mismatchCount += local.mismatches
 
     const updated = await prisma.reconciliationRun.update({
       where: { id: run.id },
@@ -223,8 +202,16 @@ export async function executeReconciliationRun(runId: string) {
         itemCount,
         mismatchCount,
         completedAt: new Date(),
+        coverage: {
+          statementSource: source,
+          formatVersion: statement?.formatVersion ?? null,
+          providerEntries,
+          localScanned: local.scanned,
+          periodStart: run.periodStart?.toISOString() ?? null,
+          periodEnd: run.periodEnd?.toISOString() ?? null,
+        },
       },
-      include: { items: true },
+      include: { items: { take: RUN_ITEM_PREVIEW } },
     })
     return serializeRun(updated)
   } catch (error) {
@@ -238,6 +225,172 @@ export async function executeReconciliationRun(runId: string) {
     })
     throw error
   }
+}
+
+const RUN_ITEM_PREVIEW = 50
+const LOCAL_SCAN_PAGE = 200
+
+type RunScope = {
+  id: string
+  provider: string
+  providerAccountKey: string
+  periodStart: Date | null
+  periodEnd: Date | null
+}
+
+async function matchProviderEntry(run: RunScope, entry: ReconEntry, autoApply: boolean): Promise<number> {
+  let mismatches = 0
+  const attempt = entry.providerPaymentId
+    ? await prisma.paymentAttempt.findFirst({
+      where: {
+        provider: run.provider,
+        providerAccountKey: run.providerAccountKey,
+        providerPaymentId: entry.providerPaymentId,
+      },
+      include: { paymentIntent: { include: { rechargeOrder: true } } },
+    })
+    : null
+  const order = attempt?.paymentIntent.rechargeOrder
+  const expectedProviderAmountMinor = attempt?.expectedProviderAmountMinor ?? order?.amountMinor ?? null
+  const quotedAmountMinor = order?.amountMinor ?? null
+  const providerPaid = entry.status === 'succeeded' || entry.status === 'paid'
+  if (providerPaid && (!order || !['paid', 'credited', 'refund_pending', 'refunded'].includes(order.status))) {
+    mismatches += 1
+    await upsertItem(run.id, {
+      providerEntryKey: entry.providerEntryKey,
+      rechargeOrderId: order?.id ?? null,
+      paymentAttemptId: attempt?.id ?? null,
+      mismatchType: order ? 'provider_paid_local_unpaid' : 'unknown_provider_transaction',
+      providerStatus: entry.status,
+      localStatus: order?.status ?? null,
+      providerAmountMinor: entry.amountMinor,
+      localAmountMinor: expectedProviderAmountMinor,
+      quotedAmountMinor,
+      currency: entry.currency,
+    })
+    if (attempt && providerPaid && autoApply) {
+      const recorded = await recordNormalizedPaymentFact({
+        source: 'reconciliation',
+        provider: run.provider,
+        providerAccountKey: run.providerAccountKey,
+        paymentAttemptId: attempt.id,
+        payment: {
+          status: 'succeeded',
+          providerPaymentId: entry.providerPaymentId ?? entry.providerEntryKey,
+          amountMinor: entry.amountMinor,
+          currency: entry.currency,
+          immutableStateVersion: `recon:${entry.status}`,
+        },
+      })
+      await applyConfirmedPayment(recorded.id)
+    }
+  } else if (order && ['paid', 'credited'].includes(order.status) && !providerPaid) {
+    mismatches += 1
+    await upsertItem(run.id, {
+      providerEntryKey: entry.providerEntryKey,
+      rechargeOrderId: order.id,
+      paymentAttemptId: attempt?.id ?? null,
+      mismatchType: 'local_paid_provider_not_paid',
+      providerStatus: entry.status,
+      localStatus: order.status,
+      providerAmountMinor: entry.amountMinor,
+      localAmountMinor: expectedProviderAmountMinor,
+      quotedAmountMinor,
+      currency: entry.currency,
+    })
+  } else if (order && order.status === 'paid' && !order.creditedAt) {
+    mismatches += 1
+    await upsertItem(run.id, {
+      providerEntryKey: entry.providerEntryKey,
+      rechargeOrderId: order.id,
+      paymentAttemptId: attempt?.id ?? null,
+      mismatchType: 'paid_not_credited',
+      providerStatus: entry.status,
+      localStatus: order.status,
+      providerAmountMinor: entry.amountMinor,
+      localAmountMinor: expectedProviderAmountMinor,
+      quotedAmountMinor,
+      currency: entry.currency,
+    })
+  } else if (order && expectedProviderAmountMinor != null && entry.amountMinor !== expectedProviderAmountMinor) {
+    mismatches += 1
+    await upsertItem(run.id, {
+      providerEntryKey: entry.providerEntryKey,
+      rechargeOrderId: order.id,
+      paymentAttemptId: attempt?.id ?? null,
+      mismatchType: 'amount_mismatch',
+      providerStatus: entry.status,
+      localStatus: order.status,
+      providerAmountMinor: entry.amountMinor,
+      localAmountMinor: expectedProviderAmountMinor,
+      quotedAmountMinor,
+      currency: entry.currency,
+    })
+  } else if (order && entry.currency !== order.currency) {
+    mismatches += 1
+    await upsertItem(run.id, {
+      providerEntryKey: entry.providerEntryKey,
+      rechargeOrderId: order.id,
+      paymentAttemptId: attempt?.id ?? null,
+      mismatchType: 'currency_mismatch',
+      providerStatus: entry.status,
+      localStatus: order.status,
+      providerAmountMinor: entry.amountMinor,
+      localAmountMinor: expectedProviderAmountMinor,
+      quotedAmountMinor,
+      currency: entry.currency,
+    })
+  }
+  return mismatches
+}
+
+/**
+ * Local integrity check over the run's whole scope (provider account and the
+ * half-open period), paged by the stable (createdAt, id) cursor.
+ */
+async function scanPaidNotCredited(run: RunScope) {
+  let scanned = 0
+  let mismatches = 0
+  let cursor: { createdAt: Date; id: string } | null = null
+  for (;;) {
+    const page: Array<{ id: string; status: string; amountMinor: bigint; currency: string; createdAt: Date }> = await prisma.rechargeOrder.findMany({
+      where: {
+        status: 'paid',
+        creditedAt: null,
+        provider: run.provider,
+        providerAccountKey: run.providerAccountKey,
+        ...(run.periodStart || run.periodEnd
+          ? { createdAt: { ...(run.periodStart ? { gte: run.periodStart } : {}), ...(run.periodEnd ? { lt: run.periodEnd } : {}) } }
+          : {}),
+        ...(cursor
+          ? { OR: [{ createdAt: { gt: cursor.createdAt } }, { createdAt: cursor.createdAt, id: { gt: cursor.id } }] }
+          : {}),
+      },
+      select: { id: true, status: true, amountMinor: true, currency: true, createdAt: true },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      take: LOCAL_SCAN_PAGE,
+    })
+    for (const order of page) {
+      scanned += 1
+      mismatches += 1
+      await upsertItem(run.id, {
+        providerEntryKey: `paid-not-credited:${order.id}`,
+        rechargeOrderId: order.id,
+        paymentAttemptId: null,
+        mismatchType: 'paid_not_credited',
+        providerStatus: null,
+        localStatus: order.status,
+        providerAmountMinor: null,
+        localAmountMinor: order.amountMinor,
+        quotedAmountMinor: order.amountMinor,
+        currency: order.currency,
+      })
+    }
+    if (page.length < LOCAL_SCAN_PAGE) break
+    const last = page[page.length - 1]
+    cursor = { createdAt: last.createdAt, id: last.id }
+  }
+  return { scanned, mismatches }
 }
 
 async function upsertItem(runId: string, item: {
@@ -549,7 +702,19 @@ export function serializeReconItem(item: {
     resolvedByUserId: item.resolvedByUserId,
     resolvedAt: item.resolvedAt?.toISOString() ?? null,
     createdAt: item.createdAt.toISOString(),
+    allowedActions: reconItemActions(item),
   }
+}
+
+/**
+ * Review (resolved/ignored) is an operator judgment; requery is the only path
+ * to an economic change (fresh provider query -> observation -> credit/refund).
+ * A reconcile_required order is decided through its own resolution endpoint.
+ */
+export function reconItemActions(item: { status: string; rechargeOrderId: string | null; localStatus: string | null }) {
+  if (item.status !== 'open') return []
+  if (item.localStatus === 'reconcile_required') return ['resolve_order']
+  return item.rechargeOrderId ? ['requery_order', 'resolve', 'ignore'] : ['resolve', 'ignore']
 }
 
 export function serializeRun(run: {
@@ -559,6 +724,10 @@ export function serializeRun(run: {
   environment: string
   scopeType: string
   scopeKey: string
+  periodStart?: Date | null
+  periodEnd?: Date | null
+  sourceSha256?: string | null
+  coverage?: unknown
   status: string
   itemCount: number
   mismatchCount: number
@@ -583,9 +752,14 @@ export function serializeRun(run: {
   return {
     id: run.id,
     provider: run.provider,
+    providerAccountKey: run.providerAccountKey,
     environment: run.environment,
     scopeType: run.scopeType,
     scopeKey: run.scopeKey,
+    periodStart: run.periodStart?.toISOString() ?? null,
+    periodEnd: run.periodEnd?.toISOString() ?? null,
+    sourceSha256: run.sourceSha256 ?? null,
+    coverage: run.coverage ?? null,
     status: run.status,
     itemCount: run.itemCount,
     mismatchCount: run.mismatchCount,

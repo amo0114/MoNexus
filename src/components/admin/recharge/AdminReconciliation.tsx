@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Copy, Scale } from 'lucide-react'
-import { createAdminReconRun, listAdminReconRuns, type AdminReconRun } from '../../../api/adminRecharge'
+import {
+  adminReconcileRechargeOrder,
+  createAdminReconRun,
+  listAdminReconItems,
+  listAdminReconRuns,
+  reviewAdminReconItem,
+  type AdminReconCoverage,
+  type AdminReconItem,
+  type AdminReconRun,
+} from '../../../api/adminRecharge'
+import AdminStatementImport from './AdminStatementImport'
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
 import ConfirmDialog from '../../ui/ConfirmDialog'
@@ -28,6 +38,20 @@ const RECON_MISMATCH_LABEL: Record<string, string> = {
   unknown_provider_transaction: '渠道未知交易',
 }
 
+const STATEMENT_SOURCE_LABEL: Record<AdminReconCoverage['statementSource'], string> = {
+  provider_api: '渠道接口账单',
+  imported_file: '导入账单文件',
+  unsupported: '仅本地完整性检查（渠道未提供账单）',
+}
+
+function coverageText(coverage: AdminReconCoverage | null | undefined) {
+  if (!coverage) return null
+  const period = coverage.periodStart || coverage.periodEnd
+    ? `${coverage.periodStart ? new Date(coverage.periodStart).toLocaleString() : '不限'} 至 ${coverage.periodEnd ? new Date(coverage.periodEnd).toLocaleString() : '不限'}`
+    : '不限时间'
+  return `${STATEMENT_SOURCE_LABEL[coverage.statementSource]}；渠道条目 ${coverage.providerEntries}，本地扫描 ${coverage.localScanned}；${period}`
+}
+
 const RECON_ITEM_STATUS_LABEL: Record<string, string> = {
   open: '待处理',
   resolved: '已解决',
@@ -42,6 +66,45 @@ export default function AdminReconciliation() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [acting, setActing] = useState(false)
   const [selectedRun, setSelectedRun] = useState<AdminReconRun | null>(null)
+  const [runItems, setRunItems] = useState<AdminReconItem[] | null>(null)
+  const [itemBusy, setItemBusy] = useState<string | null>(null)
+  const [reviewReason, setReviewReason] = useState('')
+
+  async function loadRunItems(runId: string) {
+    try {
+      setRunItems((await listAdminReconItems({ runId, pageSize: 100 })).items)
+    } catch {
+      setRunItems(null)
+    }
+  }
+
+  function openRun(run: AdminReconRun) {
+    setSelectedRun(run)
+    setRunItems(null)
+    void loadRunItems(run.id)
+  }
+
+  async function actOnItem(item: AdminReconItem, action: 'requery_order' | 'resolve' | 'ignore') {
+    if (!selectedRun || itemBusy) return
+    const reason = reviewReason.trim()
+    if (action !== 'requery_order' && !reason) return
+    setItemBusy(item.id)
+    try {
+      if (action === 'requery_order' && item.rechargeOrderId) {
+        await adminReconcileRechargeOrder(item.rechargeOrderId)
+        showToast('已向渠道重新查询该订单，按查询结果处理')
+      } else {
+        await reviewAdminReconItem(item.id, { status: action === 'resolve' ? 'resolved' : 'ignored', reason })
+        setReviewReason('')
+        showToast('已记录复核结论（不改变资金状态）')
+      }
+      await loadRunItems(selectedRun.id)
+    } catch (err) {
+      showToast(getApiErrorMessage(err, '处理失败'), 'error')
+    } finally {
+      setItemBusy(null)
+    }
+  }
 
   async function handleCopy(text: string, label: string) {
     try {
@@ -86,13 +149,16 @@ export default function AdminReconciliation() {
             ))}
           </select>
         </div>
-        <button
-          type="button"
-          className="btn-primary btn-sm text-xs cursor-pointer"
-          onClick={() => setConfirmOpen(true)}
-        >
-          发起对账
-        </button>
+        <div className="flex items-center gap-2">
+          <AdminStatementImport provider={provider} onImported={() => void load()} />
+          <button
+            type="button"
+            className="btn-primary btn-sm text-xs cursor-pointer"
+            onClick={() => setConfirmOpen(true)}
+          >
+            发起对账
+          </button>
+        </div>
       </div>
 
       {loading && items.length === 0 ? (
@@ -130,6 +196,11 @@ export default function AdminReconciliation() {
                     <div className="text-[11px] font-mono text-[var(--color-text-muted)] mt-0.5 truncate max-w-[180px]" title={item.scopeKey}>
                       {item.scopeKey}
                     </div>
+                    {item.coverage && (
+                      <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5" data-testid={`recon-coverage-${item.id}`}>
+                        {STATEMENT_SOURCE_LABEL[item.coverage.statementSource]}
+                      </div>
+                    )}
                   </td>
                   <td data-label="对账状态">
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border border-[var(--color-border)] bg-[var(--color-background)]">
@@ -141,7 +212,7 @@ export default function AdminReconciliation() {
                   <td data-label="核对结果" className="text-xs">
                     <button
                       type="button"
-                      onClick={() => setSelectedRun(item)}
+                      onClick={() => openRun(item)}
                       className="text-left cursor-pointer hover:underline"
                       title="点击查看差异明细"
                     >
@@ -160,7 +231,7 @@ export default function AdminReconciliation() {
                     <button
                       type="button"
                       className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
-                      onClick={() => setSelectedRun(item)}
+                      onClick={() => openRun(item)}
                     >
                       明细{item.items && item.items.length > 0 ? ` (${item.items.length})` : ''}
                     </button>
@@ -205,6 +276,9 @@ export default function AdminReconciliation() {
 
               <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-2">
                 <div className="font-bold text-[var(--color-text)]">对账范围与目标</div>
+                {selectedRun.coverage && (
+                  <div className="text-[var(--color-text)]" data-testid="recon-run-coverage">覆盖：{coverageText(selectedRun.coverage)}</div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <span className="text-[var(--color-text-muted)]">范围类型：</span>
@@ -258,9 +332,15 @@ export default function AdminReconciliation() {
 
               <div>
                 <h4 className="font-bold text-xs text-[var(--color-text)] mb-2">
-                  差异条目明细 ({selectedRun.items?.length || 0})
+                  差异条目明细 ({(runItems ?? selectedRun.items)?.length || 0})
                 </h4>
-                {selectedRun.items && selectedRun.items.length > 0 ? (
+                {runItems?.some((ri) => ri.allowedActions?.includes('resolve')) && (
+                  <label className="block mb-2">复核说明（标记已核实/忽略时必填，只记录判断，不改变资金）
+                    <input className="input mt-1 text-xs" maxLength={160} value={reviewReason}
+                      onChange={(e) => setReviewReason(e.target.value)} />
+                  </label>
+                )}
+                {(runItems ?? selectedRun.items) && (runItems ?? selectedRun.items).length > 0 ? (
                   <div className="overflow-x-auto rounded-lg border border-[var(--color-border)]">
                     <table className="admin-table table-cards text-xs">
                       <thead>
@@ -270,10 +350,11 @@ export default function AdminReconciliation() {
                           <th>平台状态 vs 渠道状态</th>
                           <th>平台金额 vs 渠道金额</th>
                           <th>条目状态</th>
+                          <th>处理</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedRun.items.map((ri) => (
+                        {(runItems ?? selectedRun.items).map((ri) => (
                           <tr key={ri.id}>
                             <td data-label="差异类型">
                               <span className="font-bold text-[var(--color-danger)]">
@@ -344,6 +425,25 @@ export default function AdminReconciliation() {
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold border border-[var(--color-border)] bg-[var(--color-background)]">
                                 {RECON_ITEM_STATUS_LABEL[ri.status] ?? ri.status}
                               </span>
+                            </td>
+                            <td data-label="处理">
+                              <div className="flex flex-wrap gap-1 justify-end sm:justify-start">
+                                {ri.allowedActions?.includes('requery_order') && (
+                                  <button type="button" className="btn-secondary btn-sm text-[11px]" disabled={itemBusy === ri.id}
+                                    onClick={() => void actOnItem(ri, 'requery_order')}>渠道重查</button>
+                                )}
+                                {ri.allowedActions?.includes('resolve') && (
+                                  <button type="button" className="btn-secondary btn-sm text-[11px]" disabled={itemBusy === ri.id || !reviewReason.trim()}
+                                    onClick={() => void actOnItem(ri, 'resolve')}>标记已核实</button>
+                                )}
+                                {ri.allowedActions?.includes('ignore') && (
+                                  <button type="button" className="btn-secondary btn-sm text-[11px]" disabled={itemBusy === ri.id || !reviewReason.trim()}
+                                    onClick={() => void actOnItem(ri, 'ignore')}>忽略</button>
+                                )}
+                                {ri.allowedActions?.includes('resolve_order') && (
+                                  <span className="text-[11px] text-[var(--color-text-muted)]">请在充值订单中处置</span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}

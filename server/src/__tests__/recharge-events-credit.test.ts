@@ -36,8 +36,7 @@ import {
   resolveDisputeOutcome,
 } from '../modules/payment/disputes/service.js'
 import { createReconciliationRun, reconcileOrder } from '../modules/payment/reconciliation/service.js'
-import { api, authHeader, createTestProduct, createTestUser, loginAs } from './helpers.js'
-import { debitAvailablePoints } from '../modules/points/checkedMutation.js'
+import { api, authHeader, createTestProduct, createTestUser, loginAs, spendTestPoints } from './helpers.js'
 
 const SIM_TOKEN = 'recharge-simulator-test-token'
 const originalRecharge = { ...config.recharge }
@@ -453,7 +452,7 @@ describe('refund, dispute, and restriction on PostgreSQL', () => {
       currency: created.currency,
     })
     await applyConfirmedPayment(observation.id)
-    await prisma.$transaction(tx => debitAvailablePoints(tx, user.id, 1000))
+    await spendTestPoints(user.id, 1000)
     await expect(requestRechargeRefund({
       userId: user.id,
       orderId: created.orderId,
@@ -691,7 +690,7 @@ describe('refund, dispute, and restriction on PostgreSQL', () => {
     })).id)
     const accountAfterCredit = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })
     expect(accountAfterCredit.balance).toBe(1200)
-    await prisma.$transaction(tx => debitAvailablePoints(tx, user.id, 900))
+    await spendTestPoints(user.id, 900)
 
     const dispute = await openPaymentDispute({
       provider: 'simulator',

@@ -22,6 +22,7 @@ import ProvisionBadge from '../ProvisionBadge'
 import { useAppStore } from '../../stores/appStore'
 import AdminPlatformFulfillmentActions from './AdminPlatformFulfillmentActions'
 import AdminFulfillmentReview from './AdminFulfillmentReview'
+import AdminOrderAfterSales from './AdminOrderAfterSales'
 
 export interface AdminOrderDetailDialogProps {
   order: AdminOrderDetail | null
@@ -321,6 +322,9 @@ export default function AdminOrderDetailDialog({
                 onSuccess={onFulfillmentSuccess}
               />
               <AdminFulfillmentReview key={order.id} order={order} onSuccess={onFulfillmentSuccess} />
+              {order.status === 'closed' && (
+                <AdminOrderAfterSales key={`after-sales-${order.id}`} orderId={order.id} onSuccess={onFulfillmentSuccess} />
+              )}
             </div>
           )}
 

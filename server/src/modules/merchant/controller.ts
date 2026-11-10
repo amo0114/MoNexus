@@ -330,6 +330,25 @@ export async function listSettlements(req: Request, res: Response, next: NextFun
   } catch (err) { next(err) }
 }
 
+export async function financeSummary(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await profileService.getMyMerchant(req.user!.userId)
+    res.json(await dashboardQueries.getFinanceSummary(merchant.id))
+  } catch (err) { next(err) }
+}
+
+export async function financeEntries(req: Request, res: Response, next: NextFunction) {
+  try {
+    const merchant = await profileService.getMyMerchant(req.user!.userId)
+    const { status, page, pageSize } = req.query as Record<string, string>
+    res.json(await dashboardQueries.listFinanceEntries(merchant.id, {
+      status: status || undefined,
+      page: Number(page) || 1,
+      pageSize: Math.min(Number(pageSize) || 20, 100),
+    }))
+  } catch (err) { next(err) }
+}
+
 // ---- Stats ----
 
 export async function stats(req: Request, res: Response, next: NextFunction) {

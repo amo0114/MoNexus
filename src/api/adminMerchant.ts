@@ -8,6 +8,10 @@ import {
   BatchSettleRequest,
   BatchSettleResponse,
   ListEnvelope,
+  MerchantRecoveryActionKind,
+  MerchantRecoveryCase,
+  SettlementBatchSummary,
+  SettlementPreview,
 } from '../types/merchant'
 
 function validateListEnvelope<T>(data: unknown, entityName: string): ListEnvelope<T> {
@@ -81,5 +85,42 @@ export async function getAdminSettlements(params?: {
 
 export async function batchSettle(payload: BatchSettleRequest): Promise<BatchSettleResponse> {
   const { data } = await api.post<BatchSettleResponse>('/admin/settlements/batch-settle', payload)
+  return data
+}
+
+/** Read-only check; execute re-validates under locks. */
+export async function previewSettlements(settlementIds: number[]): Promise<SettlementPreview> {
+  const { data } = await api.post<SettlementPreview>('/admin/settlements/preview', { settlementIds })
+  return data
+}
+
+export async function getSettlementBatches(params?: { page?: number; pageSize?: number }): Promise<ListEnvelope<SettlementBatchSummary>> {
+  const { data } = await api.get<ListEnvelope<SettlementBatchSummary>>('/admin/settlement-batches', { params })
+  return validateListEnvelope<SettlementBatchSummary>(data, '结算批次')
+}
+
+export async function getSettlementBatch(id: number): Promise<BatchSettleResponse> {
+  const { data } = await api.get<BatchSettleResponse>(`/admin/settlement-batches/${id}`)
+  return data
+}
+
+export async function getMerchantRecoveryCases(params?: {
+  status?: 'open' | 'closed'
+  merchantId?: number
+  page?: number
+  pageSize?: number
+}): Promise<ListEnvelope<MerchantRecoveryCase>> {
+  const { data } = await api.get<ListEnvelope<MerchantRecoveryCase>>('/admin/merchant-recovery-cases', { params })
+  return validateListEnvelope<MerchantRecoveryCase>(data, '商家欠收')
+}
+
+export async function actOnMerchantRecovery(id: number, body: {
+  kind: MerchantRecoveryActionKind
+  amount: number
+  requestKey: string
+  evidence?: string
+  note?: string
+}): Promise<MerchantRecoveryCase> {
+  const { data } = await api.post<MerchantRecoveryCase>(`/admin/merchant-recovery-cases/${id}/actions`, body)
   return data
 }

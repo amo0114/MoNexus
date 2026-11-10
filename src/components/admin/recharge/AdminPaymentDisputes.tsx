@@ -3,6 +3,7 @@ import { Copy, ShieldAlert } from 'lucide-react'
 import { listAdminPaymentDisputes, type AdminPaymentDispute } from '../../../api/adminRecharge'
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
+import AdminPaymentRecoveryClose from './AdminPaymentRecoveryClose'
 import AdminPagination from '../AdminPagination'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../ui/Dialog'
 import EmptyState from '../../ui/EmptyState'
@@ -37,6 +38,7 @@ export default function AdminPaymentDisputes() {
   const [page, setPage] = useState(1)
   const [status, setStatus] = useState('')
   const [selectedDispute, setSelectedDispute] = useState<AdminPaymentDispute | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   async function handleCopy(text: string, label: string) {
     try {
@@ -56,7 +58,7 @@ export default function AdminPaymentDisputes() {
       })
       .catch((err) => showToast(getApiErrorMessage(err, '加载争议失败'), 'error'))
       .finally(() => setLoading(false))
-  }, [page, status, showToast])
+  }, [page, status, showToast, reloadKey])
 
   return (
     <div className="space-y-4" data-testid="admin-payment-disputes">
@@ -272,6 +274,11 @@ export default function AdminPaymentDisputes() {
                         <div>原始状态 (Status): <span>{selectedDispute.recoveryCase.status}</span></div>
                       </div>
                     </details>
+                    <AdminPaymentRecoveryClose
+                      caseId={selectedDispute.recoveryCase.id}
+                      status={selectedDispute.recoveryCase.status}
+                      onClosed={() => { setSelectedDispute(null); setReloadKey((k) => k + 1) }}
+                    />
                   </div>
                 ) : (
                   <div className="text-[11px] text-[var(--color-text-muted)]">暂无关联追偿案件记录</div>
