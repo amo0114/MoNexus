@@ -39,7 +39,7 @@ import {
   CATEGORY_STATUS,
   type CategoryApplicationResolution,
   type CategoryApplicationStatus,
-} from './constants.js'
+} from '../../lib/productCatalog/constants.js'
 import type { CategoryApplicationDto } from './contracts.js'
 import { normalizeCategoryLabel } from './categorySchema.js'
 import {

@@ -10,7 +10,7 @@ import { aiOutputCompatTotal } from '../lib/ai/metrics.js'
 import { parseStructuredText, setLlmProviderForTests, type LlmProvider, type LlmStructuredRequest } from '../lib/ai/provider.js'
 import { runAiTask } from '../lib/ai/task.js'
 import { prisma } from '../lib/prisma.js'
-import { EMPTY_PRODUCT_DETAILS } from '../modules/catalog/templates/types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../lib/productCatalog/templates/types.js'
 import { api, authHeader, createTestMerchant, createTestProduct, createTestUser, getDefaultOfferId, loginAs } from './helpers.js'
 import { getActiveCategoryIdByLabel } from './catalogFixture.js'
 

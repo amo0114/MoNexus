@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { ensureSeedCategories } from './bootstrap.js'
-import { CATEGORY_SEED_CODES, SEED_CATEGORY_CODE } from './constants.js'
+import { CATEGORY_SEED_CODES, SEED_CATEGORY_CODE } from '../../lib/productCatalog/constants.js'
 
 /**
  * B_CAT — catalog category bootstrap Red tests (SPEC-CATALOG-OPS-001 §11.2).

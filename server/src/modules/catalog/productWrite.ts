@@ -4,20 +4,20 @@ import { prisma } from '../../lib/prisma.js'
 import { HttpError, notFound, type ErrorCode, type ErrorDetail } from '../../lib/httpError.js'
 import { assertProductDeliveryConfiguration } from '../../lib/productCommercial.js'
 import { resolveProductCategory } from './resolver.js'
-import { CATALOG_ERROR_CODES } from './constants.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 import {
   MediaRefResolutionError,
   resolvePlatformPublicImage,
   type PlatformMediaRef,
   type ResolvedPlatformImage,
 } from './platformMedia.js'
-import { getProductTemplate } from './templates/registry.js'
-import { evaluateTemplateFulfillment } from './templates/fulfillmentStrategy.js'
-import { validateTemplateAttributes } from './templates/validate.js'
-import { EMPTY_PRODUCT_DETAILS, type FulfillmentOfferInput, type TemplateAttributes, type TemplateKey } from './templates/types.js'
+import { getProductTemplate } from '../../lib/productCatalog/templates/registry.js'
+import { evaluateTemplateFulfillment } from '../../lib/productCatalog/templates/fulfillmentStrategy.js'
+import { validateTemplateAttributes } from '../../lib/productCatalog/templates/validate.js'
+import { EMPTY_PRODUCT_DETAILS, type FulfillmentOfferInput, type TemplateAttributes, type TemplateKey } from '../../lib/productCatalog/templates/types.js'
 import type { CreateProductV2Input, DescriptionImageRef, PatchProductContentInput } from './productV2Schema.js'
 import { computeOfferCheckoutVersion, syncProductProjection } from '../../lib/offers.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { listPersistedDescriptionImages, sanitizeProductRichContent } from './contentSanitizer.js'
 import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 import { checkProductReadiness, type ProductReadinessResult } from './publicationReadiness.js'

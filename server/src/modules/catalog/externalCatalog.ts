@@ -3,7 +3,7 @@ import type { FakaBridgeClientOptions } from '../../lib/fakaBridge/client.js'
 import type { FakaPlanCatalogItem } from '../../lib/fakaBridge/types.js'
 import { callFakaPlanCatalog } from '../../lib/fakaBridge/index.js'
 import { badRequest, HttpError, type ErrorCode } from '../../lib/httpError.js'
-import { CATALOG_ERROR_CODES } from './constants.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 import { catalogPlainTextSummary, sanitizeCatalogRichContent } from './contentSanitizer.js'
 
 export const EXTERNAL_CATALOG_IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/

@@ -4,7 +4,7 @@ import { Prisma, type Offer } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import { assertProductDeliveryConfiguration } from '../../lib/productCommercial.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { lockActiveWebhookConfigForShare } from '../orders/provisioningConfig.js'
 import {
   parseStoredDeliveryFields,

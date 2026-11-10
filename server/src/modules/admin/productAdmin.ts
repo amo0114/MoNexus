@@ -32,7 +32,7 @@ import {
   assertProductDeliveryConfiguration,
   normalizeProductImageFields,
 } from '../../lib/productCommercial.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { resolveProductCategory } from '../catalog/resolver.js'
 import { checkProductReadiness } from '../catalog/publicationReadiness.js'
 import { sanitizeCatalogRichContent } from '../catalog/contentSanitizer.js'

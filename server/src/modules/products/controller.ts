@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as productService from './service.js'
-import { resolveProductAudience } from './visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 
 function noStore(res: Response) {
   res.set('Cache-Control', 'private, no-store')

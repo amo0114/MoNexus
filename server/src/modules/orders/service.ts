@@ -23,7 +23,7 @@ import {
   type IdempotencyFingerprint,
 } from './idempotency.js'
 import { serializeUserOrderDetail, serializeUserOrderList } from './serializers.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { logInventoryChange } from '../../lib/inventoryLog.js'
 import { parseStoredPurchaseForm, validatePurchaseFormAnswers, computePurchaseFormVersion, findBookingDateField } from '../../lib/purchaseForm.js'
 import { calendarDayToUtc } from '../../lib/businessTime.js'
@@ -33,8 +33,8 @@ import {
   buildProductContentSnapshot,
   loadEffectiveAssuranceGrant,
 } from '../catalog/productContentSnapshot.js'
-import { resolveFulfillmentStrategy } from '../catalog/templates/fulfillmentStrategy.js'
-import type { FulfillmentOfferInput } from '../catalog/templates/types.js'
+import { resolveFulfillmentStrategy } from '../../lib/productCatalog/templates/fulfillmentStrategy.js'
+import type { FulfillmentOfferInput } from '../../lib/productCatalog/templates/types.js'
 import {
   parseStoredDeliveryFields,
   parseStoredStructuredContent,

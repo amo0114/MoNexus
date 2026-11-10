@@ -1,6 +1,6 @@
 import { markAiSafe, type AiSafe } from '../../../lib/ai/safe.js'
 import { HttpError } from '../../../lib/httpError.js'
-import type { ProductTemplateDefinition } from '../templates/types.js'
+import type { ProductTemplateDefinition } from '../../../lib/productCatalog/templates/types.js'
 
 export const MAX_DRAFT_DESCRIPTION = 4000
 export const MAX_DRAFT_CONTEXT = 24000

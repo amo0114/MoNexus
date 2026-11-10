@@ -21,7 +21,7 @@ import {
 } from './applicationService.js'
 import { activateCategory, createCategory, deactivateCategory } from './categoryService.js'
 import { getPublicCategoryRegistry } from './registry.js'
-import { CATALOG_ERROR_CODES } from './constants.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 
 const VALID_INPUT = {
   proposedLabel: '云工具',

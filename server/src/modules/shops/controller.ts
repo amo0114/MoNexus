@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import { resolveProductAudience } from '../products/visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 import { listShopProducts } from './service.js'
 
 export async function products(req: Request, res: Response, next: NextFunction) {

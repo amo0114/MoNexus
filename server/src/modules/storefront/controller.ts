@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from 'express'
-import { resolveProductAudience } from '../products/visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 import { listStorefrontCandidates } from './service.js'
 import type { CandidatesQuery } from './schema.js'
 

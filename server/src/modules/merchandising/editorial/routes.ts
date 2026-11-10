@@ -4,7 +4,7 @@ import { validate, idParamSchema } from '../../../middlewares/validate.js'
 import { createEditorialSchema, listEditorialQuerySchema, publicEditorialQuerySchema, revokeEditorialSchema, updateEditorialSchema } from './schema.js'
 import { createEditorialFeature, listEditorialFeatures, revokeEditorialFeature, updateEditorialFeature } from './service.js'
 import { listEditorialShelf } from './publicShelf.js'
-import { resolveProductAudience } from '../../products/visibility.js'
+import { resolveProductAudience } from '../../../lib/productCatalog/visibility.js'
 
 export const adminEditorialRouter = Router()
 adminEditorialRouter.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { api, authHeader, createTestUser, loginAs } from '../../__tests__/helpers.js'
-import { READINESS_DETAIL_CODES } from './constants.js'
+import { READINESS_DETAIL_CODES } from '../../lib/productCatalog/constants.js'
 import { __setExternalCatalogClientOverridesForTests } from './externalCatalog.js'
-import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../../lib/productCatalog/templates/types.js'
 import type { FakaPlanCatalogItem, FakaTransport } from '../../lib/fakaBridge/types.js'
 
 let catalogPlan: FakaPlanCatalogItem

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
 import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
-import { SEED_CATEGORY_CODE } from '../modules/catalog/constants.js'
+import { SEED_CATEGORY_CODE } from '../lib/productCatalog/constants.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 
 /**

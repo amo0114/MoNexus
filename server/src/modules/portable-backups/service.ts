@@ -10,7 +10,7 @@ import { badRequest, conflict, HttpError, notFound } from '../../lib/httpError.j
 import { prisma } from '../../lib/prisma.js'
 import { getStorage } from '../../lib/storage/index.js'
 import { getDeliveryStorage } from '../../lib/storage/delivery.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import {
   createTarGz,
   decryptArchive,

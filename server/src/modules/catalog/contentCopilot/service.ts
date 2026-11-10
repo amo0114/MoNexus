@@ -12,10 +12,10 @@ import {
 } from '../../../lib/ai/generation.js'
 import { aiValidationRejectionsTotal } from '../../../lib/ai/metrics.js'
 import { prisma } from '../../../lib/prisma.js'
-import { CATALOG_ERROR_CODES } from '../constants.js'
+import { CATALOG_ERROR_CODES } from '../../../lib/productCatalog/constants.js'
 import { checkProductReadiness } from '../publicationReadiness.js'
-import { getProductTemplate } from '../templates/registry.js'
-import type { TemplateKey } from '../templates/types.js'
+import { getProductTemplate } from '../../../lib/productCatalog/templates/registry.js'
+import type { TemplateKey } from '../../../lib/productCatalog/templates/types.js'
 import {
   CONTENT_COPILOT_FEATURE,
   CONTENT_FIELDS,

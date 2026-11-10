@@ -6,8 +6,8 @@ import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpE
 import { computeOfferCheckoutVersion, syncProductProjection } from '../../lib/offers.js'
 import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/index.js'
 import { assertProductDeliveryConfiguration } from '../../lib/productCommercial.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
-import { CATALOG_ERROR_CODES } from '../catalog/constants.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 import { fakaCatalogSkuSet, fetchNormalizedFakaSource } from '../catalog/externalCatalog.js'
 import {
   canonicalFixedStructuredText,

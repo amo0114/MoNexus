@@ -1,7 +1,7 @@
 import { getAiDailyQuota, isAiFeatureEnabled, runAiGeneration, type AiActorRole } from '../../../lib/ai/generation.js'
 import { notFound } from '../../../lib/httpError.js'
 import { getPublicCategoryRegistry } from '../registry.js'
-import { getProductTemplateRegistry } from '../templates/registry.js'
+import { getProductTemplateRegistry } from '../../../lib/productCatalog/templates/registry.js'
 import { buildProductDraftAiContext } from './projection.js'
 import { DRAFT_MAX_OUTPUT_TOKENS, DRAFT_PROMPT_VERSION, DRAFT_SYSTEM_PROMPT, DRAFT_VALIDATOR_VERSION } from './prompt.js'
 import { DRAFT_MODEL_SCHEMA } from './schema.js'

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { getActiveNetworkNodeCategoryId } from '../../__tests__/catalogFixture.js'
 import { listEditorialShelf } from '../merchandising/editorial/publicShelf.js'
-import { CATEGORY_GUEST_VISIBILITY } from './visibility.js'
+import { CATEGORY_GUEST_VISIBILITY } from '../../lib/productCatalog/visibility.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §3.4（P1-B）— 受限分类不得占用 limit 名额。

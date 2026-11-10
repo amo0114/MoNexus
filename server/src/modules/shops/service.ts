@@ -1,7 +1,7 @@
 import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
 import { listProducts } from '../products/service.js'
-import type { ProductAudience } from '../products/visibility.js'
+import type { ProductAudience } from '../../lib/productCatalog/visibility.js'
 
 export const SHOP_PAGE_SIZE = 24
 const SHOP_DESCRIPTION_MAX_CHARS = 500

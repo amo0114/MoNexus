@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { prisma } from '../../lib/prisma.js'
 import { createTestProduct } from '../../__tests__/helpers.js'
-import { CATALOG_ERROR_CODES } from '../catalog/constants.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 import { config } from '../../config/index.js'
 import {
   __setShortlinkClientForTests,

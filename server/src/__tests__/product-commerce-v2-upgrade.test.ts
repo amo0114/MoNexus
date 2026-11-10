@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
-import { EMPTY_PRODUCT_DETAILS } from '../modules/catalog/templates/types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../lib/productCatalog/templates/types.js'
 import { getActiveCategoryIdByLabel } from './catalogFixture.js'
 
 const V2_MIGRATION = '20260909120000_product_commerce_v2_foundation'

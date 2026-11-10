@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client'
-import { notFound } from '../../lib/httpError.js'
+import { notFound } from '../httpError.js'
 import type { AuthPayload } from '../../middlewares/auth.js'
 
 /**

@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import * as reviewService from './service.js'
-import { resolveProductAudience } from '../products/visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 
 export async function createForOrder(req: Request, res: Response, next: NextFunction) {
   try {

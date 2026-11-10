@@ -2,7 +2,7 @@ import express from 'express'
 import request from 'supertest'
 import { describe, expect, it } from 'vitest'
 import { productTemplateRoutes } from './routes.js'
-import { TEMPLATE_KEYS } from './types.js'
+import { TEMPLATE_KEYS } from '../../../lib/productCatalog/templates/types.js'
 
 const app = express()
 app.use('/api/product-templates', productTemplateRoutes)

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../../../lib/prisma.js'
 import { createTestMerchant, createTestUser } from '../../../__tests__/helpers.js'
-import { EMPTY_PRODUCT_DETAILS } from './types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../../../lib/productCatalog/templates/types.js'
 import { getActiveCategoryIdByLabel } from '../../../__tests__/catalogFixture.js'
 
 describe('product commerce v2 schema honesty (SPEC-PRODUCT-COMMERCE-002 §3 / §12.2)', () => {

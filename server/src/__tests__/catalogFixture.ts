@@ -17,7 +17,7 @@
 // tests. ensureSeedCategories is create-if-missing and cheap to re-run.
 import { prisma } from '../lib/prisma.js'
 import { ensureSeedCategories } from '../modules/catalog/bootstrap.js'
-import { CATEGORY_STATUS, SEED_CATEGORY_CODE } from '../modules/catalog/constants.js'
+import { CATEGORY_STATUS, SEED_CATEGORY_CODE } from '../lib/productCatalog/constants.js'
 
 export const CATALOG_FIXTURE_ACTOR_EMAIL = 'catalog-fixture-actor@test.local'
 
