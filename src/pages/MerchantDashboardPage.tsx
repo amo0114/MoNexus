@@ -56,6 +56,7 @@ import { TableSkeleton, StatCardSkeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import { createLatestRequestCoordinator } from '../realtime/latestRequestCoordinator'
 import WorkbenchSummary from '../components/merchant/workbench/WorkbenchSummary'
+import MerchantFinanceSummary from '../components/merchant/dashboard/MerchantFinanceSummary'
 import { parsePositiveId } from '../components/merchant/workbench/navigation'
 import { useMerchantWorkbenchStore } from '../stores/merchantWorkbench'
 
@@ -646,8 +647,8 @@ export default function MerchantDashboardPage() {
                   <>
                     <StatCard label="商品数" value={stats.productCount} />
                     <StatCard label="订单数" value={stats.orderCount} />
-                    <StatCard label="累计收益" value={stats.totalRevenue} tone="cta" />
-                    <StatCard label="待划拨" value={stats.pendingSettlement} tone="warning" />
+                    <StatCard label="净收益（积分）" value={stats.totalRevenue} tone="cta" />
+                    <StatCard label="待入账（积分）" value={stats.pendingSettlement} tone="warning" />
                   </>
                 )}
               </div>
@@ -711,6 +712,7 @@ export default function MerchantDashboardPage() {
           {activeTab === 'settlements' && (
             <div className="fade-in">
               <h2 className="font-heading text-xl font-bold mb-6 text-[var(--color-text)]">结算管理</h2>
+              <MerchantFinanceSummary />
               <div className="overflow-x-auto">
                 {loading && settlements.length === 0 ? (
                   <TableSkeleton />
@@ -724,12 +726,13 @@ export default function MerchantDashboardPage() {
                       <Th>{SETTLEMENT_TERM.PLATFORM_FEE}</Th>
                       <Th>结算金额</Th>
                       <Th>状态</Th>
+                      <Th>入账与调整</Th>
                     </tr>
                   </thead>
                   <tbody>
                     {!loading && settlements.length === 0 ? (
                       <tr>
-                        <td colSpan={6}>
+                        <td colSpan={7}>
                           <EmptyState compact icon={DollarSign} title="暂无结算记录" description="订单完成后将生成待结算记录" />
                         </td>
                       </tr>
@@ -746,6 +749,9 @@ export default function MerchantDashboardPage() {
                             {!s.payable && s.blockReason && (
                               <div className="text-xs text-[var(--color-danger)] mt-1">{blockReasonToUserMessage(s.blockReason)}</div>
                             )}
+                          </td>
+                          <td className="py-3 px-2 text-xs text-[var(--color-text-muted)]" data-label="入账与调整">
+                            <SettlementCreditNote settlement={s} />
                           </td>
                         </tr>
                       ))
@@ -946,6 +952,24 @@ export default function MerchantDashboardPage() {
 }
 
 // ---------- 概览统计卡片 ----------
+
+function SettlementCreditNote({ settlement }: { settlement: Settlement }) {
+  const credit = settlement.credit
+  const adjustments = settlement.adjustments ?? []
+  if (!credit && adjustments.length === 0) return <>—</>
+  return (
+    <div className="space-y-0.5">
+      {credit?.kind === 'batch' && <div>结算批次 #{credit.batchId}</div>}
+      {credit?.kind === 'legacy_incomplete' && <div>历史入账（凭证不完整）</div>}
+      {adjustments.map(a => (
+        <div key={a.id} className="text-[var(--color-danger)]">
+          售后冲正 {a.settlementDelta} 积分，已扣回 {a.clawbackPoints}
+          {a.recovery && a.recovery.outstanding > 0 ? `，待追偿 ${a.recovery.outstanding}` : ''}
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function StatCard({ label, value, tone }: { label: string; value: number | string; tone?: 'cta' | 'warning' }) {
   const valueColor =
