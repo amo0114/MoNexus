@@ -5,7 +5,7 @@
 | 文档 ID | `PLAN-CATALOG-PRODUCTS-DECOUPLING-001` |
 | 版本 | `1.0.0` |
 | 日期 | 2026-11-10 |
-| 状态 | 已确认两个 PR 都做；PR 1（单元 A + B）实施中，PR 2 待实施 |
+| 状态 | PR 1（单元 A + B）见 #338；PR 2（单元 C）已实施，大环实测 16 → 10 |
 | 核验基线 | `origin/develop@63e1b83` |
 | 范围 | 仅后端 `server/src`；不改接口、不改数据库、不改业务行为 |
 | 工程规范 | [分支与 CI](../branching-and-ci.md)、[测试政策](../testing-policy.md) |

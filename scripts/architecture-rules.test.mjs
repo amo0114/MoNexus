@@ -49,6 +49,18 @@ test('rejects catalog importing the products read module but allows the reverse'
   ])), [])
 })
 
+test('rejects points importing chatbot but allows chatbot to use points', () => {
+  const errors = checkBoundaries(new Map([
+    ['server/src/modules/points/routes.ts', "import * as bot from '../chatbot/bindController.js'"],
+    ['server/src/modules/chatbot/bindController.ts', "export const status = 1"],
+  ]))
+  assert.match(errors.join('\n'), /points must not import chatbot/)
+  assert.deepEqual(checkBoundaries(new Map([
+    ['server/src/modules/chatbot/checkinBridge.ts', "import { checkin } from '../points/service.js'"],
+    ['server/src/modules/points/service.ts', "export const checkin = 1"],
+  ])), [])
+})
+
 test('keeps pure policy dependencies separate from query services', () => {
   const errors = checkBoundaries(new Map([
     ['server/src/modules/orders/settlementPolicy.ts', "import { normalize } from './fulfillment.js'"],

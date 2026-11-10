@@ -89,6 +89,13 @@ describe('POST /api/orders/:id/review', () => {
   })
 })
 
+describe('review routes authentication', () => {
+  it('rejects unauthenticated create and update', async () => {
+    await api.post('/api/orders/1/review').send({ rating: 5 }).expect(401)
+    await api.put('/api/orders/1/review').send({ rating: 5 }).expect(401)
+  })
+})
+
 describe('PUT /api/orders/:id/review', () => {
   it('allows exactly one edit inside the window and recalcs aggregates', async () => {
     const { token, productId, orderId } = await buyerWithDeliveredOrder('rv-edit@test.local')
