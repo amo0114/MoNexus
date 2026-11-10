@@ -1,4 +1,4 @@
-import { Check, ChevronRight, CircleCheck, Headphones, Minus, PackageCheck, Plus, ShieldCheck, ShoppingCart, Zap } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, Minus, Plus, ShoppingCart, Zap } from 'lucide-react'
 import type { ProductDetail as Product } from '../../../../types/product'
 import { offerPeriodSubtitle, offerPeriodDetailNote } from '../../../../utils/offerPeriodDisplay'
 import { formatFileSize } from '../../../../utils/formatFileSize'
@@ -197,20 +197,6 @@ export default function MobileOfferPanel({
           购物车（{cartCount}）<ChevronRight size={15} />
         </button>
       )}
-      <div className="pm-assurance-strip">
-        <span>
-          <PackageCheck />
-          依套餐交付
-        </span>
-        <span>
-          <ShieldCheck />
-          订单可追溯
-        </span>
-        <span>
-          <Headphones />
-          售后支持
-        </span>
-      </div>
     </section>
   )
 }

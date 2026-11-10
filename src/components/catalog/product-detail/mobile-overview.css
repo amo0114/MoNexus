@@ -293,22 +293,4 @@
     font-size: 12px;
     min-height: 42px;
   }
-  .pm-assurance-strip {
-    margin-top: 20px;
-    padding-top: 17px;
-    border-top: 1px solid var(--pm-border);
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .pm-assurance-strip span {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 10px;
-  }
-  .pm-assurance-strip svg {
-    width: 15px;
-    height: 15px;
-  }
 }
