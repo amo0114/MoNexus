@@ -36,6 +36,7 @@ describe('SPEC-ENGAGE-001 check-in streak', () => {
     const status = await api.get('/api/points/checkin/status').set(headers).expect(200)
     expect(status.body).toMatchObject({ hasCheckedIn: true, streak: 3, streakState: 'done' })
     expect(status.body.nextMilestone).toEqual({ days: 7, reward: 10 })
+    expect(status.body.recent.map((r: { date: string }) => r.date).sort()).toEqual([daysAgo(2), daysAgo(1), daysAgo(0)])
     const rewardId = status.body.claimable[0].id
 
     const before = await prisma.pointAccount.findUniqueOrThrow({ where: { userId: user.id } })

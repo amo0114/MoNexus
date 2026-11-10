@@ -227,7 +227,7 @@ export async function getCheckinStatus(userId: number) {
   const [recent, monthRows, milestoneRewards, monthlyReward, claimable, price, limit, used] = await Promise.all([
     prisma.checkinRecord.findMany({
       where: { userId, date: { gte: addCalendarDays(today, -MAKEUP_WINDOW_DAYS), lte: today } },
-      select: { date: true, streak: true },
+      select: { date: true, streak: true, source: true },
     }),
     prisma.checkinRecord.findMany({
       where: { userId, date: { gte: `${monthKey}-01`, lte: `${monthKey}-${String(monthDays).padStart(2, '0')}` } },
@@ -268,6 +268,8 @@ export async function getCheckinStatus(userId: number) {
     today,
     streak,
     streakState,
+    // 近几天的签到条会跨月，month.checked 只含当月，不够用。
+    recent: recent.map(r => ({ date: r.date, makeup: r.source === 'makeup' })),
     month: {
       key: monthKey,
       daysInMonth: monthDays,
