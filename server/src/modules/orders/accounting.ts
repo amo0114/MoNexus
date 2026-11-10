@@ -1,18 +1,17 @@
 import type { Prisma } from '@prisma/client'
-import { badRequest, notFound } from '../../lib/httpError.js'
+import { conflict } from '../../lib/httpError.js'
 import {
-  consumeHeldPoints,
-  creditAvailablePoints as creditChecked,
-  debitAvailablePoints as debitChecked,
-  holdAvailablePoints as holdChecked,
-  releaseHeldPoints,
-  type PointMutationClient,
-} from '../points/checkedMutation.js'
+  captureInTx,
+  noteInTx,
+  refundInTx,
+  releaseInTx,
+  reserveInTx,
+  spendInTx,
+  type WalletContext,
+} from '../wallet/index.js'
+import { markSettlementPayableInTx, voidUnsettledInTx } from '../merchantFinance/index.js'
 
-type AccountingClient = PointMutationClient & Pick<
-  Prisma.TransactionClient,
-  'pointLog' | 'order' | 'settlement'
->
+type Tx = Prisma.TransactionClient
 
 export type HeldOrder = {
   id: number
@@ -21,36 +20,37 @@ export type HeldOrder = {
   fundsHeld: boolean
 }
 
-async function getAccountOrThrow(client: AccountingClient, userId: number) {
-  const account = await client.pointAccount.findUnique({ where: { userId } })
-  if (!account) throw notFound('积分账户不存在')
-  return account
+/** Order wallet keys: one charge, one capture/release, one refund per order. */
+export const orderWalletKey = {
+  spend: (orderId: number) => `order:${orderId}:spend`,
+  reserve: (orderId: number) => `order:${orderId}:reserve`,
+  capture: (orderId: number) => `order:${orderId}:capture`,
+  release: (orderId: number) => `order:${orderId}:release`,
+  refund: (orderId: number) => `order:${orderId}:refund`,
 }
 
-/** Atomically subtract from the balance that is actually available to spend. */
-export async function debitAvailablePoints(
-  client: AccountingClient,
-  userId: number,
-  amount: number
-): Promise<number> {
-  return (await debitChecked(client, userId, amount)).balance
+function orderCtx(order: { id: number; userId: number }, key: string, reasonCode: string, reason: string, actorUserId?: number | null): WalletContext {
+  return {
+    operationKey: key,
+    userId: order.userId,
+    source: { kind: 'order', id: order.id },
+    reasonCode,
+    actorUserId,
+    log: { reason, orderId: order.id },
+  }
 }
 
-export async function creditAvailablePoints(
-  client: AccountingClient,
-  userId: number,
-  amount: number
-): Promise<number> {
-  return (await creditChecked(client, userId, amount)).balance
-}
-
-/** Atomically move available points into the manual-service reservation pool. */
-export async function holdAvailablePoints(
-  client: AccountingClient,
-  userId: number,
-  amount: number
-): Promise<number> {
-  return (await holdChecked(client, userId, amount)).balance
+/** Checkout charge: instant modes consume immediately; manual modes reserve. */
+export async function chargeOrderInTx(
+  tx: Tx,
+  order: { id: number; userId: number; price: number },
+  mode: 'spend' | 'reserve',
+  reason: string,
+) {
+  const ctx = orderCtx(order, orderWalletKey[mode](order.id), `order_${mode}`, reason, order.userId)
+  return mode === 'reserve'
+    ? reserveInTx(tx, ctx, { amount: order.price })
+    : (await spendInTx(tx, ctx, { amount: order.price }))!
 }
 
 /**
@@ -60,7 +60,7 @@ export async function holdAvailablePoints(
  * created before frozenBalance existed; new orders never take this branch.
  */
 export async function captureHeldOrder(
-  client: AccountingClient,
+  client: Tx,
   order: HeldOrder,
   reason: string
 ): Promise<number | null> {
@@ -73,43 +73,27 @@ export async function captureHeldOrder(
   })
   if (claimed.count !== 1) return null
 
-  let balanceAfter: number
-  if (order.fundsHeld) {
-    balanceAfter = (await consumeHeldPoints(client, order.userId, amount)).balance
-  } else {
-    balanceAfter = await debitAvailablePoints(client, order.userId, amount)
-  }
-
-  await client.pointLog.create({
-    data: {
-      userId: order.userId,
-      type: 'out',
-      amount,
-      balanceAfter,
-      reason,
-      orderId: order.id,
-    },
-  })
-  return balanceAfter
+  const ctx = orderCtx(order, orderWalletKey.capture(order.id), 'order_capture', reason)
+  const result = order.fundsHeld
+    ? await captureInTx(client, ctx, { reserveKey: orderWalletKey.reserve(order.id), legacyAmount: amount })
+    : (await spendInTx(client, ctx, { amount }))!
+  return result.balance
 }
 
 /** Close/confirm an order and release merchant funds, even if payment was captured earlier. */
 export async function settleHeldOrder(
-  client: AccountingClient,
+  client: Tx,
   order: HeldOrder,
   reason: string
 ): Promise<number | null> {
   const balanceAfter = await captureHeldOrder(client, order, reason)
-  await client.settlement.updateMany({
-    where: { orderId: order.id, status: 'holding' },
-    data: { status: 'pending' },
-  })
+  await markSettlementPayableInTx(client, order.id)
   return balanceAfter
 }
 
 /** Return a manual-service reservation without counting it as earned points. */
 export async function releaseHeldOrder(
-  client: AccountingClient,
+  client: Tx,
   order: HeldOrder,
   reason: string
 ): Promise<number | null> {
@@ -122,66 +106,52 @@ export async function releaseHeldOrder(
   })
   if (claimed.count !== 1) return null
 
-  let balanceAfter: number
-  if (order.fundsHeld) {
-    balanceAfter = (await releaseHeldPoints(client, order.userId, amount)).balance
-  } else {
-    // The old system only remembered the hold on Order, without reserving the
-    // balance.  Preserve the amount and leave the account untouched.
-    balanceAfter = (await getAccountOrThrow(client, order.userId)).balance
-  }
-
-  await client.pointLog.create({
-    data: {
-      userId: order.userId,
-      type: 'release',
-      amount,
-      balanceAfter,
-      reason,
-      orderId: order.id,
-    },
-  })
-  await client.settlement.updateMany({
-    where: { orderId: order.id, status: 'holding' },
-    data: { status: 'voided' },
-  })
-  return balanceAfter
+  const ctx = orderCtx(order, orderWalletKey.release(order.id), 'order_release', reason)
+  // The old system only remembered the hold on Order, without reserving the
+  // balance.  Preserve the amount and leave the account untouched.
+  const result = order.fundsHeld
+    ? await releaseInTx(client, ctx, { reserveKey: orderWalletKey.reserve(order.id), legacyAmount: amount })
+    : await noteInTx(client, { ...ctx, log: { ...ctx.log, type: 'release' } }, { logAmount: amount })
+  await voidUnsettledInTx(client, order.id, ['holding'])
+  return result.balance
 }
 
-/** Refund a completed instant order; this is not an earning and must not affect tier progress. */
+/**
+ * Return a captured/instant order payment to its original sources. This is not
+ * an earning and must not affect tier progress. Shared by arbitration and
+ * after-sales: the single refund key makes a second refund of one order impossible.
+ */
 export async function refundPaidOrder(
-  client: AccountingClient,
+  client: Tx,
   order: Pick<HeldOrder, 'id' | 'userId'> & { price: number },
-  reason: string
-): Promise<number> {
-  const balanceAfter = await creditAvailablePoints(client, order.userId, order.price)
-  await client.pointLog.create({
-    data: {
-      userId: order.userId,
-      type: 'refund',
-      amount: order.price,
-      balanceAfter,
-      reason,
-      orderId: order.id,
+  reason: string,
+  actorUserId?: number | null,
+) {
+  const ctx = orderCtx(order, orderWalletKey.refund(order.id), 'order_refund', reason, actorUserId)
+  const paid = await client.walletOperation.findFirst({
+    where: {
+      operationKey: { in: [orderWalletKey.spend(order.id), orderWalletKey.capture(order.id)] },
+      kind: { in: ['spend', 'capture'] },
     },
+    select: { operationKey: true },
   })
-  return balanceAfter
+  if (paid) return refundInTx(client, ctx, { originalKey: paid.operationKey })
+
+  // Pre-wallet order: only an old-ledger debit of this exact order proves what
+  // may be returned; new orders always have a wallet operation.
+  const legacyDebit = await client.pointLog.findFirst({
+    where: { orderId: order.id, userId: order.userId, type: 'out', amount: order.price, walletOperation: null },
+    select: { id: true },
+  })
+  if (!legacyDebit) throw conflict('找不到该订单的原扣款记录，不能退款')
+  return refundInTx(client, ctx, { originalKey: orderWalletKey.spend(order.id), legacyAmount: order.price })
 }
 
 /**
  * A refund must not be created after merchant funds have already been settled.
  * Claim the pending/holding record before changing the order state so a racing
- * batch settlement can no longer settle it.
+ * batch settlement can no longer settle it. Settled orders go through after-sales.
  */
-export async function voidRefundableSettlement(client: AccountingClient, orderId: number) {
-  const result = await client.settlement.updateMany({
-    where: { orderId, status: { in: ['pending', 'holding'] } },
-    data: { status: 'voided' },
-  })
-  if (result.count === 1) return
-
-  const settlement = await client.settlement.findUnique({ where: { orderId } })
-  if (settlement?.status === 'settled') {
-    throw badRequest('订单已结算，不能自动退款，请先完成线下冲正')
-  }
+export async function voidRefundableSettlement(client: Tx, orderId: number) {
+  await voidUnsettledInTx(client, orderId, ['pending', 'holding'], { rejectSettled: true })
 }

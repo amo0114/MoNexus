@@ -132,6 +132,8 @@ export type ErrorCode =
   | 'POINT_BALANCE_HARD_CAP'
   | 'POINT_INSUFFICIENT'
   | 'POINT_BALANCE_CONFLICT'
+  // Buyer is the product's own merchant, or a platform administrator account.
+  | 'PURCHASE_NOT_ALLOWED'
   // SPEC-RECHARGE-PAYMENT-V1.2 user API (7.1).
   | 'RECHARGE_DISABLED'
   | 'RECHARGE_CURRENCY_DISABLED'

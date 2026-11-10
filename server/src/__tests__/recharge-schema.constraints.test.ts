@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
-import { POINT_ACCOUNT_HARD_CAP } from '../modules/points/checkedMutation.js'
+import { POINT_ACCOUNT_HARD_CAP } from '../modules/wallet/balance.js'
 
 let serial = 0
 let policyVersion = 0

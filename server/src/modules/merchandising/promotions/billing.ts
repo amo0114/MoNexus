@@ -236,7 +236,7 @@ async function applyChargeAndSchedule(
 ): Promise<ApproveCampaignResult> {
   const { campaign, now } = input
   const price = campaign.pricePointsSnapshot
-  const charge = await debitPointsForPromotionCharge(tx, input.merchantUserId, price)
+  const charge = await debitPointsForPromotionCharge(tx, campaign.id, input.merchantUserId, price)
   if (!charge.ok) {
     // 余额不足：不扣、不写 PointLog，CAS pending_review/payment_failed → payment_failed。
     const updated = await tx.promotionCampaign.update({
@@ -513,7 +513,7 @@ async function decideAdjustment(
       select: { id: true, userId: true },
     })
     if (!merchant) throw notFound('商家不存在')
-    const refund = await creditPointsForPromotionRefund(tx, merchant.userId, points)
+    const refund = await creditPointsForPromotionRefund(tx, campaign.id, merchant.userId, points)
     refundPointLogId = refund.pointLogId
   }
 
@@ -632,7 +632,7 @@ export async function adminCancelCampaign(
         select: { id: true, userId: true },
       })
       if (!merchant) throw notFound('商家不存在')
-      const refund = await creditPointsForPromotionRefund(tx, merchant.userId, campaign.chargedPoints)
+      const refund = await creditPointsForPromotionRefund(tx, campaign.id, merchant.userId, campaign.chargedPoints)
       const updated = await tx.promotionCampaign.update({
         where: { id: campaignId },
         data: {

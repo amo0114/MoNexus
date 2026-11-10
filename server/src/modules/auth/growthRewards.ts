@@ -1,9 +1,9 @@
 import type { Prisma } from '@prisma/client'
 import { conflict, HttpError, notFound } from '../../lib/httpError.js'
-import { applyTierBonus, getCurrentTierConfig, resolveTier } from '../../lib/memberTier.js'
+import { applyTierBonus, getCurrentTierConfig, GROWTH_LOG_WHERE, resolveTier } from '../../lib/memberTier.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
-import { creditAvailablePoints } from '../points/checkedMutation.js'
+import { creditInTx } from '../wallet/index.js'
 import { getShanghaiDayWindow } from './abusePolicy.js'
 import {
   recordAbuseEvent,
@@ -212,7 +212,7 @@ export async function createClaimedReferralGrowthReward(
     'invite reward',
   )
   const inviterLifetimeResult = await tx.pointLog.aggregate({
-    where: { userId: input.inviterId, type: 'in' },
+    where: { userId: input.inviterId, ...GROWTH_LOG_WHERE },
     _sum: { amount: true },
   })
   const tierConfig = await getCurrentTierConfig(tx)
@@ -513,20 +513,13 @@ export async function releaseGrowthRewardInTransaction(
     }
   }
 
-  const account = await tx.pointAccount.findUnique({ where: { userId: reward.recipientUserId } })
-  if (!account) throw notFound('积分账户不存在')
-  const balanceAfter = reward.amount > 0
-    ? (await creditAvailablePoints(tx, reward.recipientUserId, reward.amount)).balance
-    : account.balance
-  await tx.pointLog.create({
-    data: {
-      userId: reward.recipientUserId,
-      type: 'in',
-      amount: reward.amount,
-      balanceAfter,
-      reason: reward.kind === 'referral' ? '邀请奖励冷静期发放' : '注册奖励冷静期发放',
-    },
-  })
+  await creditInTx(tx, {
+    operationKey: `growth-reward:${reward.id}`,
+    userId: reward.recipientUserId,
+    source: { kind: 'growth_reward', id: reward.id },
+    reasonCode: reward.kind === 'referral' ? 'referral_reward' : 'registration_reward',
+    log: { reason: reward.kind === 'referral' ? '邀请奖励冷静期发放' : '注册奖励冷静期发放', growthEligible: true },
+  }, { amount: reward.amount, origin: 'reward' })
   const granted = await tx.growthReward.updateMany({
     where: { id: reward.id, state: 'held' },
     data: { state: 'granted', grantedAt: now },

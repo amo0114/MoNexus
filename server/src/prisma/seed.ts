@@ -337,9 +337,9 @@ async function main() {
   if (existingLogs === 0) {
     await prisma.pointLog.createMany({
       data: [
-        { userId: admin.id, type: 'in', amount: 99999, balanceAfter: 99999, reason: '管理员初始积分' },
-        { userId: testUser.id, type: 'in', amount: 5000, balanceAfter: 5000, reason: '新用户注册奖励' },
-        { userId: merchantUser.id, type: 'in', amount: 5000, balanceAfter: 5000, reason: '示例商家初始积分' },
+        { userId: admin.id, type: 'in', amount: 99999, balanceAfter: 99999, reason: '管理员初始积分', growthEligible: true },
+        { userId: testUser.id, type: 'in', amount: 5000, balanceAfter: 5000, reason: '新用户注册奖励', growthEligible: true },
+        { userId: merchantUser.id, type: 'in', amount: 5000, balanceAfter: 5000, reason: '示例商家初始积分', growthEligible: true },
       ],
     })
   }

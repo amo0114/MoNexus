@@ -1,4 +1,4 @@
-import { normalizeOrderStatus } from './statusPolicy.js'
+import { normalizeOrderStatus } from '../orders/statusPolicy.js'
 
 export function getSettlementEligibility(orderStatus: string) {
   const status = normalizeOrderStatus(orderStatus)

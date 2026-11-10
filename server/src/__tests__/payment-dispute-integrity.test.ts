@@ -82,7 +82,7 @@ async function openDisputeOnCreditedRecharge(email: string) {
     signatureVerified: true,
   })
   expect((await applyConfirmedPayment(paid.id)).outcome).toBe('credited')
-  const logsBefore = await prisma.pointLog.count({ where: { userId: user.id } })
+  const logsBeforeOpen = await prisma.pointLog.count({ where: { userId: user.id } })
   const dispute = await openPaymentDispute({
     provider: 'simulator',
     providerAccountKey: ACCOUNT,
@@ -96,6 +96,10 @@ async function openDisputeOnCreditedRecharge(email: string) {
     where: { sourceType_sourceId: { sourceType: 'payment_dispute', sourceId: dispute.id } },
   })
   expect(hold.points).toBe(1000n)
+  // Opening ledgers the freeze itself; outcome assertions start after it.
+  const opening = await prisma.pointLog.findMany({ where: { userId: user.id }, orderBy: { id: 'asc' }, skip: logsBeforeOpen })
+  expect(opening.map(log => [log.type, log.amount])).toEqual([['hold', 1000]])
+  const logsBefore = logsBeforeOpen + opening.length
   return { user, dispute, recoveryCaseId: dispute.recoveryCase!.id, holdPoints: Number(hold.points), logsBefore }
 }
 
@@ -107,7 +111,9 @@ async function accountTotal(userId: number) {
 /** Signed sum of the user's ledger rows written after the dispute was opened. */
 async function ledgerSince(userId: number, skip: number) {
   const logs = await prisma.pointLog.findMany({ where: { userId }, orderBy: { id: 'asc' }, skip })
-  const signed = logs.reduce((sum, log) => sum + (log.type === 'out' ? -log.amount : log.amount), 0)
+  // hold/release move points between available and frozen; the total is unchanged.
+  const signed = logs.reduce((sum, log) => sum + (log.type === 'out' ? -log.amount
+    : log.type === 'hold' || log.type === 'release' ? 0 : log.amount), 0)
   return { logs, signed }
 }
 
@@ -184,7 +190,7 @@ describe('payment dispute recovery integrity', () => {
     if (final.status === 'won') {
       expect(hold.status).toBe('released')
       expect(account.total).toBe(opened.total)
-      expect(logs).toHaveLength(0)
+      expect(logs.map(log => [log.type, log.amount])).toEqual([['release', holdPoints]])
     } else {
       expect(final.status).toBe('lost')
       expect(hold.status).toBe('consumed')

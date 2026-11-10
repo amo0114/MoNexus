@@ -10,10 +10,15 @@ import {
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
 import {
-  consumeHeldPoints,
-  holdAvailablePoints,
-  releaseHeldPoints,
-} from '../points/checkedMutation.js'
+  availablePointsIn,
+  findOperationByKey,
+  lockAccountsInTx,
+  releaseInTx,
+  reserveInTx,
+  reverseReservedInTx,
+  type LotFilter,
+  type WalletContext,
+} from '../wallet/index.js'
 import { getHistoricalProvider } from '../payment/providers/registry.js'
 import {
   recordNormalizedPaymentFact,
@@ -23,7 +28,7 @@ import {
 } from '../payment/observations/record.js'
 import { applyConfirmedPayment, writeOpenReconItem } from '../payment/events/applyConfirmedPayment.js'
 import { paymentTestHooks } from '../payment/events/hooks.js'
-import { parseNormalizedPaymentPayload } from './credit.js'
+import { parseNormalizedPaymentPayload, rechargeCreditWalletKey } from './credit.js'
 import { claimPaymentEvent, commitPaymentEvent } from '../payment/workers/lease.js'
 import {
   claimRechargeIdempotency,
@@ -40,6 +45,29 @@ import { providerEnvironment } from './gates.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 export const REFUND_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:refund:v1`
+
+const refundReserveKey = (refundId: string) => `recharge-refund:${refundId}:reserve`
+
+function refundWalletCtx(
+  order: { id: string; userId: number },
+  refundId: string,
+  reason: string,
+  step: 'reserve' | 'release' | 'reversal' = 'reserve',
+): WalletContext {
+  return {
+    operationKey: `recharge-refund:${refundId}:${step}`,
+    userId: order.userId,
+    source: { kind: 'recharge_refund', id: refundId },
+    reasonCode: `recharge_refund_${step}`,
+    log: { reason },
+  }
+}
+
+/** The refunded recharge's own lot; pre-wallet credits only have legacy_unknown. */
+async function refundLotFilter(tx: Prisma.TransactionClient, rechargeOrderId: string): Promise<LotFilter> {
+  const creditOp = await findOperationByKey(tx, rechargeCreditWalletKey(rechargeOrderId))
+  return creditOp ? { onlySourceOperationIds: [creditOp.id] } : { origins: ['legacy_unknown'] }
+}
 
 let providerRefundCalls = 0
 
@@ -179,13 +207,15 @@ export async function requestRechargeRefund(input: {
       const attempt = intent.attempts.find(item => item.status === 'succeeded') ?? intent.attempts.at(-1)
       if (!attempt) throw conflict('没有可退款的支付尝试')
 
-      await tx.$queryRaw`SELECT "userId" FROM "PointAccount" WHERE "userId" = ${order.userId} FOR UPDATE`
-      const account = await tx.pointAccount.findUniqueOrThrow({ where: { userId: order.userId } })
+      await lockAccountsInTx(tx, [order.userId])
       const points = Number(order.totalPoints)
       if (!Number.isSafeInteger(points) || points <= 0) throw conflict('退款积分不合法')
 
       if (order.status === 'credited') {
-        if (account.balance < points) {
+        // Only this recharge's own lot may be reversed; spending it and then
+        // reversing other recharge/reward points would misstate "unused".
+        const lots = await refundLotFilter(tx, order.id)
+        if (await availablePointsIn(tx, order.userId, lots) < points) {
           const review = await tx.rechargeRefund.create({
             data: {
               rechargeOrderId: order.id,
@@ -200,7 +230,6 @@ export async function requestRechargeRefund(input: {
           })
           return review
         }
-        const held = await holdAvailablePoints(tx, order.userId, points)
         const refund = await tx.rechargeRefund.create({
           data: {
             rechargeOrderId: order.id,
@@ -213,6 +242,7 @@ export async function requestRechargeRefund(input: {
             createdByUserId: input.createdByUserId ?? input.userId,
           },
         })
+        await reserveInTx(tx, refundWalletCtx(order, refund.id, '充值退款冻结积分'), { amount: points, ...lots })
         await tx.pointHold.create({
           data: {
             userId: order.userId,
@@ -222,7 +252,6 @@ export async function requestRechargeRefund(input: {
             status: 'active',
           },
         })
-        void held
         return refund
       }
 
@@ -518,7 +547,10 @@ export async function applyRefundObservation(observationId: string) {
           where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.id } },
         })
         if (hold?.status === 'active') {
-          await releaseHeldPoints(tx, order.userId, Number(hold.points))
+          await releaseInTx(tx, refundWalletCtx(order, refund.id, '充值退款失败释放积分', 'release'), {
+            reserveKey: refundReserveKey(refund.id),
+            legacyAmount: Number(hold.points),
+          })
           await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'released' } })
         }
         await tx.rechargeRefund.update({
@@ -552,17 +584,12 @@ export async function applyRefundObservation(observationId: string) {
         if (!hold || hold.status !== 'active') {
           return requireReconciliation('REFUND_HOLD_MISSING', refundLocal)
         }
-        const consumed = await consumeHeldPoints(tx, order.userId, Number(hold.points))
-        await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'consumed' } })
-        const log = await tx.pointLog.create({
-          data: {
-            userId: order.userId,
-            type: 'out',
-            amount: Number(hold.points),
-            balanceAfter: consumed.balance,
-            reason: '充值退款',
-          },
+        const consumed = await reverseReservedInTx(tx, refundWalletCtx(order, refund.id, '充值退款', 'reversal'), {
+          reserveKey: refundReserveKey(refund.id),
+          legacyAmount: Number(hold.points),
         })
+        await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'consumed' } })
+        const log = { id: consumed.pointLogId! }
         await tx.rechargeReversal.create({
           data: {
             rechargeRefundId: refund.id,

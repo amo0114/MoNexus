@@ -66,6 +66,8 @@ model User {
   pointAccount                 PointAccount?
   orders                       Order[]
   pointLogs                    PointLog[]
+  walletOperations             WalletOperation[]
+  pointLots                    PointLot[]
   checkins                     CheckinRecord[]
   checkinRewards               CheckinReward[]
   activeDays                   UserActiveDay[]
@@ -505,6 +507,8 @@ model PointAccount {
   balance       Int @default(0) // 可用积分，不包含已冻结的人工服务订单金额
   frozenBalance Int @default(0) // 已为尚未终态的人工服务订单保留的积分
   sandboxBalance Int @default(0) // 管理员沙箱积分；不可用于真实消费/结算
+  // wallet 首次接管该账户（建立来源批次）的时刻；此后余额只能经 wallet 变动。
+  walletInitializedAt DateTime?
 
   user User @relation(fields: [userId], references: [id])
 }
@@ -517,10 +521,13 @@ model PointLog {
   balanceAfter Int
   reason       String?
   orderId      Int?
+  // 会员成长/排行/邀请资格：只有奖励类入账为 true；充值、结算、退款等不计。
+  growthEligible Boolean @default(false)
   createdAt    DateTime @default(now())
 
   user  User   @relation(fields: [userId], references: [id])
   order Order? @relation(fields: [orderId], references: [id])
+  walletOperation WalletOperation?
 
   // ── FND-CMI-001 (SPEC-MERCH-001 §5.4): charge/refund named back-relations. ──
   // PromotionCampaign.chargePointLogId / refundPointLogId (both UNIQUE, RESTRICT)
@@ -539,6 +546,86 @@ model PointLog {
   @@index([createdAt, id])
   // 用户维度流水检索 + 时间倒序分页
   @@index([userId, createdAt, id])
+}
+
+// wallet：一次成功的积分操作。operationKey 由业务事实生成（订单、结算单、
+// 充值单等），同键同参数重放返回原结果，参数不同拒绝。经济凭证只增不删。
+model WalletOperation {
+  id                Int      @id @default(autoincrement())
+  operationKey      String   @unique
+  // credit | spend | reserve | capture | release | refund | reversal | legacy_init | legacy_refund
+  kind              String
+  userId            Int
+  amount            Int
+  requestHash       String   @db.Char(64)
+  sourceKind        String
+  sourceId          String
+  reasonCode        String
+  actorUserId       Int?
+  // capture/release 指向 reserve；refund 指向被返还的 spend/capture。
+  parentOperationId Int?
+  balanceAfter      Int
+  frozenAfter       Int
+  pointLogId        Int?     @unique
+  createdAt         DateTime @default(now())
+
+  user               User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  parent             WalletOperation?        @relation("WalletOperationParent", fields: [parentOperationId], references: [id], onDelete: Restrict)
+  children           WalletOperation[]       @relation("WalletOperationParent")
+  pointLog           PointLog?               @relation(fields: [pointLogId], references: [id], onDelete: Restrict)
+  lots               PointLot[]
+  allocations        WalletAllocation[]
+  settlementItem     SettlementBatchItem?
+  adjustmentClawback SettlementAdjustment?
+  recoveryAction     MerchantRecoveryAction?
+  afterSalesRefund   OrderAfterSalesCase?
+
+  @@index([userId, createdAt])
+  @@index([sourceKind, sourceId])
+  @@index([parentOperationId])
+}
+
+// 一个原始入账来源。issued = available + frozen + consumed（CHECK 见迁移）。
+// originKind: recharge | reward | merchant_settlement | admin_adjustment | legacy_unknown
+model PointLot {
+  id                Int      @id @default(autoincrement())
+  userId            Int
+  originKind        String
+  sourceOperationId Int
+  issuedPoints      Int
+  availablePoints   Int
+  frozenPoints      Int      @default(0)
+  consumedPoints    Int      @default(0)
+  policyVersion     String?
+  createdAt         DateTime @default(now())
+
+  user            User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  sourceOperation WalletOperation    @relation(fields: [sourceOperationId], references: [id], onDelete: Restrict)
+  allocations     WalletAllocation[]
+
+  @@index([userId, id])
+  @@index([sourceOperationId])
+}
+
+// 不可变的来源变动明细；返还/捕获/释放引用原 allocation。
+model WalletAllocation {
+  id                 Int      @id @default(autoincrement())
+  operationId        Int
+  lotId              Int
+  availableDelta     Int
+  frozenDelta        Int
+  consumedDelta      Int
+  parentAllocationId Int?
+  createdAt          DateTime @default(now())
+
+  operation WalletOperation    @relation(fields: [operationId], references: [id], onDelete: Restrict)
+  lot       PointLot           @relation(fields: [lotId], references: [id], onDelete: Restrict)
+  parent    WalletAllocation?  @relation("WalletAllocationParent", fields: [parentAllocationId], references: [id], onDelete: Restrict)
+  children  WalletAllocation[] @relation("WalletAllocationParent")
+
+  @@index([operationId])
+  @@index([lotId])
+  @@index([parentAllocationId])
 }
 
 model Product {
@@ -899,6 +986,7 @@ model Order {
   delivery       DeliveryRecord?
   review         Review?
   settlement     Settlement?
+  afterSalesCases OrderAfterSalesCase[]
   pointLogs      PointLog[]
   statusEvents   OrderStatusEvent[]
   inventoryLogs  InventoryLog[]
@@ -1262,8 +1350,134 @@ model Settlement {
   settledAt        DateTime?
   createdAt        DateTime  @default(now())
 
-  merchant Merchant @relation(fields: [merchantId], references: [id])
-  order    Order    @relation(fields: [orderId], references: [id])
+  merchant    Merchant               @relation(fields: [merchantId], references: [id])
+  order       Order                  @relation(fields: [orderId], references: [id])
+  batchItem   SettlementBatchItem?
+  adjustments SettlementAdjustment[]
+}
+
+// 一次明确提交的结算集合：全有或全无。requestKey 重放返回原批次。
+model SettlementBatch {
+  id              Int      @id @default(autoincrement())
+  requestKey      String   @unique
+  requestHash     String   @db.Char(64)
+  createdByUserId Int
+  itemCount       Int
+  totalPoints     Int
+  createdAt       DateTime @default(now())
+
+  items SettlementBatchItem[]
+
+  @@index([createdAt, id])
+}
+
+model SettlementBatchItem {
+  id                Int    @id @default(autoincrement())
+  batchId           Int
+  settlementId      Int    @unique
+  merchantId        Int
+  merchantUserId    Int
+  amount            Int
+  // 本批固定 wallet_points：入商家现有 PointAccount，不是可提现现金。
+  destination       String @default("wallet_points")
+  walletOperationId Int?   @unique
+
+  batch           SettlementBatch  @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  settlement      Settlement       @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  walletOperation WalletOperation? @relation(fields: [walletOperationId], references: [id], onDelete: Restrict)
+
+  @@index([batchId])
+  @@index([merchantId])
+}
+
+// 结算后的收益变化（目前仅已结算订单的全额售后冲正）；不覆写 Settlement 原金额。
+model SettlementAdjustment {
+  id                  Int      @id @default(autoincrement())
+  settlementId        Int
+  afterSalesCaseId    Int      @unique
+  merchantId          Int
+  kind                String   @default("after_sales_reversal")
+  // 均为非正数：订单额、佣金、商家净额的冲正。
+  orderAmountDelta    Int
+  commissionDelta     Int
+  settlementDelta     Int
+  // 立即从商家结算来源扣回的积分；不足部分进入 MerchantRecoveryCase。
+  clawbackPoints      Int      @default(0)
+  clawbackOperationId Int?     @unique
+  reason              String
+  createdByUserId     Int
+  createdAt           DateTime @default(now())
+
+  settlement        Settlement            @relation(fields: [settlementId], references: [id], onDelete: Restrict)
+  afterSalesCase    OrderAfterSalesCase   @relation(fields: [afterSalesCaseId], references: [id], onDelete: Restrict)
+  clawbackOperation WalletOperation?      @relation(fields: [clawbackOperationId], references: [id], onDelete: Restrict)
+  recoveryCase      MerchantRecoveryCase?
+
+  @@index([settlementId])
+  @@index([merchantId, createdAt])
+}
+
+// 商家欠收：已结算收益被冲正而商家结算来源不足时的应收；与买家退款进度分开。
+model MerchantRecoveryCase {
+  id              Int       @id @default(autoincrement())
+  adjustmentId    Int       @unique
+  merchantId      Int
+  amountDue       Int
+  amountCollected Int       @default(0)
+  amountWaived    Int       @default(0)
+  status          String    @default("open") // open | closed
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  closedAt        DateTime?
+
+  adjustment SettlementAdjustment     @relation(fields: [adjustmentId], references: [id], onDelete: Restrict)
+  actions    MerchantRecoveryAction[]
+
+  @@index([merchantId, status])
+}
+
+// 每次追收/线下收讫/豁免都是一条有凭证的动作。
+model MerchantRecoveryAction {
+  id                Int      @id @default(autoincrement())
+  caseId            Int
+  kind              String // wallet_clawback | offline_received | waived
+  amount            Int
+  requestKey        String   @unique
+  walletOperationId Int?     @unique
+  evidence          String?
+  note              String?
+  actorUserId       Int
+  createdAt         DateTime @default(now())
+
+  case            MerchantRecoveryCase @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  walletOperation WalletOperation?     @relation(fields: [walletOperationId], references: [id], onDelete: Restrict)
+
+  @@index([caseId, createdAt])
+}
+
+// 订单售后：独立于订单终态（订单保持 closed）。同一订单至多一个有效全额退款案件
+// （部分唯一索引 OrderAfterSalesCase_one_active_per_order 见迁移）。
+model OrderAfterSalesCase {
+  id                Int       @id @default(autoincrement())
+  orderId           Int
+  kind              String    @default("full_refund")
+  status            String    @default("open") // open | executed | rejected
+  reason            String
+  evidence          String?
+  createdByUserId   Int
+  decidedByUserId   Int?
+  decidedAt         DateTime?
+  decisionNote      String?
+  refundOperationId Int?      @unique
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  order           Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  refundOperation WalletOperation?      @relation(fields: [refundOperationId], references: [id], onDelete: Restrict)
+  adjustment      SettlementAdjustment?
+
+  @@index([orderId])
+  @@index([status, createdAt])
 }
 
 model CheckinRecord {
@@ -2556,6 +2770,10 @@ model ReconciliationRun {
   periodEnd          DateTime?
   status             String
   sourceSha256       String?   @db.Char(64)
+  // What the run actually covered: statement source (provider API / imported
+  // file / unsupported), entry and local-scan counts. A local-only scan is not
+  // a provider reconciliation.
+  coverage           Json?
   itemCount          Int       @default(0)
   mismatchCount      Int       @default(0)
   startedAt          DateTime?

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assertLegalStatusTransition, normalizeOrderStatus } from './statusPolicy.js'
-import { getSettlementEligibility } from './settlementPolicy.js'
+import { getSettlementEligibility } from '../merchantFinance/settlementPolicy.js'
 
 describe('order status policies', () => {
   it('maps legacy completed orders to delivered for settlement and transitions', () => {

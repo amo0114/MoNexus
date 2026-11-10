@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import request from 'supertest'
 import bcrypt from 'bcryptjs'
 import { app } from '../app.js'
@@ -9,6 +10,7 @@ import { getActiveCategoryIdByLabel, getActiveNetworkNodeCategoryId } from './ca
 import type { ValuePolicyStatus } from '@prisma/client'
 import { provisionValuePolicy } from '../modules/valuePolicy/governance.js'
 import { timeTestOperation } from './commonTiming.js'
+import { spendInTx } from '../modules/wallet/index.js'
 
 export const TEST_VALUE_POLICY_EVIDENCE = {
   d02DecisionRecordRef: 'test-fixture/d02',
@@ -63,9 +65,22 @@ export async function createTestUser(
       amount: balance,
       balanceAfter: balance,
       reason: '测试初始积分',
+      // Fixture grants stand in for historical reward credits.
+      growthEligible: true,
     },
   }))
   return { user, password }
+}
+
+/** Simulate the user spending points elsewhere, through the real wallet path. */
+export async function spendTestPoints(userId: number, amount: number) {
+  return prisma.$transaction(tx => spendInTx(tx, {
+    operationKey: `test-spend:${userId}:${randomUUID()}`,
+    userId,
+    source: { kind: 'test', id: userId },
+    reasonCode: 'test_spend',
+    log: { reason: '测试消费' },
+  }, { amount }))
 }
 
 /**

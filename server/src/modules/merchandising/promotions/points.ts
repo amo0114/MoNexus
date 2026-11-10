@@ -14,8 +14,8 @@
 //     a transaction breaks the MERCH-008 invariant.
 //
 // Concurrency guarantees (AC-MERCH-027 / CHK-PROMO-011):
-//   - debit/credit go through the shared checked PointAccount helper so concurrent
-//     charges cannot drive the balance negative or past the hard cap;
+//   - debit/refund go through wallet so concurrent charges cannot drive the
+//     balance negative or past the hard cap, and a refund returns the charged sources;
 //   - the campaign side (billing.ts) owns the `chargePointLogId` / `refundPointLogId`
 //     UNIQUE links that make duplicate charge/refund impossible at the DB level.
 //
@@ -25,7 +25,7 @@
 import { Prisma } from '@prisma/client'
 import { HttpError, notFound } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
-import { creditAvailablePoints, debitAvailablePoints } from '../../points/checkedMutation.js'
+import { refundInTx, spendInTx, type WalletContext } from '../../wallet/index.js'
 import { assertSpendingNotRestricted } from '../../points/spendingPolicy.js'
 
 /** 稳定 PointLog reason 模板（§7.3 / §7.4：charge 与 refund 均用固定文案，
@@ -42,16 +42,28 @@ export async function dbNow(client: Db): Promise<Date> {
   return rows[0].now
 }
 
+const chargeKey = (campaignId: number) => `promotion:${campaignId}:charge`
+
+function promotionCtx(campaignId: number, userId: number, step: 'charge' | 'refund', reason: string): WalletContext {
+  return {
+    operationKey: `promotion:${campaignId}:${step}`,
+    userId,
+    source: { kind: 'promotion_campaign', id: campaignId },
+    reasonCode: `promotion_${step}`,
+    log: { reason, orderId: null }, // §5.4：charge/refund log 必须 orderId IS NULL
+  }
+}
+
 /**
- * 条件扣款（§7.3 step 3/4）：checked debit → 余额不足返回 `{ ok: false }`
- * （不扣、不写 PointLog、不部分扣款）→ 足额则同事务创建 PointLog(type='out',
- * orderId=null)。
+ * 条件扣款（§7.3 step 3/4）：余额不足返回 `{ ok: false }`（不扣、不写
+ * PointLog、不部分扣款）→ 足额则同事务创建 PointLog(type='out', orderId=null)。
  *
  * 必须在交互式事务内调用；返回的 pointLogId 由调用方 CAS 到 campaign 的
  * `chargePointLogId`（UNIQUE）。
  */
 export async function debitPointsForPromotionCharge(
   tx: Prisma.TransactionClient,
+  campaignId: number,
   userId: number,
   amount: number,
 ): Promise<{ ok: true; pointLogId: number; balanceAfter: number } | { ok: false; balance: number }> {
@@ -59,9 +71,9 @@ export async function debitPointsForPromotionCharge(
     throw new Error(`promotion charge amount must be a positive integer, got ${amount}`)
   }
   await assertSpendingNotRestricted(userId, tx)
-  let updated
+  let charged
   try {
-    updated = await debitAvailablePoints(tx, userId, amount)
+    charged = await spendInTx(tx, promotionCtx(campaignId, userId, 'charge', PROMOTION_CHARGE_POINT_LOG_REASON), { amount })
   } catch (error) {
     if (error instanceof HttpError && error.code === 'POINT_INSUFFICIENT') {
       const account = await tx.pointAccount.findUnique({ where: { userId }, select: { balance: true } })
@@ -70,44 +82,28 @@ export async function debitPointsForPromotionCharge(
     }
     throw error
   }
-  const pointLog = await tx.pointLog.create({
-    data: {
-      userId,
-      type: 'out',
-      amount,
-      balanceAfter: updated.balance,
-      reason: PROMOTION_CHARGE_POINT_LOG_REASON,
-      orderId: null, // §5.4：charge log 必须 orderId IS NULL
-    },
-    select: { id: true },
-  })
-  return { ok: true, pointLogId: pointLog.id, balanceAfter: updated.balance }
+  return { ok: true, pointLogId: charged!.pointLogId!, balanceAfter: charged!.balance }
 }
 
 /**
- * 退款入账（§7.4）：checked credit → 创建 PointLog(type='refund', orderId=null)。
+ * 退款入账（§7.4）：按扣款来源返还 → PointLog(type='refund', orderId=null)。
  * 调用方保证 refund ≤ 当前扣款（service 校验 + DB CHECK
- * `refundedPoints <= chargedPoints`）。
+ * `refundedPoints <= chargedPoints`）。迁移前的扣款没有 wallet 记录，以
+ * campaign 的 chargePointLogId 为凭证按 legacy_unknown 返还。
  */
 export async function creditPointsForPromotionRefund(
   tx: Prisma.TransactionClient,
+  campaignId: number,
   userId: number,
   amount: number,
 ): Promise<{ pointLogId: number; balanceAfter: number }> {
   if (!Number.isInteger(amount) || amount <= 0) {
     throw new Error(`promotion refund amount must be a positive integer, got ${amount}`)
   }
-  const updated = await creditAvailablePoints(tx, userId, amount)
-  const pointLog = await tx.pointLog.create({
-    data: {
-      userId,
-      type: 'refund',
-      amount,
-      balanceAfter: updated.balance,
-      reason: PROMOTION_REFUND_POINT_LOG_REASON,
-      orderId: null, // §5.4：refund log 必须 orderId IS NULL
-    },
-    select: { id: true },
+  const refunded = await refundInTx(tx, promotionCtx(campaignId, userId, 'refund', PROMOTION_REFUND_POINT_LOG_REASON), {
+    originalKey: chargeKey(campaignId),
+    amount,
+    legacyAmount: amount,
   })
-  return { pointLogId: pointLog.id, balanceAfter: updated.balance }
+  return { pointLogId: refunded.pointLogId!, balanceAfter: refunded.balance }
 }

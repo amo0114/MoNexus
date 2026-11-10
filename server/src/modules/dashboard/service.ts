@@ -1,6 +1,7 @@
 import { performance } from 'node:perf_hooks'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
+import { getMerchantFinanceSummary } from '../merchantFinance/index.js'
 import { addCalendarDays, businessDateString, businessDayStartUtc, businessMonthRange } from '../../lib/businessTime.js'
 import type {
   DashboardStatusBreakdown,
@@ -72,17 +73,15 @@ export async function getSummary(merchantId: number): Promise<DashboardSummary> 
     prisma.order.count({ where: { merchantId, createdAt: monthRange } }),
     prisma.order.aggregate({ where: { merchantId, createdAt: monthRange, status: { not: 'refunded' } }, _sum: { price: true } }),
     prisma.product.count({ where: { merchantId, status: 'active' } }),
-    prisma.settlement.aggregate({
-      where: { merchantId, status: 'pending' },
-      _sum: { settlementAmount: true },
-    }),
+    getMerchantFinanceSummary(merchantId),
   ])
 
   const result = {
     monthOrderCount,
     monthPointsRevenue: monthRevenueResult._sum.price ?? 0,
     onSaleProductCount,
-    pendingSettlementPoints: pendingSettlementResult._sum.settlementAmount ?? 0,
+    // Same vocabulary as the merchant finance page: earned but not yet credited.
+    pendingSettlementPoints: pendingSettlementResult.awaitingCompletion + pendingSettlementResult.settleable,
   }
   logDuration('dashboard.summary', merchantId, startedAt)
   return result
