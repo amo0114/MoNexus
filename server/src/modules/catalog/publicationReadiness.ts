@@ -21,16 +21,16 @@ import {
   CATEGORY_STATUS,
   READINESS_DETAIL_CODES,
   type ReadinessDetailCode,
-} from './constants.js'
-import { getProductTemplate } from './templates/registry.js'
-import { evaluateTemplateFulfillment } from './templates/fulfillmentStrategy.js'
-import { validateTemplateAttributes } from './templates/validate.js'
+} from '../../lib/productCatalog/constants.js'
+import { getProductTemplate } from '../../lib/productCatalog/templates/registry.js'
+import { evaluateTemplateFulfillment } from '../../lib/productCatalog/templates/fulfillmentStrategy.js'
+import { validateTemplateAttributes } from '../../lib/productCatalog/templates/validate.js'
 import {
   TEMPLATE_KEYS,
   type FulfillmentOfferInput,
   type TemplateAttributes,
   type TemplateKey,
-} from './templates/types.js'
+} from '../../lib/productCatalog/templates/types.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 

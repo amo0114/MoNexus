@@ -19,7 +19,7 @@ import {
   updateCategory,
 } from './categoryService.js'
 import { getPublicCategoryRegistry } from './registry.js'
-import { CATALOG_ERROR_CODES, SEED_CATEGORY_CODE } from './constants.js'
+import { CATALOG_ERROR_CODES, SEED_CATEGORY_CODE } from '../../lib/productCatalog/constants.js'
 
 // Every direct category create is an ACTIVE category → needs a resolvable cover.
 const COVER_URL = '/assets/network.webp'

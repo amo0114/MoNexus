@@ -37,6 +37,18 @@ test('allows merchant identity lookup but rejects self-service internals', () =>
   assert.match(checkBoundaries(new Map([[file, "import { lookup } from '../merchant/profileService.js'"]])).join('\n'), /merchant self-service internals/)
 })
 
+test('rejects catalog importing the products read module but allows the reverse', () => {
+  const errors = checkBoundaries(new Map([
+    ['server/src/modules/catalog/productWrite.ts', "import { list } from '../products/service.js'"],
+    ['server/src/modules/products/service.ts', "export const list = 1"],
+  ]))
+  assert.match(errors.join('\n'), /catalog must not import the products read module/)
+  assert.deepEqual(checkBoundaries(new Map([
+    ['server/src/modules/products/service.ts', "import { load } from '../catalog/assurance/service.js'"],
+    ['server/src/modules/catalog/assurance/service.ts', "import type { Row } from '../../products/service.js'\nexport const load = 1"],
+  ])), [])
+})
+
 test('keeps pure policy dependencies separate from query services', () => {
   const errors = checkBoundaries(new Map([
     ['server/src/modules/orders/settlementPolicy.ts', "import { normalize } from './fulfillment.js'"],

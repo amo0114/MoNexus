@@ -5,7 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { checkProductReadiness, type ReadinessDetail } from './publicationReadiness.js'
-import { CATEGORY_STATUS, READINESS_DETAIL_CODES } from './constants.js'
+import { CATEGORY_STATUS, READINESS_DETAIL_CODES } from '../../lib/productCatalog/constants.js'
 
 type OfferOverrides = Partial<{
   id: number

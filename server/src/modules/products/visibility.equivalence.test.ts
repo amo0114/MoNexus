@@ -10,7 +10,7 @@ import {
   publicVisibilityWhere,
   type ProductAudience,
   type PublicProductAccessRow,
-} from './visibility.js'
+} from '../../lib/productCatalog/visibility.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §3.3 —— 四条访问路径的等价性测试。

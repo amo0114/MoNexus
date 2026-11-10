@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { assertNoSentinel, assertUnknownPreserved, collectKeyPaths } from '../../../__tests__/aiProjection.js'
-import { getProductTemplateRegistry } from '../templates/registry.js'
+import { getProductTemplateRegistry } from '../../../lib/productCatalog/templates/registry.js'
 import { buildProductDraftAiContext, MAX_DRAFT_CONTEXT } from './projection.js'
 import { validateDraftSuggestion } from './validator.js'
 import { DRAFT_SAMPLE_DESCRIPTION, sampleDraftOutput, grounded, RESUME_LAYOUT_DESCRIPTION } from './fixtures.js'

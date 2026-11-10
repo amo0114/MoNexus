@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { getProductTemplateRegistry } from './registry.js'
+import { getProductTemplateRegistry } from '../../../lib/productCatalog/templates/registry.js'
 
 const router = Router()
 

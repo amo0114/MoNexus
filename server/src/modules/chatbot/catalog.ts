@@ -1,7 +1,7 @@
 import { badRequest, HttpError } from '../../lib/httpError.js'
 import { listProducts, getProductDetail } from '../products/service.js'
 import type { AvailabilityStatus } from '../products/publicAvailability.js'
-import type { ProductAudience } from '../products/visibility.js'
+import type { ProductAudience } from '../../lib/productCatalog/visibility.js'
 
 /**
  * SPEC-CHAT-BOT-001 / BOT-1 —— 机器人侧商品查询（只读）。

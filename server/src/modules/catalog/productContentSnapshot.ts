@@ -1,8 +1,8 @@
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { ASSURANCE_POLICY_CODE, ASSURANCE_POLICY_TEXT } from './constants.js'
-import { parseProductDetails } from './templates/productDetails.js'
-import type { ProductDetails, TemplateAttributes, TemplateKey } from './templates/types.js'
+import { ASSURANCE_POLICY_CODE, ASSURANCE_POLICY_TEXT } from '../../lib/productCatalog/constants.js'
+import { parseProductDetails } from '../../lib/productCatalog/templates/productDetails.js'
+import type { ProductDetails, TemplateAttributes, TemplateKey } from '../../lib/productCatalog/templates/types.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 

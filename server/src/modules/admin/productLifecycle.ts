@@ -3,8 +3,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { syncProductProjection } from '../../lib/offers.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
-import { CATALOG_ERROR_CODES, PRODUCT_STATUS } from '../catalog/constants.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
+import { CATALOG_ERROR_CODES, PRODUCT_STATUS } from '../../lib/productCatalog/constants.js'
 
 type Tx = Prisma.TransactionClient
 export type ArchivedFilter = 'exclude' | 'only' | 'all'

@@ -3,8 +3,8 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { checkProductReadiness, type ReadinessDetail } from './publicationReadiness.js'
-import { CATEGORY_STATUS, READINESS_DETAIL_CODES } from './constants.js'
-import { EMPTY_PRODUCT_DETAILS } from './templates/types.js'
+import { CATEGORY_STATUS, READINESS_DETAIL_CODES } from '../../lib/productCatalog/constants.js'
+import { EMPTY_PRODUCT_DETAILS } from '../../lib/productCatalog/templates/types.js'
 
 type OfferOverrides = Partial<{
   id: number

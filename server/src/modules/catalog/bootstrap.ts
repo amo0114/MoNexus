@@ -16,7 +16,7 @@ import {
   CATEGORY_STATUS,
   SEED_CATEGORY_CODE,
   type SeedCategoryCode,
-} from './constants.js'
+} from '../../lib/productCatalog/constants.js'
 
 type Client = typeof prisma | Prisma.TransactionClient
 

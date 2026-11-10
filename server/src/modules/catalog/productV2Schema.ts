@@ -6,10 +6,10 @@ import {
   productNameSchema,
   productPriceSchema,
   productRichDescriptionSchema,
-} from '../products/schema.js'
-import { PRODUCT_VISIBILITY } from './constants.js'
-import { productDetailsSchema } from './templates/productDetails.js'
-import { TEMPLATE_KEYS } from './templates/types.js'
+} from '../../lib/productCatalog/fieldSchemas.js'
+import { PRODUCT_VISIBILITY } from '../../lib/productCatalog/constants.js'
+import { productDetailsSchema } from '../../lib/productCatalog/templates/productDetails.js'
+import { TEMPLATE_KEYS } from '../../lib/productCatalog/templates/types.js'
 
 export const platformMediaRefSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('upload'), objectKey: z.string().min(1).max(512) }).strict(),

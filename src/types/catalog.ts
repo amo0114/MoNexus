@@ -3,7 +3,7 @@
  * Foundation-frozen server contracts.
  *
  * The values below are the exact copies of the frozen baseline:
- *   server/src/modules/catalog/constants.ts
+ *   server/src/lib/productCatalog/constants.ts
  *   server/src/modules/catalog/contracts.ts
  * (FND-CMI-001 F0). Do not invent new codes or drift from those files —
  * contract changes must go through the Owner freeze process.
@@ -11,7 +11,7 @@
 import type { DeliveryMode, StockMode } from './merchant'
 
 /* ------------------------------------------------------------------ *
- * Frozen constants (mirror server/src/modules/catalog/constants.ts)
+ * Frozen constants (mirror server/src/lib/productCatalog/constants.ts)
  * ------------------------------------------------------------------ */
 
 /** The builtin (seeded) ProductCategory.code values — immutable, never reused. */

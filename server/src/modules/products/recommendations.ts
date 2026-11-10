@@ -1,8 +1,8 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { getProductTemplate } from '../catalog/templates/registry.js'
-import type { TemplateKey } from '../catalog/templates/types.js'
-import { guestVisibilitySql, merchantVisibleSql, type ProductAudience } from './visibility.js'
+import { getProductTemplate } from '../../lib/productCatalog/templates/registry.js'
+import type { TemplateKey } from '../../lib/productCatalog/templates/types.js'
+import { guestVisibilitySql, merchantVisibleSql, type ProductAudience } from '../../lib/productCatalog/visibility.js'
 
 /** Fixed per-group candidate cap; bounds hydration cost, not the category scan. */
 export const RECOMMENDATION_CANDIDATE_LIMIT = 64

@@ -5,7 +5,7 @@ import {
   bumpProductListVersionCoalesced,
   getCacheVersion,
   makeCacheKey,
-} from '../../lib/cache.js'
+} from '../cache.js'
 
 type ProductListCacheParams = {
   query?: string

@@ -6,9 +6,9 @@
 // the domain rules the schema cannot see (code immutability, referenced-delete).
 
 import { z } from 'zod'
-import { CATEGORY_CODE_PATTERN, CATEGORY_STATUS } from './constants.js'
-import { CATEGORY_GUEST_VISIBILITY } from '../products/visibility.js'
-import type { CategoryGuestVisibility } from '../products/visibility.js'
+import { CATEGORY_CODE_PATTERN, CATEGORY_STATUS } from '../../lib/productCatalog/constants.js'
+import { CATEGORY_GUEST_VISIBILITY } from '../../lib/productCatalog/visibility.js'
+import type { CategoryGuestVisibility } from '../../lib/productCatalog/visibility.js'
 
 export const MAX_CATEGORY_LABEL_LENGTH = 50
 export const MAX_CATEGORY_DESCRIPTION_LENGTH = 500

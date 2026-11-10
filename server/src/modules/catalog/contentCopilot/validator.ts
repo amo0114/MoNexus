@@ -4,9 +4,9 @@
 // independent detector rejects hard facts the model did not declare.
 
 import type { IssueCounts } from '../../../lib/ai/generation.js'
-import { productDescriptionSchema } from '../../products/schema.js'
-import { productDetailsSchema } from '../templates/productDetails.js'
-import type { ProductDetails } from '../templates/types.js'
+import { productDescriptionSchema } from '../../../lib/productCatalog/fieldSchemas.js'
+import { productDetailsSchema } from '../../../lib/productCatalog/templates/productDetails.js'
+import type { ProductDetails } from '../../../lib/productCatalog/templates/types.js'
 import {
   GENERATION_LIMITS,
   MAX_CLAIMS_PER_UNIT,

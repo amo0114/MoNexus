@@ -9,7 +9,7 @@ import {
   isInventoryContentUniqueViolation,
   type InventoryImportPayload,
 } from '../../lib/inventoryImport.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { parseStoredDeliveryFields, structuredContentToJson } from '../../lib/deliveryFields.js'
 import { getDefaultOffer } from '../../lib/offers.js'
 import { adjustOfferCapacity } from '../../lib/offerCapacity.js'

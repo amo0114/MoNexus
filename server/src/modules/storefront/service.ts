@@ -3,7 +3,7 @@ import { logger } from '../../lib/logger.js'
 import { listSponsoredItems } from '../merchandising/promotions/publicSponsored.js'
 import { listEditorialShelf } from '../merchandising/editorial/publicShelf.js'
 import { getPublicProductCardsByIds } from '../products/service.js'
-import type { ProductAudience } from '../products/visibility.js'
+import type { ProductAudience } from '../../lib/productCatalog/visibility.js'
 import type { CandidatesQuery } from './schema.js'
 
 const CANDIDATE_LIMIT = 6

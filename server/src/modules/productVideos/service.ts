@@ -6,7 +6,7 @@ import { HttpError, notFound } from '../../lib/httpError.js'
 import { getDeliveryStorageForProvider, getDeliveryStorageForWrite } from '../../lib/storage/delivery.js'
 import { registerStoredObject } from '../../lib/storage/storedObjectRegistry.js'
 import { VIDEO_MAX_BYTES, VIDEO_POSTER_MAX_BYTES, VIDEO_TTL_SECONDS, videoKey } from '../../lib/storage/videoKeys.js'
-import { assertPublicProductAccess, type ProductAudience } from '../products/visibility.js'
+import { assertPublicProductAccess, type ProductAudience } from '../../lib/productCatalog/visibility.js'
 import type { VideoMetadata } from './processing.js'
 
 const unavailable = () => new HttpError(409, 'VIDEO_ASSET_UNAVAILABLE', '视频已不可用或已关联其他商品，请重新上传')

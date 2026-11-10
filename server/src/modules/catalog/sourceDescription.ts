@@ -1,14 +1,14 @@
 import { createHash } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { lockProductRow } from './productLock.js'
 import { invalidateGuestEligibilityIfNeeded } from './guestEligibility.js'
 import {
   fetchNormalizedFakaSource,
   type NormalizedFakaSource,
 } from './externalCatalog.js'
-import { CATALOG_ERROR_CODES } from './constants.js'
+import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 
 export type SourceDescriptionField = 'description' | 'richDescription'
 

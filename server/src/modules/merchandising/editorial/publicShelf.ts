@@ -5,7 +5,7 @@ import {
   guestVisibleProductIdsSql,
   isCurrentlyPubliclyVisible,
   type ProductAudience,
-} from '../../products/visibility.js'
+} from '../../../lib/productCatalog/visibility.js'
 
 export async function listEditorialShelf(
   input: { placement?: string; categoryCode?: string; limit?: number } = {},

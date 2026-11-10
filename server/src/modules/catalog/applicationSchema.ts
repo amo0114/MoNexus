@@ -17,7 +17,7 @@ import { z } from 'zod'
 import {
   CATEGORY_APPLICATION_RESOLUTION,
   CATEGORY_APPLICATION_STATUS,
-} from './constants.js'
+} from '../../lib/productCatalog/constants.js'
 import {
   categoryCodeSchema,
   categoryDescriptionField,

@@ -12,14 +12,14 @@ import {
   isFakaBridgeConfigured,
   normalizeFakaOfferIntegration,
 } from '../../lib/fakaBridge/index.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { resolveProductCategory } from '../catalog/resolver.js'
 import {
   MediaRefResolutionError,
   resolveLegacyPlatformImageUrl,
   resolvePlatformPublicImage,
 } from '../catalog/platformMedia.js'
-import { CATALOG_ERROR_CODES, EXTERNAL_CATALOG_PROVIDER } from '../catalog/constants.js'
+import { CATALOG_ERROR_CODES, EXTERNAL_CATALOG_PROVIDER } from '../../lib/productCatalog/constants.js'
 import {
   buildExternalCatalogRequestHash,
   fetchNormalizedFakaSource,
@@ -28,7 +28,7 @@ import {
   type ExternalCatalogRequestInput,
   type NormalizedFakaSource,
 } from '../catalog/externalCatalog.js'
-import { EMPTY_PRODUCT_DETAILS } from '../catalog/templates/types.js'
+import { EMPTY_PRODUCT_DETAILS } from '../../lib/productCatalog/templates/types.js'
 
 /**
  * Admin-only: set Xboard capacity_limit for a Faka offer (null = unlimited).

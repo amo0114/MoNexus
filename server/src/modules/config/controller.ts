@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
 import * as configService from './service.js'
-import { resolveProductAudience } from '../products/visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 
 export async function registry(req: Request, res: Response, next: NextFunction) {
   try {

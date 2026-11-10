@@ -11,7 +11,7 @@ import {
   isInventoryContentUniqueViolation,
   type InventoryImportPayload,
 } from '../../lib/inventoryImport.js'
-import { invalidateProductPublicCache } from '../products/cache.js'
+import { invalidateProductPublicCache } from '../../lib/productCatalog/publicCache.js'
 import { adjustOfferCapacity } from '../../lib/offerCapacity.js'
 
 /**

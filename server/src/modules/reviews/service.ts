@@ -7,9 +7,9 @@ import { badRequest, notFound, conflict } from '../../lib/httpError.js'
 import {
   buildProductReviewsCacheKey,
   invalidateProductPublicCache,
-} from '../products/cache.js'
+} from '../../lib/productCatalog/publicCache.js'
 import { normalizeOrderStatus } from '../orders/statusPolicy.js'
-import { assertPublicProductAccess, type ProductAudience } from '../products/visibility.js'
+import { assertPublicProductAccess, type ProductAudience } from '../../lib/productCatalog/visibility.js'
 
 const EDIT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 

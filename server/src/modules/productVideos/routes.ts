@@ -16,7 +16,7 @@ import { getDeliveryStorage } from '../../lib/storage/delivery.js'
 import { DeliveryMemoryStorage, verifyVideoToken } from '../../lib/storage/deliveryMemory.js'
 import { VIDEO_SOURCE_MAX_BYTES, videoSourceKey } from '../../lib/storage/videoKeys.js'
 import { productVideoTempRoot } from '../../lib/productVideoTemp.js'
-import { resolveProductAudience } from '../products/visibility.js'
+import { resolveProductAudience } from '../../lib/productCatalog/visibility.js'
 import { videoToolsAvailable } from './processing.js'
 import { productVideoPlayback, reserveVideo, signVideoAsset, videoJob } from './service.js'
 

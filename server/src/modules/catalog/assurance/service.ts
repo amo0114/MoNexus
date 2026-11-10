@@ -1,9 +1,9 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma.js'
 import { badRequest, forbidden, HttpError, notFound } from '../../../lib/httpError.js'
-import { ASSURANCE_POLICY_CODE, ASSURANCE_POLICY_TEXT, CATALOG_ERROR_CODES } from '../constants.js'
+import { ASSURANCE_POLICY_CODE, ASSURANCE_POLICY_TEXT, CATALOG_ERROR_CODES } from '../../../lib/productCatalog/constants.js'
 import { lockProductRow } from '../productLock.js'
-import { invalidateProductPublicCache } from '../../products/cache.js'
+import { invalidateProductPublicCache } from '../../../lib/productCatalog/publicCache.js'
 
 type Tx = Prisma.TransactionClient
 const DAY_MS = 86_400_000

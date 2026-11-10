@@ -21,7 +21,7 @@ import {
   productStockModeSchema,
   productTypeSchema,
   validateProductCommercialFields,
-} from '../products/schema.js'
+} from '../../lib/productCatalog/fieldSchemas.js'
 
 export const adjustPointsSchema = z.object({
   type: z.enum(['add', 'deduct']),

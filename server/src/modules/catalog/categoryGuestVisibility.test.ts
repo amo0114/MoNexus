@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest'
 import { api, authHeader, createTestUser, loginAs } from '../../__tests__/helpers.js'
 import { prisma } from '../../lib/prisma.js'
-import { CATEGORY_GUEST_VISIBILITY } from '../products/visibility.js'
+import { CATEGORY_GUEST_VISIBILITY } from '../../lib/productCatalog/visibility.js'
 
 async function loginAdmin(email = 'catvis-admin@test.local') {
   const { user, password } = await createTestUser(email, 'admin123', 'admin')
