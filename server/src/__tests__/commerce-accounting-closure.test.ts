@@ -132,7 +132,7 @@ describe('commerce accounting closure', () => {
     const adminOrder = await api.post('/api/orders').set(authHeader(admin.accessToken)).send({ productId: platform.id }).expect(400)
     expect(adminOrder.body.error.code).toBe('PURCHASE_NOT_ALLOWED')
     await api.post(`/api/admin/users/${adminUser.id}/adjust`).set(authHeader(admin.accessToken))
-      .send({ type: 'add', amount: 100, reason: '自加' }).expect(400)
+      .set('Idempotency-Key', 'self-adjust').send({ type: 'add', amount: 100, reason: '自加' }).expect(400)
     expect(await prisma.order.count()).toBe(0)
   })
 })

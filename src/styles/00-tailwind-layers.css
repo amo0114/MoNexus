@@ -6,7 +6,7 @@
 
 .btn-primary {
   @apply inline-flex items-center justify-center gap-2 cursor-pointer
-         bg-[var(--color-primary)] text-white font-semibold text-sm
+         bg-[var(--color-primary)] text-[var(--color-on-primary)] font-semibold text-sm
          px-6 py-3 rounded-lg shadow-md transition-all duration-200
          hover:bg-[var(--color-primary-hover)] hover:-translate-y-px hover:shadow-lg
          focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]

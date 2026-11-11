@@ -265,8 +265,11 @@ export async function reportAdminPlatformUnfulfillable(
 export async function adjustUserPoints(
   userId: number,
   payload: { type: 'add' | 'deduct'; amount: number; reason: string },
+  idempotencyKey: string,
 ): Promise<void> {
-  await api.post(`/admin/users/${userId}/adjust`, payload)
+  await api.post(`/admin/users/${userId}/adjust`, payload, {
+    headers: { 'Idempotency-Key': idempotencyKey },
+  })
 }
 
 export async function banUser(userId: number, reason: string): Promise<void> {

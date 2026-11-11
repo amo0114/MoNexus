@@ -198,12 +198,15 @@ transaction). Admin routes require an MFA-verified session: `ADMIN_TOKEN` must
 be the access token returned by `POST /api/auth/mfa/verify` after the admin
 password login, not the password-only challenge. Body fields follow
 `adjustPointsSchema` (`server/src/modules/admin/schema.ts`): `type` is `add` or
-`deduct`, `amount` is a positive integer, `reason` is required.
+`deduct`, `amount` is a positive integer up to 1,000,000, `reason` is required.
+`Idempotency-Key` is required: reuse the same key when retrying a timed-out
+call (it replays instead of adjusting twice); use a new key for a new adjustment.
 
 ```bash
 ADMIN_TOKEN='<mfa-verified-admin-access-token>'
 curl -fsS -X POST "http://localhost:3000/api/admin/users/<userId>/adjust" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H 'Content-Type: application/json' \
   -d '{"type": "deduct", "amount": 100, "reason": "fraud reversal #1234"}'
 ```

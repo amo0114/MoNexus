@@ -9,7 +9,7 @@ Privileged surface for the platform operator: user / merchant / product / settle
 | --- | --- | --- |
 | GET | `/api/admin/stats` | Dashboard counters (users / orders / today's orders / 签到 / active products / available inventory). |
 | GET | `/api/admin/users?q=&page=&pageSize=` | Email-fuzzy search. |
-| POST | `/api/admin/users/:id/adjust` | Add or deduct points. Transactional `PointAccount` + `PointLog` + `AdminLog`. Rejects deduct when balance is insufficient. |
+| POST | `/api/admin/users/:id/adjust` | Add or deduct points (1..1,000,000). Requires `Idempotency-Key`; a retry with the same key replays the first result without a second `AdminLog`. Transactional `PointAccount` + `PointLog` + `AdminLog`. Rejects deduct when balance is insufficient. |
 | PUT | `/api/admin/users/:id/ban` | Sets `status = 已封禁`, **revokes all refresh tokens**, writes `AdminLog`. Cannot ban self or other admins. |
 | PUT | `/api/admin/users/:id/unban` | Sets `status = 正常`, writes `AdminLog`. The user must log in again to mint fresh tokens. |
 

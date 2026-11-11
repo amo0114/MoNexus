@@ -263,6 +263,8 @@ export async function uploadDeliveryFile(file: File): Promise<{ id: number; file
   form.append('file', file)
   const { data } = await api.post('/uploads/delivery-file', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    // Sized by deliveryFileMaxMb; the global 15s budget would abort large uploads mid-stream.
+    timeout: 0,
   })
   return data
 }
