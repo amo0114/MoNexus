@@ -691,6 +691,13 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
 
         {step === 5 && (
           <div className="space-y-5" data-testid="wizard-step-availability">
+            {draft && (
+              <p className="text-xs text-[var(--color-text-muted)]" data-testid="wizard-draft-locked-hint">
+                草稿已保存，商品信息与规格不能再在向导中修改；发布前如需调整，请到
+                <button type="button" className="underline text-[var(--color-primary)] mx-1" onClick={() => navigate(`/merchant/products/${draft.id}/edit`)}>编辑页</button>
+                修改。
+              </p>
+            )}
             {draft ? (
               availabilityLoading ? (
                 <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm text-[var(--color-text-muted)] flex items-center gap-2" data-testid="availability-offers-loading">
@@ -754,7 +761,8 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
       />
 
       <div className="flex justify-between mt-6 scroll-mb-24">
-        <button type="button" onClick={() => setStep(s => Math.max(s - 1, 0))} disabled={step === 0 || busy}
+        {/* Steps 0-4 are already persisted in the draft; edits there would be silently dropped. */}
+        <button type="button" onClick={() => setStep(s => Math.max(s - 1, 0))} disabled={step === 0 || busy || (draft != null && step === 5)}
           className="btn-secondary px-6 py-2.5 disabled:opacity-40">
           <ArrowLeft className="w-4 h-4" /> 上一步
         </button>

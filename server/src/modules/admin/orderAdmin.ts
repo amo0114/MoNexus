@@ -2,6 +2,7 @@ import { resolvePagination } from '../../lib/pagination.js'
 import { Prisma } from '@prisma/client'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { prisma } from '../../lib/prisma.js'
+import { addCalendarDays, businessDayStartUtc } from '../../lib/businessTime.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { afterOrderRefunded, onOrderRefundedInTx } from '../fulfillment/coordination.js'
 import { serializeAdminOrderDetail, serializeAdminOrderList } from '../orders/serializers.js'
@@ -38,16 +39,9 @@ function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
 
   if (query.fromDate || query.toDate) {
     const createdAtFilter: Prisma.DateTimeFilter = {}
-    if (query.fromDate) {
-      // 起始日包含：UTC 零点
-      createdAtFilter.gte = new Date(`${query.fromDate}T00:00:00.000Z`)
-    }
-    if (query.toDate) {
-      // 结束日次日零点排除：UTC 次日零点
-      const nextDay = new Date(`${query.toDate}T00:00:00.000Z`)
-      nextDay.setUTCDate(nextDay.getUTCDate() + 1)
-      createdAtFilter.lt = nextDay
-    }
+    // 日期按业务日（Asia/Shanghai）解释：起始日零点包含，结束日次日零点排除。
+    if (query.fromDate) createdAtFilter.gte = businessDayStartUtc(query.fromDate)
+    if (query.toDate) createdAtFilter.lt = businessDayStartUtc(addCalendarDays(query.toDate, 1))
     where.createdAt = createdAtFilter
   }
 

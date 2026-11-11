@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Search, UsersRound, Loader2 } from 'lucide-react'
 import {
   getAdminUsers,
@@ -7,7 +7,8 @@ import {
   adjustUserPoints,
   AdminUserItem,
 } from '../../api/admin'
-import { getApiErrorMessage } from '../../api/error'
+import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
+import { newIdempotencyKey } from '../../utils/idempotencyKey'
 import { useAppStore } from '../../stores/appStore'
 import { useAuthStore } from '../../stores/authStore'
 import AdminPagination from './AdminPagination'
@@ -19,6 +20,9 @@ import EmptyState from '../ui/EmptyState'
 const PAGE_SIZE = 20
 
 /** 用户管理 Tab：搜索（邮箱/商家名，300ms 防抖）+ 分页 + 封禁/解封/调整积分 */
+// Mirrors adjustPointsSchema on the server.
+const MAX_ADJUST_POINTS = 1_000_000
+
 export default function AdminUserTable() {
   const showToast = useAppStore((s) => s.showToast)
   const currentUser = useAuthStore((s) => s.user)
@@ -111,22 +115,34 @@ export default function AdminUserTable() {
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjusting, setAdjusting] = useState(false)
+  // One key per opened dialog: a retry after a timeout replays the grant instead of repeating it.
+  const adjustKeyRef = useRef('')
 
   async function confirmAdjust() {
     if (!adjustTarget || adjusting) return
-    const amount = parseInt(adjustAmount)
-    if (!amount || amount <= 0 || !adjustReason) {
+    const amount = /^\d+$/.test(adjustAmount.trim()) ? Number(adjustAmount) : 0
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !adjustReason) {
       showToast('请填写有效的数量和原因', 'error')
+      return
+    }
+    if (amount > MAX_ADJUST_POINTS) {
+      showToast(`单次调整不能超过 ${MAX_ADJUST_POINTS} 积分`, 'error')
       return
     }
     setAdjusting(true)
     try {
-      await adjustUserPoints(adjustTarget.id, { type: adjustType, amount, reason: adjustReason })
+      await adjustUserPoints(adjustTarget.id, { type: adjustType, amount, reason: adjustReason }, adjustKeyRef.current)
       showToast(`已成功${adjustType === 'add' ? '发放' : '扣除'} ${amount} 积分`)
       setShowAdjust(false)
       fetchUsers()
     } catch (err: any) {
-      showToast(getApiErrorMessage(err, '操作失败'), 'error')
+      if (getApiErrorCode(err) === 'IDEMPOTENCY_KEY_REUSED') {
+        // The earlier attempt with this key committed (e.g. it timed out client-side).
+        showToast('上次调整可能已生效，请先核对该用户积分流水再决定是否重新调整', 'error')
+        fetchUsers()
+      } else {
+        showToast(getApiErrorMessage(err, '操作失败'), 'error')
+      }
     } finally {
       setAdjusting(false)
     }
@@ -215,6 +231,7 @@ export default function AdminUserTable() {
                       setAdjustType('add')
                       setAdjustAmount('')
                       setAdjustReason('')
+                      adjustKeyRef.current = newIdempotencyKey()
                       setShowAdjust(true)
                     }}
                     className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
@@ -330,6 +347,7 @@ export default function AdminUserTable() {
                   id="adjust-points-amount"
                   type="number"
                   min="1"
+                  max={MAX_ADJUST_POINTS}
                   step="1"
                   value={adjustAmount}
                   onChange={(e) => setAdjustAmount(e.target.value)}

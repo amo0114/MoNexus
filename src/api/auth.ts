@@ -316,7 +316,8 @@ export async function changePassword(payload: {
   currentPassword: string
   newPassword: string
 }): Promise<{ message: string }> {
-  const { data } = await api.post('/auth/password-change', payload)
+  // A wrong current password is a business 401; refreshing and replaying would submit it twice.
+  const { data } = await api.post('/auth/password-change', payload, { skipAuthRefresh: true })
   return data
 }
 
