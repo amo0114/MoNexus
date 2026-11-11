@@ -354,7 +354,7 @@ describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
     }]))
   })
 
-  it('is idempotent: re-submitting an already-saved draft never creates a second one', async () => {
+  it('locks the saved steps so later edits cannot be silently dropped from the draft', async () => {
     const transport = await walkToConfirm({
       get: { '/merchant/products/101/offers': catalogFixtureOffers },
       post: { '/merchant/products': v2Created },
@@ -363,10 +363,8 @@ describe('ProductCreateWizard draft flow (editorVersion 2)', () => {
     fireEvent.click(screen.getByTestId('wizard-save-draft'))
     await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /上一步/ }))
-    expect(screen.getByTestId('wizard-step-confirm')).toBeInTheDocument()
-    fireEvent.click(screen.getByTestId('wizard-save-draft'))
-    await waitFor(() => expect(screen.getByTestId('product-availability-step')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /上一步/ })).toBeDisabled()
+    expect(screen.getByTestId('wizard-draft-locked-hint')).toBeInTheDocument()
 
     const creates = transport.calls.filter(c => c.method === 'post' && c.url === '/merchant/products')
     expect(creates).toHaveLength(1)
