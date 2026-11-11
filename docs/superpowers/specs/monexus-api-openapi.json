@@ -929,7 +929,8 @@
           },
           "amount": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "maximum": 1000000
           },
           "reason": {
             "type": "string",
@@ -6847,7 +6848,7 @@
           "Admin Users"
         ],
         "summary": "调整用户积分（增 / 扣）",
-        "description": "事务内：更新余额 → 写 `PointLog` → 写 `AdminLog`。扣除时余额不足返回 400。",
+        "description": "事务内：更新余额 → 写 `PointLog` → 写 `AdminLog`。扣除时余额不足返回 400。同一 Idempotency-Key 重试回放首次结果，不重复调整。",
         "security": [
           {
             "bearerAuth": []
@@ -6860,6 +6861,16 @@
             "required": true,
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "每次调整意图一个键；超时重试复用同一键。",
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._:-]{1,128}$"
             }
           }
         ],

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Search, UsersRound, Loader2 } from 'lucide-react'
 import {
   getAdminUsers,
@@ -111,17 +111,19 @@ export default function AdminUserTable() {
   const [adjustAmount, setAdjustAmount] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjusting, setAdjusting] = useState(false)
+  // One key per opened dialog: a retry after a timeout replays the grant instead of repeating it.
+  const adjustKeyRef = useRef('')
 
   async function confirmAdjust() {
     if (!adjustTarget || adjusting) return
-    const amount = parseInt(adjustAmount)
-    if (!amount || amount <= 0 || !adjustReason) {
+    const amount = /^\d+$/.test(adjustAmount.trim()) ? Number(adjustAmount) : 0
+    if (!Number.isSafeInteger(amount) || amount <= 0 || !adjustReason) {
       showToast('请填写有效的数量和原因', 'error')
       return
     }
     setAdjusting(true)
     try {
-      await adjustUserPoints(adjustTarget.id, { type: adjustType, amount, reason: adjustReason })
+      await adjustUserPoints(adjustTarget.id, { type: adjustType, amount, reason: adjustReason }, adjustKeyRef.current)
       showToast(`已成功${adjustType === 'add' ? '发放' : '扣除'} ${amount} 积分`)
       setShowAdjust(false)
       fetchUsers()
@@ -215,6 +217,7 @@ export default function AdminUserTable() {
                       setAdjustType('add')
                       setAdjustAmount('')
                       setAdjustReason('')
+                      adjustKeyRef.current = crypto.randomUUID()
                       setShowAdjust(true)
                     }}
                     className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"

@@ -377,7 +377,7 @@ test('merchant promotion completions preserve confirmation and actual charge res
   expect(await retry()).toMatchObject({ status: 'payment_failed', chargedPoints: 0 })
   await expect(page.locator('.merch-action-error')).toContainText('推广尚未扣费')
   await expect(page.getByTestId('action-island-notice').filter({ hasText: '推广已生效' })).toHaveCount(0)
-  const topUp = await request.post(`${API_BASE}/api/admin/users/${profile.id}/adjust`, { headers: adminHeaders, data: { type: 'add', amount: 100, reason: 'E2E promotion retry fixture' } })
+  const topUp = await request.post(`${API_BASE}/api/admin/users/${profile.id}/adjust`, { headers: { ...adminHeaders, 'Idempotency-Key': randomUUID() }, data: { type: 'add', amount: 100, reason: 'E2E promotion retry fixture' } })
   expect(topUp.ok()).toBe(true)
   expect(await retry()).toMatchObject({ status: 'active', chargedPoints: price })
   if (mobile) {
@@ -394,7 +394,7 @@ test('merchant promotion completions preserve confirmation and actual charge res
   const cleanup = await request.post(`${API_BASE}/api/admin/promotion-campaigns/${nextId}/cancel`, { headers: { ...adminHeaders, 'Idempotency-Key': randomUUID() }, data: { points: 0, reason: 'E2E promotion cleanup' } })
   expect(cleanup.ok()).toBe(true)
   if (balanceBefore > 0) {
-    const restore = await request.post(`${API_BASE}/api/admin/users/${profile.id}/adjust`, { headers: adminHeaders, data: { type: 'add', amount: balanceBefore, reason: 'E2E fixture balance restore' } })
+    const restore = await request.post(`${API_BASE}/api/admin/users/${profile.id}/adjust`, { headers: { ...adminHeaders, 'Idempotency-Key': randomUUID() }, data: { type: 'add', amount: balanceBefore, reason: 'E2E fixture balance restore' } })
     expect(restore.ok()).toBe(true)
   }
   expect(pkgId).toBeGreaterThan(0)

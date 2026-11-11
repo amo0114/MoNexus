@@ -297,20 +297,20 @@ describe('PointAccount hard-cap mutations', () => {
     const { user: admin } = await createTestUser(email('admin'), 'pass123', 'admin', 0)
     const target = await userWithBalances(CAP)
     const before = await snapshot(target.id)
-    await expect(adjustUserPoints(admin.id, target.id, 'add', 1, 'hard-cap add')).rejects.toSatisfy(
+    await expect(adjustUserPoints(admin.id, target.id, 'add', 1, 'hard-cap add', 'k1')).rejects.toSatisfy(
       (error: unknown) => error instanceof HttpError && error.code === 'POINT_BALANCE_HARD_CAP',
     )
     expect(await snapshot(target.id)).toEqual(before)
 
     const poor = await userWithBalances(5)
-    await expect(adjustUserPoints(admin.id, poor.id, 'deduct', 6, 'over-deduct')).rejects.toMatchObject({
+    await expect(adjustUserPoints(admin.id, poor.id, 'deduct', 6, 'over-deduct', 'k2')).rejects.toMatchObject({
       code: 'POINT_INSUFFICIENT',
       message: expect.stringContaining('余额'),
     })
     expect(await snapshot(poor.id)).toMatchObject({ balance: 5, frozenBalance: 0 })
 
-    await expect(adjustUserPoints(admin.id, poor.id, 'add', 3, 'ok add')).resolves.toEqual({ newBalance: 8 })
-    await expect(adjustUserPoints(admin.id, poor.id, 'deduct', 2, 'ok deduct')).resolves.toEqual({ newBalance: 6 })
+    await expect(adjustUserPoints(admin.id, poor.id, 'add', 3, 'ok add', 'k3')).resolves.toEqual({ newBalance: 8 })
+    await expect(adjustUserPoints(admin.id, poor.id, 'deduct', 2, 'ok deduct', 'k4')).resolves.toEqual({ newBalance: 6 })
   })
 
   it('fails promotion refund at the cap and still charges a normal debit', async () => {

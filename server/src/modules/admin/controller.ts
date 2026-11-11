@@ -20,6 +20,8 @@ import * as adminService from './service.js'
 import * as offerAdmin from './offerAdmin.js'
 import * as mailOperations from './mailOperations.js'
 import * as reviewService from '../reviews/service.js'
+import { badRequest } from '../../lib/httpError.js'
+import { adjustPointsIdempotencyKeySchema } from './schema.js'
 import type {
   ListAdminAuditQuery, ListAdminProductsQuery, ListOrdersQuery, ListPointLogsQuery, ListUsersQuery,
   ListDeliveryFilesQuery, ListFileGrantsQuery, OfferReportQuery,
@@ -46,7 +48,9 @@ export async function adjustPoints(req: Request, res: Response, next: NextFuncti
   try {
     const targetId = req.params.id as unknown as number
     const { type, amount, reason } = req.body
-    const result = await userAdmin.adjustUserPoints(req.user!.userId, targetId, type, amount, reason)
+    const key = adjustPointsIdempotencyKeySchema.safeParse(req.header('Idempotency-Key') ?? '')
+    if (!key.success) throw badRequest('缺少或无效的 Idempotency-Key 请求头')
+    const result = await userAdmin.adjustUserPoints(req.user!.userId, targetId, type, amount, reason, key.data)
     res.json(result)
   } catch (err) { next(err) }
 }

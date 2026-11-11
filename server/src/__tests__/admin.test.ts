@@ -194,10 +194,27 @@ describe('POST /api/admin/users/:id/adjust', () => {
     const res = await api
       .post(`/api/admin/users/${target.id}/adjust`)
       .set(authHeader(accessToken))
+      .set('Idempotency-Key', 'adjust-add-1')
       .send({ type: 'add', amount: 300, reason: '测试补偿' })
       .expect(200)
 
     expect(res.body.newBalance).toBe(400)
+
+    // A timed-out retry with the same key replays instead of granting again.
+    const retry = await api
+      .post(`/api/admin/users/${target.id}/adjust`)
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', 'adjust-add-1')
+      .send({ type: 'add', amount: 300, reason: '测试补偿' })
+      .expect(200)
+    expect(retry.body.newBalance).toBe(400)
+    expect(await prisma.adminLog.count({ where: { targetId: target.id } })).toBe(1)
+
+    await api
+      .post(`/api/admin/users/${target.id}/adjust`)
+      .set(authHeader(accessToken))
+      .send({ type: 'add', amount: 300, reason: '测试补偿' })
+      .expect(400)
   })
 
   it('should reject deduct exceeding balance', async () => {
@@ -208,6 +225,7 @@ describe('POST /api/admin/users/:id/adjust', () => {
     const res = await api
       .post(`/api/admin/users/${target.id}/adjust`)
       .set(authHeader(accessToken))
+      .set('Idempotency-Key', 'adjust-deduct-1')
       .send({ type: 'deduct', amount: 999, reason: '违规扣除' })
       .expect(400)
 

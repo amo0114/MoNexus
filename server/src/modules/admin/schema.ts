@@ -23,11 +23,16 @@ import {
   validateProductCommercialFields,
 } from '../../lib/productCatalog/fieldSchemas.js'
 
+// A typo-level guard on manual grants; larger moves go through several audited adjustments.
+const MAX_ADMIN_POINT_ADJUSTMENT = 1_000_000
+
 export const adjustPointsSchema = z.object({
   type: z.enum(['add', 'deduct']),
-  amount: z.number().int().positive('调整数量必须为正整数'),
+  amount: z.number().int().positive('调整数量必须为正整数').max(MAX_ADMIN_POINT_ADJUSTMENT, `单次调整不能超过 ${MAX_ADMIN_POINT_ADJUSTMENT} 积分`),
   reason: z.string().min(1, '请填写操作原因'),
 })
+
+export const adjustPointsIdempotencyKeySchema = z.string().trim().regex(/^[A-Za-z0-9._:-]{1,128}$/)
 
 export const banUserSchema = z.object({
   reason: z.string().min(1, '请填写封禁原因'),
