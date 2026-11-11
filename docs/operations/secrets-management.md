@@ -69,7 +69,7 @@ Use **environment secrets** for credential material and **environment variables*
 | `STORAGE_CREDENTIALS_ENC_KEY_PREVIOUS_VERSION` | Environment variable | `staging`, `production` | Storage/Ops | Version `n` that `PREVIOUS` decrypts; required when PREVIOUS is set | Environment variables | backend runtime |
 | `STORAGE_ENDPOINT_ALLOWLIST` | Environment variable | `staging`, `production` | Storage/Ops | Comma-separated hosts: single-label = exact match only (e.g. `minio`); multi-label = exact or subdomain suffix (e.g. `minio.internal`). Never bare TLDs (`com`) | Environment variables | backend runtime |
 | `METRICS_TOKEN` | Secret | `staging`, `production` | Observability | Bearer token for `/api/metrics` | Environment secrets | backend runtime; Prometheus scrape config |
-| `BACKUP_DATABASE_URL` | Secret | `production` | DBA/Ops | Read-only database URL for scheduled `pg_dump` when using the GitHub/url backup source | Repository secret | `.github/workflows/backup.yml` |
+| `BACKUP_DATABASE_URL` | Secret | `production` | DBA/Ops | Read-only database URL for manual `pg_dump` when using the GitHub/url backup source | Repository secret | `.github/workflows/backup.yml` |
 | `BACKUP_AGE_RECIPIENT` | Environment variable / repository secret | `production` | DBA/Ops | Public `age1...` recipient used to encrypt database backup artifacts | Host backup env; GitHub Actions secret | `scripts/backup.sh`; `.github/workflows/backup.yml` |
 | `RESTORE_TARGET_URL` | Secret | `staging` | DBA/Ops | Staging-only restore target for backup restore rehearsals | Environment secrets | manual restore commands / future rollback workflow |
 | `DEPLOY_SSH_HOST` | Secret | `production` | Ops | Compose VPS endpoint | Production environment secret | `compose-production-deploy.yml` |
