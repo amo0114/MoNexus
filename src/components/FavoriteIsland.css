@@ -53,7 +53,8 @@
 }
 
 .favorite-island-feedback[data-liked='true'] { color: #e11d48; }
-:root:is([data-theme='dark'], [data-theme='ink']) .favorite-island-feedback[data-liked='true'] { color: #fb7185; }
+/* dark is applied as a class; ink is a light theme and keeps the base color. */
+:root.dark .favorite-island-feedback[data-liked='true'] { color: #fb7185; }
 
 .favorite-island-feedback[data-liked='true'] .favorite-island-heart-motion {
   animation: t-like-pop 500ms cubic-bezier(0.34, 1.96, 0.64, 1) 180ms both;
