@@ -33,7 +33,7 @@ interface AppliedFilters {
   toDate: string
 }
 
-/** 订单记录 Tab：支持状态下拉、买家/订单号搜索、UTC 日期范围筛选、分页与订单履约详情 */
+/** 订单记录 Tab：支持状态下拉、买家/订单号搜索、北京时间日期范围筛选、分页与订单履约详情 */
 export default function AdminOrderTable({ active = true }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
@@ -295,7 +295,7 @@ export default function AdminOrderTable({ active = true }: Props) {
                   <td data-label="订单号 / 时间">
                     <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{o.id}</div>
                     <div className="text-xs text-[var(--color-text-muted)] mt-1">
-                      {new Date(o.createdAt).toLocaleString()}
+                      {new Date(o.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                     </div>
                   </td>
                   <td className="text-sm" data-label="买家">
