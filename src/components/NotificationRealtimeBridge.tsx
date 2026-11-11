@@ -16,7 +16,7 @@ import { showOrderNotificationIsland } from '../realtime/notificationIsland'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import { refreshAccessToken } from '../api/authRefresh'
-import { NotificationStream, type NotificationStreamState } from '../realtime/notificationStream.js'
+import { NotificationStream, STREAM_FALLBACK_MS, type NotificationStreamState } from '../realtime/notificationStream.js'
 import {
   resolveInvalidation,
   type RealtimeNotificationData,
@@ -72,7 +72,7 @@ export function NotificationRealtimeBridge(): null {
 
   useEffect(() => {
     // Wait for the public runtime capability before connecting. Disabled
-    // installations stay polling-only without deliberately probing a 404.
+    // installations stay polling-only (effect below) without probing a 404.
     if (!user || !accessToken || !sessionOwnerKey || realtimeEnabled !== true) {
       resetRealtimeRuntime()
       streamRef.current?.stop()
@@ -100,6 +100,17 @@ export function NotificationRealtimeBridge(): null {
     lastSessionOwnerKeyRef.current = null
     lastTokenRef.current = null
   }, [])
+
+  // Realtime off: nothing else refreshes badges on a tab that stays in front,
+  // so poll at the same cadence the stream uses for its degraded fallback.
+  const loggedIn = Boolean(user)
+  useEffect(() => {
+    if (!loggedIn || realtimeEnabled === true) return
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') publishAllVisible()
+    }, STREAM_FALLBACK_MS)
+    return () => window.clearInterval(timer)
+  }, [loggedIn, realtimeEnabled])
 
   // 回前台立即权威同步 (spec 7.2 / D-RT-15): visible -> all.visible, no Toast.
   useEffect(() => {
