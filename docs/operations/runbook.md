@@ -863,7 +863,7 @@ prove that the mailbox provider did not quarantine or bounce the message.
 
 ## 24. Database Backup (M4)
 
-GitHub Actions runs `pg_dump` against production daily at **02:17 UTC** and uploads a gzipped SQL dump as a 7-day-retention artifact. Manual trigger is also available for ad-hoc backups before risky changes.
+Daily production backups run on the host (`scripts/backup.sh`, see above). The GitHub Actions workflow is **manual only**: it runs `pg_dump` and uploads an encrypted 7-day-retention artifact for ad-hoc backups before risky changes, and needs the secrets below plus a database reachable from GitHub runners.
 
 ### One-time secret setup
 

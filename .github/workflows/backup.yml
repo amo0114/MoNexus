@@ -1,9 +1,9 @@
 name: Database Backup
 
+# Manual only: production is backed up daily by the host systemd timer
+# (scripts/backup.sh); a scheduled run would need the database reachable from
+# GitHub runners.
 on:
-  schedule:
-    # Every day at 02:17 UTC. Off-the-hour to avoid GitHub's hourly cron stampede.
-    - cron: '17 2 * * *'
   workflow_dispatch:
 
 concurrency:
