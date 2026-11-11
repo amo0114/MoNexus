@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, Copy, ExternalLink, Loader2 } from 'lucide-react'
+import { Check, Copy, ExternalLink, Loader2, X } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionContext } from '../auth/sessionContext'
 import { getOrderDetail } from '../api/orders'
+import { getMe } from '../api/auth'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
 import DeliveryContent, { type DeliveryProgressEvent } from './DeliveryContent'
 import type { StructuredDeliveryContent } from '../types/merchant'
@@ -87,6 +90,7 @@ export default function SuccessModal({
   const [pollTimedOut, setPollTimedOut] = useState(false)
   // Only async provision polls. Empty payload on a normal order is NOT "开通中".
   const [awaitingProvision, setAwaitingProvision] = useState(() => Boolean(provisionPending))
+  const [refunded, setRefunded] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -94,6 +98,7 @@ export default function SuccessModal({
 
     let cancelled = false
     const started = Date.now()
+    const authContext = getAuthSessionContext(useAuthStore.getState())
 
     const clearPollTimer = () => {
       if (pollTimerRef.current != null) {
@@ -141,7 +146,13 @@ export default function SuccessModal({
         }
         if (detail.status === 'refunded') {
           setAwaitingProvision(false)
-          setDeliveryContent('开通失败，积分已退回。请查看订单详情或联系客服。')
+          setRefunded(true)
+          // The checkout debited the header balance; reflect the refund without a reload.
+          if (authContext) {
+            void getMe()
+              .then((me) => { useAuthStore.getState().updatePoints(me.points, authContext) })
+              .catch(() => {})
+          }
           return
         }
         // pending / processing：继续等异步开通
@@ -172,7 +183,7 @@ export default function SuccessModal({
     Boolean(deliveryContent?.trim())
 
   // Manual-service / non-provision: order placed, no card yet — not a spinning "开通中"
-  const awaitingMerchant = !provisionPending && !hasPayload && !awaitingProvision && !pollTimedOut
+  const awaitingMerchant = !provisionPending && !hasPayload && !awaitingProvision && !pollTimedOut && !refunded
   const showSpinner = awaitingProvision
   const pendingCopy = awaitingProvision
 
@@ -208,20 +219,28 @@ export default function SuccessModal({
   return (
     <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent className="max-w-md text-center flex flex-col max-h-[90dvh] overflow-hidden">
-        <div className={`w-16 h-16 bg-[var(--color-success-bg)] border-2 border-[var(--color-success-border)] text-[var(--color-success-text)] rounded-full flex items-center justify-center mx-auto mb-5 ${
+        <div className={`w-16 h-16 border-2 rounded-full flex items-center justify-center mx-auto mb-5 ${
+          refunded
+            ? 'bg-[var(--color-danger-bg)] border-[var(--color-danger-border)] text-[var(--color-danger-text)]'
+            : 'bg-[var(--color-success-bg)] border-[var(--color-success-border)] text-[var(--color-success-text)]'
+        } ${
           !showSpinner ? 'animate-in zoom-in-75 duration-300 ease-[cubic-bezier(0.34,1.3,0.64,1)]' : ''
         }`}>
           {showSpinner ? (
             <Loader2 className="w-8 h-8 text-[var(--color-cta)] animate-spin" data-testid="success-provision-spinner" />
+          ) : refunded ? (
+            <X className="w-8 h-8 stroke-[2.5]" data-testid="success-refunded-icon" />
           ) : (
             <Check className="w-8 h-8 stroke-[2.5] success-check-path" data-testid="success-check-icon" />
           )}
         </div>
         <DialogTitle className="text-2xl mb-2" data-testid="success-modal-title">
-          {titleFromStructured(structuredContent, pendingCopy, headline)}
+          {refunded ? '开通失败' : titleFromStructured(structuredContent, pendingCopy, headline)}
         </DialogTitle>
         <p className="text-[var(--color-text-muted)] mb-4 text-sm" data-testid="success-modal-subtitle">
-          {pollTimedOut
+          {refunded
+            ? '积分已退回到你的账户'
+            : pollTimedOut
             ? '开通仍在处理中，请稍后在个人中心查看订单结果（已停止自动刷新）'
             : subtitleFromStructured(structuredContent, pendingCopy, headline, awaitingMerchant)}
         </p>
@@ -234,7 +253,7 @@ export default function SuccessModal({
 
         <div className="bg-[var(--color-background)] rounded-lg p-4 mb-6 border border-[var(--color-border)] text-left flex-1 min-h-0 overflow-y-auto">
           <p className="text-xs text-[var(--color-text-muted)] mb-2 font-bold uppercase tracking-wider">
-            {showSpinner ? '开通状态' : awaitingMerchant || pollTimedOut ? '订单状态' : '开通结果'}
+            {showSpinner ? '开通状态' : awaitingMerchant || pollTimedOut || refunded ? '订单状态' : '开通结果'}
           </p>
           {showSpinner ? (
             <div
@@ -246,6 +265,13 @@ export default function SuccessModal({
                 完成后将展示：续期前/后到期时间，或流量包购买前后剩余流量。
                 也可随时在「个人中心 → 我的订单」查看。
               </p>
+            </div>
+          ) : refunded ? (
+            <div
+              className="text-sm text-[var(--color-text-muted)] bg-[var(--color-surface)] p-3 rounded border border-[var(--color-border)] leading-relaxed"
+              data-testid="success-provision-refunded"
+            >
+              开通失败，积分已退回。请查看订单详情或联系客服。
             </div>
           ) : awaitingMerchant || pollTimedOut ? (
             <div
@@ -274,7 +300,7 @@ export default function SuccessModal({
         </div>
 
         <div className="flex flex-col gap-3 shrink-0">
-          {!deliveryFile && hasPayload && !showSpinner && (
+          {!deliveryFile && hasPayload && !showSpinner && !refunded && (
             <button
               onClick={copyContent}
               className="btn-primary w-full flex items-center justify-center gap-1.5"
