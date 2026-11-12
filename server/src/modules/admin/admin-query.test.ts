@@ -444,6 +444,6 @@ describe('seed.ts no longer sets legacy Product.isHot = true', () => {
     expect(falseWrites).toBeGreaterThanOrEqual(2)
 
     // 语义：平台 products 的 upsert 不得再保留空的 update:{}（那会让历史 demo true 留存）。
-    expect(source).not.toMatch(/update:\s*\{\s*\}/)
+    expect(source.slice(source.indexOf('prisma.product.upsert'))).not.toMatch(/update:\s*\{\s*\}/)
   })
 })

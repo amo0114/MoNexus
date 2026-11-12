@@ -183,6 +183,8 @@ export async function requireActiveUser(req: Request, _res: Response, next: Next
   }
 
   try {
+    // The legacy process-local status cache cannot observe bans or session
+    // revocation on another replica. Authorization always reads current facts.
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
       select: { id: true },

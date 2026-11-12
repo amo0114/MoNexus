@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
+import { resolvePagination } from '../../lib/pagination.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { accountStatus, effectiveBanWhere, legacyStatus } from '../accountGovernance/status.js'
 import { assertPermission, authorization } from '../adminAuthorization/service.js'
@@ -54,8 +55,7 @@ export function statsDto(row: {
 }
 export async function listGovernanceUsers(actor: number, q: UserListQuery) {
   await assertPermission(actor, 'users.read')
-  const page = q.page ?? 1,
-    pageSize = Math.min(q.pageSize ?? 20, 100)
+  const { page, pageSize } = await resolvePagination(q.page, q.pageSize)
   const clauses: Prisma.Sql[] = [Prisma.sql`TRUE`]
   if (q.accountStatus)
     clauses.push(Prisma.sql`governance_user_active(u.id) = ${q.accountStatus === 'active'}`)

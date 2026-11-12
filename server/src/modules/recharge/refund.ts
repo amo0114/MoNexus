@@ -542,7 +542,7 @@ export async function applyRefundObservation(observationId: string) {
       const requireReconciliation = async (
         reason: string,
         local: {
-          orderId?: string
+          orderId?: string | null
           attemptId?: string
           localStatus?: string
           localAmountMinor?: bigint
@@ -552,7 +552,10 @@ export async function applyRefundObservation(observationId: string) {
         await writeOpenReconItem(tx, {
           scopePrefix: 'refund',
           mismatchType: 'refund_mismatch',
-          orderId: local.orderId ?? observedAttempt?.paymentIntent.rechargeOrderId ?? null,
+          orderId:
+            local.orderId !== undefined
+              ? local.orderId
+              : observedAttempt?.paymentIntent.rechargeOrderId ?? null,
           attemptId: local.attemptId ?? observedAttempt?.id ?? observation.paymentAttemptId,
           eventId: observation.id,
           provider: observation.provider,
@@ -619,7 +622,7 @@ export async function applyRefundObservation(observationId: string) {
       const order = orderRows[0]
       // The order row was not found, so it must not be referenced by the item's foreign key.
       if (!order)
-        return requireReconciliation('REFUND_ORDER_MISSING', { ...refundLocal, orderId: undefined })
+        return requireReconciliation('REFUND_ORDER_MISSING', { ...refundLocal, orderId: null })
 
       const existingReversal = await tx.rechargeReversal.findUnique({
         where: { rechargeRefundId: refund.id },
