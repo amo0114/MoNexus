@@ -23,7 +23,7 @@
     "inventory-batch.json",
     "offer-revision.json"
   ],
-  "validatedRuntimeCommit": "a620a38",
+  "validatedRuntimeCommit": "2c53ba7",
   "pullRequest": "https://github.com/amo0114/MoNexus/pull/349",
   "deploymentStatus": "not_deployed"
 }

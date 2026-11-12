@@ -5,8 +5,8 @@
     "missingBans": 0,
     "missingMerchantBaselines": 0,
     "missingOfferBaselines": 0,
-    "asOf": "2026-11-12T15:51:56.376Z",
-    "cutoverAt": "2026-11-12T15:19:51.267Z",
+    "asOf": "2026-11-12T16:03:40.912Z",
+    "cutoverAt": "2026-11-12T16:02:22.419Z",
     "states": [
       {
         "entity": "user.status",
@@ -16,17 +16,7 @@
       {
         "entity": "user.status",
         "value": "active",
-        "count": "10003"
-      },
-      {
-        "entity": "user.role",
-        "value": "user",
-        "count": "10002"
-      },
-      {
-        "entity": "user.role",
-        "value": "admin",
-        "count": "1"
+        "count": "3"
       },
       {
         "entity": "user.role",
@@ -34,14 +24,19 @@
         "count": "1"
       },
       {
-        "entity": "merchant.status",
-        "value": "active",
+        "entity": "user.role",
+        "value": "user",
+        "count": "2"
+      },
+      {
+        "entity": "user.role",
+        "value": "admin",
         "count": "1"
       },
       {
-        "entity": "order.status",
-        "value": "closed",
-        "count": "100000"
+        "entity": "merchant.status",
+        "value": "active",
+        "count": "1"
       },
       {
         "entity": "order.status",
@@ -90,8 +85,8 @@
     "missingBans": 0,
     "missingMerchantBaselines": 0,
     "missingOfferBaselines": 0,
-    "asOf": "2026-11-12T15:51:56.406Z",
-    "cutoverAt": "2026-11-12T15:19:51.267Z",
+    "asOf": "2026-11-12T16:03:40.919Z",
+    "cutoverAt": "2026-11-12T16:02:22.419Z",
     "states": [
       {
         "entity": "user.status",
@@ -101,17 +96,7 @@
       {
         "entity": "user.status",
         "value": "active",
-        "count": "10003"
-      },
-      {
-        "entity": "user.role",
-        "value": "user",
-        "count": "10002"
-      },
-      {
-        "entity": "user.role",
-        "value": "admin",
-        "count": "1"
+        "count": "3"
       },
       {
         "entity": "user.role",
@@ -119,14 +104,19 @@
         "count": "1"
       },
       {
-        "entity": "merchant.status",
-        "value": "active",
+        "entity": "user.role",
+        "value": "user",
+        "count": "2"
+      },
+      {
+        "entity": "user.role",
+        "value": "admin",
         "count": "1"
       },
       {
-        "entity": "order.status",
-        "value": "closed",
-        "count": "100000"
+        "entity": "merchant.status",
+        "value": "active",
+        "count": "1"
       },
       {
         "entity": "order.status",

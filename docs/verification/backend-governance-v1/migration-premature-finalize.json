@@ -1,0 +1,169 @@
+{
+  "phase": "finalize",
+  "dryRun": false,
+  "before": {
+    "missingBans": 1,
+    "missingMerchantBaselines": 1,
+    "missingOfferBaselines": 1,
+    "asOf": "2026-11-12T16:03:01.200Z",
+    "cutoverAt": "2026-11-12T16:02:22.419Z",
+    "states": [
+      {
+        "entity": "user.status",
+        "value": "已封禁",
+        "count": "1"
+      },
+      {
+        "entity": "user.status",
+        "value": "正常",
+        "count": "3"
+      },
+      {
+        "entity": "user.role",
+        "value": "merchant",
+        "count": "1"
+      },
+      {
+        "entity": "user.role",
+        "value": "user",
+        "count": "2"
+      },
+      {
+        "entity": "user.role",
+        "value": "admin",
+        "count": "1"
+      },
+      {
+        "entity": "merchant.status",
+        "value": "active",
+        "count": "1"
+      },
+      {
+        "entity": "order.status",
+        "value": "completed",
+        "count": "1"
+      }
+    ],
+    "unknown": [],
+    "numbers": [
+      {
+        "table": "Order",
+        "missing": 1
+      },
+      {
+        "table": "SettlementBatch",
+        "missing": 1
+      },
+      {
+        "table": "OrderAfterSalesCase",
+        "missing": 1
+      }
+    ],
+    "roles": [],
+    "admins": [
+      {
+        "id": 1,
+        "createdAt": "2026-10-01T00:00:00.000Z",
+        "adminAuthorization": null
+      }
+    ],
+    "unknownRechargeSources": "0",
+    "legacyInventoryWithoutItemBatch": 0,
+    "walletViolations": [],
+    "storage": {
+      "durable": false,
+      "providerConfigId": null,
+      "verified": true
+    }
+  },
+  "checkpoints": [],
+  "status": "failed",
+  "after": {
+    "missingBans": 1,
+    "missingMerchantBaselines": 1,
+    "missingOfferBaselines": 1,
+    "asOf": "2026-11-12T16:03:01.207Z",
+    "cutoverAt": "2026-11-12T16:02:22.419Z",
+    "states": [
+      {
+        "entity": "user.status",
+        "value": "已封禁",
+        "count": "1"
+      },
+      {
+        "entity": "user.status",
+        "value": "正常",
+        "count": "3"
+      },
+      {
+        "entity": "user.role",
+        "value": "merchant",
+        "count": "1"
+      },
+      {
+        "entity": "user.role",
+        "value": "user",
+        "count": "2"
+      },
+      {
+        "entity": "user.role",
+        "value": "admin",
+        "count": "1"
+      },
+      {
+        "entity": "merchant.status",
+        "value": "active",
+        "count": "1"
+      },
+      {
+        "entity": "order.status",
+        "value": "completed",
+        "count": "1"
+      }
+    ],
+    "unknown": [],
+    "numbers": [
+      {
+        "table": "Order",
+        "missing": 1
+      },
+      {
+        "table": "SettlementBatch",
+        "missing": 1
+      },
+      {
+        "table": "OrderAfterSalesCase",
+        "missing": 1
+      }
+    ],
+    "roles": [],
+    "admins": [
+      {
+        "id": 1,
+        "createdAt": "2026-10-01T00:00:00.000Z",
+        "adminAuthorization": null
+      }
+    ],
+    "unknownRechargeSources": "0",
+    "legacyInventoryWithoutItemBatch": 0,
+    "walletViolations": [],
+    "storage": {
+      "durable": false,
+      "providerConfigId": null,
+      "verified": true
+    }
+  },
+  "error": "finalize_preconditions_failed: complete all backfills and concurrent indexes",
+  "structure": {
+    "invalidIndexes": [],
+    "missingFinalChecks": [
+      "User_governance_status_check",
+      "User_governance_role_check",
+      "Merchant_governance_status_check",
+      "Order_governance_status_check",
+      "Order_governance_number_check",
+      "SettlementBatch_governance_number_check",
+      "OrderAfterSalesCase_governance_number_check"
+    ]
+  }
+}

@@ -197,7 +197,7 @@ approve/reject 必须同时匹配 pending、currentApplicationVersion 和 lifecy
 
 新增 AccountBan：UUID id、userId、version（Int，默认 0）、reasonCode、reason、startsAt、expiresAt（null 为长期）、createdByUserId、source（admin/legacy）、releasedAt、releasedByUserId、releaseReason、createdAt。未释放记录按 userId 建部分唯一索引（releasedAt IS NULL，不使用依赖当前时间的索引谓词）；已过期但尚未扫尾的记录必须先在用户锁内收尾，不能因唯一索引拒绝新的合法封禁。释放请求携带 expectedVersion，锁内 CAS 更新 releasedAt 等字段并递增 version；只提供立即生效的封禁，不在本批引入预约封禁调度。
 
-User.status 规范为 active/banned，作为受 accountGovernance 管理的状态投影；有效封禁以未释放且未到期的 AccountBan 为准。统一有效状态 helper、数据库过滤构造器和缓存对象：缓存包含到期时间，缓存 TTL 不得跨越到期时刻；服务、SQL 列表过滤、登录和 SSE 资格都不能继续各自比较中文字面值。定时任务只完成到期投影和历史收尾，解封生效不能依赖 cron 及时执行。
+User.status 规范为 active/banned，作为受 accountGovernance 管理的状态投影；有效封禁以未释放且未到期的 AccountBan 为准。统一有效状态 helper 和数据库过滤构造器。实施时鉴权改为直接读取当前数据库事实，确保其他实例写入封禁或撤销会话后立即生效；旧进程内状态缓存不再作为鉴权依据。若以后引入共享缓存，必须验证跨实例失效并限制 TTL 不跨越到期时刻；服务、SQL 列表过滤、登录和 SSE 资格都不能继续各自比较中文字面值。定时任务只完成到期投影和历史收尾，解封生效不能依赖 cron 及时执行。
 
 ban/unban 在用户会话锁内复核当前记录，创建/释放结构化封禁、更新 User 投影、撤销会话并写成功审计。手动解封必须带理由。用户仍需重新登录；封禁到期不复活已撤销令牌。已有禁止封禁自己和管理员的保护保留。
 

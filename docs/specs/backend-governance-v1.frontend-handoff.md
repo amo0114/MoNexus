@@ -1,6 +1,6 @@
 # 后台运营治理 v1：前端 agent 交接书
 
-日期：2026-11-12｜状态：设计契约，尚未开发｜代码基线：develop@8da71e0
+日期：2026-11-13｜状态：契约 1.0.2 与后端已交付，完整 CI 复验中｜运行时代码：2c53ba7（基线 develop@8da71e0）
 
 主方案：[后端业务闭环与运营治理实施书](../implementation/2026-11-12-backend-governance-implementation-plan.md)。本交接书只给页面方向和协作边界，具体视觉与组件由前端 agent 决定。
 
@@ -10,7 +10,7 @@
 
 请使用独立工作树。共享代码库内不要撤销他人的修改，不修改 server 逻辑来迎合页面 mock。根 package.json、e2e 公共夹具和工作流若有交叉变更，先声明具体文件与原因，由双方约定单一编辑者。
 
-后端先提供 OpenAPI 和 docs/api/governance-v1/ 脱敏响应夹具。联调使用后端最终 SHA；字段或行为冲突反馈给后端负责人统一修订契约，不在前端另造规则。
+后端已提供 [OpenAPI、夹具索引和 20 份合成响应](../api/governance-v1/README.md)，契约 1.0.2。后端 PR 为 [#349](https://github.com/amo0114/MoNexus/pull/349)。联调使用后端最终 SHA；字段或行为冲突反馈给后端负责人统一修订契约，不在前端另造规则。
 
 ## 2. 建议页面方向
 
@@ -47,7 +47,7 @@ GET /api/admin/capabilities 返回 contractVersion=governance-v1、permissions�
 4. 审核操作传对应 expectedVersion。409 时展示当前事实并重新获取，不能偷偷用最新版本重试旧决定。
 5. allowedActions 与 blockers 是后端当前预览，执行仍可能冲突。金额、退款资格、来源、结算和商家权限不可在前端重新推导。
 6. 沿用 error.code/message/details 解析，业务 409 不进入登录刷新循环；提交后只显示真实执行结果。断网或超时先查询，不乐观标记资金成功。
-7. 明细使用 cursor/pageInfo；用户主列表保留 page/pageSize。筛选或排序变化清空旧游标，取消过期请求，防止用户 A 的迟到响应显示在用户 B 详情。
+7. 明细使用 cursor/pageInfo，固定上限 100；用户主列表保留 page/pageSize，沿用系统配置默认值和上限，绝对上限 500。筛选或排序变化清空旧游标，取消过期请求，防止用户 A 的迟到响应显示在用户 B 详情。
 8. chargedPoints/refundedPoints/netSpentPoints 为积分口径；冻结额不算已消费，closed 订单可能已有售后退款。使用后端统计，不按列表当前页累加。
 9. lastLoginAt、会话最近使用时间、活跃自然日有不同精度，分别命名；null 显示未知，不显示为从未使用或伪造注册时间。
 10. 秘密与个人信息只显示授权 DTO，不要求后端返回卡密、token、raw IP 或原始支付响应来填满详情页。
