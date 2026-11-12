@@ -198,12 +198,15 @@ transaction). Admin routes require an MFA-verified session: `ADMIN_TOKEN` must
 be the access token returned by `POST /api/auth/mfa/verify` after the admin
 password login, not the password-only challenge. Body fields follow
 `adjustPointsSchema` (`server/src/modules/admin/schema.ts`): `type` is `add` or
-`deduct`, `amount` is a positive integer, `reason` is required.
+`deduct`, `amount` is a positive integer up to 1,000,000, `reason` is required.
+`Idempotency-Key` is required: reuse the same key when retrying a timed-out
+call (it replays instead of adjusting twice); use a new key for a new adjustment.
 
 ```bash
 ADMIN_TOKEN='<mfa-verified-admin-access-token>'
 curl -fsS -X POST "http://localhost:3000/api/admin/users/<userId>/adjust" \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Idempotency-Key: $(uuidgen)" \
   -H 'Content-Type: application/json' \
   -d '{"type": "deduct", "amount": 100, "reason": "fraud reversal #1234"}'
 ```
@@ -863,7 +866,7 @@ prove that the mailbox provider did not quarantine or bounce the message.
 
 ## 24. Database Backup (M4)
 
-GitHub Actions runs `pg_dump` against production daily at **02:17 UTC** and uploads a gzipped SQL dump as a 7-day-retention artifact. Manual trigger is also available for ad-hoc backups before risky changes.
+Daily production backups run on the host (`scripts/backup.sh`, see above). The GitHub Actions workflow is **manual only**: it runs `pg_dump` and uploads an encrypted 7-day-retention artifact for ad-hoc backups before risky changes, and needs the secrets below plus a database reachable from GitHub runners.
 
 ### One-time secret setup
 

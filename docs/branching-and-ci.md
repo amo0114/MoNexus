@@ -61,7 +61,7 @@ chore/xxx ┘                                        ▲
   [`compose-production-deploy.md`](./operations/compose-production-deploy.md)。
 - `cd.yml` / `deploy.yml`：保留为 legacy artifact/systemd/PM2 路线；不得用于当前
   Docker Compose VPS。
-- `backup.yml`（定时）、`alert-routing-test.yml`、`sentry-alert-check.yml`（手动）：与分支无关，不变。
+- `backup.yml`（手动；日常备份由主机 timer 执行）、`alert-routing-test.yml`、`sentry-alert-check.yml`（手动）：与分支无关，不变。
 
 ## 分支保护建议（需仓库管理员在 Settings 配置）
 

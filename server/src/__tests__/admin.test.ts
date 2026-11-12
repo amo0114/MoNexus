@@ -194,10 +194,27 @@ describe('POST /api/admin/users/:id/adjust', () => {
     const res = await api
       .post(`/api/admin/users/${target.id}/adjust`)
       .set(authHeader(accessToken))
+      .set('Idempotency-Key', 'adjust-add-1')
       .send({ type: 'add', amount: 300, reason: '测试补偿' })
       .expect(200)
 
     expect(res.body.newBalance).toBe(400)
+
+    // A timed-out retry with the same key replays instead of granting again.
+    const retry = await api
+      .post(`/api/admin/users/${target.id}/adjust`)
+      .set(authHeader(accessToken))
+      .set('Idempotency-Key', 'adjust-add-1')
+      .send({ type: 'add', amount: 300, reason: '测试补偿' })
+      .expect(200)
+    expect(retry.body.newBalance).toBe(400)
+    expect(await prisma.adminLog.count({ where: { targetId: target.id } })).toBe(1)
+
+    await api
+      .post(`/api/admin/users/${target.id}/adjust`)
+      .set(authHeader(accessToken))
+      .send({ type: 'add', amount: 300, reason: '测试补偿' })
+      .expect(400)
   })
 
   it('should reject deduct exceeding balance', async () => {
@@ -208,6 +225,7 @@ describe('POST /api/admin/users/:id/adjust', () => {
     const res = await api
       .post(`/api/admin/users/${target.id}/adjust`)
       .set(authHeader(accessToken))
+      .set('Idempotency-Key', 'adjust-deduct-1')
       .send({ type: 'deduct', amount: 999, reason: '违规扣除' })
       .expect(400)
 
@@ -509,7 +527,7 @@ describe('GET /api/admin/orders', () => {
     expect(combined).toEqual(sortedIdsDesc)
   })
 
-  it('should filter orders by exact UTC boundaries: inclusive fromDate and exclusive toDate next day midnight', async () => {
+  it('should filter orders by Asia/Shanghai day boundaries: inclusive fromDate and exclusive toDate next day midnight', async () => {
     await createTestUser('order-utc-admin@test.local', 'admin222', 'admin')
     await createTestUser('order-utc-buyer@test.local', 'buyerpass', 'user', 10000)
     await createTestProduct('UTC边界商品', 100, 5, ['utc-1', 'utc-2', 'utc-3', 'utc-4', 'utc-5'])
@@ -533,15 +551,15 @@ describe('GET /api/admin/orders', () => {
 
     await prisma.order.update({
       where: { id: ord1.body.orderId },
-      data: { createdAt: new Date('2026-04-01T23:59:59.000Z') },
+      data: { createdAt: new Date('2026-04-01T15:59:59.000Z') }, // 04-01 23:59:59 Shanghai
     })
     await prisma.order.update({
       where: { id: ord2.body.orderId },
-      data: { createdAt: new Date('2026-04-02T00:00:00.000Z') },
+      data: { createdAt: new Date('2026-04-01T16:00:00.000Z') }, // 04-02 00:00 Shanghai
     })
     await prisma.order.update({
       where: { id: ord3.body.orderId },
-      data: { createdAt: new Date('2026-04-03T00:00:00.000Z') },
+      data: { createdAt: new Date('2026-04-02T16:00:00.000Z') }, // 04-03 00:00 Shanghai
     })
 
     const { accessToken } = await loginAs('order-utc-admin@test.local', 'admin222')

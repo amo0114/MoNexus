@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { resolvePagination } from '../../lib/pagination.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -6,7 +5,7 @@ import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
 import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
-import { accountSources, creditInTx, spendInTx, type WalletContext } from '../wallet/index.js'
+import { accountSources, creditInTx, spendInTx, type WalletContext, type WalletResult } from '../wallet/index.js'
 import type { ListUsersQuery } from './schema.js'
 
 export async function listUsers(query: ListUsersQuery = {}) {
@@ -52,7 +51,8 @@ export async function adjustUserPoints(
   targetUserId: number,
   type: 'add' | 'deduct',
   amount: number,
-  reason: string
+  reason: string,
+  idempotencyKey: string,
 ) {
   // An operator must not mint or move points for their own account.
   if (adminUserId === targetUserId) throw badRequest('不能调整自己的积分')
@@ -61,7 +61,8 @@ export async function adjustUserPoints(
     if (!account) throw notFound('目标用户积分账户不存在')
 
     const ctx: WalletContext = {
-      operationKey: `admin-adjust:${randomUUID()}`,
+      // Scoped per operator+target so a timed-out retry replays instead of granting twice.
+      operationKey: `admin-adjust:${adminUserId}:${targetUserId}:${idempotencyKey}`,
       userId: targetUserId,
       source: { kind: 'admin_adjustment', id: adminUserId },
       reasonCode: type === 'add' ? 'admin_credit' : 'admin_debit',
@@ -69,12 +70,12 @@ export async function adjustUserPoints(
       // Admin grants keep counting toward growth as before; they are not recharge.
       log: { reason: `后台调整: ${reason}`, growthEligible: type === 'add' },
     }
-    let newBalance: number
+    let result: WalletResult
     if (type === 'add') {
-      newBalance = (await creditInTx(tx, ctx, { amount, origin: 'admin_adjustment' })).balance
+      result = await creditInTx(tx, ctx, { amount, origin: 'admin_adjustment' })
     } else {
       try {
-        newBalance = (await spendInTx(tx, ctx, { amount }))!.balance
+        result = (await spendInTx(tx, ctx, { amount }))!
       } catch (error) {
         if (error instanceof HttpError && error.code === 'POINT_INSUFFICIENT') {
           throw badRequest('扣除数量不能大于用户当前余额', 'POINT_INSUFFICIENT')
@@ -82,6 +83,8 @@ export async function adjustUserPoints(
         throw error
       }
     }
+
+    if (result.replayed) return { newBalance: result.balance }
 
     await tx.adminLog.create({
       data: {
@@ -93,7 +96,7 @@ export async function adjustUserPoints(
       },
     })
 
-    return { newBalance }
+    return { newBalance: result.balance }
   })
 }
 
