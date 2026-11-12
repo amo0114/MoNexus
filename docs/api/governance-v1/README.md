@@ -1,10 +1,10 @@
 # 后端治理 v1：前端协作契约
 
-版本：`governance-v1 / 1.0.0`。基线：`develop@8da71e0`。
+版本：`governance-v1 / 1.0.1`。基线：`develop@8da71e0`。
 
 **契约已交付；服务实现中。此目录的 JSON 均为合成数据，不代表接口已经可调用。**
 
-- `openapi.json`：可独立导入的 OpenAPI 3.0.3；39 个方法、61 个 schema。相同增量已合入 `docs/superpowers/specs/monexus-api-openapi.json`。
+- `openapi.json`：可独立导入的 OpenAPI 3.0.3；39 个方法、64 个 schema。相同增量已合入 `docs/superpowers/specs/monexus-api-openapi.json`。
 - `manifest.json`：夹具索引。每个文件带 method/path/status/schema/response；mock 返回 `response`，不要返回整个夹具包装。
 - `permissions.json`：管理员权限与商家能力词表。
 - 实现状态以真实 `GET /api/admin/capabilities` 为准。不存在该端点时显示新能力未提供，不能自动认为是 super。
@@ -41,3 +41,7 @@
 商家 approve/reject/suspend 保留原 PUT 方法，restore 新增 POST。新客户端必须传版本和理由；旧接口兼容层由后端负责。授权设置只允许 super。库存批次作废只影响 available 条目。
 
 后端将分提交更新实际实现状态，不更改此版本既定字段语义；语义变更同时修订 OpenAPI、夹具和本说明。
+
+## 1.0.1 契约校准
+
+导出请求按 kind 使用独立筛选 schema，补齐状态枚举与字符串长度约束，拒绝跨种类筛选字段。路径、成功响应、夹具及原有合法请求不变。带时区的 from/to 按实际时刻比较。

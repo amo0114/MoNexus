@@ -7378,83 +7378,80 @@
         "additionalProperties": false
       },
       "GVExportFilters": {
-        "type": "object",
-        "properties": {
-          "q": {
-            "type": "string"
+        "description": "筛选字段由导出 kind 决定；创建请求使用 GVExportInput。",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/GVUsersExportFilters"
           },
-          "userId": {
-            "type": "integer",
-            "minimum": 1
+          {
+            "$ref": "#/components/schemas/GVOrdersExportFilters"
           },
-          "accountStatus": {
-            "type": "string",
-            "enum": [
-              "active",
-              "banned"
-            ]
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "user",
-              "merchant",
-              "admin"
-            ]
-          },
-          "merchantStatus": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "active",
-              "suspended",
-              "rejected"
-            ]
-          },
-          "emailVerified": {
-            "type": "boolean"
-          },
-          "from": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "to": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "status": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string"
-          },
-          "orderNo": {
-            "type": "string"
+          {
+            "$ref": "#/components/schemas/GVPointLogsExportFilters"
           }
-        },
-        "required": [],
-        "additionalProperties": false
+        ]
       },
       "GVExportInput": {
-        "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "users",
-              "orders",
-              "point_logs"
-            ]
+        "description": "仅接受对应 kind 的筛选字段；from 必须在实际时刻上早于 to。",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "users"
+                ]
+              },
+              "filters": {
+                "$ref": "#/components/schemas/GVUsersExportFilters"
+              }
+            },
+            "required": [
+              "kind",
+              "filters"
+            ],
+            "additionalProperties": false
           },
-          "filters": {
-            "$ref": "#/components/schemas/GVExportFilters"
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "orders"
+                ]
+              },
+              "filters": {
+                "$ref": "#/components/schemas/GVOrdersExportFilters"
+              }
+            },
+            "required": [
+              "kind",
+              "filters"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "point_logs"
+                ]
+              },
+              "filters": {
+                "$ref": "#/components/schemas/GVPointLogsExportFilters"
+              }
+            },
+            "required": [
+              "kind",
+              "filters"
+            ],
+            "additionalProperties": false
           }
-        },
-        "required": [
-          "kind",
-          "filters"
-        ],
-        "additionalProperties": false
+        ]
       },
       "GVExportJob": {
         "type": "object",
@@ -8207,6 +8204,108 @@
           "pageInfo",
           "asOf"
         ],
+        "additionalProperties": false
+      },
+      "GVUsersExportFilters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "accountStatus": {
+            "type": "string",
+            "enum": [
+              "active",
+              "banned"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "merchant",
+              "admin"
+            ]
+          },
+          "merchantStatus": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "active",
+              "suspended",
+              "rejected"
+            ]
+          },
+          "emailVerified": {
+            "type": "boolean"
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GVOrdersExportFilters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processing",
+              "delivered",
+              "disputed",
+              "closed",
+              "refunded"
+            ]
+          },
+          "orderNo": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "GVPointLogsExportFilters": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
         "additionalProperties": false
       }
     },
