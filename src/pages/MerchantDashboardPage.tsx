@@ -607,7 +607,7 @@ export default function MerchantDashboardPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
+    <div className="flex flex-col md:flex-row gap-6">
       {/* Sidebar — <md: sticky horizontal pill strip (spec M4); ≥md: card rail */}
       <aside className="w-full md:w-64 flex-shrink-0 max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[color-mix(in_srgb,var(--color-background)_95%,transparent)] max-md:backdrop-blur-md">
         <nav className="md:card p-0 md:p-2 flex md:flex-col gap-1 overflow-x-auto hide-scrollbar">
@@ -617,7 +617,7 @@ export default function MerchantDashboardPage() {
               onClick={() => { if (path) { navigate(path) } else { setActiveTab(key) } }}
               className={`shrink-0 flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm whitespace-nowrap ${
                 (activeTab === key && !path)
-                  ? 'bg-[var(--color-primary)] text-white font-semibold shadow-sm'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] font-semibold shadow-sm'
                   : 'text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] hover:text-[var(--color-text)] font-medium'
               }`}
             >

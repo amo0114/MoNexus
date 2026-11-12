@@ -242,7 +242,7 @@ export default function AdminConfigPanel() {
               onClick={() => setActiveGroup(group.id)}
               className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                 isActive
-                  ? 'bg-[var(--color-primary)] text-white shadow-xs'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-xs'
                   : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
               }`}
             >

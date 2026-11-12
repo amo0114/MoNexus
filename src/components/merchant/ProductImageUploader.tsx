@@ -392,7 +392,7 @@ export default function ProductImageUploader({
             >
               <SafeImage src={url} alt={`商品图 ${index + 1}`} className="w-full h-20 object-cover" />
               {index === 0 && (
-                <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-white">
+                <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-[var(--color-on-cta)]">
                   封面
                 </span>
               )}

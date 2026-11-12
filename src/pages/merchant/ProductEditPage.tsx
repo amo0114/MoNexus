@@ -450,7 +450,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
   if (loading) {
     return (
-      <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
+      <div className="pb-16 fade-in" data-testid="product-edit-page">
         <div className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] py-16 justify-center">
           <Loader2 className="w-4 h-4 animate-spin" /> 正在加载编辑器…
         </div>
@@ -460,7 +460,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
   if (notFound) {
     return (
-      <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
+      <div className="pb-16 fade-in" data-testid="product-edit-page">
         <EmptyState
           icon={Package}
           title="商品不存在"
@@ -477,7 +477,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
   if (loadError) {
     return (
-      <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
+      <div className="pb-16 fade-in" data-testid="product-edit-page">
         <EmptyState
           icon={Package}
           title="加载失败"
@@ -495,7 +495,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const busy = saving || videoBusy || bindingOfferId != null || !canEdit
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 pb-24 sm:pb-16 fade-in" data-testid="product-edit-page">
+    <div className="pb-24 sm:pb-16 fade-in" data-testid="product-edit-page">
       <button
         type="button"
         onClick={handleBack}

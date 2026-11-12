@@ -243,7 +243,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                           }}
                           className={`flex items-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
                             isActive
-                              ? 'bg-[var(--color-primary)] text-white font-bold shadow-sm'
+                              ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] font-bold shadow-sm'
                               : 'bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
                           }`}
                         >
@@ -309,7 +309,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                       onClick={() => onTabChange(item.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors cursor-pointer text-sm ${
                         isActive
-                          ? 'bg-[var(--color-primary)] text-white shadow-sm font-semibold'
+                          ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-sm font-semibold'
                           : 'text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] hover:text-[var(--color-text)]'
                       }`}
                     >

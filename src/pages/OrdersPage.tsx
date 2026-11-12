@@ -170,7 +170,7 @@ export default function OrdersPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-6 pb-24 md:pb-8" data-testid="orders-page">
+    <div className="fade-in" data-testid="orders-page">
       <div className="flex items-start justify-between gap-3 mb-5">
         <div>
           <h1 className="font-heading text-xl font-bold text-[var(--color-text)] flex items-center gap-2">
@@ -211,7 +211,7 @@ export default function OrdersPage() {
               onClick={() => setTab(t.id)}
               className={`flex-1 min-w-[4.5rem] px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
                 selected
-                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-sm'
                   : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'
               }`}
             >

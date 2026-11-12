@@ -751,7 +751,7 @@ export default function StorePage() {
   }, [columnCount, loadMore, feedItems.length, visibleEndIndex])
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
+    <div className="space-y-8">
       {/* Header — compacted on mobile (V2-M2), explanatory subtitle preserved.
           登录用户换成今日面板（SPEC-ENGAGE-001 HM-01）。 */}
       {showTodayPanel ? (

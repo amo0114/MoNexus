@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { Brush, Moon, Sparkles, Sun } from 'lucide-react'
 import { useTheme, type Theme } from '../lib/ThemeProvider'
 
@@ -69,6 +69,86 @@ export default function ThemeToggle() {
           )
         })}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Header variant: one icon button that opens the theme options, so the
+ * desktop navbar keeps its space for navigation. The drawer keeps the full
+ * segmented control above.
+ */
+export function ThemeMenu() {
+  const { theme, setTheme } = useTheme()
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuId = useId()
+  const current = OPTIONS.find((o) => o.value === theme) ?? OPTIONS[0]
+  const CurrentIcon = current.icon
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-controls={menuId}
+        aria-label={`主题：${current.label}`}
+        title="切换主题"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[var(--color-text-muted)] transition-colors hover:bg-[var(--color-primary-tint)] hover:text-[var(--color-primary)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
+      >
+        <CurrentIcon size={18} />
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          role="radiogroup"
+          aria-label="主题切换"
+          className="menu-pop absolute right-0 top-full z-50 mt-2 w-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5 shadow-lg"
+        >
+          {OPTIONS.map(({ value, label, icon: Icon }) => {
+            const active = theme === value
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                onClick={() => { setTheme(value); setOpen(false) }}
+                className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                  active
+                    ? 'bg-[var(--color-primary-tint)] font-semibold text-[var(--color-primary)]'
+                    : 'text-[var(--color-text)] hover:bg-[var(--color-primary-tint)]'
+                }`}
+              >
+                <Icon size={16} />
+                {label}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

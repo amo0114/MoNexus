@@ -318,7 +318,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
                 onClick={() => setCurrency(item.currency)}
                 className={`min-h-11 min-w-0 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors ${
                   currency === item.currency
-                    ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                    ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-[var(--color-primary)]'
                     : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)]'
                 }`}
               >

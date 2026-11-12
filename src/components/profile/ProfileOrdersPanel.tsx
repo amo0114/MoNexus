@@ -83,7 +83,7 @@ export default function ProfileOrdersPanel({
             onClick={() => onOrderFilterChange('all')}
             className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               orderFilter === 'all'
-                ? 'bg-[var(--color-primary)] text-white shadow-2xs'
+                ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-2xs'
                 : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]'
             }`}
           >

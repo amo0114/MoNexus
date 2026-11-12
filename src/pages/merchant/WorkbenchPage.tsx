@@ -66,7 +66,7 @@ export default function WorkbenchPage() {
 
   if (state.availability === 'disabled' || state.availability === 'forbidden') {
     return (
-      <div className="mx-auto mt-8 max-w-3xl card text-center" data-testid="workbench-unavailable">
+      <div className="mx-auto max-w-3xl card text-center" data-testid="workbench-unavailable">
         <p className="font-bold text-[var(--color-text)]">商家待办暂不可用</p>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">原有商品、库存和订单功能不受影响。</p>
         <Link to="/merchant" className="btn-secondary mt-4 inline-flex min-h-11 items-center px-4">返回商家后台</Link>
@@ -83,7 +83,7 @@ export default function WorkbenchPage() {
   const draftMatches = drafts.length
 
   return (
-    <div className="mx-auto mt-4 max-w-4xl" data-testid="workbench-page">
+    <div className="fade-in" data-testid="workbench-page">
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           type="button"

@@ -41,7 +41,7 @@ export default function AdminOfferReport() {
               onClick={() => setRange(opt.value)}
               className={`px-3 py-1.5 btn-sm rounded text-sm font-medium border transition-colors cursor-pointer ${
                 range === opt.value
-                  ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-[var(--color-primary)]'
                   : 'text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text)]'
               }`}
               data-testid={`admin-offer-report-range-${opt.value}`}

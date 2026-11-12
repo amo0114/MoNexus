@@ -67,7 +67,7 @@ export default function AdminRechargePage() {
                 selected
                   ? isSandbox
                     ? 'bg-amber-600 text-white shadow-sm'
-                    : 'bg-[var(--color-primary)] text-white shadow-sm'
+                    : 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-sm'
                   : isSandbox
                     ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-500/10'
                     : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'

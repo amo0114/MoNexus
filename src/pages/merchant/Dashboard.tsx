@@ -75,7 +75,7 @@ export default function Dashboard() {
   }, [range])
 
   return (
-    <div className="max-w-6xl mx-auto mt-4">
+    <div className="fade-in">
       <div className="flex items-center gap-4 mb-6">
         <button
           onClick={() => navigate('/merchant')}

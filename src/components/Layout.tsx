@@ -14,7 +14,7 @@ import AnnouncementCenter, { AnnouncementBellButton } from './AnnouncementCenter
 import Logo from './ui/Logo'
 import KineticBrand from './ui/KineticBrand'
 import UserAvatar from './ui/UserAvatar'
-import ThemeToggle from './ThemeToggle'
+import { ThemeMenu } from './ThemeToggle'
 import MobileNavDrawer from './MobileNavDrawer'
 import BottomTabBar from './BottomTabBar'
 import MobileSearchIsland from './MobileSearchIsland'
@@ -428,7 +428,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 />
 
                 <div className="hidden md:block">
-                  <ThemeToggle />
+                  <ThemeMenu />
                 </div>
               </>
             ) : (
@@ -557,7 +557,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     brand + toggle + avatar + hamburger overflow 320-375px
                     viewports and push the drawer trigger off-screen. */}
                 <div className="hidden md:block">
-                  <ThemeToggle />
+                  <ThemeMenu />
                 </div>
 
                 <button
@@ -578,15 +578,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </button>
 
                 {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
-                <div
-                  className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[color-mix(in_srgb,var(--color-primary)_35%,transparent)] transition-colors group"
+                <button
+                  type="button"
+                  aria-label={`我的积分 ${user.points ?? ''}`}
+                  className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full cursor-pointer hover:border-[color-mix(in_srgb,var(--color-primary)_35%,transparent)] transition-colors group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                   onClick={() => navigate('/profile')}
                 >
                   <PointCoin className="w-5 h-5 shrink-0" />
-                  <span className="font-bold text-[15px] text-[var(--color-text)] font-mono">
-                    {user.points ?? '--'}
+                  <span className="font-bold text-[15px] text-[var(--color-text)]">
+                    {user.points != null ? user.points.toLocaleString('zh-CN') : '--'}
                   </span>
-                </div>
+                </button>
                 </>
                 ) : (
                 <button
@@ -685,7 +687,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </nav>
 
       {/* Email verification nudge — silent when verified or dismissed */}
-      <EmailVerificationBanner />
+      {!isAdminPage && <EmailVerificationBanner />}
       <VerifiedActionGate />
 
       {/* Platform announcement — fetched from /api/announcements */}
@@ -717,7 +719,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           padding-bottom 在 <md 预留 BottomTabBar 高度（--tabbar-h + safe-area
           + 呼吸空间），≥md 由 md:pb-8 覆盖回原值。
           P2-2：商品详情页 Tab Bar 不渲染（购买条接管），豁免该预留——
-          购买条空间由 ProductDetailPage 根部自行预留，避免双重预留。 */}
+          购买条空间由 ProductDetailPage 根部自行预留，避免双重预留。
+          宽度规范：页面默认占满 main（与 header/footer 同宽对齐）；阅读与表单页
+          自行收窄到 max-w-3xl，认证卡片 max-w-md。页面不再各自设 max-w-6xl 等。 */}
       <main className={`flex-grow ${
         isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : isProductDetailPage ? 'max-w-7xl px-0 md:px-6' : 'max-w-7xl px-4 sm:px-6'
       } mx-auto w-full ${isProductDetailPage ? 'pt-0 md:pt-4' : 'pt-6 sm:pt-8'} ${

@@ -211,7 +211,7 @@ export default function ProfilePage() {
   ]
 
   return (
-    <div className="fade-in max-w-6xl mx-auto space-y-6 pt-2 pb-12 sm:space-y-7">
+    <div className="fade-in space-y-6 pb-12 sm:space-y-7">
       {/* ─────────────────────────────────────────────────────────────
           1. 顶层：一体化主身份与资产尊贵浮岛（Identity & Asset Hero）
           ───────────────────────────────────────────────────────────── */}
@@ -321,7 +321,7 @@ export default function ProfilePage() {
                     ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] opacity-60'
                     : hasCheckedIn
                     ? 'bg-[var(--color-background)] text-[var(--color-text-muted)] border border-[var(--color-border)] cursor-not-allowed'
-                    : 'bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] active:scale-95'
+                    : 'bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)] active:scale-95'
                 }`}
               >
                 <CalendarCheck className="w-4 h-4" />

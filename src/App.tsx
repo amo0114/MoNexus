@@ -11,6 +11,7 @@ import ScrollToTop from './components/ScrollToTop'
 import StorePage from './pages/StorePage'
 import LoginPage from './pages/LoginPage'
 import RoleGuard from './components/RoleGuard'
+import RouteFallback from './components/ui/RouteFallback'
 
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
@@ -72,7 +73,11 @@ function SessionLayout({
   }, [isLoggedIn, authEpoch, userId, setUser, logout])
 
   if (requireAuth && !isLoggedIn) return <Navigate to="/login" />
-  return <Layout>{children}</Layout>
+  return (
+    <Layout>
+      <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+    </Layout>
+  )
 }
 
 export default function App() {
@@ -92,7 +97,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Suspense fallback={<div role="status" className="p-8 text-center text-[var(--color-text-muted)]">正在加载页面…</div>}>
+      <Suspense fallback={<div role="status" aria-label="正在加载页面" className="min-h-screen" />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />

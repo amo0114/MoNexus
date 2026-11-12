@@ -124,7 +124,7 @@ export default function AdminMerchandisingPage({
               onClick={() => setSection(tab.id)}
               className={`flex-1 min-w-[6rem] px-3 py-2 rounded-lg text-sm font-bold transition-colors cursor-pointer whitespace-nowrap ${
                 selected
-                  ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-sm'
                   : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)]'
               }`}
             >

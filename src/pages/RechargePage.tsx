@@ -32,7 +32,7 @@ export default function RechargePage() {
   const resumePayment = Boolean(sessionOrderId && orderId === sessionOrderId) || hasApprovalReturnParams(params)
 
   return (
-    <div className="fade-in max-w-3xl mx-auto space-y-5 pt-2" data-testid="recharge-page">
+    <div className="fade-in max-w-3xl mx-auto space-y-5" data-testid="recharge-page">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">积分充值</h1>

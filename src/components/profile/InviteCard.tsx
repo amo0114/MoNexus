@@ -165,7 +165,7 @@ export default function InviteCard() {
                   </button>
                   <button
                     onClick={() => copyLink(code.code)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] transition-colors inline-flex items-center gap-1 cursor-pointer font-medium"
+                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)] transition-colors inline-flex items-center gap-1 cursor-pointer font-medium"
                     title="复制邀请链接"
                   >
                     <LinkIcon className="w-3.5 h-3.5" /> 复制链接

@@ -491,7 +491,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         onClick={() => setDescMode('edit')}
                         className={`px-3 py-1 btn-sm rounded text-xs font-bold cursor-pointer transition-colors ${
                           descMode === 'edit'
-                            ? 'bg-[var(--color-primary)] text-white'
+                            ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
                             : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
                         }`}
                         data-testid="product-desc-tab-edit"
@@ -505,7 +505,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                         onClick={() => setDescMode('preview')}
                         className={`px-3 py-1 btn-sm rounded text-xs font-bold cursor-pointer transition-colors ${
                           descMode === 'preview'
-                            ? 'bg-[var(--color-primary)] text-white'
+                            ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
                             : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
                         }`}
                         data-testid="product-desc-tab-preview"

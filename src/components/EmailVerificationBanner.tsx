@@ -127,7 +127,7 @@ export default function EmailVerificationBanner() {
             type="button"
             onClick={handleSend}
             disabled={sending || cooldownSeconds > 0}
-            className="min-h-[44px] px-3.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
+            className="min-h-[44px] px-3.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
           >
             {sending ? '发送中…' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重发` : '发送验证邮件'}
           </button>

@@ -169,7 +169,7 @@ export default function NotificationsPage() {
   ]
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6" data-testid="notifications-page">
+    <div className="fade-in max-w-3xl mx-auto" data-testid="notifications-page">
       <div className="flex items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-2">
           <Bell className="w-5 h-5 text-[var(--color-primary)]" />

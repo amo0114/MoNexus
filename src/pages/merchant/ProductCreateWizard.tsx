@@ -454,7 +454,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   }), [form.name, form.price, form.originalPrice, form.description, form.richDescription, images, selectedCategory, selectedTemplate, form.deliveryMode, previewOffers, productDetails])
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 pb-24 sm:pb-16 fade-in" data-testid="product-create-wizard">
+    <div className="pb-24 sm:pb-16 fade-in" data-testid="product-create-wizard">
       <button onClick={() => navigate('/merchant')} className="flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-4 cursor-pointer">
         <ArrowLeft className="w-4 h-4" /> 返回商家中心
       </button>
@@ -489,9 +489,9 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                   <span
                     className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shrink-0 ${
                       isCompletedPhase
-                        ? 'bg-[var(--color-primary)] text-white'
+                        ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
                         : isCurrentPhase
-                          ? 'bg-[var(--color-primary)] text-white'
+                          ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
                           : 'border border-[var(--color-border)] text-[var(--color-text-muted)] bg-[var(--color-surface)]'
                     }`}
                   >

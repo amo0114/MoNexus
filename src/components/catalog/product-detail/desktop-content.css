@@ -102,7 +102,7 @@
     line-height: 1.35;
     margin-bottom: 10px;
     letter-spacing: 0.5px;
-    color: var(--pd-text);
+    color: var(--pd-ink);
   }
   .pd-intro > div {
     font-size: 14px;
@@ -216,7 +216,7 @@
   .pd-faq-hub-header h2 {
     font-size: 18px;
     font-weight: 600;
-    color: var(--pd-text);
+    color: var(--pd-ink);
     margin: 0;
   }
   .pd-faq-hub-subtitle {
@@ -289,7 +289,7 @@
     gap: 8px;
     font-size: 14px;
     font-weight: 600;
-    color: var(--pd-text);
+    color: var(--pd-ink);
     padding-bottom: 12px;
     border-bottom: 1px solid var(--pd-border);
   }
@@ -333,7 +333,7 @@
     display: block;
     font-size: 13px;
     font-weight: 600;
-    color: var(--pd-text);
+    color: var(--pd-ink);
     line-height: 1.3;
   }
   .pd-step-content p {
@@ -375,7 +375,7 @@
     padding: 16px 8px;
     font-size: 14.5px;
     font-weight: 600;
-    color: var(--pd-text);
+    color: var(--pd-ink);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -463,7 +463,7 @@
   .pd-faq-contact-title {
     font-size: 14.5px;
     font-weight: 600;
-    color: var(--pd-text);
+    color: var(--pd-ink);
   }
   .pd-faq-contact-desc {
     font-size: 12.5px;

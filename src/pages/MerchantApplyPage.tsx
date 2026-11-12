@@ -77,7 +77,7 @@ function MerchantApplyContent() {
 
   if (isActive) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="max-w-xl mx-auto mt-10 text-center">
+      <div ref={statusRef} tabIndex={-1} className="max-w-3xl mx-auto text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">您已经是商家了</h2>
         <button
           onClick={() => navigate('/merchant')}
@@ -91,7 +91,7 @@ function MerchantApplyContent() {
 
   if (isPending) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="card max-w-xl mx-auto mt-10 text-center">
+      <div ref={statusRef} tabIndex={-1} className="card max-w-3xl mx-auto text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">商家申请审核中</h2>
         <p className="text-[var(--color-text-muted)]">您的入驻申请已提交，请耐心等待平台审核。</p>
         {statusRefresh}
@@ -101,7 +101,7 @@ function MerchantApplyContent() {
 
   if (isSuspended) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="card max-w-xl mx-auto mt-10 text-center">
+      <div ref={statusRef} tabIndex={-1} className="card max-w-3xl mx-auto text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">账号已停用</h2>
         <p className="text-[var(--color-text-muted)]">您的商家账号已被停用，请联系平台管理员。</p>
         {statusRefresh}
@@ -112,7 +112,7 @@ function MerchantApplyContent() {
   // The register API rejects every existing application, including rejected ones.
   if (isRejected) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="card max-w-xl mx-auto mt-10 text-center">
+      <div ref={statusRef} tabIndex={-1} className="card max-w-3xl mx-auto text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">商家申请未通过</h2>
         <p className="text-[var(--color-text-muted)]">如需进一步处理，请联系平台管理员。</p>
         {statusRefresh}
@@ -169,7 +169,7 @@ function MerchantApplyContent() {
   }
 
   return (
-    <div ref={statusRef} tabIndex={-1} className="max-w-xl mx-auto mt-10">
+    <div ref={statusRef} tabIndex={-1} className="max-w-3xl mx-auto">
       <h2 className="font-heading text-2xl font-bold mb-6 text-[var(--color-text)]">商家入驻申请</h2>
       {(viewStatus || refreshError || error) && statusRefresh}
       <form onSubmit={handleSubmit} className="card flex flex-col gap-5">

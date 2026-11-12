@@ -145,7 +145,7 @@
 .pd-hovercard-name-row h3 {
   font-size: 15px;
   font-weight: 700;
-  color: var(--pd-text);
+  color: var(--pd-ink);
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -276,7 +276,7 @@
 .pd-honor-badge--default,
 .pd-hovercard-badge-pill {
   background: var(--pd-soft, #f8fafc);
-  color: var(--pd-text, #334155);
+  color: var(--pd-ink);
   border-color: var(--pd-border, #e2e8f0);
 }
 .dark .pd-honor-badge--default,
@@ -284,7 +284,7 @@
 .dark .pd-hovercard-badge-pill,
 [data-theme='dark'] .pd-hovercard-badge-pill {
   background: rgba(255, 255, 255, 0.05);
-  color: var(--pd-text, #e2e8f0);
+  color: var(--pd-ink);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -314,7 +314,7 @@
   gap: 3px;
   font-size: 13.5px;
   font-weight: 700;
-  color: var(--pd-text);
+  color: var(--pd-ink);
 }
 
 .pd-hovercard-metric-item strong svg {
@@ -367,7 +367,7 @@
   border-radius: 7px;
   font-size: 12.5px;
   font-weight: 500;
-  color: var(--pd-text);
+  color: var(--pd-ink);
   background: var(--pd-surface);
   border: 1px solid var(--pd-border);
   cursor: pointer;
