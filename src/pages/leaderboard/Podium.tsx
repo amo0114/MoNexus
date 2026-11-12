@@ -75,7 +75,7 @@ function PodiumSpot({
       </div>
       <div className="mt-1 flex items-center gap-1 text-[var(--color-points)]">
         <Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        <span className="font-mono text-sm lg:text-base font-bold tabular-nums">{fmtPoints(entry.points)}</span>
+        <span className="text-sm lg:text-base font-bold tabular-nums">{fmtPoints(entry.points)}</span>
       </div>
       {entry.isMe && (
         <span className="mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[var(--color-primary-tint-strong)] text-[var(--color-primary)]">

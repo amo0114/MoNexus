@@ -86,7 +86,7 @@ for (const width of [320, 390, 1280]) {
         await notice.getByRole('button', { name: '查看申请状态' }).click()
         await expect(page).toHaveURL(/\/merchant\/apply\?view=status$/)
       } else await page.getByRole('button', { name: '刷新申请状态' }).click()
-      await expect(page.getByRole('heading', { name: '您已经是商家了' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: '你已经是商家了' })).toBeVisible()
       expect(writeCalls).toBe(2)
       expect(errors).toEqual([])
     })

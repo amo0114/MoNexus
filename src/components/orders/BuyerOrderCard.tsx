@@ -61,7 +61,7 @@ export default function BuyerOrderCard({
           </span>
         </div>
 
-        <div className="flex items-center text-[var(--color-cta)] font-bold tabular-nums text-sm shrink-0">
+        <div className="flex items-center text-[var(--color-points)] font-bold tabular-nums text-sm shrink-0">
           -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
           {order.price}
         </div>
@@ -119,11 +119,7 @@ export default function BuyerOrderCard({
                 onOpen(order.id)
               }}
               disabled={loading}
-              className="inline-flex items-center justify-center gap-1 cursor-pointer
-                bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white
-                text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 shadow-xs
-                focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
-                disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+              className="btn-tonal shrink-0 ml-auto"
               data-testid={`open-order-detail-${order.id}`}
             >
               {loading ? (

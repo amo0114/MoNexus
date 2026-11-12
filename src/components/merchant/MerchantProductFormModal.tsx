@@ -516,7 +516,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                   </div>
                   {descMode === 'edit' ? (
                     <textarea
-                      placeholder="在这里详细描述您的商品特性、使用教程、售后承诺等..."
+                      placeholder="在这里详细描述你的商品特性、使用教程、售后承诺等..."
                       className="input min-h-[160px] resize-y font-mono leading-relaxed"
                       value={form.richDescription}
                       onChange={(e) => setForm({ ...form, richDescription: e.target.value })}

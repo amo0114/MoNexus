@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import PasswordInput from '../components/auth/PasswordInput'
 import { Gift, Wrench } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -523,7 +524,7 @@ export default function LoginPage() {
     <LoginShell>
       <h2 className="mb-1 font-heading text-2xl font-semibold text-[var(--color-text)]">{isRegister ? '创建账号' : '登录'}</h2>
       <p className="mb-8 text-sm text-[var(--color-text-muted)]">
-        {isRegister ? '注册后即可浏览与兑换数字商品' : '使用邮箱登录您的账号'}
+        {isRegister ? '注册后即可浏览与兑换数字商品' : '使用邮箱登录你的账号'}
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -531,6 +532,7 @@ export default function LoginPage() {
           type="email"
           placeholder="邮箱地址"
           aria-label="邮箱地址"
+          autoComplete={isRegister ? 'email' : 'username'}
           value={email}
           onChange={(event) => {
             setEmail(event.target.value)
@@ -541,8 +543,8 @@ export default function LoginPage() {
           disabled={loading}
         />
         <div className="space-y-1">
-          <input
-            type="password"
+          <PasswordInput
+            autoComplete={isRegister ? 'new-password' : 'current-password'}
             placeholder={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
             aria-label={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
             aria-describedby={isRegister ? 'register-password-hint' : undefined}
@@ -554,7 +556,6 @@ export default function LoginPage() {
             required
             // Login keeps the legacy minimum so existing accounts can still sign in.
             minLength={isRegister ? PASSWORD_MIN_LENGTH : 6}
-            className="input"
             disabled={loading}
           />
           {isRegister && (

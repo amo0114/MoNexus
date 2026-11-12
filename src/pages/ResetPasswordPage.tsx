@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import PasswordInput from '../components/auth/PasswordInput'
 import { KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { resetPassword } from '../api/auth'
@@ -77,23 +78,23 @@ export default function ResetPasswordPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <input
-                type="password"
+              <PasswordInput
                 placeholder="新密码"
+                aria-label="新密码"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 minLength={PASSWORD_MIN_LENGTH}
-                className="input"
               />
-              <input
-                type="password"
+              <PasswordInput
                 placeholder="再次输入新密码"
+                aria-label="再次输入新密码"
+                autoComplete="new-password"
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 required
                 minLength={PASSWORD_MIN_LENGTH}
-                className="input"
               />
               <button
                 type="submit"

@@ -126,7 +126,7 @@ export default function ForgotPasswordPage() {
             </div>
             <h2 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-2">请查收邮件</h2>
             <p className="text-sm text-[var(--color-text-muted)] leading-relaxed">
-              如该邮箱已注册，您将收到重置链接，有效期 30 分钟。<br />
+              如该邮箱已注册，你将收到重置链接，有效期 30 分钟。<br />
               如未收到，请检查垃圾邮件文件夹。
             </p>
           </div>

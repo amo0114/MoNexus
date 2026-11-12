@@ -332,7 +332,7 @@ export default function ProfilePage() {
                 type="button"
                 onClick={() => navigate('/recharge')}
                 data-testid="profile-recharge-entry"
-                className="max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm shadow-xs active:scale-95 cursor-pointer transition"
+                className="max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-[var(--color-primary-tint)] text-[var(--color-primary)] hover:bg-[var(--color-primary-tint-strong)] font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm active:scale-95 cursor-pointer transition focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
               >
                 <Wallet className="w-4 h-4" /> 充值
               </button>

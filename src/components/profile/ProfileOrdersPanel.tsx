@@ -197,20 +197,14 @@ export default function ProfileOrdersPanel({
                 </div>
 
                 <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-2 sm:gap-3 shrink-0 sm:border-l sm:border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] sm:pl-4 pt-3 sm:pt-0 border-t border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] sm:border-t-0">
-                  <div className="hidden sm:flex items-center text-[var(--color-cta)] font-bold whitespace-nowrap text-sm">
+                  <div className="hidden sm:flex items-center text-[var(--color-points)] font-bold whitespace-nowrap text-sm tabular-nums">
                     -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
                     {order.price}
                   </div>
                   <button
                     onClick={() => onOpenOrderDetail(order.id)}
                     disabled={loadingOrderId === order.id}
-                    className="inline-flex items-center justify-center gap-1.5 cursor-pointer
-                      bg-[var(--color-primary)] text-white text-xs font-semibold
-                      px-3.5 py-2 btn-sm rounded-xl transition-colors whitespace-nowrap
-                      hover:bg-[var(--color-primary-hover)]
-                      focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
-                      disabled:opacity-50 disabled:cursor-not-allowed
-                      w-full sm:w-auto"
+                    className="btn-tonal btn-sm w-full sm:w-auto"
                   >
                     {loadingOrderId === order.id ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />

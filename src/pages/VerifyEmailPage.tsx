@@ -124,7 +124,7 @@ export default function VerifyEmailPage() {
               <CheckCircle2 className="h-8 w-8 text-[var(--color-cta)]" />
             </div>
             <h2 className="mb-2 font-heading text-2xl font-bold text-[var(--color-text)]">邮箱已验证</h2>
-            <p className="text-sm text-[var(--color-text-muted)]">您现在可以继续使用需要邮箱验证的功能。</p>
+            <p className="text-sm text-[var(--color-text-muted)]">你现在可以继续使用需要邮箱验证的功能。</p>
             <p className="mt-2 text-sm text-[var(--color-text-muted)]">即将跳转到个人中心…</p>
           </>
         )}

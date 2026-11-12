@@ -24,6 +24,17 @@
          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
 }
 
+/* Tonal: quiet secondary action for repeated rows/cards, where a filled
+   button per item would compete with the page's one primary action. */
+.btn-tonal {
+  @apply inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap
+         rounded-lg px-3 py-1.5 text-xs font-semibold
+         bg-[var(--color-primary-tint)] text-[var(--color-primary)]
+         transition-colors hover:bg-[var(--color-primary-tint-strong)]
+         focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
+         disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
 .btn-secondary {
   display: inline-flex;
   align-items: center;
