@@ -1,0 +1,22 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/admin/exports/00000000-0000-4000-8000-000000000007",
+  "status": 200,
+  "schema": "GVExportJob",
+  "response": {
+    "id": "00000000-0000-4000-8000-000000000007",
+    "kind": "orders",
+    "requestedByUserId": 1,
+    "status": "queued",
+    "phase": null,
+    "snapshotAt": null,
+    "rowCount": null,
+    "byteSize": null,
+    "errorCode": null,
+    "createdAt": "2026-11-12T08:00:00.000Z",
+    "completedAt": null,
+    "expiresAt": null
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "contractVersion": "governance-v1",
+  "implementationStatus": "planned",
+  "fixtures": [
+    "capabilities-operator.json",
+    "permission-denied.json",
+    "refund-refundable.json",
+    "refund-source-insufficient.json",
+    "refund-legacy-unproven.json",
+    "refund-resumed.json",
+    "state-conflict.json",
+    "merchant-rejected.json",
+    "merchant-suspended.json",
+    "user-banned-legacy-incomplete.json",
+    "ban-active.json",
+    "audit-safe.json",
+    "export-queued.json",
+    "export-running.json",
+    "export-succeeded.json",
+    "export-failed.json",
+    "export-expired.json",
+    "integrity-issue.json",
+    "inventory-batch.json",
+    "offer-revision.json"
+  ]
+}

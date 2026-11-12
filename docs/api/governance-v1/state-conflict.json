@@ -1,0 +1,14 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "POST",
+  "path": "/api/admin/recharge/refunds/00000000-0000-4000-8000-000000000001/review",
+  "status": 409,
+  "schema": "GVError",
+  "response": {
+    "error": {
+      "code": "STATE_CONFLICT",
+      "message": "状态已经变化，请重新获取当前事实"
+    }
+  }
+}

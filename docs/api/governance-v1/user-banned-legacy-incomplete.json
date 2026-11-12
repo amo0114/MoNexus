@@ -1,0 +1,76 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/admin/users/42",
+  "status": 200,
+  "schema": "GVUserDetail",
+  "response": {
+    "user": {
+      "id": 42,
+      "email": "user@example.invalid",
+      "nickname": "示例用户",
+      "avatarUrl": null,
+      "role": "user",
+      "status": "已封禁",
+      "accountStatus": "banned",
+      "emailVerified": "2026-11-12T08:00:00.000Z",
+      "createdAt": "2026-11-12T08:00:00.000Z",
+      "updatedAt": "2026-11-12T08:00:00.000Z",
+      "lastLoginAt": null
+    },
+    "ban": {
+      "id": "00000000-0000-4000-8000-000000000006",
+      "userId": 42,
+      "version": 0,
+      "reasonCode": "abuse",
+      "reason": "合成运营理由",
+      "startsAt": "2026-11-12T08:00:00.000Z",
+      "expiresAt": "2026-11-13T08:00:00.000Z",
+      "createdByUserId": 1,
+      "source": "admin",
+      "releasedAt": null,
+      "releasedByUserId": null,
+      "releaseReason": null,
+      "createdAt": "2026-11-12T08:00:00.000Z",
+      "effective": true
+    },
+    "merchant": null,
+    "wallet": {
+      "balance": 600,
+      "frozenBalance": 0,
+      "sources": [
+        {
+          "origin": "legacy_unknown",
+          "availablePoints": 600,
+          "frozenPoints": 0
+        }
+      ]
+    },
+    "stats": {
+      "orderCount": 2,
+      "chargedPoints": 1000,
+      "refundedPoints": 400,
+      "netSpentPoints": 600,
+      "legacyCompleteness": "partial"
+    },
+    "invites": {
+      "inviterUserId": null,
+      "inviteeCount": 0
+    },
+    "activity": {
+      "lastLoginAt": null,
+      "lastSessionUsedAt": null,
+      "lastActiveDay": null
+    },
+    "sections": {
+      "orders": true,
+      "pointLogs": true,
+      "sessions": true,
+      "referrals": true,
+      "securityEvents": true,
+      "audit": true
+    },
+    "asOf": "2026-11-12T08:00:00.000Z"
+  }
+}

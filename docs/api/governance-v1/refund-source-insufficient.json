@@ -1,0 +1,37 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/admin/recharge/refunds/00000000-0000-4000-8000-000000000001",
+  "status": 200,
+  "schema": "GVRefundDetail",
+  "response": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "rechargeOrderId": "00000000-0000-4000-8000-000000000002",
+    "userId": 42,
+    "status": "manual_review",
+    "amountMinor": "10000",
+    "currency": "CNY",
+    "pointsToReverse": "1000",
+    "reasonCode": "source_insufficient",
+    "reviewVersion": 0,
+    "qualification": {
+      "sourceKind": "recharge",
+      "requiredPoints": "1000",
+      "availablePoints": "600",
+      "asOf": "2026-11-12T08:00:00.000Z"
+    },
+    "allowedActions": [
+      "reject"
+    ],
+    "blockers": [
+      {
+        "code": "REFUND_SOURCE_INSUFFICIENT",
+        "message": "原充值来源积分不足"
+      }
+    ],
+    "history": [],
+    "createdAt": "2026-11-12T08:00:00.000Z",
+    "updatedAt": "2026-11-12T08:00:00.000Z"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "POST",
+  "path": "/api/admin/wallet-integrity/issues/00000000-0000-4000-8000-000000000008/recheck",
+  "status": 200,
+  "schema": "GVIntegrityIssue",
+  "response": {
+    "id": "00000000-0000-4000-8000-000000000008",
+    "userId": 42,
+    "type": "balance_source_mismatch",
+    "accountValue": 600,
+    "sourceValue": 550,
+    "status": "open",
+    "firstSeenAt": "2026-11-12T08:00:00.000Z",
+    "lastSeenAt": "2026-11-12T08:00:00.000Z",
+    "lastVerifiedAt": "2026-11-12T08:00:00.000Z",
+    "note": null
+  }
+}
