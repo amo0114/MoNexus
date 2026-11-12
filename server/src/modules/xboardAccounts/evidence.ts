@@ -1,22 +1,25 @@
+import { accountStatus } from '../accountGovernance/status.js'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 
 type DB = typeof prisma | Prisma.TransactionClient
 export async function readRecoverySource(taskId: number, db: DB = prisma) {
-  return db.fakaBridgeTask.findUnique({ where: { id: taskId }, select: {
+  const source = await db.fakaBridgeTask.findUnique({ where: { id: taskId }, select: {
     id: true, status: true, completedAt: true, requestOrderNo: true, emailSnapshot: true, xboardTradeNo: true,
     order: { select: { id: true, userId: true, status: true, createdAt: true,
       user: { select: { status: true, email: true, emailVerified: true } },
       delivery: { select: { status: true, deliveredAt: true, userId: true } },
     } },
   } })
+  if (source) source.order.user.status = await accountStatus(source.order.userId, db)
+  return source
 }
 export type RecoverySource = NonNullable<Awaited<ReturnType<typeof readRecoverySource>>>
 
 export function sourceBlockReason(source: RecoverySource | null) {
   if (!source || source.status !== 'succeeded' || !source.completedAt || !source.xboardTradeNo) return 'source_incomplete' as const
   const { order } = source
-  if (order.user.status !== '正常') return 'user_unavailable' as const
+  if (order.user.status !== 'active') return 'user_unavailable' as const
   if (!['delivered', 'closed', 'disputed', 'refunded'].includes(order.status)
     || order.delivery?.status !== 'delivered' || !order.delivery.deliveredAt
     || order.delivery.userId !== order.userId) return 'delivery_untrusted' as const

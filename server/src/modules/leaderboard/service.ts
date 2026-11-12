@@ -144,7 +144,7 @@ function eligibleLogsSql(startUtc: Date | null, endUtc: Date) {
       AND pl."createdAt" < ${boundAsStoredUtc(endUtc)}
       ${lowerBound}
       AND u."role" <> 'admin'
-      AND u."status" <> '已封禁'
+      AND governance_user_active(u.id)
   `
 }
 

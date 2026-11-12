@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { prisma } from '../../lib/prisma.js'
 import { resolveUserByPlatformId } from './service.js'
 import type { ProductAudience } from '../../lib/productCatalog/visibility.js'
@@ -12,7 +13,7 @@ import type { ProductAudience } from '../../lib/productCatalog/visibility.js'
  *
  * 判定规则（与 docs/specs/product-guest-visibility-ai-moderation.md §5.1 一致）：
  *
- *   private + 有 platformId + 已绑定 + 账号 status === '正常'  → member
+ *   private + 有 platformId + 已绑定 + 账号有效状态为 active  → member
  *   其余全部                                                     → guest
  *
  * 「其余」包括：缺 platformId、缺/未知 conversationType、group、未绑定、
@@ -30,9 +31,6 @@ export type BotConversationType = 'private' | 'group'
 function normalizeConversationType(raw: unknown): BotConversationType | null {
   return raw === 'private' || raw === 'group' ? raw : null
 }
-
-/** 账号可用的唯一状态值（与 User.status 默认值、auth 既有判定一致）。 */
-const ACTIVE_USER_STATUS = '正常'
 
 /**
  * 由请求体字段解析商品视角。该函数是**唯一**的视角来源，
@@ -66,5 +64,5 @@ export async function resolveBotProductAudience(params: {
   })
   if (!user) return 'guest'
 
-  return user.status === ACTIVE_USER_STATUS ? 'member' : 'guest'
+  return !await isAccountBanned(userId) ? 'member' : 'guest'
 }

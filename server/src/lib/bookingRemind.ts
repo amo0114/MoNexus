@@ -26,6 +26,7 @@ const REMIND_INTERVAL_MS = 60 * 60 * 1000
 
 interface CandidateOrder {
   id: number
+  orderNo: string | null
   bookingDate: Date | null
   productNameSnapshot: string | null
   offerNameSnapshot: string | null
@@ -57,6 +58,7 @@ function buildMail(to: string, order: CandidateOrder, role: 'buyer' | 'merchant'
   return renderMail('booking_reminder', {
     to,
     orderId: order.id,
+    orderNo: order.orderNo,
     productLabel: label,
     bookingDay,
     role,
@@ -119,6 +121,7 @@ export async function runBookingRemindBatch(now = new Date()) {
       },
       select: {
         id: true,
+        orderNo: true,
         bookingDate: true,
         productNameSnapshot: true,
         offerNameSnapshot: true,

@@ -1,3 +1,4 @@
+import { assertMerchantOperation, merchantOrderActions } from '../merchantGovernance/capability.js'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, HttpError } from '../../lib/httpError.js'
@@ -44,6 +45,7 @@ function buildOrderWhere(merchantId: number, query: MerchantOrderListQuery): Pri
     ...(query.q
       ? {
           OR: [
+            { orderNo: query.q },
             { product: { name: { contains: query.q, mode: 'insensitive' } } },
             { user: { email: { contains: query.q, mode: 'insensitive' } } },
           ],
@@ -97,6 +99,7 @@ function computeSlaExceeded(order: {
 }
 
 export async function listMyOrders(merchantId: number, query: MerchantOrderListQuery) {
+  const allowed=await merchantOrderActions(merchantId,['start_fulfillment','reject','deliver','post_progress','report_unfulfillable','respond_dispute'])
   const where = buildOrderWhere(merchantId, query)
   const [items, total] = await prisma.$transaction([
     prisma.order.findMany({
@@ -128,7 +131,7 @@ export async function listMyOrders(merchantId: number, query: MerchantOrderListQ
       // P6c：预约日期（null = 非预约单）；列表/详情均透出供商家排期。
       bookingDate: order.bookingDate,
       slaExceeded: computeSlaExceeded(order),
-      availableActions: getAvailableActions(order),
+      availableActions: getAvailableActions(order).filter(a=>allowed.includes(a)),
     })),
     total,
     page: query.page,
@@ -176,14 +179,16 @@ export async function getMyOrderDetail(merchantId: number, orderId: number) {
     // P6c：预约日期（null = 非预约单）。
     bookingDate: order.bookingDate,
     slaExceeded: computeSlaExceeded(order),
-    availableActions: getAvailableActions(order),
+    availableActions: await merchantOrderActions(merchantId,getAvailableActions(order)),
     // 详情显式回填：买家购买前填写的信息是商家的履约依据。
     purchaseFormSnapshot: order.purchaseFormSnapshot ?? null,
     purchaseFormAnswers: order.purchaseFormAnswers ?? null,
   }
 }
 
-async function assertMerchantOrder(merchantId: number, orderId: number, tx: Prisma.TransactionClient) {
+async function assertMerchantOrder(merchantId: number, orderId: number, tx: Prisma.TransactionClient, activeOnly=false) {
+  await tx.$queryRaw`SELECT id FROM "Order" WHERE id=${orderId} FOR UPDATE`
+  await assertMerchantOperation(tx,merchantId,activeOnly)
   const order = await tx.order.findFirst({
     where: { id: orderId, merchantId },
     select: {
@@ -209,7 +214,7 @@ export async function startOrderFulfillment(
   input: { publicNote?: string; internalNote?: string }
 ) {
   await prisma.$transaction(async tx => {
-    await assertMerchantOrder(merchantId, orderId, tx)
+    await assertMerchantOrder(merchantId, orderId, tx,true)
     await transitionOrderStatus({
       orderId,
       toStatus: 'processing',
@@ -376,6 +381,8 @@ export async function reportUnfulfillable(
   input: { publicNote?: string; internalNote?: string }
 ) {
   await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id=${orderId} FOR UPDATE`
+    await assertMerchantOperation(tx,merchantId,false)
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await tx.order.findFirst({
       where: { id: orderId, merchantId },
@@ -400,6 +407,8 @@ export async function rejectOrder(
   // 商家拒单（pending → refunded）：仅 manual_service 走 pending；即时模式创建即 delivered 不会进入 pending。
   // 拒单后立即退还冻结积分（holdingPoints），Settlement holding → voided。
   await prisma.$transaction(async tx => {
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id=${orderId} FOR UPDATE`
+    await assertMerchantOperation(tx,merchantId,false)
     const order = await tx.order.findFirst({
       where: { id: orderId, merchantId },
       select: {

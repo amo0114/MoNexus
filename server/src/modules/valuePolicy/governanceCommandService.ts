@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { createHash } from 'node:crypto'
 import type { Prisma, ValuePolicy, ValuePolicyStatus } from '@prisma/client'
 import { config } from '../../config/index.js'
@@ -102,7 +103,7 @@ async function assertAdminActor(tx: Prisma.TransactionClient, actorUserId: numbe
     where: { id: actorUserId },
     select: { role: true, status: true },
   })
-  if (!actor || actor.role !== 'admin' || actor.status !== '正常') {
+  if (!actor || actor.role !== 'admin' || await isAccountBanned(actorUserId, tx)) {
     throw new HttpError(403, 'FORBIDDEN', 'ValuePolicy 治理仅允许有效管理员执行')
   }
 }

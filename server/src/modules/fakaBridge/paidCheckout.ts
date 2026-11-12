@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { createHmac } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -40,7 +41,7 @@ export async function readPaidCheckoutTarget(userId: number, offer: Offer, accou
   if (!link) throw notFound()
   if (link.status !== 'active') throw unresolved()
   if (instance?.origin !== settings.origin) throw unavailable()
-  if (user?.status !== '正常') throw new HttpError(403, 'FORBIDDEN', '账号状态异常，无法下单')
+  if (!user || await isAccountBanned(userId, db)) throw new HttpError(403, 'FORBIDDEN', '账号状态异常，无法下单')
   return target(userId, offer, link)
 }
 /** Fresh remote preflight only; no HTTP inside the order transaction. */

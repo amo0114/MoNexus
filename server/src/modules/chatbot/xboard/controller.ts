@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../../accountGovernance/status.js'
 import { purchaseReset } from '../../xboardAccounts/purchase.js'
 import { createIntent, confirmReset, resetStatus, resetIntentStatus } from '../../trafficReset/intents.js'
 import { processResetOperation } from '../../trafficReset/worker.js'
@@ -18,7 +19,7 @@ export function handleXboardQuery(action: 'purchase-reset' | 'accounts' | 'profi
       const binding = await prisma.chatBinding.findUnique({ where: { platform_platformId: { platform: 'qq', platformId } },
         select: { id: true, userId: true, user: { select: { status: true } } } })
       if (!binding) { res.json({ bound: false }); return }
-      if (binding.user.status !== '正常') throw forbidden('当前账号不可用')
+      if (await isAccountBanned(binding.userId)) throw forbidden('当前账号不可用')
       await consumeAbuseBucket(() => abuseLimiter.consume({ flow: 'xboard-account-query', dimension: 'user', limit: 10, windowMs: 60_000 }, binding.userId))
       const actor = { userId: binding.userId, bindingId: binding.id, platformId }
       const result = action === 'purchase-reset' ? await purchaseReset(actor, req.body.accountLinkId)

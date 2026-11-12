@@ -1,3 +1,4 @@
+import { setCommercialActor } from '../catalog/offerRevisions.js'
 import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -124,6 +125,7 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
   }
 
   const product = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/productAdmin')
     // B_CAT：用事务内 client 解析 categoryId/type（不开启嵌套事务）。
     const { categoryId, type } = await resolveProductCategory(
       { categoryId: data.categoryId, type: data.type },
@@ -184,6 +186,7 @@ export async function unpublishProduct(productId: number) {
 
 export async function updateProduct(adminUserId: number, id: number, data: UpdateProductInput) {
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/productAdmin')
     const product = await tx.product.findUnique({ where: { id } })
     if (!product) throw notFound('商品不存在')
 

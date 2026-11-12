@@ -1,3 +1,5 @@
+import { merchantCapabilities } from '../merchantGovernance/lifecycle.js'
+import { legacyStatus } from '../accountGovernance/status.js'
 import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import type { Prisma } from '@prisma/client'
@@ -27,12 +29,16 @@ export function hashRefreshToken(refreshToken: string) {
   return crypto.createHash('sha256').update(refreshToken).digest('hex')
 }
 
-export function buildAuthUser(user: { id: number; email: string; role: string; status: string; nickname: string | null; avatarUrl?: string | null }, points = 0) {
+export function buildAuthUser(user: { id: number; email: string; role: string; status: string; nickname: string | null; avatarUrl?: string | null; merchant?: { status: string; lifecycleVersion: number } | null }, points = 0) {
   return {
     id: user.id,
     email: user.email,
     role: user.role,
-    status: user.status,
+    status: legacyStatus(user.status === 'banned' || user.status === '已封禁' ? 'banned' : 'active'),
+    accountStatus: user.status === 'banned' || user.status === '已封禁' ? 'banned' : 'active',
+    merchantStatus: user.merchant?.status ?? null,
+    merchantLifecycleVersion: user.merchant?.lifecycleVersion ?? null,
+    merchantCapabilities: merchantCapabilities(user.merchant?.status ?? null, !['active','正常'].includes(user.status)),
     nickname: resolveUserNickname(user),
     avatarUrl: user.avatarUrl ?? null,
     points,

@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import type { FakaBridgeTask, Prisma } from '@prisma/client'
 import { isDeepStrictEqual } from 'node:util'
 import { config } from '../../config/index.js'
@@ -39,7 +40,7 @@ export async function paidActorStillEligible(task: TaskIdentity & { orderId: num
     db.order.findUnique({ where: { id: task.orderId }, select: { userId: true, user: { select: { status: true } } } }),
     db.xboardInstance.findUnique({ where: { id: task.instanceIdSnapshot! } }),
   ])
-  return !!link && !!order && order.user.status === '正常' && link.status === 'active' && link.userId === order.userId
+  return !!link && !!order && !await isAccountBanned(order.userId, db) && link.status === 'active' && link.userId === order.userId
     && link.instanceId === task.instanceIdSnapshot && link.xboardUserId === task.xboardUserIdSnapshot && instance?.origin === task.originSnapshot
 }
 export async function callPaidTask(action: 'paid-reset' | 'paid-reset-status' | 'paid-reset-revoke', task: TaskIdentity, options: FakaBridgeClientOptions) {

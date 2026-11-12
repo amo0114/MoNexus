@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { callFakaV2Capabilities } from '../../lib/fakaBridge/accountV2.js'
 import { callResetPreview } from '../../lib/fakaBridge/resetV2.js'
 import { paidResetHistory } from './resetHistory.js'
@@ -15,7 +16,7 @@ export async function assertActor(actor: AccountActor, db: DB = prisma) {
   const binding = await db.chatBinding.findUnique({ where: { id: actor.bindingId },
     select: { userId: true, platform: true, platformId: true, user: { select: { status: true } } } })
   if (!binding || binding.platform !== 'qq' || binding.platformId !== actor.platformId || binding.userId !== actor.userId
-    || binding.user.status !== '正常') throw new HttpError(409, 'XBOARD_BINDING_CHANGED', 'QQ 绑定或账号状态已变化，请重新查询')
+    || await isAccountBanned(actor.userId, db)) throw new HttpError(409, 'XBOARD_BINDING_CHANGED', 'QQ 绑定或账号状态已变化，请重新查询')
 }
 function mask(email: string) {
   const at = email.lastIndexOf('@')

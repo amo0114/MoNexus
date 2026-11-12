@@ -1,0 +1,178 @@
+{
+  "phase": "verify",
+  "dryRun": false,
+  "before": {
+    "missingBans": 0,
+    "missingMerchantBaselines": 0,
+    "missingOfferBaselines": 0,
+    "asOf": "2026-11-12T15:51:56.376Z",
+    "cutoverAt": "2026-11-12T15:19:51.267Z",
+    "states": [
+      {
+        "entity": "user.status",
+        "value": "banned",
+        "count": "1"
+      },
+      {
+        "entity": "user.status",
+        "value": "active",
+        "count": "10003"
+      },
+      {
+        "entity": "user.role",
+        "value": "user",
+        "count": "10002"
+      },
+      {
+        "entity": "user.role",
+        "value": "admin",
+        "count": "1"
+      },
+      {
+        "entity": "user.role",
+        "value": "merchant",
+        "count": "1"
+      },
+      {
+        "entity": "merchant.status",
+        "value": "active",
+        "count": "1"
+      },
+      {
+        "entity": "order.status",
+        "value": "closed",
+        "count": "100000"
+      },
+      {
+        "entity": "order.status",
+        "value": "delivered",
+        "count": "1"
+      }
+    ],
+    "unknown": [],
+    "numbers": [
+      {
+        "table": "Order",
+        "missing": 0
+      },
+      {
+        "table": "SettlementBatch",
+        "missing": 0
+      },
+      {
+        "table": "OrderAfterSalesCase",
+        "missing": 0
+      }
+    ],
+    "roles": [],
+    "admins": [
+      {
+        "id": 1,
+        "createdAt": "2026-10-01T00:00:00.000Z",
+        "adminAuthorization": {
+          "tier": "super",
+          "version": 0
+        }
+      }
+    ],
+    "unknownRechargeSources": "0",
+    "legacyInventoryWithoutItemBatch": 0,
+    "walletViolations": [],
+    "storage": {
+      "durable": false,
+      "providerConfigId": null,
+      "verified": true
+    }
+  },
+  "checkpoints": [],
+  "status": "completed",
+  "after": {
+    "missingBans": 0,
+    "missingMerchantBaselines": 0,
+    "missingOfferBaselines": 0,
+    "asOf": "2026-11-12T15:51:56.406Z",
+    "cutoverAt": "2026-11-12T15:19:51.267Z",
+    "states": [
+      {
+        "entity": "user.status",
+        "value": "banned",
+        "count": "1"
+      },
+      {
+        "entity": "user.status",
+        "value": "active",
+        "count": "10003"
+      },
+      {
+        "entity": "user.role",
+        "value": "user",
+        "count": "10002"
+      },
+      {
+        "entity": "user.role",
+        "value": "admin",
+        "count": "1"
+      },
+      {
+        "entity": "user.role",
+        "value": "merchant",
+        "count": "1"
+      },
+      {
+        "entity": "merchant.status",
+        "value": "active",
+        "count": "1"
+      },
+      {
+        "entity": "order.status",
+        "value": "closed",
+        "count": "100000"
+      },
+      {
+        "entity": "order.status",
+        "value": "delivered",
+        "count": "1"
+      }
+    ],
+    "unknown": [],
+    "numbers": [
+      {
+        "table": "Order",
+        "missing": 0
+      },
+      {
+        "table": "SettlementBatch",
+        "missing": 0
+      },
+      {
+        "table": "OrderAfterSalesCase",
+        "missing": 0
+      }
+    ],
+    "roles": [],
+    "admins": [
+      {
+        "id": 1,
+        "createdAt": "2026-10-01T00:00:00.000Z",
+        "adminAuthorization": {
+          "tier": "super",
+          "version": 0
+        }
+      }
+    ],
+    "unknownRechargeSources": "0",
+    "legacyInventoryWithoutItemBatch": 0,
+    "walletViolations": [],
+    "storage": {
+      "durable": false,
+      "providerConfigId": null,
+      "verified": true
+    }
+  },
+  "structure": {
+    "invalidIndexes": [],
+    "missingFinalChecks": []
+  },
+  "dataReady": true,
+  "verified": true
+}

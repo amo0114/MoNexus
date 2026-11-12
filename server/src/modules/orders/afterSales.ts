@@ -69,6 +69,7 @@ export async function serializeAfterSalesCase(db: Db, caseId: number) {
   const available = settledNet > 0 && order.merchant ? await merchantSettlementAvailable(db, order.merchant.userId) : 0
   return {
     id: row.id,
+    caseNo: row.caseNo,
     orderId: row.orderId,
     kind: row.kind,
     status: row.status,
@@ -111,23 +112,26 @@ export async function listOrderAfterSalesCases(orderId: number) {
 }
 
 export async function createAfterSalesCase(adminUserId: number, orderId: number, input: { reason: string; evidence?: string }) {
-  const order = await prisma.order.findUnique({ where: { id: orderId }, select: { status: true } })
+  return prisma.$transaction(async tx => {
+  await tx.$queryRaw`SELECT id FROM "Order" WHERE id=${orderId} FOR UPDATE`
+  const order = await tx.order.findUnique({ where: { id: orderId }, select: { status: true } })
   if (!order) throw notFound('订单不存在')
   if (order.status !== 'closed') throw badRequest('只有已关闭订单可发起售后；未完成订单请走取消或仲裁')
   try {
-    const created = await prisma.orderAfterSalesCase.create({
+    const created = await tx.orderAfterSalesCase.create({
       data: { orderId, reason: input.reason, evidence: input.evidence ?? null, createdByUserId: adminUserId },
     })
-    await prisma.adminLog.create({
+    await tx.adminLog.create({
       data: { adminUserId, action: '发起订单售后', targetType: 'order', targetId: orderId, detail: `案件 #${created.id}: ${input.reason}` },
     })
-    return serializeAfterSalesCase(prisma, created.id)
+    return serializeAfterSalesCase(tx, created.id)
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       throw conflict('该订单已有进行中或已执行的全额售后')
     }
     throw error
   }
+  })
 }
 
 export async function rejectAfterSalesCase(adminUserId: number, caseId: number, note: string) {

@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import type { Prisma, PrismaClient, ValuePolicy, ValuePolicyStatus } from '@prisma/client'
 import { POINT_ASSET_CODE, REFERENCE_ASSET_CODE } from './constants.js'
 
@@ -63,7 +64,7 @@ async function assertGovernanceActor(tx: Prisma.TransactionClient, actorUserId: 
     where: { id: actorUserId },
     select: { role: true, status: true },
   })
-  if (!actor || actor.role !== 'admin' || actor.status !== '正常') {
+  if (!actor || actor.role !== 'admin' || await isAccountBanned(actorUserId, tx)) {
     throw prismaError('value_policy_actor_must_be_active_admin')
   }
 }

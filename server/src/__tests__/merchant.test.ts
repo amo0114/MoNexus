@@ -643,6 +643,6 @@ describe('Merchant product and order flows', () => {
     await api
       .get('/api/merchant/me')
       .set(authHeader(merchantLogin.accessToken))
-      .expect(403)
+      .expect(401)
   })
 })

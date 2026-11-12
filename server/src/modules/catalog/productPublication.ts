@@ -13,6 +13,9 @@
 // (AC-CAT-004); the public/checkout active guard is enforced by the existing
 // product read and checkout paths (status=active contract).
 
+import { assertMerchantOperation } from '../merchantGovernance/capability.js'
+import { lockProductRow } from './productLock.js'
+import { notFound } from '../../lib/httpError.js'
 import type { Product } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, HttpError, type ErrorCode, type ErrorDetail } from '../../lib/httpError.js'
@@ -48,9 +51,13 @@ function notReadyError(readiness: ProductReadinessResult): HttpError {
  * Publish a draft/inactive product to active after passing the readiness gate.
  * Idempotent: already-active products return the current resource unchanged.
  */
-export async function publishProduct(productId: number): Promise<PublishOutcome> {
+export async function publishProduct(productId: number, merchantId?: number): Promise<PublishOutcome> {
   const outcome = await prisma.$transaction(async tx => {
-    const product = await tx.product.findUniqueOrThrow({ where: { id: productId } })
+    const product = await lockProductRow(tx, productId)
+    if (merchantId !== undefined) {
+      if (product.merchantId !== merchantId) throw notFound('商品不存在')
+      await assertMerchantOperation(tx, merchantId)
+    }
     if (product.archivedAt) {
       throw new HttpError(
         409,
@@ -118,9 +125,13 @@ export async function publishProduct(productId: number): Promise<PublishOutcome>
  * Unpublish an active product to inactive. Idempotent: non-active products
  * return the current resource unchanged. Inventory/orders/logs are untouched.
  */
-export async function unpublishProduct(productId: number): Promise<PublishOutcome> {
+export async function unpublishProduct(productId: number, merchantId?: number): Promise<PublishOutcome> {
   const outcome = await prisma.$transaction(async tx => {
-    const product = await tx.product.findUniqueOrThrow({ where: { id: productId } })
+    const product = await lockProductRow(tx, productId)
+    if (merchantId !== undefined) {
+      if (product.merchantId !== merchantId) throw notFound('商品不存在')
+      await assertMerchantOperation(tx, merchantId)
+    }
     if (product.status !== PRODUCT_STATUS.ACTIVE) {
       return {
         product,

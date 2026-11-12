@@ -1,3 +1,4 @@
+import { setCommercialActor } from '../catalog/offerRevisions.js'
 import { assertMyDeliveryFile } from './deliveryFilePolicy.js'
 import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma, type Offer } from '@prisma/client'
@@ -285,6 +286,7 @@ export async function insertOffer(
   productId: number,
   input: OfferWriteInput & { name: string; price: number }
 ) {
+  await setCommercialActor(tx, { merchantId }, 'merchant/offerService')
   const product = await lockProductRow(tx, productId)
   const allowIncompleteFixedContent = product.status === 'draft' && product.templateKey != null
   const deliveryMode = input.deliveryMode ?? 'instant_inventory'
@@ -368,6 +370,7 @@ export async function createMyOffer(
 ) {
   await assertMyProduct(merchantId, productId)
   const offer = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { merchantId }, 'merchant/offerService')
     const created = await insertOffer(tx, merchantId, productId, input)
     // SPEC-CATALOG-VIS-001 §4.4（P1.5-A 复审）：商家新建套餐若直接启用，
     // 属于「新增未审核套餐」，必须让商品旧批准失效。
@@ -390,6 +393,7 @@ export async function updateMyOffer(
   await assertMyProduct(merchantId, productId)
 
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { merchantId }, 'merchant/offerService')
     // Same lock order as admin patchAdminOffer: Product FOR UPDATE, then load
     // the offer, then CAS. Without the row lock two transactions can both read
     // the same digest and both write.
@@ -559,6 +563,7 @@ export async function deleteMyOffer(merchantId: number, productId: number, offer
   await assertMyProduct(merchantId, productId)
 
   await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { merchantId }, 'merchant/offerService')
     const offer = await tx.offer.findFirst({ where: { id: offerId, productId } })
     if (!offer) throw notFound('规格不存在')
 

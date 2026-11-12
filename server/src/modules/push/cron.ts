@@ -1,3 +1,4 @@
+import { activeUserWhere } from '../accountGovernance/status.js'
 import { addCalendarDays, businessDateString } from '../../lib/businessTime.js'
 import { config } from '../../config/index.js'
 import { acquireCronLeaseWithHeartbeat, type CronLeaseHandle } from '../../lib/cronLease.js'
@@ -45,7 +46,7 @@ export async function pushDueAnnouncements(now = new Date()) {
     if (count === 0) continue
     const roleFilter = announcement.audience === 'all' ? {} : { role: announcement.audience }
     await broadcastPush(
-      { user: { status: { not: '已封禁' }, ...roleFilter } },
+      { user: { ...activeUserWhere(), ...roleFilter } },
       { title: 'MoNexus 公告', body: announcement.title, deeplink: '/notifications', tag: `announcement-${announcement.id}` },
     )
     pushed++
@@ -61,7 +62,7 @@ export async function pushStreakAtRisk(now = new Date()) {
     SELECT DISTINCT p."userId", y."streak"
     FROM "PushSubscription" p
     JOIN "CheckinRecord" y ON y."userId" = p."userId" AND y."date" = ${yesterday} AND y."streak" >= ${STREAK_RISK_MIN_STREAK}
-    JOIN "User" u ON u."id" = p."userId" AND u."status" <> '已封禁'
+    JOIN "User" u ON u."id" = p."userId" AND governance_user_active(u.id)
     WHERE NOT EXISTS (
       SELECT 1 FROM "CheckinRecord" t WHERE t."userId" = p."userId" AND t."date" = ${today}
     )`

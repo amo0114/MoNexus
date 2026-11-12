@@ -1,12 +1,12 @@
 # MoNexus 后端业务闭环与运营治理实施书
 
-版本：v1.0｜日期：2026-11-12｜状态：待实施的工程方案
+版本：v1.0｜日期：2026-11-12｜状态：方案已批准，后端实施与验证中
 
 代码基线：`origin/develop@8da71e00936695eb880e009cf98c6f746d08c9f9`。
 
-交付约束：最多两个功能 PR，后端一个、前端一个，均合入 develop。后端由 Codex 主代理负责；前端由用户另行指定的 agent 负责。本轮只编写方案，不代表已实现、已验证运行或已启用任何支付能力。本文和前端交接书随对应功能 PR 纳入，不再单开文档 PR。
+交付约束：最多两个功能 PR，后端一个、前端一个，均合入 develop。后端由 Codex 主代理负责；前端由用户另行指定的 agent 负责。本文记录批准的设计；实际实现、验证和未完成门禁单独维护于[验证记录](../verification/backend-governance-v1/README.md)，发布步骤见[运维手册](../operations/backend-governance-v1.md)。本文和前端交接书随对应功能 PR 纳入，不再单开文档 PR。
 
-主文档以 Markdown 为维护源，同名 DOCX 为阅读版。前端协作入口：[前端交接书](../specs/backend-governance-v1.frontend-handoff.md)。既有交易、钱包和结算设计参见 [2026-11-10 实施方案](2026-11-10-commerce-accounting-settlement-closure-plan.md)；其中已经实现的部分，本批只扩展、不重建。
+主文档以 Markdown 为维护源，同名 DOCX 保留最初设计阅读版。前端协作入口：[前端交接书](../specs/backend-governance-v1.frontend-handoff.md)。既有交易、钱包和结算设计参见 [2026-11-10 实施方案](2026-11-10-commerce-accounting-settlement-closure-plan.md)；其中已经实现的部分，本批只扩展、不重建。
 
 ## 1. 目标、范围与成功标准
 

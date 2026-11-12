@@ -1,3 +1,6 @@
+import { assertPermission } from '../adminAuthorization/service.js'
+import { createBan, releaseBan } from '../accountGovernance/service.js'
+import { legacyStatus, accountStatus } from '../accountGovernance/status.js'
 import { resolvePagination } from '../../lib/pagination.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -100,70 +103,30 @@ export async function adjustUserPoints(
   })
 }
 
-export async function banUser(adminUserId: number, targetUserId: number, reason: string) {
-  const updated = await prisma.$transaction(async tx => {
-    const target = await tx.user.findUnique({
-      where: { id: targetUserId },
-      select: { id: true, email: true, role: true, status: true },
-    })
-    if (!target) throw notFound('用户不存在')
-    if (target.id === adminUserId) throw badRequest('不能封禁自己的账号')
-    if (target.role === 'admin') throw badRequest('不能封禁管理员账号')
-
-    await lockUserRefreshSessionMutations(tx, target.id)
-
-    const updated = await tx.user.update({
-      where: { id: target.id },
-      data: { status: '已封禁' },
-      select: { id: true, email: true, role: true, status: true },
-    })
-
-    await revokeAllUserRefreshTokens(target.id, tx)
-
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '封禁用户',
-        targetType: 'user',
-        targetId: target.id,
-        detail: `用户 ${target.email} 已封禁，原因: ${reason}`,
-      },
-    })
-
-    return updated
-  })
-
-  invalidateUserStatusCache(targetUserId)
-  return updated
+async function legacyUserResult(id: number) {
+  const u = await prisma.user.findUniqueOrThrow({where:{id},select:{id:true,email:true,role:true}})
+  return {...u,status:legacyStatus(await accountStatus(id))}
 }
-
-export async function unbanUser(adminUserId: number, targetUserId: number) {
-  const updated = await prisma.$transaction(async tx => {
-    const target = await tx.user.findUnique({
-      where: { id: targetUserId },
-      select: { id: true, email: true, role: true, status: true },
-    })
-    if (!target) throw notFound('用户不存在')
-
-    const updated = await tx.user.update({
-      where: { id: target.id },
-      data: { status: '正常' },
-      select: { id: true, email: true, role: true, status: true },
-    })
-
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '解封用户',
-        targetType: 'user',
-        targetId: target.id,
-        detail: `用户 ${target.email} 已解封`,
-      },
-    })
-
-    return updated
-  })
-
-  invalidateUserStatusCache(targetUserId)
-  return updated
+export async function banUser(actor: number, userId: number, reason: string) {
+  const previous = await prisma.accountBan.findFirst({where:{userId},orderBy:{createdAt:'desc'}})
+  await createBan(actor,userId,`legacy-ban:${userId}:${previous?.id??'first'}`,{reasonCode:'admin_banned',reason,expiresAt:null})
+  return legacyUserResult(userId)
+}
+export async function unbanUser(actor: number, userId: number) {
+  await assertPermission(actor,'users.ban')
+  // The compatibility endpoint supplies an explicit adapter reason; new clients must supply their own.
+  let ban = await prisma.accountBan.findFirst({where:{userId,releasedAt:null}})
+  if(!ban) {
+    const user = await prisma.user.findUnique({where:{id:userId},select:{status:true}})
+    if(!user)throw notFound('用户不存在')
+    if(['banned','已封禁'].includes(user.status)) {
+      await prisma.$transaction(async tx=>{
+        await lockUserRefreshSessionMutations(tx,userId)
+        if(!await tx.accountBan.findFirst({where:{userId,releasedAt:null}}))await tx.accountBan.create({data:{userId,reasonCode:'legacy_unknown',source:'legacy'}})
+      })
+      ban = await prisma.accountBan.findFirst({where:{userId,releasedAt:null}})
+    }
+  }
+  if(ban)await releaseBan(actor,userId,ban.id,`legacy-unban:${ban.id}`,{expectedVersion:ban.version,reason:'管理员通过旧版兼容接口解封'})
+  return legacyUserResult(userId)
 }

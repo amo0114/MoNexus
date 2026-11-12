@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { PASSWORD_BCRYPT_ROUNDS, normalizeEmailAddress } from './credentialPrimitives.js'
 import {
   registrationProtectionIsEnforced,
@@ -267,7 +268,7 @@ export async function registerUser(
     await lockUserRefreshSessionMutations(tx, result.user.id)
     const currentUser = await tx.user.findUnique({ where: { id: result.user.id } })
     if (!currentUser) throw notFound('用户不存在')
-    if (currentUser.status === '已封禁') throw badRequest('账号已被封禁')
+    if (await isAccountBanned(currentUser.id, tx)) throw badRequest('账号已被封禁')
 
     const session = await createStoredRefreshToken(currentUser.id, ip, userAgent, tx, maxAgeMs)
     return { user: currentUser, session }

@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import type { Offer } from '@prisma/client'
 import { z } from 'zod'
 import type { CheckoutExtension, ExtensionInput } from '../../extension-contracts/fulfillment.js'
@@ -28,7 +29,7 @@ const stableAccountInputSchema = z.object({
 })
 
 async function assertBuyerCanProvision(
-  client: Pick<typeof prisma, 'user'>,
+  client: Pick<typeof prisma, 'user' | 'accountBan'>,
   userId: number
 ): Promise<{ email: string }> {
   const buyer = await client.user.findUnique({
@@ -36,7 +37,7 @@ async function assertBuyerCanProvision(
     select: { email: true, emailVerified: true, status: true },
   })
   if (!buyer) throw notFound('用户不存在')
-  if (buyer.status !== '正常') throw badRequest('账号状态异常，无法下单')
+  if (await isAccountBanned(userId, client)) throw badRequest('账号状态异常，无法下单')
   if (!buyer.emailVerified) throw badRequest('请先验证邮箱后再购买订阅类商品')
   return buyer
 }

@@ -1,7 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import { badRequest, notFound } from '../../lib/httpError.js'
 
-type DeliveryFileDb = Pick<Prisma.TransactionClient, 'deliveryFile'>
+type DeliveryFileDb = Pick<Prisma.TransactionClient, 'deliveryFile' | '$queryRaw'>
 
 export type DeliveryFileActor =
   | { kind: 'merchant'; merchantId: number }
@@ -18,6 +18,8 @@ export async function assertOwnedActiveDeliveryFile(
   actor: DeliveryFileActor,
   fileId: number,
 ): Promise<void> {
+  // Serialize binding with lifecycle GC/revocation; re-read status after waiting.
+  await tx.$queryRaw`SELECT id FROM "DeliveryFile" WHERE id=${fileId} FOR SHARE`
   const file = await tx.deliveryFile.findFirst({
     where: actor.kind === 'merchant'
       ? { id: fileId, merchantId: actor.merchantId }

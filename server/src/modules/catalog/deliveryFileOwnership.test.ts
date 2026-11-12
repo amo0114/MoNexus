@@ -4,7 +4,7 @@ import { assertOwnedActiveDeliveryFile, type DeliveryFileActor } from './deliver
 
 function database(status: string | null) {
   const findFirst = vi.fn().mockResolvedValue(status == null ? null : { status })
-  const db = { deliveryFile: { findFirst } } as unknown as Pick<Prisma.TransactionClient, 'deliveryFile'>
+  const db = { $queryRaw: vi.fn().mockResolvedValue([{ id:42 }]), deliveryFile: { findFirst } } as unknown as Pick<Prisma.TransactionClient, 'deliveryFile' | '$queryRaw'>
   return { db, findFirst }
 }
 

@@ -1,3 +1,4 @@
+import { isAccountBanned, activeUserWhere } from '../accountGovernance/status.js'
 import { createHash, createHmac, randomInt, timingSafeEqual } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, HttpError } from '../../lib/httpError.js'
@@ -97,7 +98,7 @@ export async function requestBind(params: {
   })
 
   // 邮箱不存在 / 未验证 / 被封禁：静默返回，不泄露账号状态。
-  if (!user || user.status !== '正常') return accepted
+  if (!user || await isAccountBanned(user.id)) return accepted
 
   // 反向检查（防撞库）：该邮箱若已绑给别的平台账号，这里必须停下。
   // 缺少这一步时，任何人都能对「已知的、属于他人的邮箱」反复触发发信——
@@ -355,7 +356,7 @@ export async function listUncheckedBoundUsers(platform: string, dateStr: string)
     where: {
       platform: p,
       user: {
-        status: '正常',
+        ...activeUserWhere(),
         checkins: { none: { date: dateStr } },
       },
     },

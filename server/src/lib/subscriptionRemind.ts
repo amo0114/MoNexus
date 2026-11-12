@@ -39,6 +39,7 @@ interface CandidateRecord {
   expiresAt: Date | null
   order: {
     id: number
+    orderNo: string | null
     productNameSnapshot: string | null
     offerNameSnapshot: string | null
     user: { email: string }
@@ -72,6 +73,7 @@ function buildPreMail(to: string, order: CandidateRecord['order'], expiresAt: Da
   return renderMail('subscription_expiring', {
     to,
     orderId: order.id,
+    orderNo: order.orderNo,
     productLabel: label,
     expiresAtLabel: formatExpiry(expiresAt),
   })
@@ -82,6 +84,7 @@ function buildExpiredMail(to: string, order: CandidateRecord['order'], expiresAt
   return renderMail('subscription_expired', {
     to,
     orderId: order.id,
+    orderNo: order.orderNo,
     productLabel: label,
     expiresAtLabel: formatExpiry(expiresAt),
   })
@@ -182,6 +185,7 @@ export async function runSubscriptionRemindBatch(now = new Date()) {
         order: {
           select: {
             id: true,
+            orderNo: true,
             productNameSnapshot: true,
             offerNameSnapshot: true,
             user: { select: { email: true } },

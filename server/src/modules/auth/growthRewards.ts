@@ -1,3 +1,4 @@
+import { accountStatus, isAccountBanned } from '../accountGovernance/status.js'
 import type { Prisma } from '@prisma/client'
 import { conflict, HttpError, notFound } from '../../lib/httpError.js'
 import { applyTierBonus, getCurrentTierConfig, GROWTH_LOG_WHERE, resolveTier } from '../../lib/memberTier.js'
@@ -11,7 +12,7 @@ import {
 } from './abuseEvents.js'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
-const NORMAL_USER_STATUS = '正常'
+const NORMAL_USER_STATUS = 'active'
 const PENDING_REFERRAL_STATES = ['pending_verification', 'qualified'] as const
 const VOIDABLE_REWARD_STATES = ['pending_verification', 'held'] as const
 
@@ -81,7 +82,8 @@ async function lockUserForGrowthReward(
     FROM "User"
     WHERE "id" = ${userId}
     FOR UPDATE`
-  return rows[0] ?? null
+  const user = rows[0]
+  return user ? { ...user, status: await accountStatus(user.id, tx) } : null
 }
 
 async function lockPendingInviteRelation(
@@ -483,7 +485,7 @@ export async function releaseGrowthRewardInTransaction(
       createdAt: true,
     },
   })
-  if (!recipient || recipient.status !== NORMAL_USER_STATUS) {
+  if (!recipient || await isAccountBanned(recipient.id, tx)) {
     const reason: RewardVoidReason = 'recipient_banned'
     const voided = await voidLockedGrowthReward(tx, reward, { reason, now })
     return { outcome: voided ? 'voided' : 'skipped', rewardId, ...(voided ? { reason } : {}) } as GrowthRewardReleaseOutcome

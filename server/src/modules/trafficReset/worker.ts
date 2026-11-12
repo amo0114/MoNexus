@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { randomUUID } from 'node:crypto'
 import type { XboardTrafficResetOperation } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -27,7 +28,7 @@ async function actorStillEligible(tx: Tx, op: XboardTrafficResetOperation) {
   ])
   const binding = await tx.chatBinding.findUnique({ where: { id: intent.chatBindingId } })
   return !!link && link.status === 'active' && link.userId === op.userId && link.instanceId === op.instanceIdSnapshot
-    && link.xboardUserId === op.xboardUserIdSnapshot && user.status === '正常'
+    && link.xboardUserId === op.xboardUserIdSnapshot && !await isAccountBanned(op.userId, tx)
     && !!binding && binding.userId === op.userId && binding.platform === 'qq'
 }
 async function applyResult(op: XboardTrafficResetOperation, result: ResetResult) {
