@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, SearchX, X } from 'lucide-react'
+import { LayoutGrid, LogIn, Search, SearchX, X } from 'lucide-react'
 import { listStoreProducts, loadStoreCandidates, type StoreProductQuery } from '../api/storeFeed'
 import { getApiErrorCode } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -73,6 +73,7 @@ function getProductQueryKey(
 
 function getColumnCount(width: number, isMobile: boolean) {
   if (isMobile) return 2
+  if (width >= 1200) return 4
   if (width >= 1024) return 3
   if (width >= 768) return 2
   return 1
@@ -849,11 +850,42 @@ export default function StorePage() {
           </div>
         </div>
       ) : feedItems.length === 0 ? (
-        <EmptyState
-          icon={SearchX}
-          title="未找到相关好物"
-          description="请尝试更换搜索词，或者看下其他分类"
-        />
+        searchQuery ? (
+          <EmptyState
+            icon={SearchX}
+            title={`没有找到「${searchQuery}」相关的商品`}
+            description="换个关键词试试，或浏览其他分类"
+            action={
+              <button type="button" className="btn-secondary px-6 py-2" onClick={() => setSearchQuery('')}>
+                清除搜索
+              </button>
+            }
+          />
+        ) : category !== '全部' ? (
+          <EmptyState
+            icon={LayoutGrid}
+            title="这个分类暂时没有商品"
+            description="去看看全部商品"
+            action={
+              <button type="button" className="btn-secondary px-6 py-2" onClick={() => setCategory('全部')}>
+                查看全部
+              </button>
+            }
+          />
+        ) : !isLoggedIn ? (
+          <EmptyState
+            icon={LogIn}
+            title="登录后查看全部商品"
+            description="部分商品仅对登录用户开放，登录即可浏览与兑换"
+            action={
+              <button type="button" className="btn-primary px-6 py-2" onClick={() => navigate('/login')}>
+                登录 / 注册
+              </button>
+            }
+          />
+        ) : (
+          <EmptyState icon={SearchX} title="暂时还没有上架商品" description="稍后再来看看" />
+        )
       ) : (
         <>
           <div className="pt-2">
