@@ -11,6 +11,8 @@ import ScrollToTop from './components/ScrollToTop'
 import StorePage from './pages/StorePage'
 import LoginPage from './pages/LoginPage'
 import RoleGuard from './components/RoleGuard'
+import RouteFallback from './components/ui/RouteFallback'
+import MerchantShell from './components/merchant/MerchantShell'
 
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
@@ -72,7 +74,11 @@ function SessionLayout({
   }, [isLoggedIn, authEpoch, userId, setUser, logout])
 
   if (requireAuth && !isLoggedIn) return <Navigate to="/login" />
-  return <Layout>{children}</Layout>
+  return (
+    <Layout>
+      <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+    </Layout>
+  )
 }
 
 export default function App() {
@@ -92,7 +98,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Suspense fallback={<div role="status" className="p-8 text-center text-[var(--color-text-muted)]">正在加载页面…</div>}>
+      <Suspense fallback={<div role="status" aria-label="正在加载页面" className="min-h-screen" />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -185,7 +191,9 @@ export default function App() {
                       path="/merchant/dashboard"
                       element={
                         <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <Dashboard />
+                          <MerchantShell active="operations">
+                            <Dashboard />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
@@ -193,7 +201,9 @@ export default function App() {
                       path="/merchant/workbench"
                       element={
                         <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <WorkbenchPage />
+                          <MerchantShell active="dashboard">
+                            <WorkbenchPage />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
@@ -201,7 +211,9 @@ export default function App() {
                       path="/merchant/promotions"
                       element={
                         <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <MerchantPromotionPage />
+                          <MerchantShell active="promotions">
+                            <MerchantPromotionPage />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />

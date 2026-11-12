@@ -60,7 +60,7 @@ export function MemberTierConfigPanel({
 
   return (
     <div className="space-y-4" data-testid="member-tier-config-panel">
-      <div className="bg-[var(--color-info)]/8 border border-[var(--color-info)]/20 rounded-lg p-3 text-xs text-[var(--color-text-muted)] space-y-1">
+      <div className="bg-[color-mix(in_srgb,var(--color-info)_8%,transparent)] border border-[color-mix(in_srgb,var(--color-info)_20%,transparent)] rounded-lg p-3 text-xs text-[var(--color-text-muted)] space-y-1">
         <p>
           <strong className="text-[var(--color-text)]">升级门槛规则：</strong>按用户累计获得的正向积分流水统计，不含冻结积分。门槛需严格满足：银卡 &lt; 金卡 &lt; 铂金。调大门槛时需先调大更高级别，调小门槛时需先调小更低级别。
         </p>
@@ -85,17 +85,17 @@ export function MemberTierConfigPanel({
               let badgeStyles = ''
               switch (t.tone) {
                 case 'success':
-                  badgeStyles = 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
+                  badgeStyles = 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
                   break
                 case 'warning':
-                  badgeStyles = 'bg-[var(--color-warning)]/10 text-[var(--color-warning)] border-[var(--color-warning)]/25'
+                  badgeStyles = 'bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] text-[var(--color-warning)] border-[color-mix(in_srgb,var(--color-warning)_25%,transparent)]'
                   break
                 case 'info':
-                  badgeStyles = 'bg-[var(--color-info)]/10 text-[var(--color-info)] border-[var(--color-info)]/25'
+                  badgeStyles = 'bg-[color-mix(in_srgb,var(--color-info)_10%,transparent)] text-[var(--color-info)] border-[color-mix(in_srgb,var(--color-info)_25%,transparent)]'
                   break
                 case 'neutral':
                 default:
-                  badgeStyles = 'bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] border-[var(--color-text-muted)]/25'
+                  badgeStyles = 'bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] border-[color-mix(in_srgb,var(--color-text-muted)_25%,transparent)]'
                   break
               }
 
@@ -112,7 +112,7 @@ export function MemberTierConfigPanel({
               const bpsCfg = bpsKey ? items.find((c) => c.key === bpsKey) : undefined
 
               return (
-                <tr key={t.value} className={isBronze ? 'opacity-70 bg-[var(--color-text-muted)]/5' : ''}>
+                <tr key={t.value} className={isBronze ? 'opacity-70 bg-[color-mix(in_srgb,var(--color-text-muted)_5%,transparent)]' : ''}>
                   <td data-label="等级名称">
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold border ${badgeStyles}`}>
                       {t.label}
@@ -147,7 +147,7 @@ export function MemberTierConfigPanel({
                             onClick={() => void onSave(thKey!, thVal)}
                             disabled={thSaving || savingKey !== null}
                             data-testid={`admin-config-save-${thKey!}`}
-                            className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                           >
                             {thSaving ? '保存中...' : '保存'}
                           </button>
@@ -168,7 +168,7 @@ export function MemberTierConfigPanel({
                         {thErr && (
                           <div
                             id={`config-error-${thKey!}`}
-                            className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-1 rounded border border-[var(--color-danger)]/20 max-w-sm"
+                            className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-2 py-1 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] max-w-sm"
                           >
                             {thErr}
                           </div>
@@ -206,7 +206,7 @@ export function MemberTierConfigPanel({
                             onClick={() => void onSave(bpsKey!, bpsVal)}
                             disabled={bpsSaving || savingKey !== null}
                             data-testid={`admin-config-save-${bpsKey!}`}
-                            className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                           >
                             {bpsSaving ? '保存中...' : '保存'}
                           </button>
@@ -227,7 +227,7 @@ export function MemberTierConfigPanel({
                         {bpsErr && (
                           <div
                             id={`config-error-${bpsKey!}`}
-                            className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-1 rounded border border-[var(--color-danger)]/20 max-w-sm"
+                            className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-2 py-1 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] max-w-sm"
                           >
                             {bpsErr}
                           </div>

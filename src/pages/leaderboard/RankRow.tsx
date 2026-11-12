@@ -23,8 +23,9 @@ export function RankDelta({ rank, prevRank }: { rank: number; prevRank?: number 
   const delta = prevRank - rank
   if (delta === 0) {
     return (
-      <span data-testid="rank-delta" data-delta="0" className="text-[10px] font-bold leading-tight text-[var(--color-text-muted)]">
-        –
+      // Unchanged rank carries no signal: keep the hook for tests/AT, draw nothing.
+      <span data-testid="rank-delta" data-delta="0" className="sr-only">
+        名次不变
       </span>
     )
   }
@@ -72,7 +73,7 @@ export default function RankRow({
       }`}
     >
       <span className="w-8 shrink-0 flex flex-col items-center justify-center gap-0.5">
-        <span className="font-mono text-sm font-bold leading-tight text-[var(--color-text-muted)] tabular-nums">
+        <span className="text-sm font-bold leading-tight text-[var(--color-text-muted)] tabular-nums">
           {entry.rank}
         </span>
         <RankDelta rank={entry.rank} prevRank={entry.prevRank} />
@@ -111,7 +112,7 @@ export default function RankRow({
       )}
       <span className="shrink-0 flex items-center gap-1 text-[var(--color-points)]">
         <Coins className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
-        <span className="font-mono text-sm font-bold tabular-nums">{fmtPoints(entry.points)}</span>
+        <span className="text-sm font-bold tabular-nums">{fmtPoints(entry.points)}</span>
       </span>
     </li>
   )

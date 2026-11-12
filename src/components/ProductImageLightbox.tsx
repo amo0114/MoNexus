@@ -95,7 +95,7 @@ export default function ProductImageLightbox({
         }}
         data-testid="product-image-lightbox-close"
         aria-label="关闭全图预览"
-        className="absolute right-3 top-[max(0.625rem,env(safe-area-inset-top))] z-40 inline-flex h-10 sm:h-11 min-w-10 sm:min-w-11 items-center justify-center gap-1.5 rounded-full border border-white/40 bg-white/10 px-3 text-white shadow-xl backdrop-blur-md transition-all hover:bg-white/25 hover:border-white focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.55)] sm:right-6"
+        className="absolute right-3 top-[max(0.625rem,env(safe-area-inset-top))] z-40 inline-flex h-10 sm:h-11 min-w-10 sm:min-w-11 items-center justify-center gap-1.5 rounded-full border border-white/40 bg-white/10 px-3 text-white shadow-xl backdrop-blur-md transition hover:bg-white/25 hover:border-white focus-visible:outline-none focus-visible:[box-shadow:0_0_0_3px_rgba(255,255,255,0.55)] sm:right-6"
       >
         <X className="h-5 w-5 shrink-0" aria-hidden="true" strokeWidth={2.5} />
         <span className="hidden sm:inline text-xs font-semibold pr-0.5">关闭</span>

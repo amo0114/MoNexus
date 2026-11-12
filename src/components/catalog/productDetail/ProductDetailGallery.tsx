@@ -118,7 +118,7 @@ export default function ProductDetailGallery({
                 data-testid={`product-gallery-thumb-${i}`}
                 aria-label={`查看第 ${i + 1} 张图片`}
                 aria-pressed={!videoActive && i === activeImage}
-                className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-all p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
+                className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                   !videoActive && i === activeImage
                     ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)] shadow-xs'
                     : 'border-[var(--color-border)] opacity-60 hover:opacity-100 bg-[var(--color-surface)]'
@@ -146,7 +146,7 @@ export default function ProductDetailGallery({
         )}
 
         {/* Balanced Aspect Container for Contain Frame */}
-        <div className="flex-1 aspect-[16/10] sm:aspect-[4/3] max-h-[280px] sm:max-h-[400px] rounded-xl bg-[var(--color-image-placeholder)]/50 overflow-hidden relative select-none">
+        <div className="flex-1 aspect-[16/10] sm:aspect-[4/3] max-h-[280px] sm:max-h-[400px] rounded-xl bg-[color-mix(in_srgb,var(--color-image-placeholder)_50%,transparent)] overflow-hidden relative select-none">
           {videoActive && promoVideo && productId ? <div className="flex flex-col h-full">
             <div className="flex-1 min-h-0"><ProductVideoPlayer autoPlay assetId={promoVideo.assetId} productId={productId} cover={images[0]} /></div>
             <div role="group" aria-label="商品媒体切换" tabIndex={0} className="flex shrink-0 min-h-11 items-center justify-between text-xs px-3" onKeyDown={event => {

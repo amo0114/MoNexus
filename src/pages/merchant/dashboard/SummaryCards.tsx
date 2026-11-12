@@ -10,7 +10,7 @@ export default function SummaryCards({ data, loading }: { data?: DashboardSummar
         {loading ? (
           <div className="animate-pulse bg-[var(--color-border)] rounded-md h-8 w-24"></div>
         ) : (
-          <div className={`font-heading text-2xl font-bold ${valueColor}`}>{value ?? '--'}</div>
+          <div className={`font-heading text-2xl font-bold ${valueColor}`}>{typeof value === 'number' ? value.toLocaleString('zh-CN') : (value ?? '--')}</div>
         )}
       </div>
     )

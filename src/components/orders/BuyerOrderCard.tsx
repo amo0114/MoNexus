@@ -33,7 +33,7 @@ export default function BuyerOrderCard({
     <div
       onClick={() => onOpen(order.id)}
       className="group bg-[var(--color-background)] rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)]
-        hover:border-[var(--color-primary)]/40 hover:shadow-md transition-all cursor-pointer flex flex-col gap-2.5"
+        hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:shadow-md transition cursor-pointer flex flex-col gap-2.5"
       data-testid={`buyer-order-card-${order.id}`}
     >
       {/* 顶部元信息栏：状态、过期标签、单号、时间、积分 */}
@@ -47,7 +47,7 @@ export default function BuyerOrderCard({
           </span>
           {expired && (
             <span
-              className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30"
+              className="text-xs font-bold text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)]"
               data-testid={`order-expired-tag-${order.id}`}
             >
               已过期
@@ -61,7 +61,7 @@ export default function BuyerOrderCard({
           </span>
         </div>
 
-        <div className="flex items-center text-[var(--color-cta)] font-bold tabular-nums text-sm shrink-0">
+        <div className="flex items-center text-[var(--color-points)] font-bold tabular-nums text-sm shrink-0">
           -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
           {order.price}
         </div>
@@ -96,7 +96,7 @@ export default function BuyerOrderCard({
               )}
               {order.bookingDate && (
                 <span
-                  className="text-[11px] leading-tight font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
+                  className="text-[11px] leading-tight font-bold text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
                   data-testid={`order-booking-tag-${order.id}`}
                 >
                   预约 {formatBookingDay(order.bookingDate)}
@@ -119,11 +119,7 @@ export default function BuyerOrderCard({
                 onOpen(order.id)
               }}
               disabled={loading}
-              className="inline-flex items-center justify-center gap-1 cursor-pointer
-                bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white
-                text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap shrink-0 shadow-xs
-                focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
-                disabled:opacity-50 disabled:cursor-not-allowed ml-auto"
+              className="btn-tonal shrink-0 ml-auto"
               data-testid={`open-order-detail-${order.id}`}
             >
               {loading ? (

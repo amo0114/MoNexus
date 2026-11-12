@@ -19,7 +19,7 @@ export default function RoleGuard({ children, allowedRoles, requireActiveMerchan
     return (
       <div className="flex flex-col items-center justify-center p-8 text-center">
         <h2 className="text-xl font-bold mb-2">访问被拒绝</h2>
-        <p className="text-[var(--color-text-muted)]">您没有权限访问此页面</p>
+        <p className="text-[var(--color-text-muted)]">你没有权限访问此页面</p>
       </div>
     )
   }
@@ -31,12 +31,12 @@ export default function RoleGuard({ children, allowedRoles, requireActiveMerchan
           <h2 className="text-xl font-bold mb-2">需要商家权限</h2>
           <p className="text-gray-500">
             {user.merchant?.status === 'pending'
-              ? '您的商家入驻申请正在审核中'
+              ? '你的商家入驻申请正在审核中'
               : user.merchant?.status === 'rejected'
-              ? '您的商家入驻申请已被拒绝'
+              ? '你的商家入驻申请已被拒绝'
               : user.merchant?.status === 'suspended'
-              ? '您的商家账号已被停用'
-              : '您还没有入驻成为商家'}
+              ? '你的商家账号已被停用'
+              : '你还没有入驻成为商家'}
           </p>
         </div>
       )

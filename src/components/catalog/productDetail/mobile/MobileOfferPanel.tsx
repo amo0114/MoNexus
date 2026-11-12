@@ -24,7 +24,6 @@ interface MobileOfferPanelProps {
   onQuantityChange: (next: number) => void
 
   cartCount: number
-  redeemLabel: string
   purchaseDisabled: boolean
   onBuy: () => void
   onAddToCart: () => void
@@ -52,7 +51,6 @@ export default function MobileOfferPanel({
   quantity,
   onQuantityChange,
   cartCount,
-  redeemLabel,
   purchaseDisabled,
   onBuy,
   onAddToCart,
@@ -93,7 +91,7 @@ export default function MobileOfferPanel({
                   ) : preview && index === 0 ? (
                     <span className="pm-offer-ribbon pm-hot">热销</span>
                   ) : null}
-                  <strong>{offer.name}</strong>
+                  <strong title={offer.name}>{offer.name}</strong>
                   {selected && <Check className="pm-offer-check" size={14} />}
                   <b>{money(offer.price)}</b>
                   <small>
@@ -180,18 +178,20 @@ export default function MobileOfferPanel({
           )}
         </div>
       )}
-      <div className="pm-buy-actions">
-        <button className="pm-buy" disabled={purchaseDisabled} onClick={onBuy}>
-          <Zap size={19} />
-          {preview ? '立即购买' : redeemLabel}
-        </button>
-        {preview && (
+      {/* Live products buy from the fixed MobilePurchaseBar; a second in-page
+          CTA would only repeat it. The preview sandbox keeps add-to-cart here. */}
+      {preview && (
+        <div className="pm-buy-actions">
+          <button className="pm-buy" disabled={purchaseDisabled} onClick={onBuy}>
+            <Zap size={19} />
+            立即购买
+          </button>
           <button disabled={soldOut} onClick={onAddToCart}>
             <ShoppingCart size={19} />
             加入购物车
           </button>
-        )}
-      </div>
+        </div>
+      )}
       {preview && cartCount > 0 && (
         <button className="pm-cart-link" onClick={onOpenCart}>
           购物车（{cartCount}）<ChevronRight size={15} />

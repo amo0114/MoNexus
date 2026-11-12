@@ -311,7 +311,7 @@ export default function AdminOrderTable({ active = true }: Props) {
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                         {o.bookingDate && (
                           <span
-                            className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
+                            className="text-xs font-bold text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
                             data-testid={`admin-order-booking-${o.id}`}
                           >
                             预约 {formatBookingDay(o.bookingDate)}
@@ -321,7 +321,7 @@ export default function AdminOrderTable({ active = true }: Props) {
                           <span
                             className={
                               o.delivery.expired
-                                ? 'text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30'
+                                ? 'text-xs font-bold text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)]'
                                 : 'text-xs font-medium text-[var(--color-text-muted)] bg-[var(--color-background)] px-1.5 py-0.5 rounded border border-[var(--color-border)]'
                             }
                             data-testid={`admin-order-expiry-${o.id}`}

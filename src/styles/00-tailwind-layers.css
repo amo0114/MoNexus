@@ -7,7 +7,7 @@
 .btn-primary {
   @apply inline-flex items-center justify-center gap-2 cursor-pointer
          bg-[var(--color-primary)] text-[var(--color-on-primary)] font-semibold text-sm
-         px-6 py-3 rounded-lg shadow-md transition-all duration-200
+         px-6 py-3 rounded-lg shadow-md transition duration-200
          hover:bg-[var(--color-primary-hover)] hover:-translate-y-px hover:shadow-lg
          focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
          active:translate-y-0 active:scale-[0.98] active:shadow-sm
@@ -17,11 +17,22 @@
 .btn-cta {
   @apply inline-flex items-center justify-center gap-2 cursor-pointer
          bg-[var(--color-cta)] text-[var(--color-on-cta)] font-semibold text-sm
-         px-6 py-3 rounded-lg shadow-md transition-all duration-200
+         px-6 py-3 rounded-lg shadow-md transition duration-200
          hover:bg-[var(--color-cta-hover)] hover:-translate-y-px hover:shadow-lg
          focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
          active:translate-y-0 active:scale-[0.98] active:shadow-sm
          disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-md;
+}
+
+/* Tonal: quiet secondary action for repeated rows/cards, where a filled
+   button per item would compete with the page's one primary action. */
+.btn-tonal {
+  @apply inline-flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap
+         rounded-lg px-3 py-1.5 text-xs font-semibold
+         bg-[var(--color-primary-tint)] text-[var(--color-primary)]
+         transition-colors hover:bg-[var(--color-primary-tint-strong)]
+         focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
+         disabled:opacity-50 disabled:cursor-not-allowed;
 }
 
 .btn-secondary {
@@ -72,11 +83,7 @@
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: rgba(99, 102, 241, 0.1);
-}
-
-.dark .btn-secondary:hover:not(:disabled) {
-  background: rgba(129, 140, 248, 0.12);
+  background: var(--color-primary-tint);
 }
 
 .btn-secondary:focus-visible {
@@ -188,8 +195,7 @@
 .admin-table th { text-align: left; padding: 1rem; color: var(--color-text-muted); font-weight: bold; font-size: 0.875rem; border-bottom: 1px solid var(--color-border); }
 .admin-table td { padding: 1rem; border-bottom: 1px solid var(--color-border); vertical-align: middle; color: var(--color-text); }
 .admin-table tr:last-child td { border-bottom: none; }
-.admin-table tr:hover td { background-color: rgba(99, 102, 241, 0.06); }
-.dark .admin-table tr:hover td { background-color: rgba(129, 140, 248, 0.08); }
+.admin-table tr:hover td { background-color: var(--color-primary-tint); }
 }
 @layer components {
 

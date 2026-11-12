@@ -63,7 +63,7 @@ export default function AdminVideoReviewPanel() {
       {current && <div className="space-y-3" key={`${current.assetId}:${current.moderationVersion}`}>
         <p className="font-medium">{current.product.name}</p>
         <div className="max-w-lg h-64"><ProductVideoPlayer assetId={current.assetId} actor="admin" /></div>
-        <p className="text-sm">检查完整画面、文字、二维码；有声音时请打开声音并听完。以下勾选记录您的审核声明。</p>
+        <p className="text-sm">检查完整画面、文字、二维码；有声音时请打开声音并听完。以下勾选记录你的审核声明。</p>
         <label className="block"><input type="checkbox" checked={watched} onChange={e => setWatched(e.target.checked)} /> 我已完整观看视频</label>
         {current.hasAudio && <label className="block"><input type="checkbox" checked={listened} onChange={e => setListened(e.target.checked)} /> 我已听完音频</label>}
         <label className="block">拒绝或撤销原因<input className="input w-full" value={reason} maxLength={500} onChange={e => setReason(e.target.value)} /></label>

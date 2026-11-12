@@ -92,7 +92,7 @@ export default function SessionManager() {
     <section className="card flex flex-col gap-4" data-testid="session-manager" aria-busy={loading}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)]">
             <Laptop className="h-6 w-6" />
           </div>
           <div>
@@ -116,7 +116,7 @@ export default function SessionManager() {
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />正在加载登录设备…
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/10 p-4">
+        <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] p-4">
           <p className="text-sm text-[var(--color-danger)]" role="alert">{error}</p>
           <button type="button" className="btn-secondary btn-sm mt-3 px-3 py-1.5 text-xs" onClick={() => void loadSessions()}>
             <RefreshCw className="mr-1 inline h-3.5 w-3.5" />重试
@@ -135,7 +135,7 @@ export default function SessionManager() {
                   <div className="flex flex-wrap items-center gap-2">
                     <h5 className="font-medium text-[var(--color-text)]">{session.deviceLabel}</h5>
                     {session.current && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-cta)]/10 px-2 py-0.5 text-xs font-medium text-[var(--color-cta)]" data-testid="session-current-badge">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] px-2 py-0.5 text-xs font-medium text-[var(--color-cta)]" data-testid="session-current-badge">
                         <ShieldCheck className="h-3 w-3" />当前设备
                       </span>
                     )}
@@ -149,7 +149,7 @@ export default function SessionManager() {
                 ) : (
                   <button
                     type="button"
-                    className="btn-secondary inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 border-[var(--color-danger)]/40 px-3 py-1.5 text-xs text-[var(--color-danger)]"
+                    className="btn-secondary inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 border-[color-mix(in_srgb,var(--color-danger)_40%,transparent)] px-3 py-1.5 text-xs text-[var(--color-danger)]"
                     onClick={() => setPendingAction({ kind: 'single', session })}
                     disabled={submitting}
                     data-testid="session-revoke-device"

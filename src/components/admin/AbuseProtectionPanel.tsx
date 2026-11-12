@@ -48,13 +48,13 @@ function StatePill({ state }: { state: string }) {
       ? 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
       : state === 'voided' || state === 'quota_exhausted'
         ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300'
-        : 'bg-[var(--color-border)]/60 text-[var(--color-text-muted)]'
+        : 'bg-[color-mix(in_srgb,var(--color-border)_60%,transparent)] text-[var(--color-text-muted)]'
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap ${tone}`}>{ABUSE_STATE_LABEL[state] ?? state}</span>
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)]/60 p-3 min-w-0">
+    <div className="rounded-lg border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_60%,transparent)] p-3 min-w-0">
       <p className="text-xs text-[var(--color-text-muted)] truncate">{label}</p>
       <p className="mt-1 text-xl font-bold text-[var(--color-text)] tabular-nums">{value.toLocaleString()}</p>
     </div>
@@ -241,7 +241,7 @@ export default function AbuseProtectionPanel() {
 
       {overviewLoading && !overview ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, index) => <div className="h-20 animate-pulse rounded-lg bg-[var(--color-border)]/50" key={index} />)}
+          {Array.from({ length: 8 }).map((_, index) => <div className="h-20 animate-pulse rounded-lg bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)]" key={index} />)}
         </div>
       ) : overview ? (
         <section className="space-y-3" aria-label="风控数据概览">
@@ -441,7 +441,7 @@ export default function AbuseProtectionPanel() {
       <Dialog open={pendingAction !== null} onOpenChange={open => { if (!open && !actionBusy) setPendingAction(null) }}>
         <DialogContent className="max-w-md" data-testid="admin-abuse-confirm-dialog">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]">
               <AlertTriangle className="h-5 w-5" />
             </div>
             <div className="min-w-0">

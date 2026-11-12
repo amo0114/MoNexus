@@ -395,13 +395,13 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                             {DELIVERY_LABEL[offer.deliveryMode] ?? offer.deliveryMode}
                           </span>
                           {offer.isDefault && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium" data-testid={`offer-default-badge-${offer.id}`}>默认</span>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] font-medium" data-testid={`offer-default-badge-${offer.id}`}>默认</span>
                           )}
                           {offer.status === 'inactive' && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-border)] text-[var(--color-text-muted)] font-medium">已下架</span>
                           )}
                           {offer.autoProvision && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-medium" data-testid={`offer-auto-provision-badge-${offer.id}`}>自动开通</span>
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] font-medium" data-testid={`offer-auto-provision-badge-${offer.id}`}>自动开通</span>
                           )}
                         </div>
                         <div className="text-xs text-[var(--color-text-muted)] mt-1">

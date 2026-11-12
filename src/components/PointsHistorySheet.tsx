@@ -86,16 +86,16 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
           </DialogDescription>
 
           <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-[var(--color-text-muted)]">
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/8 text-[var(--color-cta)]">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-cta)_8%,transparent)] text-[var(--color-cta)]">
               入账 +
             </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/8 text-[var(--color-danger)]">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_8%,transparent)] text-[var(--color-danger)]">
               支付扣款 −
             </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 text-[var(--color-warning)]">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] text-[var(--color-warning)]">
               积分冻结
             </span>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)]">
               解除冻结
             </span>
           </div>

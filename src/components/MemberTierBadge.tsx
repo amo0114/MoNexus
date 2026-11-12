@@ -38,7 +38,7 @@ export function MemberTierBadge({ tier, label, className = '' }: Props) {
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs border whitespace-nowrap shrink-0 transition-all ${badgeStyles} ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs border whitespace-nowrap shrink-0 transition ${badgeStyles} ${className}`}
       data-testid="member-tier-badge"
     >
       <IconComponent className="w-3.5 h-3.5 shrink-0" />

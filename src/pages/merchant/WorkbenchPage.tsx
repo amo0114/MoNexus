@@ -1,5 +1,5 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Loader2, RefreshCw } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { Loader2, RefreshCw } from 'lucide-react'
 import AgentPanel from '../../components/merchant/agent/AgentPanel'
 import WorkbenchCard, { formatShanghai } from '../../components/merchant/workbench/WorkbenchCard'
 import { useMerchantWorkbench } from '../../components/merchant/workbench/useMerchantWorkbench'
@@ -60,13 +60,12 @@ function GroupStatus({ group, shown, manageLink, manageLabel, testId }: {
 
 export default function WorkbenchPage() {
   const state = useMerchantWorkbench()
-  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const view: View = searchParams.get('view') === 'urgent' ? 'urgent' : 'all'
 
   if (state.availability === 'disabled' || state.availability === 'forbidden') {
     return (
-      <div className="mx-auto mt-8 max-w-3xl card text-center" data-testid="workbench-unavailable">
+      <div className="mx-auto max-w-3xl card text-center" data-testid="workbench-unavailable">
         <p className="font-bold text-[var(--color-text)]">商家待办暂不可用</p>
         <p className="mt-1 text-sm text-[var(--color-text-muted)]">原有商品、库存和订单功能不受影响。</p>
         <Link to="/merchant" className="btn-secondary mt-4 inline-flex min-h-11 items-center px-4">返回商家后台</Link>
@@ -83,16 +82,8 @@ export default function WorkbenchPage() {
   const draftMatches = drafts.length
 
   return (
-    <div className="mx-auto mt-4 max-w-4xl" data-testid="workbench-page">
+    <div className="fade-in" data-testid="workbench-page">
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          onClick={() => navigate('/merchant')}
-          aria-label="返回商家后台"
-          className="icon-btn rounded-full p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </button>
         <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">商家待办</h1>
         <button
           type="button"

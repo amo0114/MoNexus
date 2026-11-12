@@ -1,7 +1,9 @@
 @media (min-width: 1024px) {
+  /* Same content width as the global header/footer (Layout max-w-7xl px-6)
+     so the page edges line up at every desktop size. */
   .product-layout > main {
-    max-width: 2064px;
-    padding: 0 32px 48px;
+    max-width: 80rem;
+    padding: 0 24px 48px;
   }
   .product-layout.bg-grid-pattern {
     background-color: var(--color-background);
@@ -69,7 +71,7 @@
     border-radius: 7px;
     border: 1px solid var(--pd-border, #e2e8f0);
     background: var(--pd-surface, #ffffff);
-    color: var(--pd-text, #334155);
+    color: var(--pd-ink);
     font-size: 12px;
     font-weight: 550;
     cursor: pointer;
@@ -120,7 +122,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--pd-text, #0f172a);
+    color: var(--pd-ink);
     font-weight: 500;
   }
   .pd-breadcrumb a,
@@ -192,7 +194,7 @@
   .pd-byline-name {
     font-size: 13.5px;
     font-weight: 600;
-    color: var(--pd-text);
+    color: var(--pd-ink);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -233,7 +235,7 @@
     font-weight: 500;
     background: var(--pd-surface);
     border: 1px solid var(--pd-border);
-    color: var(--pd-text);
+    color: var(--pd-ink);
     cursor: pointer;
     transition: all var(--duration-quick, 150ms) ease;
   }

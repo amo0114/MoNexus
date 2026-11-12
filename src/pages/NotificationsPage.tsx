@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell, CheckCheck, Loader2 } from 'lucide-react'
+import { Bell, BellOff, CheckCheck, Inbox } from 'lucide-react'
+import EmptyState from '../components/ui/EmptyState'
+import ErrorState from '../components/ui/ErrorState'
+import { Skeleton } from '../components/ui/Skeleton'
 import {
   getNotifications,
   markAllAsRead,
@@ -38,6 +41,9 @@ export default function NotificationsPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [workingId, setWorkingId] = useState<number | null>(null)
   const [markingAll, setMarkingAll] = useState(false)
+  // 'disabled': the deployment has notifications switched off (API 404), which
+  // is a product state, not an error worth a red toast.
+  const [loadError, setLoadError] = useState<null | 'disabled' | 'failed'>(null)
   const filterRef = useRef<FilterTab>(filter)
   const itemsFilterRef = useRef<FilterTab>(filter)
   const loadRequestRef = useRef(0)
@@ -64,9 +70,12 @@ export default function NotificationsPage() {
       setItems((prev) => append ? appendUniqueNotifications(prev, data.notifications) : data.notifications)
       setNextCursor(data.nextCursor)
       setHasMore(data.hasMore)
+      setLoadError(null)
     } catch (err) {
       if (request === loadRequestRef.current && filterRef.current === requestedFilter) {
-        showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
+        const disabled = (err as { response?: { status?: number } })?.response?.status === 404
+        if (append) showToast(getApiErrorMessage(err, '加载消息失败'), 'error')
+        else setLoadError(disabled ? 'disabled' : 'failed')
       }
     } finally {
       if (request === loadRequestRef.current) { setLoading(false); setLoadingMore(false) }
@@ -169,7 +178,7 @@ export default function NotificationsPage() {
   ]
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6" data-testid="notifications-page">
+    <div className="fade-in max-w-3xl mx-auto" data-testid="notifications-page">
       <div className="flex items-center justify-between gap-3 mb-5">
         <div className="flex items-center gap-2">
           <Bell className="w-5 h-5 text-[var(--color-primary)]" />
@@ -197,7 +206,7 @@ export default function NotificationsPage() {
             onClick={() => changeFilter(tab.id)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               filter === tab.id
-                ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30'
+                ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]'
                 : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]'
             }`}
             data-testid={`notifications-tab-${tab.id}`}
@@ -208,12 +217,22 @@ export default function NotificationsPage() {
       </div>
 
       {loading ? (
-        <div className="py-16 flex justify-center text-[var(--color-text-muted)]">
-          <Loader2 className="w-5 h-5 animate-spin" />
-        </div>
+        <ul className="space-y-3" role="status" aria-label="加载中">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <li key={i} className="rounded-xl border border-[var(--color-border)] p-4 space-y-2.5">
+              <Skeleton className="h-4 w-2/5" />
+              <Skeleton className="h-3 w-4/5" />
+              <Skeleton className="h-3 w-24" />
+            </li>
+          ))}
+        </ul>
+      ) : loadError === 'disabled' ? (
+        <EmptyState icon={BellOff} title="消息通知暂未开启" description="平台开启后，订单与系统消息会出现在这里" />
+      ) : loadError === 'failed' ? (
+        <ErrorState title="消息加载失败" description="请检查网络后重试" onRetry={() => void load()} testId="notifications-error" />
       ) : items.length === 0 ? (
-        <div className="py-16 text-center text-sm text-[var(--color-text-muted)]" data-testid="notifications-empty">
-          暂无消息
+        <div data-testid="notifications-empty">
+          <EmptyState icon={Inbox} title="暂无消息" description="订单进度与系统通知会第一时间出现在这里" />
         </div>
       ) : (
         <ul className="space-y-3" data-testid="notifications-list">
@@ -227,8 +246,8 @@ export default function NotificationsPage() {
                   disabled={workingId === item.id}
                   className={`w-full text-left rounded-xl border p-4 transition-colors ${
                     unread
-                      ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.035]'
-                      : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'
+                      ? 'border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_3.5%,transparent)]'
+                      : 'border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_50%,transparent)]'
                   }`}
                   data-testid={`notification-item-${item.id}`}
                   data-notification-category={item.category}

@@ -189,7 +189,7 @@ export default function AdminProductTable({
                           type="button"
                           data-testid={`admin-product-publish-${p.id}`}
                           disabled={releaseGate.blocked}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                           onClick={() => onOpenPublication(p, 'product-list')}
                         >
                           <Upload className="w-3.5 h-3.5" />
@@ -201,7 +201,7 @@ export default function AdminProductTable({
                           type="button"
                           data-testid={`admin-product-relist-${p.id}`}
                           disabled={releaseGate.blocked}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                           onClick={() => onOpenPublication(p, 'product-list')}
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
@@ -226,7 +226,7 @@ export default function AdminProductTable({
                         <button
                           type="button"
                           data-testid={`admin-guest-review-open-${p.id}`}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer"
                           onClick={() => onOpenGuestReview(p)}
                         >
                           审核公开
@@ -255,7 +255,7 @@ export default function AdminProductTable({
                             })
                           }}
                           data-testid={`admin-import-inventory-${p.id}`}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer"
                         >
                           导入交付库存
                         </button>
@@ -288,7 +288,7 @@ export default function AdminProductTable({
                         <button
                           type="button"
                           data-testid={`admin-restore-product-${p.id}`}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer"
                           onClick={async () => {
                             try {
                               await restoreAdminProduct(p.id)

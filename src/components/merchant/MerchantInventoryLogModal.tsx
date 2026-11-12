@@ -108,7 +108,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product }: 
                     </td>
                     <td className="py-2.5 px-2 text-sm" data-label="动作">
                       {log.action === 'import' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]">
                           导入
                         </span>
                       ) : log.action === 'sale' ? (
@@ -120,7 +120,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product }: 
                           名额调整
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]">
                           作废
                         </span>
                       )}

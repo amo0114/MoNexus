@@ -295,8 +295,8 @@ export default function CategoryFormDialog({
                       data-testid={`category-icon-${key}`}
                       className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${
                         form.iconKey === key
-                          ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary)]/10'
-                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[var(--color-primary)]/40'
+                          ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]'
+                          : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)]'
                       }`}
                       onClick={() => setForm((f) => ({ ...f, iconKey: key }))}
                       disabled={busy}

@@ -1,13 +1,3 @@
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(15px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.fade-in {
-  animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  opacity: 0;
-}
-
 /* Toast 动效方向跟着位置走：移动端顶部下挂 → 自上而下；桌面右下 → 自下而上。
    X 居中由容器负责（-translate-x-1/2），卡片 keyframes 只动 translateY/scale。
    assertive 级（error/warning）用带回弹的曲线 + 稍长时长，进场分量更重。 */

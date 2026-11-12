@@ -28,17 +28,17 @@ const presentationMeta = {
   notice: {
     label: '普通通知',
     icon: Megaphone,
-    badge: 'bg-[var(--color-primary)]/8 text-[var(--color-primary)] border-[var(--color-primary)]/20',
+    badge: 'bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]',
   },
   important: {
     label: '重要通知',
     icon: CircleAlert,
-    badge: 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25',
+    badge: 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]',
   },
   acknowledgement_required: {
     label: '必须确认',
     icon: ShieldCheck,
-    badge: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25',
+    badge: 'bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]',
   },
 } as const
 
@@ -60,7 +60,7 @@ export function AnnouncementBellButton({ unreadCount, onClick }: { unreadCount: 
     <button
       type="button"
       onClick={onClick}
-      className="hidden md:inline-flex icon-btn relative rounded-full p-2 text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/10 hover:text-[var(--color-primary)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
+      className="hidden md:inline-flex icon-btn relative rounded-full p-2 text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] hover:text-[var(--color-primary)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
       aria-label={unreadCount > 0 ? `通知中心，有 ${unreadCount} 条未读` : '通知中心'}
       title="通知中心"
       data-testid="announcement-center-desktop-trigger"
@@ -262,7 +262,7 @@ export default function AnnouncementCenter({
             onClick={() => setTab('announcements')}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               tab === 'announcements'
-                ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30'
+                ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]'
                 : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]'
             }`}
             data-testid="notification-center-tab-announcements"
@@ -276,7 +276,7 @@ export default function AnnouncementCenter({
             onClick={() => setTab('messages')}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               tab === 'messages'
-                ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30'
+                ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]'
                 : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]'
             }`}
             data-testid="notification-center-tab-messages"
@@ -302,11 +302,11 @@ export default function AnnouncementCenter({
                 return (
                   <article
                     key={`${announcement.id}:${announcement.version}`}
-                    className={`rounded-xl border p-4 transition-colors ${unread ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.035]' : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'}`}
+                    className={`rounded-xl border p-4 transition-colors ${unread ? 'border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_3.5%,transparent)]' : 'border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_50%,transparent)]'}`}
                     data-testid={`announcement-item-${announcement.id}`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 p-2 rounded-lg bg-[var(--color-primary)]/8 text-[var(--color-primary)] shrink-0">
+                      <div className="mt-0.5 p-2 rounded-lg bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] shrink-0">
                         <Icon className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -369,13 +369,13 @@ export default function AnnouncementCenter({
                     disabled={workingId === item.id}
                     className={`w-full text-left rounded-xl border p-4 transition-colors ${
                       unread
-                        ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.035]'
-                        : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'
+                        ? 'border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_3.5%,transparent)]'
+                        : 'border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_50%,transparent)]'
                     }`}
                     data-testid={`notification-center-message-${item.id}`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="mt-0.5 p-2 rounded-lg bg-[var(--color-primary)]/8 text-[var(--color-primary)] shrink-0">
+                      <div className="mt-0.5 p-2 rounded-lg bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] shrink-0">
                         <MessageSquare className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">

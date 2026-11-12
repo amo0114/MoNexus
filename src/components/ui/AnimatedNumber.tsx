@@ -34,7 +34,7 @@ export default function AnimatedNumber({
   return (
     <span
       data-testid={dataTestId}
-      className={`inline-block tabular-nums transition-all duration-300 ${
+      className={`inline-block tabular-nums transition duration-300 ${
         animating ? 'animate-[numberPopIn_0.25s_cubic-bezier(0.22,1,0.36,1)] text-[var(--color-primary)] scale-105' : ''
       } ${className}`}
       style={{ fontFeatureSettings: '"tnum" 1' }}

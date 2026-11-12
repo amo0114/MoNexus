@@ -27,10 +27,12 @@
   --color-glass-border: rgba(99, 102, 241, 0.12);
 
   /* Primary tints as ready-made rgba tokens.
-     `bg-[var(--color-primary)]/8` does NOT work: Tailwind v3 cannot apply an
+     An opacity modifier (`/8`) on `bg-[var(--color-primary)]` does NOT work: Tailwind v3 cannot apply an
      opacity modifier to an arbitrary var() colour (it can't split it into
      channels), so the utility is dropped and the element renders transparent.
-     These tokens give the same wash, theme-aware, with no build-time magic. */
+     These tokens give the same wash, theme-aware, with no build-time magic.
+     For other one-off tints use an explicit mix instead:
+     `bg-[color-mix(in_srgb,var(--color-x)_8%,transparent)]`. */
   --color-primary-tint: rgba(99, 102, 241, 0.09);
   --color-primary-tint-strong: rgba(99, 102, 241, 0.16);
 
@@ -73,8 +75,13 @@
   --radius-pill: 9999px;
 
   /* --- Font tokens --- */
-  --font-body: 'Exo 2', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --font-heading: 'Orbitron', 'Exo 2', sans-serif;
+  /* Exo 2 only covers Latin; CJK glyphs fall through to the platform's UI
+     face. Headings share the body face — Orbitron is a display face whose
+     slashed zero and geometric numerals hurt product names and figures, so
+     it is reserved for the brand wordmark (--font-display). */
+  --font-body: 'Exo 2', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI', Roboto, 'Noto Sans SC', sans-serif;
+  --font-heading: var(--font-body);
+  --font-display: 'Orbitron', 'Exo 2', sans-serif;
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;

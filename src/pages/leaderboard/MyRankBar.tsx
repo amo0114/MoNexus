@@ -12,7 +12,7 @@ import { RankDelta } from './RankRow'
  * 始终挂在 DOM 上（自己已在可视区时只做视觉隐藏），这样 leaderboard-me
  * 契约稳定、可断言；隐藏态以 data-hidden 暴露，形制同 BottomTabBar。
  * 移动端避让 Tab Bar 高度 + safe-area（同 Toast 的预留公式）；Tab Bar
- * 下滑自动隐藏时同步下移（bottom 走 transition-all 的过渡）。
+ * 下滑自动隐藏时同步下移（bottom 走 transition-[bottom] 的过渡）。
  *
  * 注意：本条为 position: fixed，调用方不得把它放进带 transform 的祖先
  * （如 .fade-in），否则包含块被改写、吸底失效（见 ProductDetailPage 注释）。
@@ -35,7 +35,7 @@ export default function MyRankBar({
       data-testid="leaderboard-me"
       data-hidden={hidden || undefined}
       aria-hidden={hidden || undefined}
-      className={`fixed inset-x-0 z-30 px-4 pointer-events-none transition-all duration-300 lg:hidden ${
+      className={`fixed inset-x-0 z-30 px-4 pointer-events-none transition-[bottom,opacity,transform] duration-300 lg:hidden ${
         tabbarHidden
           ? 'bottom-[calc(var(--safe-bottom)+0.75rem)] md:bottom-6'
           : 'bottom-[calc(var(--tabbar-h)+var(--safe-bottom)+0.75rem)] md:bottom-6'

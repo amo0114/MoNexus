@@ -454,7 +454,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
   }), [form.name, form.price, form.originalPrice, form.description, form.richDescription, images, selectedCategory, selectedTemplate, form.deliveryMode, previewOffers, productDetails])
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 pb-24 sm:pb-16 fade-in" data-testid="product-create-wizard">
+    <div className="pb-24 sm:pb-16 fade-in" data-testid="product-create-wizard">
       <button onClick={() => navigate('/merchant')} className="flex items-center gap-1 text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)] mb-4 cursor-pointer">
         <ArrowLeft className="w-4 h-4" /> 返回商家中心
       </button>
@@ -476,9 +476,9 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
             return (
               <li
                 key={phase.id}
-                className={`relative rounded-xl border p-3 transition-all ${
+                className={`relative rounded-xl border p-3 transition ${
                   isCurrentPhase
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary-tint)]/40 shadow-xs ring-1 ring-[var(--color-primary)]/30'
+                    ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary-tint)_40%,transparent)] shadow-xs ring-1 ring-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]'
                     : isCompletedPhase
                       ? 'border-[var(--color-border)] bg-[var(--color-surface)] opacity-90'
                       : 'border-[var(--color-border)] bg-[var(--color-background)] opacity-60'
@@ -489,9 +489,9 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                   <span
                     className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center shrink-0 ${
                       isCompletedPhase
-                        ? 'bg-[var(--color-primary)] text-white'
+                        ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
                         : isCurrentPhase
-                          ? 'bg-[var(--color-primary)] text-white'
+                          ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]'
                           : 'border border-[var(--color-border)] text-[var(--color-text-muted)] bg-[var(--color-surface)]'
                     }`}
                   >
@@ -576,12 +576,12 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                       onClick={() => applyTemplate(template.key)}
                       className={`flex items-start gap-3 p-4 rounded-xl border text-left transition-colors cursor-pointer ${
                         templateKey === template.key
-                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                          : 'border-[var(--color-border)] hover:border-[var(--color-primary)]/50'
+                          ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
+                          : 'border-[var(--color-border)] hover:border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)]'
                       }`}
                       data-testid={`template-${template.key}`}
                     >
-                      <span className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center shrink-0">
+                      <span className="w-10 h-10 rounded-lg bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] flex items-center justify-center shrink-0">
                         <Icon className="w-5 h-5" />
                       </span>
                       <span>

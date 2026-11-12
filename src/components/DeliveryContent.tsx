@@ -332,7 +332,7 @@ export default function DeliveryContent({
                   自动开通中，请稍候…
                 </div>
                 <div className="text-xs text-[var(--color-text-muted)]">
-                  系统正在为您自动开通服务，开通完成后凭证将在此展示。如有疑问可咨询平台客服。
+                  系统正在为你自动开通服务，开通完成后凭证将在此展示。如有疑问可咨询平台客服。
                 </div>
               </div>
             )}

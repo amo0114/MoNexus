@@ -218,7 +218,7 @@ export default function ProductSpecSections({
             {specRows.map((row, index) => (
               <div
                 key={`${row.key}-${row.source ?? 'unique'}-${index}`}
-                className="grid grid-cols-[minmax(5.5rem,8.5rem)_minmax(0,1fr)] gap-3 px-5 py-3.5 text-sm hover:bg-[var(--color-background)]/50 transition-colors"
+                className="grid grid-cols-[minmax(5.5rem,8.5rem)_minmax(0,1fr)] gap-3 px-5 py-3.5 text-sm hover:bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)] transition-colors"
                 data-testid="product-spec-row"
                 data-key={row.key}
                 data-source={row.source ?? 'unique'}
@@ -278,7 +278,7 @@ export default function ProductSpecSections({
             ) : null}
             {assurance ? (
               <div
-                className="text-sm text-[var(--color-text)] leading-relaxed bg-[var(--color-primary-tint)] p-5 sm:p-6 rounded-2xl border border-[var(--color-primary)]/20 shadow-xs"
+                className="text-sm text-[var(--color-text)] leading-relaxed bg-[var(--color-primary-tint)] p-5 sm:p-6 rounded-2xl border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] shadow-xs"
                 data-testid="product-spec-assurance"
               >
                 <p className="font-bold text-base text-[var(--color-primary)] flex items-center gap-2">
@@ -302,7 +302,7 @@ export default function ProductSpecSections({
             {resolvedDetails.faq
               .filter((item) => item.question.trim() && item.answer.trim())
               .map((item, index) => (
-                <details key={`${item.question}-${index}`} className="group px-5 py-2 hover:bg-[var(--color-background)]/40 transition-colors" data-testid={`product-spec-faq-${index}`}>
+                <details key={`${item.question}-${index}`} className="group px-5 py-2 hover:bg-[color-mix(in_srgb,var(--color-background)_40%,transparent)] transition-colors" data-testid={`product-spec-faq-${index}`}>
                   <summary className="cursor-pointer min-h-[44px] flex items-center justify-between text-sm font-semibold text-[var(--color-text)] list-none">
                     <span>{item.question}</span>
                     <span className="text-[var(--color-text-muted)] group-open:rotate-180 transition-transform text-xs font-mono ml-2">▼</span>

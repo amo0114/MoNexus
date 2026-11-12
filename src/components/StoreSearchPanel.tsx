@@ -82,7 +82,7 @@ export default function StoreSearchPanel({ onClose, active = true }: { onClose: 
             className={`px-4 py-2 btn-sm rounded-full text-sm font-medium cursor-pointer transition-colors whitespace-nowrap border shrink-0 ${
               category === cat
                 ? 'bg-[var(--color-text)] text-[var(--color-background)] border-transparent shadow-sm'
-                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] hover:border-[var(--color-primary)]'
+                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] hover:text-[var(--color-text)] hover:border-[var(--color-primary)]'
             }`}
           >
             {label(cat)}

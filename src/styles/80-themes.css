@@ -60,6 +60,7 @@
 
   --font-body: 'Nunito', 'Hiragino Maru Gothic ProN', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
   --font-heading: 'Nunito', 'Hiragino Maru Gothic ProN', 'Microsoft YaHei UI', 'PingFang SC', system-ui, sans-serif;
+  --font-display: var(--font-heading);
   --font-weight-normal: 500;
   --font-weight-medium: 600;
   --font-weight-semibold: 700;

@@ -81,10 +81,10 @@ export default function ProfileOrdersPanel({
           <button
             type="button"
             onClick={() => onOrderFilterChange('all')}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               orderFilter === 'all'
-                ? 'bg-[var(--color-primary)] text-white shadow-2xs'
-                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[var(--color-border)]/60'
+                ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-2xs'
+                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]'
             }`}
           >
             全部 ({orderCounts.all})
@@ -92,10 +92,10 @@ export default function ProfileOrdersPanel({
           <button
             type="button"
             onClick={() => onOrderFilterChange('completed')}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               orderFilter === 'completed'
                 ? 'bg-emerald-600 text-white shadow-2xs'
-                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[var(--color-border)]/60'
+                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]'
             }`}
           >
             已交付 ({orderCounts.completed})
@@ -103,10 +103,10 @@ export default function ProfileOrdersPanel({
           <button
             type="button"
             onClick={() => onOrderFilterChange('pending')}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               orderFilter === 'pending'
                 ? 'bg-amber-600 text-white shadow-2xs'
-                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[var(--color-border)]/60'
+                : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]'
             }`}
           >
             待履约 ({orderCounts.pending})
@@ -141,8 +141,8 @@ export default function ProfileOrdersPanel({
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredOrders.slice(0, 5).map((order, i) => (
-            <Reveal key={order.id} delay={Math.min(i, 8) * 50}>
+          {filteredOrders.slice(0, 5).map((order) => (
+            <Reveal key={order.id}>
               <div data-testid={`profile-order-card-${order.id}`} className="bg-[var(--color-background)] rounded-xl p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-2xs hover:shadow-xs transition-shadow">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
@@ -152,7 +152,7 @@ export default function ProfileOrdersPanel({
                         const expiresAt = order.expiresAt ?? order.delivery?.expiresAt
                         return expiresAt && new Date(expiresAt).getTime() <= Date.now() ? (
                           <span
-                            className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30"
+                            className="text-xs font-bold text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)]"
                             data-testid={`order-expired-tag-${order.id}`}
                           >
                             已过期
@@ -181,7 +181,7 @@ export default function ProfileOrdersPanel({
                     )}
                     {order.bookingDate && (
                       <span
-                        className="text-xs font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
+                        className="text-xs font-bold text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
                         data-testid={`order-booking-tag-${order.id}`}
                       >
                         预约 {formatBookingDay(order.bookingDate)}
@@ -189,28 +189,22 @@ export default function ProfileOrdersPanel({
                     )}
                     <RegistryPill value={order.product?.type} category="productTypes" />
                     {order.deliveryMode && <RegistryPill value={order.deliveryMode} category="deliveryModes" />}
-                    <span className="text-xs font-medium text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-2 py-0.5 rounded border border-[var(--color-primary)]/20 inline-flex items-center gap-1">
+                    <span className="text-xs font-medium text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] px-2 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] inline-flex items-center gap-1">
                       <Store className="w-3 h-3" />
                       {order.merchant?.name || '平台自营'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-2 sm:gap-3 shrink-0 sm:border-l sm:border-[var(--color-border)]/60 sm:pl-4 pt-3 sm:pt-0 border-t border-[var(--color-border)]/60 sm:border-t-0">
-                  <div className="hidden sm:flex items-center text-[var(--color-cta)] font-bold whitespace-nowrap text-sm">
+                <div className="flex items-center justify-between sm:flex-col sm:items-end sm:justify-center gap-2 sm:gap-3 shrink-0 sm:border-l sm:border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] sm:pl-4 pt-3 sm:pt-0 border-t border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] sm:border-t-0">
+                  <div className="hidden sm:flex items-center text-[var(--color-points)] font-bold whitespace-nowrap text-sm tabular-nums">
                     -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
                     {order.price}
                   </div>
                   <button
                     onClick={() => onOpenOrderDetail(order.id)}
                     disabled={loadingOrderId === order.id}
-                    className="inline-flex items-center justify-center gap-1.5 cursor-pointer
-                      bg-[var(--color-primary)] text-white text-xs font-semibold
-                      px-3.5 py-2 btn-sm rounded-xl transition-colors whitespace-nowrap
-                      hover:bg-[var(--color-primary-hover)]
-                      focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]
-                      disabled:opacity-50 disabled:cursor-not-allowed
-                      w-full sm:w-auto"
+                    className="btn-tonal btn-sm w-full sm:w-auto"
                   >
                     {loadingOrderId === order.id ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -228,7 +222,7 @@ export default function ProfileOrdersPanel({
             <button
               type="button"
               onClick={() => navigate('/orders')}
-              className="w-full p-3.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-primary)]/5 hover:border-[var(--color-primary)]/30 transition-all cursor-pointer group shadow-2xs flex items-center justify-between gap-3 text-left"
+              className="w-full p-3.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] hover:border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)] transition cursor-pointer group shadow-2xs flex items-center justify-between gap-3 text-left"
               data-testid="profile-orders-more"
             >
               <div className="flex items-start gap-2.5 min-w-0">

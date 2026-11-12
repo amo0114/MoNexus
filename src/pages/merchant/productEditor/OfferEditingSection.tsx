@@ -41,7 +41,7 @@ export default function OfferEditingSection({
       </p>
       {conflictLabels.length > 0 && (
         <div
-          className="rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-2 text-sm text-[var(--color-text)]"
+          className="rounded-lg border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-text)]"
           data-testid="product-edit-offer-conflicts"
         >
           以下字段与其他会话冲突，已采用最新规格内容：{conflictLabels.join('、')}

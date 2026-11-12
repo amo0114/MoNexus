@@ -383,10 +383,10 @@ export default function ProfileIdentityCard() {
         {changingPwd && (
           <form
             onSubmit={handleChangePassword}
-            className="flex flex-col gap-2.5 mt-3 border-t border-[var(--color-border)]/50 pt-3 animate-in fade-in-50 duration-200"
+            className="flex flex-col gap-2.5 mt-3 border-t border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] pt-3 animate-in fade-in-50 duration-200"
           >
             {pwdError && (
-              <div id={passwordErrorId} role="alert" className="text-[var(--color-danger)] text-xs font-medium bg-[var(--color-danger)]/10 px-3 py-1.5 rounded-lg">
+              <div id={passwordErrorId} role="alert" className="text-[var(--color-danger)] text-xs font-medium bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-1.5 rounded-lg">
                 {pwdError}
               </div>
             )}

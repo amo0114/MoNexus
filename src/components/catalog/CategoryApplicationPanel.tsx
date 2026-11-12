@@ -317,10 +317,10 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
                       data-testid={`application-status-${a.status}`}
                       className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
                         a.status === CATEGORY_APPLICATION_STATUS.PENDING
-                          ? 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'
+                          ? 'bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] text-[var(--color-warning)]'
                           : a.status === CATEGORY_APPLICATION_STATUS.APPROVED
-                            ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]'
-                            : 'bg-[var(--color-muted)]/20 text-[var(--color-text-muted)]'
+                            ? 'bg-[color-mix(in_srgb,var(--color-success)_10%,transparent)] text-[var(--color-success)]'
+                            : 'bg-[color-mix(in_srgb,var(--color-muted)_20%,transparent)] text-[var(--color-text-muted)]'
                       }`}
                     >
                       {CATEGORY_APPLICATION_STATUS_LABEL[a.status]}

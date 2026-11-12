@@ -220,8 +220,8 @@ export default function PurchaseModal({
         <DialogTitle className="text-xl mb-2">{renewMode ? '确认续费' : '确认兑换'}</DialogTitle>
         <DialogDescription className="text-[var(--color-text-muted)] mb-6 text-sm">
           {renewMode
-            ? '您即将消耗积分续费以下规格，成功后将顺延订阅时长：'
-            : '您即将消耗积分兑换以下商品：'}
+            ? '你即将消耗积分续费以下规格，成功后将顺延订阅时长：'
+            : '你即将消耗积分兑换以下商品：'}
         </DialogDescription>
 
         <form onSubmit={(e) => { e.preventDefault(); handleConfirm(); }}>

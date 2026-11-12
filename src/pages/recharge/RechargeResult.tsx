@@ -42,12 +42,12 @@ function nextPollDelay(pollCount: number): number {
 
 function StatusPill({ status }: { status: string }) {
   const tone = status === 'credited'
-    ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
+    ? 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
     : status === 'failed' || status === 'reconcile_required'
-      ? 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25'
+      ? 'bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]'
       : status === 'paid' || status === 'closure_pending' || status === 'refund_pending'
-        ? 'bg-[var(--color-warning)]/10 text-[var(--color-warning-accent)] border-[var(--color-warning)]/25'
-        : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/20'
+        ? 'bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] text-[var(--color-warning-accent)] border-[color-mix(in_srgb,var(--color-warning)_25%,transparent)]'
+        : 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]'
   return (
     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-sm font-bold border ${tone}`} data-testid="recharge-result-status">
       {orderStatusLabel(status)}
@@ -229,7 +229,7 @@ export default function RechargeResult({
 
       {payableNotice && (
         <div
-          className="rounded-lg border-2 border-[var(--color-warning)] bg-[var(--color-warning)]/10 p-4 space-y-1"
+          className="rounded-lg border-2 border-[var(--color-warning)] bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] p-4 space-y-1"
           data-testid="recharge-payable-notice"
         >
           <p className="font-heading font-bold text-[var(--color-text)]">{payableNotice.headline}</p>

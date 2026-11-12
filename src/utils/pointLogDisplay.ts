@@ -26,7 +26,7 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
         amountPrefix: '+',
         amountClass: 'text-[var(--color-cta)]',
         iconWrapClass:
-          'bg-[var(--color-cta)]/10 border border-[var(--color-cta)]/25 text-[var(--color-cta)]',
+          'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] text-[var(--color-cta)]',
       }
     case 'out':
       return {
@@ -34,7 +34,7 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
         amountPrefix: '−',
         amountClass: 'text-[var(--color-danger)]',
         iconWrapClass:
-          'bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/25 text-[var(--color-danger)]',
+          'bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] text-[var(--color-danger)]',
         hint: '已完成支付扣款；此前有冻结记录时，本次消耗冻结积分，不会再次扣减可用余额',
       }
     case 'hold':
@@ -43,7 +43,7 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
         amountPrefix: '冻',
         amountClass: 'text-[var(--color-warning)]',
         iconWrapClass:
-          'bg-[var(--color-warning)]/12 border border-[var(--color-warning)]/30 text-[var(--color-warning)]',
+          'bg-[color-mix(in_srgb,var(--color-warning)_12%,transparent)] border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] text-[var(--color-warning)]',
         hint: '这是下单时的历史冻结记录，不表示当前仍冻结或待付款；后续扣款、解除冻结会另记流水，当前状态请查看关联订单',
       }
     case 'release':
@@ -52,7 +52,7 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
         amountPrefix: '+',
         amountClass: 'text-[var(--color-primary)]',
         iconWrapClass:
-          'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/25 text-[var(--color-primary)]',
+          'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] text-[var(--color-primary)]',
         hint: '此前冻结的积分已解除冻结并返还到可用余额，不属于新增收入',
       }
     case 'refund':
@@ -61,7 +61,7 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
         amountPrefix: '+',
         amountClass: 'text-[var(--color-cta)]',
         iconWrapClass:
-          'bg-[var(--color-cta)]/10 border border-[var(--color-cta)]/25 text-[var(--color-cta)]',
+          'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] text-[var(--color-cta)]',
         hint: '订单退款返还',
       }
     case 'settlement_in':
@@ -72,7 +72,7 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
         amountPrefix: '+',
         amountClass: 'text-[var(--color-primary)]',
         iconWrapClass:
-          'bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/25 text-[var(--color-primary)]',
+          'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] text-[var(--color-primary)]',
         hint: '沙箱充值入账',
       }
     default:
@@ -81,7 +81,7 @@ export function pointLogVisual(type: PointLogType): PointLogVisual {
         amountPrefix: '',
         amountClass: 'text-[var(--color-text)]',
         iconWrapClass:
-          'bg-[var(--color-text-muted)]/15 border border-[var(--color-text-muted)]/25 text-[var(--color-text-muted)]',
+          'bg-[color-mix(in_srgb,var(--color-text-muted)_15%,transparent)] border border-[color-mix(in_srgb,var(--color-text-muted)_25%,transparent)] text-[var(--color-text-muted)]',
       }
   }
 }

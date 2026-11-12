@@ -122,7 +122,7 @@ export default function ImageCropDialog({
                 type="button"
                 className={`btn-sm px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer ${
                   aspectMode === '1:1'
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)]'
                     : 'border-[var(--color-border)] text-[var(--color-text-muted)]'
                 }`}
                 onClick={() => setAspectMode('1:1')}
@@ -135,7 +135,7 @@ export default function ImageCropDialog({
                 type="button"
                 className={`btn-sm px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer ${
                   aspectMode === 'free'
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)]'
                     : 'border-[var(--color-border)] text-[var(--color-text-muted)]'
                 }`}
                 onClick={() => setAspectMode('free')}

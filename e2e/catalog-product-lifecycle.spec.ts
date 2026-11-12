@@ -551,7 +551,7 @@ test.describe.serial('PAR-CMI-001 catalog product lifecycle prelude', () => {
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill(PRODUCT_NAME)
     // StorePage 搜索 300ms debounce + 虚拟列表：web-first 等待空态文案（不 fixed sleep）。
-    await expect(page.getByText('未找到相关好物')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText(`没有找到「${PRODUCT_NAME}」相关的商品`)).toBeVisible({ timeout: 15_000 })
     // 空态下明确断言该商品卡片计数为 0（绝不只依赖 API 断言）。
     await expect(page.getByTestId(`store-product-card-${productId}`)).toHaveCount(0)
   })

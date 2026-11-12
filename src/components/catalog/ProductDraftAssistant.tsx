@@ -270,7 +270,7 @@ export default function ProductDraftAssistant({ actor, templates, categories: in
     <section className={`mb-4 rounded-2xl border border-[var(--color-border)] ${active ? 'bg-[var(--color-background)]' : 'bg-[var(--color-surface)]'}`} aria-label="AI 辅助新建商品">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
         <div className="flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)] text-white"><Sparkles className="size-5" aria-hidden="true" /></span>
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)] text-[var(--color-on-primary)]"><Sparkles className="size-5" aria-hidden="true" /></span>
           <div><h2 className="font-bold">AI 帮我建商品</h2><p className="mt-1 text-xs text-[var(--color-text-muted)]">你介绍商品，AI 整理信息，确认满意后再保存。</p></div>
         </div>
         <button type="button" className="btn-secondary min-h-11" disabled={disabled || busy === 'create'} onClick={() => changeActive(!active)}>
@@ -281,7 +281,7 @@ export default function ProductDraftAssistant({ actor, templates, categories: in
         <ol aria-label="创建进度" className="grid grid-cols-3 gap-2 border-t border-[var(--color-border)] pt-4">
           {['描述商品', '预览与补充', '确认草稿'].map((label, index) => <li key={label} aria-current={currentStep === index ? 'step' : undefined}
             className={`flex items-center gap-2 text-xs ${currentStep === index ? 'font-bold text-[var(--color-primary)]' : 'text-[var(--color-text-muted)]'}`}>
-            <span className={`flex size-6 shrink-0 items-center justify-center rounded-full ${currentStep >= index ? 'bg-[var(--color-primary)] text-white' : 'border border-[var(--color-border)]'}`}>
+            <span className={`flex size-6 shrink-0 items-center justify-center rounded-full ${currentStep >= index ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)]' : 'border border-[var(--color-border)]'}`}>
               {currentStep > index ? <Check className="size-3.5" aria-hidden="true" /> : index + 1}</span>{label}
           </li>)}
         </ol>

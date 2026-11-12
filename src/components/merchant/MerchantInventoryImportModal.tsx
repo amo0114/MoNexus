@@ -145,7 +145,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)]">
+            <div className="w-12 h-12 rounded-xl bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] flex items-center justify-center text-[var(--color-primary)]">
               <DatabaseZap className="w-6 h-6" />
             </div>
             <div>
@@ -193,7 +193,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
               </div>
             )}
             {/* Guidelines */}
-            <div className="bg-[var(--color-primary)]/8 border border-[var(--color-primary)]/20 rounded-lg p-4 flex items-start gap-3">
+            <div className="bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] rounded-lg p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-[var(--color-primary)] flex-shrink-0 mt-0.5" />
               <div>
                 <h4 className="text-sm font-bold text-[var(--color-primary)] mb-1">导入须知</h4>
@@ -225,7 +225,7 @@ export default function MerchantInventoryImportModal({ isOpen, onClose, onSubmit
                 </label>
                 <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded-full border ${
                   lineCount > 0
-                    ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
+                    ? 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
                     : 'bg-[var(--color-background)] text-[var(--color-text-muted)] border-[var(--color-border)]'
                 }`}>
                   已解析: {lineCount} 个交付单元

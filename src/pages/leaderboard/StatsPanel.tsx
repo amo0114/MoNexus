@@ -52,7 +52,7 @@ export default function StatsPanel({ data }: { data: LeaderboardResponse }) {
         {me ? (
           <div className="min-w-0">
             <div className="text-xs text-[var(--color-text-muted)]">我的排名</div>
-            <div className="font-mono text-2xl font-bold tracking-tight text-[var(--color-text)] tabular-nums">
+            <div className="text-2xl font-bold tracking-tight text-[var(--color-text)] tabular-nums">
               第 {fmtPoints(me.rank)} 名 <RankDelta rank={me.rank} prevRank={me.prevRank} /> ·{' '}
               {fmtPoints(me.points)} 分
             </div>
@@ -75,7 +75,7 @@ export default function StatsPanel({ data }: { data: LeaderboardResponse }) {
                 <stat.icon className="w-4 h-4 shrink-0" aria-hidden="true" />
                 {stat.label}
               </span>
-              <span className="font-mono text-xl font-bold text-[var(--color-text)] tabular-nums">
+              <span className="text-xl font-bold text-[var(--color-text)] tabular-nums">
                 {stat.value}
               </span>
             </div>

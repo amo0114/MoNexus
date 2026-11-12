@@ -203,7 +203,7 @@ export default function AdminPromotionPackageManager({
         ) : loadError ? (
           <div
             role="alert"
-            className="flex flex-col items-start gap-3 rounded border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-4 text-sm text-[var(--color-danger)]"
+            className="flex flex-col items-start gap-3 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-4 py-4 text-sm text-[var(--color-danger)]"
           >
             <div>{loadError}</div>
             <button type="button" className="btn-secondary btn-sm" onClick={() => void load()}>
