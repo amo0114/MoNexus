@@ -118,7 +118,7 @@ export default function ProductDetailGallery({
                 data-testid={`product-gallery-thumb-${i}`}
                 aria-label={`查看第 ${i + 1} 张图片`}
                 aria-pressed={!videoActive && i === activeImage}
-                className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition-all p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
+                className={`w-16 h-12 rounded-lg overflow-hidden shrink-0 cursor-pointer border-2 transition p-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                   !videoActive && i === activeImage
                     ? 'border-[var(--color-primary)] ring-2 ring-[var(--color-primary)] shadow-xs'
                     : 'border-[var(--color-border)] opacity-60 hover:opacity-100 bg-[var(--color-surface)]'

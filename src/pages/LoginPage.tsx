@@ -60,7 +60,7 @@ function LoginShell({ children }: { children: ReactNode }) {
           <div className="mb-3 flex justify-center">
             <Logo className="h-16 w-16 shrink-0" />
           </div>
-          <h1 className="font-heading text-4xl font-bold tracking-[0.18em] text-[var(--color-text)]">MONEXUS</h1>
+          <h1 className="font-display text-4xl font-bold tracking-[0.18em] text-[var(--color-text)]">MONEXUS</h1>
           <div className="mx-auto mt-2 h-0.5 w-12 bg-[var(--color-primary)]" />
           <p className="mt-3 text-xs uppercase tracking-[0.35em] text-[var(--color-text-muted)]">Digital · Marketplace</p>
         </div>

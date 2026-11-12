@@ -81,7 +81,7 @@ export default function ProfileOrdersPanel({
           <button
             type="button"
             onClick={() => onOrderFilterChange('all')}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               orderFilter === 'all'
                 ? 'bg-[var(--color-primary)] text-white shadow-2xs'
                 : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]'
@@ -92,7 +92,7 @@ export default function ProfileOrdersPanel({
           <button
             type="button"
             onClick={() => onOrderFilterChange('completed')}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               orderFilter === 'completed'
                 ? 'bg-emerald-600 text-white shadow-2xs'
                 : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]'
@@ -103,7 +103,7 @@ export default function ProfileOrdersPanel({
           <button
             type="button"
             onClick={() => onOrderFilterChange('pending')}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
               orderFilter === 'pending'
                 ? 'bg-amber-600 text-white shadow-2xs'
                 : 'bg-[var(--color-background)] text-[var(--color-text-muted)] hover:text-[var(--color-text)] border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]'
@@ -141,8 +141,8 @@ export default function ProfileOrdersPanel({
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredOrders.slice(0, 5).map((order, i) => (
-            <Reveal key={order.id} delay={Math.min(i, 8) * 50}>
+          {filteredOrders.slice(0, 5).map((order) => (
+            <Reveal key={order.id}>
               <div data-testid={`profile-order-card-${order.id}`} className="bg-[var(--color-background)] rounded-xl p-4 border border-[var(--color-border)] flex flex-col sm:flex-row justify-between gap-4 shadow-2xs hover:shadow-xs transition-shadow">
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 mb-2">
@@ -228,7 +228,7 @@ export default function ProfileOrdersPanel({
             <button
               type="button"
               onClick={() => navigate('/orders')}
-              className="w-full p-3.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] hover:border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)] transition-all cursor-pointer group shadow-2xs flex items-center justify-between gap-3 text-left"
+              className="w-full p-3.5 sm:px-4 sm:py-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] hover:border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)] transition cursor-pointer group shadow-2xs flex items-center justify-between gap-3 text-left"
               data-testid="profile-orders-more"
             >
               <div className="flex items-start gap-2.5 min-w-0">

@@ -76,7 +76,7 @@ export default function ProductOfferSelector({
               disabled={soldOut || disabled}
               data-testid={`sku-option-${offer.id}`}
               aria-pressed={isSelected}
-              className={`group relative inline-flex items-center gap-2 py-2 px-3 rounded-lg border text-left transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
+              className={`group relative inline-flex items-center gap-2 py-2 px-3 rounded-lg border text-left transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                 soldOut
                   ? 'opacity-40 cursor-not-allowed border-[var(--color-border)] bg-[var(--color-background)]'
                   : isSelected

@@ -14,9 +14,9 @@
    ========================================================= */
 
 /* =========================================================
-   Motion system (V2-M1) — Apple-class easing & durations.
-   All overrides below are scoped to <md; desktop keeps the
-   original parameters (V2 spec invariant 9).
+   Motion system — one easing/duration scale for every viewport.
+   Entrances are short (≤380ms) and travel ≤8px so navigation never
+   feels like it is waiting on an animation.
    ========================================================= */
 :root {
   --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);   /* iOS standard ease-out */
@@ -26,10 +26,15 @@
   --dur-slow: 380ms;
 }
 
-/* Page entrance, mobile variant: faster, shorter travel, iOS curve. */
-@keyframes fadeInMobile {
+/* Page entrance. */
+@keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  opacity: 0;
+  animation: fadeIn var(--dur-slow) var(--ease-standard) forwards;
 }
 
 @keyframes overlayIn {
@@ -37,10 +42,7 @@
   to { opacity: 1; }
 }
 
-@media (max-width: 767px) {
-  .fade-in { animation: fadeInMobile var(--dur-slow) var(--ease-standard) forwards; }
-  .modal-overlay { animation: overlayIn var(--dur-med) ease-out; }
-}
+.modal-overlay { animation: overlayIn var(--dur-med) ease-out; }
 
 /* iOS tap feedback — opt-in via .pressable (scale only, no layout shift). */
 .pressable {

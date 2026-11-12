@@ -183,7 +183,7 @@ export default function LivePreviewSandbox({
                       key={offer.id ?? idx}
                       type="button"
                       onClick={() => handleSelectOffer(idx)}
-                      className={`p-2 rounded-lg border text-left text-xs transition-all cursor-pointer ${
+                      className={`p-2 rounded-lg border text-left text-xs transition cursor-pointer ${
                         isSelected
                           ? 'border-[var(--color-primary)] bg-[var(--color-surface)] shadow-xs ring-1 ring-[var(--color-primary)] font-bold'
                           : 'border-[var(--color-border)] bg-[var(--color-surface)] opacity-80 hover:opacity-100'

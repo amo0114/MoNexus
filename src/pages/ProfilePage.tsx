@@ -216,16 +216,16 @@ export default function ProfilePage() {
           1. 顶层：一体化主身份与资产尊贵浮岛（Identity & Asset Hero）
           ───────────────────────────────────────────────────────────── */}
       <div
-        className={`relative overflow-hidden rounded-2xl border transition-all duration-300 ${tierSkin.cardBg} ${tierSkin.borderColor}`}
+        className={`relative overflow-hidden rounded-2xl border transition duration-300 ${tierSkin.cardBg} ${tierSkin.borderColor}`}
         data-testid="profile-hero-card"
         data-tier={tierData?.tier || 'bronze'}
       >
         {/* 背景动态专属流光氛围 */}
         <div
-          className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20 transition-all duration-700 ${tierSkin.glowTop}`}
+          className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20 transition duration-700 ${tierSkin.glowTop}`}
         />
         <div
-          className={`absolute bottom-0 left-1/3 w-64 h-64 rounded-full blur-3xl pointer-events-none transition-all duration-700 ${tierSkin.glowBottom}`}
+          className={`absolute bottom-0 left-1/3 w-64 h-64 rounded-full blur-3xl pointer-events-none transition duration-700 ${tierSkin.glowBottom}`}
         />
 
         <div className="relative z-10 p-5 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
@@ -243,7 +243,7 @@ export default function ProfilePage() {
                   url={user?.avatarUrl}
                   name={user?.nickname || user?.email}
                   size={68}
-                  className={`transition-all duration-300 ${tierSkin.avatarRing}`}
+                  className={`transition duration-300 ${tierSkin.avatarRing}`}
                 />
                 <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-semibold backdrop-blur-xs">
                   <Camera className="w-5 h-5" />
@@ -316,7 +316,7 @@ export default function ProfilePage() {
               <button
                 onClick={() => void checkinState.checkin()}
                 disabled={hasCheckedIn !== false || checkingIn}
-                className={`max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition-all cursor-pointer ${
+                className={`max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-semibold text-xs sm:text-sm shadow-xs transition cursor-pointer ${
                   hasCheckedIn === null
                     ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] opacity-60'
                     : hasCheckedIn
@@ -332,7 +332,7 @@ export default function ProfilePage() {
                 type="button"
                 onClick={() => navigate('/recharge')}
                 data-testid="profile-recharge-entry"
-                className="max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm shadow-xs active:scale-95 cursor-pointer transition-all"
+                className="max-md:min-h-10 flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm shadow-xs active:scale-95 cursor-pointer transition"
               >
                 <Wallet className="w-4 h-4" /> 充值
               </button>
@@ -340,7 +340,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="max-md:min-h-10 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-[var(--color-background)] hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] text-[var(--color-text)] border border-[var(--color-border)] px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition-all cursor-pointer"
+                className="max-md:min-h-10 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-[var(--color-background)] hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] text-[var(--color-text)] border border-[var(--color-border)] px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition cursor-pointer"
               >
                 流水明细
               </button>
@@ -568,7 +568,7 @@ export default function ProfilePage() {
             <button
               onClick={handleLogout}
               data-testid="profile-logout"
-              className="cursor-pointer text-[color-mix(in_srgb,var(--color-danger)_80%,transparent)] hover:text-[var(--color-danger)] font-semibold flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[color-mix(in_srgb,var(--color-danger)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-danger)_15%,transparent)] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] transition-all text-sm shadow-2xs"
+              className="cursor-pointer text-[color-mix(in_srgb,var(--color-danger)_80%,transparent)] hover:text-[var(--color-danger)] font-semibold flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[color-mix(in_srgb,var(--color-danger)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-danger)_15%,transparent)] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] transition text-sm shadow-2xs"
             >
               <LogOut className="w-4 h-4" /> 退出当前登录账号
             </button>

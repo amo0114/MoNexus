@@ -87,7 +87,7 @@ export default function PushToggle() {
             onClick={() => void toggle()}
             disabled={busy}
             data-testid="push-toggle-button"
-            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-60 ${
+            className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer disabled:opacity-60 ${
               state.subscribed
                 ? 'border border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
                 : 'bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)]'

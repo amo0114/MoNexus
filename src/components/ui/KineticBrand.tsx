@@ -60,7 +60,7 @@ export default function KineticBrand({
           className="relative flex items-center overflow-visible md:w-[8.4rem] md:min-w-[8.4rem] h-6"
         >
           <span
-            className="font-heading font-bold text-[var(--color-text)] text-sm min-[360px]:text-lg leading-none tracking-[0.18em] flex items-center whitespace-nowrap"
+            className="font-display font-bold text-[var(--color-text)] text-sm min-[360px]:text-lg leading-none tracking-[0.18em] flex items-center whitespace-nowrap"
             style={{
               fontFeatureSettings: '"tnum" 1',
             }}

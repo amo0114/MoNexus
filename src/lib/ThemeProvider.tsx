@@ -18,6 +18,11 @@ const ASSET_VARIANT: Record<Theme, string> = {
   ink: 'black',
 }
 
+// Mirrors public/theme-boot.js: the soft theme's font is fetched on demand
+// when a visitor switches to it after boot.
+const SOFT_FONT_ID = 'font-soft'
+const SOFT_FONT_HREF = 'https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap'
+
 interface ThemeContextValue {
   theme: Theme
   setTheme: (t: Theme) => void
@@ -44,6 +49,14 @@ function applyTheme(t: Theme) {
     root.setAttribute('data-theme', t)
   } else {
     root.removeAttribute('data-theme')
+  }
+
+  if (t === 'soft' && !document.getElementById(SOFT_FONT_ID)) {
+    const link = document.createElement('link')
+    link.id = SOFT_FONT_ID
+    link.rel = 'stylesheet'
+    link.href = SOFT_FONT_HREF
+    document.head.appendChild(link)
   }
 
   const variant = ASSET_VARIANT[t]

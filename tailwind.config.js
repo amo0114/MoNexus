@@ -2,6 +2,9 @@
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   darkMode: 'class',
+  // Touch devices keep :hover "stuck" after a tap; only apply hover styles
+  // where a real hovering pointer exists.
+  future: { hoverOnlyWhenSupported: true },
   theme: {
     extend: {
       colors: {
@@ -17,6 +20,7 @@ export default {
       },
       fontFamily: {
         heading: ['var(--font-heading)'],
+        display: ['var(--font-display)'],
         body: ['var(--font-body)'],
         sans: ['var(--font-body)'],
       },

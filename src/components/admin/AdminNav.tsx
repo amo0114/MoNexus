@@ -174,7 +174,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
               type="button"
               aria-label="管理后台导航菜单"
               data-testid="admin-mobile-nav-trigger"
-              className="w-full flex items-center justify-between px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] text-sm font-medium shadow-xs active:scale-[0.99] transition-all cursor-pointer"
+              className="w-full flex items-center justify-between px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] text-sm font-medium shadow-xs active:scale-[0.99] transition cursor-pointer"
             >
               <div className="flex items-center gap-2 min-w-0">
                 {CurrentIcon && <CurrentIcon className="w-4 h-4 text-[var(--color-primary)] shrink-0" aria-hidden="true" />}

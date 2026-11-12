@@ -99,7 +99,7 @@ export default function OrdersPagination({
                 key={p}
                 type="button"
                 onClick={() => onPageChange(p)}
-                className={`min-w-8 h-8 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`min-w-8 h-8 px-2 rounded-lg text-xs font-semibold transition cursor-pointer ${
                   active
                     ? 'bg-[var(--color-primary)] text-white shadow-xs'
                     : 'bg-[var(--color-surface)] hover:bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)]'

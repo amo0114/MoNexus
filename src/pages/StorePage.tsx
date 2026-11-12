@@ -784,7 +784,7 @@ export default function StorePage() {
       {/* Search & Categories — 全视口常驻，移动端紧凑直出（与顶栏搜索共用 appStore 状态） */}
       <div className="max-w-3xl mx-auto w-full space-y-2.5 md:space-y-4">
         <div className="relative group">
-          <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition-all duration-200 pointer-events-none" />
+          <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition duration-200 pointer-events-none" />
           <input
             type="text"
             value={draftSearchQuery}
@@ -794,13 +794,13 @@ export default function StorePage() {
             }}
             placeholder={isMobile ? '搜索商品、服务...' : '搜账号、卡密、教程...'}
             aria-label="搜索商品"
-            className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition-all text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+            className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:scale-90 rounded-full hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] transition-all duration-150 cursor-pointer animate-in fade-in zoom-in-75"
+              className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:scale-90 rounded-full hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] transition duration-150 cursor-pointer animate-in fade-in zoom-in-75"
               aria-label="清除搜索词"
             >
               <X className="w-4 h-4" />
@@ -886,7 +886,7 @@ export default function StorePage() {
                         imageFetchPriority={visibleStartIndex + i === 0 ? 'high' : 'auto'}
                       />
                   return initialCard ? <div key={item.productId}>{card}</div> : (
-                    <Reveal key={item.productId} delay={(i % columnCount) * 60}>{card}</Reveal>
+                    <Reveal key={item.productId}>{card}</Reveal>
                   )
                 })}
               </div>

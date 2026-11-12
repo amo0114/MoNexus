@@ -476,7 +476,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
             return (
               <li
                 key={phase.id}
-                className={`relative rounded-xl border p-3 transition-all ${
+                className={`relative rounded-xl border p-3 transition ${
                   isCurrentPhase
                     ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary-tint)_40%,transparent)] shadow-xs ring-1 ring-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]'
                     : isCompletedPhase

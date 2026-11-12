@@ -33,7 +33,7 @@ export default function BuyerOrderCard({
     <div
       onClick={() => onOpen(order.id)}
       className="group bg-[var(--color-background)] rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)]
-        hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:shadow-md transition-all cursor-pointer flex flex-col gap-2.5"
+        hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:shadow-md transition cursor-pointer flex flex-col gap-2.5"
       data-testid={`buyer-order-card-${order.id}`}
     >
       {/* 顶部元信息栏：状态、过期标签、单号、时间、积分 */}

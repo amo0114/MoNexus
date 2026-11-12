@@ -734,7 +734,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 opacity-80">
             <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-            <span className="font-heading text-sm font-bold text-[var(--color-text-muted)] tracking-[0.15em]">MONEXUS</span>
+            <span className="font-display text-sm font-bold text-[var(--color-text-muted)] tracking-[0.15em]">MONEXUS</span>
           </div>
           {legalLinks && legalLinks.length > 0 && (
             <nav aria-label="法律与协议" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-medium text-[var(--color-text-muted)]" data-testid="footer-legal-links">

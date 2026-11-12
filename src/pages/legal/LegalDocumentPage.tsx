@@ -74,7 +74,7 @@ export default function LegalDocumentPage({ slug }: { slug: LegalDocumentSlug })
         <div className="relative z-10 mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 text-[var(--color-text)]">
             <Logo className="h-7 w-7 shrink-0" />
-            <span className="font-heading text-base font-bold tracking-[0.18em]">MONEXUS</span>
+            <span className="font-display text-base font-bold tracking-[0.18em]">MONEXUS</span>
             <span className="hidden text-xs tracking-[0.3em] text-[var(--color-text-muted)] sm:inline">法律文档中心</span>
           </Link>
           <Link

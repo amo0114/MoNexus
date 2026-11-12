@@ -63,7 +63,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
         shadow-sm hover:shadow-xl hover:border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)]
         shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.75)] dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12)]
-        hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
+        hover:-translate-y-1.5 transition duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
         max-md:rounded-2xl max-md:shadow-sm max-md:hover:translate-y-0 max-md:active:scale-[0.98]
         ${isSoldOut ? 'opacity-60 grayscale' : ''}`}
     >
@@ -76,7 +76,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
         alt={product.name}
         frameClassName={`${compact ? 'h-28 md:h-36' : 'h-36 md:h-44'} overflow-hidden`}
         className="shrink-0 border-b border-[var(--color-border)]"
-        imageClassName="transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 group-hover:opacity-95"
+        imageClassName="transition duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 group-hover:opacity-95"
         fit="cover"
         imageProps={{
           loading: imageLoading,

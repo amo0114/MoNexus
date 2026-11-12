@@ -42,4 +42,23 @@
       );
     }
   } catch (e) {}
+
+  // Web fonts are progressive enhancement: links injected by script do not
+  // block first paint, so an unreachable font CDN can only delay the swap,
+  // never the page. Nunito is only needed by the soft theme. Keep the URLs in
+  // sync with THEME_FONT_HREF in src/lib/ThemeProvider.tsx.
+  function loadFont(id, href) {
+    if (document.getElementById(id)) return;
+    var link = document.createElement('link');
+    link.id = id;
+    link.rel = 'stylesheet';
+    link.href = href;
+    document.head.appendChild(link);
+  }
+  try {
+    loadFont('font-base', 'https://fonts.googleapis.com/css2?family=Exo+2:wght@400;500;600;700&family=Orbitron:wght@600;700&display=swap');
+    if (document.documentElement.getAttribute('data-theme') === 'soft') {
+      loadFont('font-soft', 'https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
+    }
+  } catch (e) {}
 })();

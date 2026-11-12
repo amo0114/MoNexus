@@ -90,7 +90,7 @@ export function ExperienceProgressBar({
           className="relative w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-2.5 overflow-hidden border border-slate-200/60 dark:border-slate-700/60 shadow-inner"
         >
           <div
-            className={`relative h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${progressGradient}`}
+            className={`relative h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${progressGradient}`}
             style={{ width: `${progress}%` }}
           >
             {/* 流光扫掠层 (skills-ref/transitions-dev/15-shimmer-text) */}
@@ -153,7 +153,7 @@ export function ExperienceProgressBar({
         className="relative w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-2 overflow-hidden border border-slate-200/60 dark:border-slate-700/60 shadow-inner"
       >
         <div
-          className={`relative h-full rounded-full transition-all duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${progressGradient}`}
+          className={`relative h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] ${progressGradient}`}
           style={{ width: `${progress}%` }}
         >
           {/* 流光扫掠层 (skills-ref/transitions-dev/15-shimmer-text) */}
