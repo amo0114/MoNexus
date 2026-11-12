@@ -263,11 +263,8 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
       {/* Desktop Vertical Disclosure Navigation (≥xl: 1280px) */}
       <nav
         aria-label="管理后台导航"
-        className="hidden xl:block w-56 flex-shrink-0 space-y-3"
+        className="hidden xl:block w-56 flex-shrink-0 space-y-3 xl:sticky xl:top-[calc(var(--navbar-current-h)+1rem)] xl:self-start xl:max-h-[calc(100dvh-var(--navbar-current-h)-2rem)] xl:overflow-y-auto hide-scrollbar"
       >
-        <div className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider px-3 mb-2">
-          系统管理
-        </div>
         {ADMIN_NAV_GROUPS.map((group) => {
           const isExpanded = expandedGroups.has(group.id)
           return (

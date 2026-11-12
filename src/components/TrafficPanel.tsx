@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Eye, Users, RefreshCw } from 'lucide-react'
+import { Eye, LineChart, Users, RefreshCw } from 'lucide-react'
+import EmptyState from './ui/EmptyState'
+import RangePills, { DAY_RANGE_OPTIONS } from './ui/RangePills'
 import { fetchTrafficReport, type TrafficAudience, type TrafficRange, type TrafficReport } from '../api/traffic'
 import { getApiErrorMessage } from '../api/error'
 
@@ -35,6 +37,9 @@ function Ranking({ title, rows }: { title: string; rows: Array<{ key: number | s
 }
 
 function TrafficTrend({ points }: { points: TrafficReport['points'] }) {
+  if (!points.some(point => point.pv > 0)) {
+    return <EmptyState compact icon={LineChart} title="所选时间内暂无访问" description="有访客浏览后，这里会显示每日趋势" />
+  }
   const max = Math.max(1, ...points.map(point => point.pv))
   const path = (metric: 'pv' | 'uv') => points.map((point, index) =>
     `${index === 0 ? 'M' : 'L'} ${12 + index / Math.max(1, points.length - 1) * 696} ${160 - point[metric] / max * 144}`
@@ -43,14 +48,14 @@ function TrafficTrend({ points }: { points: TrafficReport['points'] }) {
   return (
     <div>
       <div className="flex items-center justify-between text-xs text-[var(--color-text-muted)] mb-2">
-        <span>每日访问趋势</span>
+        <span>每日访问趋势 · 峰值 {number.format(max)}</span>
         <span className="flex gap-4"><span className="text-[var(--color-primary)]">实线 PV</span><span className="text-[var(--color-cta)]">虚线 UV</span></span>
       </div>
-      <svg viewBox="0 0 720 180" className="w-full h-40 sm:h-48" role="img" aria-label="每日浏览量和访客数趋势，下方可展开查看每日数据">
-        {[16, 88, 160].map(y => <line key={y} x1="12" y1={y} x2="708" y2={y} stroke="var(--color-border)" strokeDasharray="4 4" />)}
-        <path d={path('pv')} fill="none" stroke="var(--color-primary)" strokeWidth="2" />
-        <path d={path('uv')} fill="none" stroke="var(--color-cta)" strokeWidth="2" strokeDasharray="5 3" />
-        <text x="12" y="12" fill="var(--color-text-muted)" fontSize="11">{number.format(max)}</text>
+      {/* Stretch to the card width; strokes stay crisp via non-scaling-stroke. */}
+      <svg viewBox="0 0 720 180" preserveAspectRatio="none" className="w-full h-40 sm:h-48" role="img" aria-label="每日浏览量和访客数趋势，下方可展开查看每日数据">
+        {[16, 88, 160].map(y => <line key={y} x1="12" y1={y} x2="708" y2={y} stroke="var(--color-border)" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />)}
+        <path d={path('pv')} fill="none" stroke="var(--color-primary)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+        <path d={path('uv')} fill="none" stroke="var(--color-cta)" strokeWidth="2" strokeDasharray="5 3" vectorEffect="non-scaling-stroke" />
       </svg>
       <div className="flex justify-between text-xs text-[var(--color-text-muted)]">
         <span>{points[0]?.date}</span><span>{points[points.length - 1]?.date}</span>
@@ -104,9 +109,7 @@ export default function TrafficPanel({ audience, range: controlledRange, active 
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {!controlledRange && <select aria-label="访问统计时间范围" value={range} onChange={event => setSelectedRange(event.target.value as TrafficRange)} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm">
-            <option value="7d">近 7 天</option><option value="30d">近 30 天</option><option value="90d">近 90 天</option>
-          </select>}
+          {!controlledRange && <RangePills value={range} onChange={setSelectedRange} options={DAY_RANGE_OPTIONS} ariaLabel="访问统计时间范围" />}
           <button type="button" aria-label="刷新访问统计" disabled={loading} onClick={() => setRevision(value => value + 1)} className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] p-2.5 disabled:opacity-50"><RefreshCw className="w-4 h-4" /></button>
         </div>
       </div>

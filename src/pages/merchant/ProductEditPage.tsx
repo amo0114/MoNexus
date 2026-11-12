@@ -680,7 +680,11 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             data-testid="product-edit-description-image-input"
           />
 
-          <div className="flex justify-end scroll-mb-24">
+          {/* The form is long; keep the save action and its state in reach. */}
+          <div className="sticky bottom-3 max-md:bottom-[calc(var(--tabbar-h)+var(--safe-bottom)+0.5rem)] z-20 flex items-center justify-end gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-glass-bg)] px-4 py-3 shadow-lg backdrop-blur-md scroll-mb-24">
+            <span className="mr-auto text-xs text-[var(--color-text-muted)]" aria-live="polite">
+              {saving ? '正在保存…' : dirty ? '有未保存的修改' : '所有修改已保存'}
+            </span>
             <button
               type="button"
               className="btn-primary px-6 py-2.5 disabled:opacity-40 scroll-mb-24"
@@ -734,7 +738,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           />
         )}
 
-        <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
+        <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-[calc(var(--navbar-current-h)+1rem)] space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
           <LivePreviewSandbox product={previewData} />
           <ProductPublicationChecklist issues={checklistIssues} ready={checklistIssues.length === 0} />
         </aside>

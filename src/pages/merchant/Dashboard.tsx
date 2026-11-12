@@ -8,14 +8,11 @@ import TopProducts from './dashboard/TopProducts'
 import TopOffers from './dashboard/TopOffers'
 import StatusBreakdown from './dashboard/StatusBreakdown'
 import RangeFilter from './dashboard/RangeFilter'
-import { useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import TrafficPanel from '../../components/TrafficPanel'
 import WorkbenchSummary from '../../components/merchant/workbench/WorkbenchSummary'
 
 export default function Dashboard() {
   const { range } = useDashboardStore()
-  const navigate = useNavigate()
 
   const [summary, setSummary] = useState<DashboardSummary>()
   const [summaryLoading, setSummaryLoading] = useState(true)
@@ -76,16 +73,7 @@ export default function Dashboard() {
 
   return (
     <div className="fade-in">
-      <div className="flex items-center gap-4 mb-6">
-        <button
-          onClick={() => navigate('/merchant')}
-          aria-label="返回商家后台"
-          className="icon-btn p-2 hover:bg-[var(--color-surface)] rounded-full text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h1 className="font-heading text-2xl font-bold text-[var(--color-text)]">经营数据</h1>
-      </div>
+      <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-6">经营数据</h1>
 
       {/* Loads independently; a workbench failure never blocks these statistics. */}
       <WorkbenchSummary />

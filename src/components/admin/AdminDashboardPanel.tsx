@@ -129,49 +129,49 @@ export default function AdminDashboardPanel({ active = true }: Props) {
         title="数据仪表盘"
         description="关键运营统计（数据截至本次加载）"
       />
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-        <DashStat icon={Users} label="注册用户总数" value={stats.users} />
-        <DashStat icon={ShoppingBag} label="平台订单总数" value={stats.orders} />
-        <DashStat
-          icon={Coins}
-          label="账户可用积分合计"
-          value={stats.totalPoints}
-          hint="不含冻结积分及沙箱积分"
-          tone="cta"
-        />
-        {stats.todayOrders != null && (
+      {(stats.todayOrders != null || stats.todayCheckins != null) && (
+        <section aria-labelledby="admin-dash-today" className="space-y-3">
+          <h3 id="admin-dash-today" className="text-xs font-semibold text-[var(--color-text-muted)]">今日（北京时间）</h3>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            {stats.todayOrders != null && (
+              <DashStat icon={ShoppingCart} label="今日新增订单" value={stats.todayOrders} />
+            )}
+            {stats.todayCheckins != null && (
+              <DashStat icon={Activity} label="今日签到人次" value={stats.todayCheckins} />
+            )}
+          </div>
+        </section>
+      )}
+      <section aria-labelledby="admin-dash-totals" className="space-y-3">
+        <h3 id="admin-dash-totals" className="text-xs font-semibold text-[var(--color-text-muted)]">平台累计</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
+          <DashStat icon={Users} label="注册用户总数" value={stats.users} />
+          <DashStat icon={ShoppingBag} label="平台订单总数" value={stats.orders} />
           <DashStat
-            icon={ShoppingCart}
-            label="今日新增订单"
-            value={stats.todayOrders}
-            hint="今日（北京时间）"
+            icon={Coins}
+            label="账户可用积分合计"
+            value={stats.totalPoints}
+            hint="不含冻结积分及沙箱积分"
+            tone="cta"
           />
-        )}
-        {stats.todayCheckins != null && (
-          <DashStat
-            icon={Activity}
-            label="今日签到人次"
-            value={stats.todayCheckins}
-            hint="今日（北京时间）"
-          />
-        )}
-        {stats.productCount != null && (
-          <DashStat
-            icon={Package}
-            label="已发布商品数"
-            value={stats.productCount}
-            hint="已发布商品，不保证均有可售库存"
-          />
-        )}
-        {stats.availableInventory != null && (
-          <DashStat
-            icon={Layers}
-            label="可用库存条目"
-            value={stats.availableInventory}
-            hint="按可用库存记录统计"
-          />
-        )}
-      </div>
+          {stats.productCount != null && (
+            <DashStat
+              icon={Package}
+              label="已发布商品数"
+              value={stats.productCount}
+              hint="已发布商品，不保证均有可售库存"
+            />
+          )}
+          {stats.availableInventory != null && (
+            <DashStat
+              icon={Layers}
+              label="可用库存条目"
+              value={stats.availableInventory}
+              hint="按可用库存记录统计"
+            />
+          )}
+        </div>
+      </section>
       <AdminOfferReport />
       <TrafficPanel audience="platform" active={active} />
     </div>

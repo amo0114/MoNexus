@@ -47,7 +47,7 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="fade-in pt-2">
+    <div className="fade-in">
       <div className="flex flex-col xl:flex-row gap-6 w-full">
         {/* Navigation Rail / Drawer */}
         <AdminNav activeTab={activeTab} onTabChange={handleTabChange} />

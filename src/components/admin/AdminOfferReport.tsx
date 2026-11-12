@@ -5,12 +5,8 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
+import RangePills, { DAY_RANGE_OPTIONS } from '../ui/RangePills'
 
-const RANGE_OPTIONS: { label: string; value: ReportRange }[] = [
-  { label: '7天', value: '7d' },
-  { label: '30天', value: '30d' },
-  { label: '90天', value: '90d' },
-]
 
 /** P5.5 T2：管理端「热销规格」报表（数据仪表盘内嵌区块，自行拉取数据）。 */
 export default function AdminOfferReport() {
@@ -34,22 +30,13 @@ export default function AdminOfferReport() {
     <section className="pt-6 border-t border-[var(--color-border)]">
       <div className="flex flex-wrap justify-between items-center gap-3 mb-1">
         <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">热销规格</h3>
-        <div className="flex gap-2">
-          {RANGE_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setRange(opt.value)}
-              className={`px-3 py-1.5 btn-sm rounded text-sm font-medium border transition-colors cursor-pointer ${
-                range === opt.value
-                  ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-[var(--color-primary)]'
-                  : 'text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text)]'
-              }`}
-              data-testid={`admin-offer-report-range-${opt.value}`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <RangePills
+          value={range}
+          onChange={setRange}
+          options={DAY_RANGE_OPTIONS}
+          ariaLabel="热销规格时间范围"
+          testIdPrefix="admin-offer-report-range"
+        />
       </div>
       <p className="text-xs text-[var(--color-text-muted)] mb-4">净成交口径（已排除退款订单）</p>
       <div className="overflow-x-auto">

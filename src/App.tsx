@@ -12,6 +12,7 @@ import StorePage from './pages/StorePage'
 import LoginPage from './pages/LoginPage'
 import RoleGuard from './components/RoleGuard'
 import RouteFallback from './components/ui/RouteFallback'
+import MerchantShell from './components/merchant/MerchantShell'
 
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
@@ -190,7 +191,9 @@ export default function App() {
                       path="/merchant/dashboard"
                       element={
                         <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <Dashboard />
+                          <MerchantShell active="operations">
+                            <Dashboard />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
@@ -198,7 +201,9 @@ export default function App() {
                       path="/merchant/workbench"
                       element={
                         <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <WorkbenchPage />
+                          <MerchantShell active="dashboard">
+                            <WorkbenchPage />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
@@ -206,7 +211,9 @@ export default function App() {
                       path="/merchant/promotions"
                       element={
                         <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <MerchantPromotionPage />
+                          <MerchantShell active="promotions">
+                            <MerchantPromotionPage />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
