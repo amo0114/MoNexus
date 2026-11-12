@@ -4,10 +4,8 @@ import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
   Globe2,
-  Headphones,
   Heart,
   Laptop,
-  PackageCheck,
   ShieldCheck,
   ShoppingCart,
   Trash2,
@@ -124,19 +122,6 @@ export default function ProductDetailMobile({
       : ['平台认证', '秒级履约', '全额存管', '优质商户']
   const merchant = merchantName
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
-  const features = preview
-    ? previewFeatures
-    : [
-        { icon: PackageCheck, title: '数字交付', detail: '数字交付', note: '订单内查看交付内容' },
-        {
-          icon: activeOffer?.deliveryMode === 'manual_service' ? Headphones : Zap,
-          title: activeOffer?.deliveryMode === 'manual_service' ? '人工服务' : '自动发货',
-          detail: '套餐交付',
-          note: '依套餐说明交付',
-        },
-        { icon: ShieldCheck, title: '订单保障', detail: '订单记录', note: '交付与订单记录可追溯' },
-        { icon: Headphones, title: '售后支持', detail: '售后支持', note: '平台协助处理' },
-      ]
   const money = (value: number, isPreview = preview) =>
     isPreview ? `¥ ${value.toFixed(2)}` : `${value.toLocaleString()} 积分`
 
@@ -310,10 +295,14 @@ export default function ProductDetailMobile({
             )}
           </div>
           <button className="pm-rating" data-testid="rating-summary" onClick={() => goToSection('reviews')}>
-            <StarRating value={product.ratingAvg ?? 0} />
-            <strong>{product.ratingCount ? (product.ratingAvg ?? 0).toFixed(1) : '暂无评分'}</strong>
-            <span>（{(product.ratingCount ?? 0).toLocaleString()} 条评价）</span>
-            <i />
+            {(product.ratingCount ?? 0) > 0 && (
+              <>
+                <StarRating value={product.ratingAvg ?? 0} />
+                <strong>{(product.ratingAvg ?? 0).toFixed(1)}</strong>
+                <span>（{(product.ratingCount ?? 0).toLocaleString()} 条评价）</span>
+                <i />
+              </>
+            )}
             <span>已售 {(product.sales ?? 0).toLocaleString()}</span>
           </button>
           <p className="pm-description">{product.description}</p>
@@ -330,14 +319,6 @@ export default function ProductDetailMobile({
               shortfall={shortfall}
             />
           )}
-          <div className="pm-feature-strip">
-            {features.map(({ icon: Icon, title }) => (
-              <div key={title}>
-                <Icon size={23} />
-                <span>{title}</span>
-              </div>
-            ))}
-          </div>
         </div>
       </section>
 
@@ -355,7 +336,6 @@ export default function ProductDetailMobile({
         quantity={quantity}
         onQuantityChange={setQuantity}
         cartCount={cartCount}
-        redeemLabel={redeemLabel}
         purchaseDisabled={purchaseDisabled}
         onBuy={buy}
         onAddToCart={() => addToCart()}
