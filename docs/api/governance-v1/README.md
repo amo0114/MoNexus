@@ -1,8 +1,8 @@
 # 后端治理 v1：前端协作契约
 
-版本：`governance-v1 / 1.0.1`。基线：`develop@8da71e0`。
+版本：`governance-v1 / 1.0.2`。基线：`develop@8da71e0`。
 
-**契约已交付；服务实现中。此目录的 JSON 均为合成数据，不代表接口已经可调用。**
+**契约和后端实现已交付；运行时代码 a620a38 已完成本地定向验证，完整 CI 见 [PR #349](https://github.com/amo0114/MoNexus/pull/349)。尚未部署生产；此目录 JSON 均为合成数据。**
 
 - `openapi.json`：可独立导入的 OpenAPI 3.0.3；39 个方法、64 个 schema。相同增量已合入 `docs/superpowers/specs/monexus-api-openapi.json`。
 - `manifest.json`：夹具索引。每个文件带 method/path/status/schema/response；mock 返回 `response`，不要返回整个夹具包装。
@@ -45,3 +45,11 @@
 ## 1.0.1 契约校准
 
 导出请求按 kind 使用独立筛选 schema，补齐状态枚举与字符串长度约束，拒绝跨种类筛选字段。路径、成功响应、夹具及原有合法请求不变。带时区的 from/to 按实际时刻比较。
+
+## 1.0.2 分页兼容校准
+
+`GET /api/admin/users` 沿用既有 `SystemConfig.defaultPageSize/maxPageSize`：省略 pageSize 时使用配置默认值，请求值按配置上限截断，绝对上限 500；出厂默认 20、上限 100。新增游标明细列表及 capabilities.limits.pageSize 仍为 100。路径、响应结构和夹具不变。
+
+## 真实接口联调
+
+后端运行时代码基线为 `a620a38`。本地数据库须先按[发布手册](../../operations/backend-governance-v1.md)完成扩展、回填、finalize 和 verify；不要对另一 agent 正在使用的开发库直接重置。`GET /api/admin/capabilities` 需要完成 MFA 且有授权记录的管理员。新建管理员缺省无权限；原有管理员由迁移初始化，测试夹具中的管理员由测试辅助代码显式授权。未配置持久私有存储时，导出明确返回 503。

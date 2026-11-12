@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus governance-v1 contract",
-    "version": "1.0.1",
-    "description": "设计契约，运行时尚未实现。admin 都要求当前管理员及 MFA；不得把夹具当成运行结果。"
+    "version": "1.0.2",
+    "description": "后端已实现并完成本地定向验证；完整 CI 见 PR #349，未部署生产。admin 要求当前管理员及 MFA；夹具为合成数据。"
   },
   "servers": [
     {
@@ -23,7 +23,7 @@
         ],
         "operationId": "gv_get_api_admin_capabilities",
         "summary": "/api/admin/capabilities",
-        "description": "契约已冻结；服务实现中。权限：admin。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：admin。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -32,7 +32,7 @@
         "x-permissions": [
           "admin"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -114,7 +114,7 @@
         ],
         "operationId": "gv_get_api_admin_recharge_refunds_id_",
         "summary": "/api/admin/recharge/refunds/{id}",
-        "description": "契约已冻结；服务实现中。权限：payments.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：payments.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -123,7 +123,7 @@
         "x-permissions": [
           "payments.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -216,7 +216,7 @@
         ],
         "operationId": "gv_post_api_admin_recharge_refunds_id_review",
         "summary": "/api/admin/recharge/refunds/{id}/review",
-        "description": "契约已冻结；服务实现中。权限：payments.refunds.review。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：payments.refunds.review。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -225,7 +225,7 @@
         "x-permissions": [
           "payments.refunds.review"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -339,7 +339,7 @@
         ],
         "operationId": "gv_get_api_merchant_application",
         "summary": "/api/merchant/application",
-        "description": "契约已冻结；服务实现中。权限：authenticated。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：authenticated。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -348,7 +348,7 @@
         "x-permissions": [
           "authenticated"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -430,7 +430,7 @@
         ],
         "operationId": "gv_post_api_merchant_application_resubmit",
         "summary": "/api/merchant/application/resubmit",
-        "description": "契约已冻结；服务实现中。权限：application.resubmit。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：application.resubmit。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -439,7 +439,7 @@
         "x-permissions": [
           "application.resubmit"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -544,7 +544,7 @@
         ],
         "operationId": "gv_get_api_admin_merchants_id_history",
         "summary": "/api/admin/merchants/{id}/history",
-        "description": "契约已冻结；服务实现中。权限：merchants.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：merchants.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -553,7 +553,7 @@
         "x-permissions": [
           "merchants.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -646,7 +646,7 @@
         ],
         "operationId": "gv_put_api_admin_merchants_id_approve",
         "summary": "商家approve；旧 PUT 可不带新版本字段，新前端必须携带。",
-        "description": "契约已冻结；服务实现中。权限：merchants.review。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：merchants.review。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -655,7 +655,7 @@
         "x-permissions": [
           "merchants.review"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -769,7 +769,7 @@
         ],
         "operationId": "gv_put_api_admin_merchants_id_reject",
         "summary": "商家reject；旧 PUT 可不带新版本字段，新前端必须携带。",
-        "description": "契约已冻结；服务实现中。权限：merchants.review。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：merchants.review。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -778,7 +778,7 @@
         "x-permissions": [
           "merchants.review"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -892,7 +892,7 @@
         ],
         "operationId": "gv_put_api_admin_merchants_id_suspend",
         "summary": "商家suspend；旧 PUT 可不带新版本字段，新前端必须携带。",
-        "description": "契约已冻结；服务实现中。权限：merchants.suspend。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：merchants.suspend。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -901,7 +901,7 @@
         "x-permissions": [
           "merchants.suspend"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1015,7 +1015,7 @@
         ],
         "operationId": "gv_post_api_admin_merchants_id_restore",
         "summary": "商家restore；旧 PUT 可不带新版本字段，新前端必须携带。",
-        "description": "契约已冻结；服务实现中。权限：merchants.suspend。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：merchants.suspend。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1024,7 +1024,7 @@
         "x-permissions": [
           "merchants.suspend"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1138,7 +1138,7 @@
         ],
         "operationId": "gv_get_api_admin_users",
         "summary": "/api/admin/users",
-        "description": "契约已冻结；服务实现中。权限：users.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：users.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1147,7 +1147,7 @@
         "x-permissions": [
           "users.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1238,9 +1238,9 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 100,
-              "default": 20
-            }
+              "maximum": 500
+            },
+            "description": "沿用 SystemConfig.defaultPageSize/maxPageSize：省略时使用配置默认值，请求值按配置上限截断；出厂默认 20、上限 100，绝对上限 500。新游标明细列表仍固定上限 100。"
           },
           {
             "name": "q",
@@ -1369,7 +1369,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_",
         "summary": "/api/admin/users/{id}",
-        "description": "契约已冻结；服务实现中。权限：users.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：users.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1378,7 +1378,7 @@
         "x-permissions": [
           "users.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1471,7 +1471,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_orders",
         "summary": "/api/admin/users/{id}/orders",
-        "description": "契约已冻结；服务实现中。权限：orders.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：orders.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1480,7 +1480,7 @@
         "x-permissions": [
           "orders.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1592,7 +1592,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_point_logs",
         "summary": "/api/admin/users/{id}/point-logs",
-        "description": "契约已冻结；服务实现中。权限：points.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：points.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1601,7 +1601,7 @@
         "x-permissions": [
           "points.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1713,7 +1713,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_sessions",
         "summary": "/api/admin/users/{id}/sessions",
-        "description": "契约已冻结；服务实现中。权限：users.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：users.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1722,7 +1722,7 @@
         "x-permissions": [
           "users.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1834,7 +1834,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_referrals",
         "summary": "/api/admin/users/{id}/referrals",
-        "description": "契约已冻结；服务实现中。权限：users.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：users.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1843,7 +1843,7 @@
         "x-permissions": [
           "users.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -1955,7 +1955,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_security_events",
         "summary": "/api/admin/users/{id}/security-events",
-        "description": "契约已冻结；服务实现中。权限：audit.details.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：audit.details.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -1964,7 +1964,7 @@
         "x-permissions": [
           "audit.details.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -2076,7 +2076,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_audit",
         "summary": "/api/admin/users/{id}/audit",
-        "description": "契约已冻结；服务实现中。权限：audit.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：audit.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2085,7 +2085,7 @@
         "x-permissions": [
           "audit.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -2197,7 +2197,7 @@
         ],
         "operationId": "gv_get_api_admin_users_id_bans",
         "summary": "/api/admin/users/{id}/bans",
-        "description": "契约已冻结；服务实现中。权限：users.ban。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：users.ban。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2206,7 +2206,7 @@
         "x-permissions": [
           "users.ban"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -2316,7 +2316,7 @@
         ],
         "operationId": "gv_post_api_admin_users_id_bans",
         "summary": "/api/admin/users/{id}/bans",
-        "description": "契约已冻结；服务实现中。权限：users.ban。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：users.ban。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2325,7 +2325,7 @@
         "x-permissions": [
           "users.ban"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "201": {
             "description": "Success",
@@ -2439,7 +2439,7 @@
         ],
         "operationId": "gv_post_api_admin_users_id_bans_banId_release",
         "summary": "/api/admin/users/{id}/bans/{banId}/release",
-        "description": "契约已冻结；服务实现中。权限：users.ban。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：users.ban。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2448,7 +2448,7 @@
         "x-permissions": [
           "users.ban"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -2571,7 +2571,7 @@
         ],
         "operationId": "gv_get_api_admin_audit_id_",
         "summary": "/api/admin/audit/{id}",
-        "description": "契约已冻结；服务实现中。权限：audit.details.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：audit.details.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2580,7 +2580,7 @@
         "x-permissions": [
           "audit.details.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -2673,7 +2673,7 @@
         ],
         "operationId": "gv_get_api_admin_products_id_inventory_batches",
         "summary": "/api/admin/products/{id}/inventory/batches",
-        "description": "契约已冻结；服务实现中。权限：inventory.manage。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：inventory.manage。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2682,7 +2682,7 @@
         "x-permissions": [
           "inventory.manage"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -2794,7 +2794,7 @@
         ],
         "operationId": "gv_get_api_admin_products_id_inventory_batches_batchId_",
         "summary": "/api/admin/products/{id}/inventory/batches/{batchId}",
-        "description": "契约已冻结；服务实现中。权限：inventory.manage。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：inventory.manage。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2803,7 +2803,7 @@
         "x-permissions": [
           "inventory.manage"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -2924,7 +2924,7 @@
         ],
         "operationId": "gv_post_api_admin_products_id_inventory_batches_batchId_void",
         "summary": "/api/admin/products/{id}/inventory/batches/{batchId}/void",
-        "description": "契约已冻结；服务实现中。权限：inventory.manage。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：inventory.manage。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -2933,7 +2933,7 @@
         "x-permissions": [
           "inventory.manage"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -3056,7 +3056,7 @@
         ],
         "operationId": "gv_get_api_admin_products_id_offers_offerId_revisions",
         "summary": "/api/admin/products/{id}/offers/{offerId}/revisions",
-        "description": "契约已冻结；服务实现中。权限：catalog.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：catalog.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3065,7 +3065,7 @@
         "x-permissions": [
           "catalog.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -3186,7 +3186,7 @@
         ],
         "operationId": "gv_get_api_merchant_products_id_inventory_batches",
         "summary": "/api/merchant/products/{id}/inventory/batches",
-        "description": "契约已冻结；服务实现中。权限：history.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：history.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3195,7 +3195,7 @@
         "x-permissions": [
           "history.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -3307,7 +3307,7 @@
         ],
         "operationId": "gv_get_api_merchant_products_id_inventory_batches_batchId_",
         "summary": "/api/merchant/products/{id}/inventory/batches/{batchId}",
-        "description": "契约已冻结；服务实现中。权限：history.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：history.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3316,7 +3316,7 @@
         "x-permissions": [
           "history.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -3437,7 +3437,7 @@
         ],
         "operationId": "gv_post_api_merchant_products_id_inventory_batches_batchId_void",
         "summary": "/api/merchant/products/{id}/inventory/batches/{batchId}/void",
-        "description": "契约已冻结；服务实现中。权限：inventory.write。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：inventory.write。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3446,7 +3446,7 @@
         "x-permissions": [
           "inventory.write"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -3569,7 +3569,7 @@
         ],
         "operationId": "gv_get_api_merchant_products_id_offers_offerId_revisions",
         "summary": "/api/merchant/products/{id}/offers/{offerId}/revisions",
-        "description": "契约已冻结；服务实现中。权限：history.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：history.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3578,7 +3578,7 @@
         "x-permissions": [
           "history.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -3699,7 +3699,7 @@
         ],
         "operationId": "gv_post_api_admin_exports",
         "summary": "/api/admin/exports",
-        "description": "契约已冻结；服务实现中。权限：exports.create+kind.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：exports.create+kind.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3709,7 +3709,7 @@
           "exports.create",
           "kind.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "202": {
             "description": "Success",
@@ -3812,7 +3812,7 @@
         ],
         "operationId": "gv_get_api_admin_exports",
         "summary": "/api/admin/exports",
-        "description": "契约已冻结；服务实现中。权限：exports.create。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：exports.create。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3821,7 +3821,7 @@
         "x-permissions": [
           "exports.create"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -3924,7 +3924,7 @@
         ],
         "operationId": "gv_get_api_admin_exports_id_",
         "summary": "/api/admin/exports/{id}",
-        "description": "契约已冻结；服务实现中。权限：exports.create+kind.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：exports.create+kind.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -3934,7 +3934,7 @@
           "exports.create",
           "kind.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -4027,7 +4027,7 @@
         ],
         "operationId": "gv_post_api_admin_exports_id_download",
         "summary": "/api/admin/exports/{id}/download",
-        "description": "契约已冻结；服务实现中。权限：exports.create+kind.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：exports.create+kind.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -4037,7 +4037,7 @@
           "exports.create",
           "kind.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -4130,7 +4130,7 @@
         ],
         "operationId": "gv_get_api_admin_wallet_integrity_runs",
         "summary": "/api/admin/wallet-integrity/runs",
-        "description": "契约已冻结；服务实现中。权限：wallet.integrity.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：wallet.integrity.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -4139,7 +4139,7 @@
         "x-permissions": [
           "wallet.integrity.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -4242,7 +4242,7 @@
         ],
         "operationId": "gv_get_api_admin_wallet_integrity_issues",
         "summary": "/api/admin/wallet-integrity/issues",
-        "description": "契约已冻结；服务实现中。权限：wallet.integrity.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：wallet.integrity.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -4251,7 +4251,7 @@
         "x-permissions": [
           "wallet.integrity.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -4354,7 +4354,7 @@
         ],
         "operationId": "gv_post_api_admin_wallet_integrity_issues_id_recheck",
         "summary": "/api/admin/wallet-integrity/issues/{id}/recheck",
-        "description": "契约已冻结；服务实现中。权限：wallet.integrity.read。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：wallet.integrity.read。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -4363,7 +4363,7 @@
         "x-permissions": [
           "wallet.integrity.read"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -4467,7 +4467,7 @@
         ],
         "operationId": "gv_get_api_admin_authorizations_userId_",
         "summary": "/api/admin/authorizations/{userId}",
-        "description": "契约已冻结；服务实现中。权限：admin.permissions.manage。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：admin.permissions.manage。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -4476,7 +4476,7 @@
         "x-permissions": [
           "admin.permissions.manage"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",
@@ -4567,7 +4567,7 @@
         ],
         "operationId": "gv_put_api_admin_authorizations_userId_",
         "summary": "/api/admin/authorizations/{userId}",
-        "description": "契约已冻结；服务实现中。权限：admin.permissions.manage。管理接口还要求有效管理员 + MFA。",
+        "description": "已实现并完成本地定向验证；完整 CI 以 PR #349 为准。权限：admin.permissions.manage。管理接口还要求有效管理员 + MFA。",
         "security": [
           {
             "bearerAuth": []
@@ -4576,7 +4576,7 @@
         "x-permissions": [
           "admin.permissions.manage"
         ],
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "responses": {
           "200": {
             "description": "Success",

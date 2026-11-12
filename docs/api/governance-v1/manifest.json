@@ -1,6 +1,6 @@
 {
   "contractVersion": "governance-v1",
-  "implementationStatus": "planned",
+  "implementationStatus": "implemented",
   "fixtures": [
     "capabilities-operator.json",
     "permission-denied.json",
@@ -22,5 +22,8 @@
     "integrity-issue.json",
     "inventory-batch.json",
     "offer-revision.json"
-  ]
+  ],
+  "validatedRuntimeCommit": "a620a38",
+  "pullRequest": "https://github.com/amo0114/MoNexus/pull/349",
+  "deploymentStatus": "not_deployed"
 }
