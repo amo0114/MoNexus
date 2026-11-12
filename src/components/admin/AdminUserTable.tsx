@@ -187,7 +187,7 @@ export default function AdminUserTable() {
                   <div className="font-bold text-[var(--color-text)] flex items-center gap-1.5">
                     U{u.id}
                     {u.role === 'admin' && (
-                      <span className="text-xs bg-[var(--color-primary)]/12 text-[var(--color-primary)] border border-[var(--color-primary)]/25 px-1.5 py-0.5 rounded font-medium">管理员</span>
+                      <span className="text-xs bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] text-[var(--color-primary)] border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] px-1.5 py-0.5 rounded font-medium">管理员</span>
                     )}
                   </div>
                   <div className="text-xs text-[var(--color-text-muted)] mt-1">{u.email}</div>
@@ -197,7 +197,7 @@ export default function AdminUserTable() {
                 <td data-label="状态">
                   <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${
                     u.status === '正常'
-                      ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
+                      ? 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
                       : 'bg-red-500/10 text-red-500 border-red-500/25'
                   }`}>
                     {u.status}
@@ -212,7 +212,7 @@ export default function AdminUserTable() {
                         setBanReason('')
                         setShowBan(true)
                       }}
-                      className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="text-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       封禁
                     </button>
@@ -220,7 +220,7 @@ export default function AdminUserTable() {
                   {u.status === '已封禁' && u.role !== 'admin' && (
                     <button
                       onClick={() => setUnbanTarget(u.id)}
-                      className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
+                      className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer"
                     >
                       解封
                     </button>
@@ -234,7 +234,7 @@ export default function AdminUserTable() {
                       adjustKeyRef.current = newIdempotencyKey()
                       setShowAdjust(true)
                     }}
-                    className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
+                    className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer"
                   >
                     调整积分
                   </button>
@@ -320,7 +320,7 @@ export default function AdminUserTable() {
                       key={t}
                       className={`flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer transition-colors hover:bg-[var(--color-background)] ${
                         adjustType === t
-                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 ring-1 ring-[var(--color-primary)]'
+                          ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] ring-1 ring-[var(--color-primary)]'
                           : 'border-[var(--color-border)]'
                       }`}
                     >

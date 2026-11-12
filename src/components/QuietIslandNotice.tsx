@@ -61,7 +61,7 @@ export default function QuietIslandNotice({ notice, suppressed, onDismiss, onVis
         className={`apple-island-stadium quiet-island-surface ${copy
           ? 'w-[min(calc(100vw-2.5rem),19rem)] min-h-[46px]'
           : 'w-[min(calc(100vw-2rem),20rem)] min-h-[44px]'} rounded-full
-          bg-[var(--color-surface)]/95 backdrop-blur-2xl border border-black/[0.08] dark:border-white/[0.12]
+          bg-[color-mix(in_srgb,var(--color-surface)_95%,transparent)] backdrop-blur-2xl border border-black/[0.08] dark:border-white/[0.12]
           shadow-lg flex items-center justify-center px-3.5 py-1 cursor-pointer select-none
           focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]`}
       >

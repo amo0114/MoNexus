@@ -33,7 +33,7 @@ export default function BuyerOrderCard({
     <div
       onClick={() => onOpen(order.id)}
       className="group bg-[var(--color-background)] rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)]
-        hover:border-[var(--color-primary)]/40 hover:shadow-md transition-all cursor-pointer flex flex-col gap-2.5"
+        hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:shadow-md transition-all cursor-pointer flex flex-col gap-2.5"
       data-testid={`buyer-order-card-${order.id}`}
     >
       {/* 顶部元信息栏：状态、过期标签、单号、时间、积分 */}
@@ -47,7 +47,7 @@ export default function BuyerOrderCard({
           </span>
           {expired && (
             <span
-              className="text-xs font-bold text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-1.5 py-0.5 rounded border border-[var(--color-danger)]/30"
+              className="text-xs font-bold text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)]"
               data-testid={`order-expired-tag-${order.id}`}
             >
               已过期
@@ -96,7 +96,7 @@ export default function BuyerOrderCard({
               )}
               {order.bookingDate && (
                 <span
-                  className="text-[11px] leading-tight font-bold text-[var(--color-primary)] bg-[var(--color-primary)]/10 px-1.5 py-0.5 rounded border border-[var(--color-primary)]/20"
+                  className="text-[11px] leading-tight font-bold text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] px-1.5 py-0.5 rounded border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]"
                   data-testid={`order-booking-tag-${order.id}`}
                 >
                   预约 {formatBookingDay(order.bookingDate)}

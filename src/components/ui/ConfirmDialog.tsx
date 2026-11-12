@@ -48,7 +48,7 @@ export default function ConfirmDialog({
       <DialogContent className="max-w-sm" data-testid={testId} hideClose={loading}>
         <div className="flex items-start gap-3">
           {tone === 'danger' && (
-            <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-full bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] flex items-center justify-center shrink-0">
               <AlertTriangle className="w-5 h-5" />
             </div>
           )}

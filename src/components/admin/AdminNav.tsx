@@ -168,7 +168,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
     <>
       {/* Mobile Sticky Trigger Bar and Radix Drawer Sheet (<md) */}
       <DialogPrimitive.Root open={mobileOpen} onOpenChange={setMobileOpen}>
-        <div className="xl:hidden sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 px-4 py-2 bg-[var(--color-background)]/95 backdrop-blur-md border-b border-[var(--color-border)] mb-4">
+        <div className="xl:hidden sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 px-4 py-2 bg-[color-mix(in_srgb,var(--color-background)_95%,transparent)] backdrop-blur-md border-b border-[var(--color-border)] mb-4">
           <DialogPrimitive.Trigger asChild>
             <button
               type="button"
@@ -213,7 +213,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                   type="button"
                   aria-label="关闭导航"
                   data-testid="admin-mobile-nav-close"
-                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]/50 transition-colors cursor-pointer"
+                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" aria-hidden="true" />
                 </button>
@@ -244,7 +244,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                           className={`flex items-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
                             isActive
                               ? 'bg-[var(--color-primary)] text-white font-bold shadow-sm'
-                              : 'bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-primary)]/8'
+                              : 'bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
                           }`}
                         >
                           <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -279,7 +279,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                 aria-controls={`admin-nav-group-${group.id}`}
                 data-testid={`admin-nav-group-trigger-${group.id}`}
                 onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg hover:bg-[var(--color-primary)]/5 transition-colors cursor-pointer"
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg hover:bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] transition-colors cursor-pointer"
               >
                 <span>{group.title}</span>
                 <ChevronDown
@@ -310,7 +310,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors cursor-pointer text-sm ${
                         isActive
                           ? 'bg-[var(--color-primary)] text-white shadow-sm font-semibold'
-                          : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)]'
+                          : 'text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] hover:text-[var(--color-text)]'
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />

@@ -174,7 +174,7 @@ function MerchantApplyContent() {
       {(viewStatus || refreshError || error) && statusRefresh}
       <form onSubmit={handleSubmit} className="card flex flex-col gap-5">
         {error && (
-          <div role="alert" className="text-[var(--color-danger)] text-sm p-3 bg-[var(--color-danger)]/10 rounded-lg border border-[var(--color-danger)]/20">
+          <div role="alert" className="text-[var(--color-danger)] text-sm p-3 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]">
             {error}
           </div>
         )}

@@ -139,7 +139,7 @@ export default function KineticBrand({
 
       {/* Admin badge if on admin route */}
       {isAdminPage && (
-        <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/20 whitespace-nowrap">
+        <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded-md text-xs font-bold bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] whitespace-nowrap">
           管理后台
         </span>
       )}

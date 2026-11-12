@@ -317,7 +317,7 @@ export default function AdminFakaImportPreview({ open, onClose, onImported }: Pr
                         <span className="text-sm text-[var(--color-text-muted)]">将使用该分类的默认封面。</span>
                       </div>
                     ) : (
-                      <div className="rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 p-3 text-sm" data-testid="admin-faka-cover-missing">
+                      <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-warning)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] p-3 text-sm" data-testid="admin-faka-cover-missing">
                         <p className="text-[var(--color-text)]">所选分类还没有默认封面。</p>
                         <p className="text-xs text-[var(--color-text-muted)] mt-1">可切换上方「上传平台托管封面」，或在分类管理中为该分类设置默认封面。</p>
                       </div>

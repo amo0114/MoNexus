@@ -609,7 +609,7 @@ export default function MerchantDashboardPage() {
   return (
     <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
       {/* Sidebar — <md: sticky horizontal pill strip (spec M4); ≥md: card rail */}
-      <aside className="w-full md:w-64 flex-shrink-0 max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[var(--color-background)]/95 max-md:backdrop-blur-md">
+      <aside className="w-full md:w-64 flex-shrink-0 max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[color-mix(in_srgb,var(--color-background)_95%,transparent)] max-md:backdrop-blur-md">
         <nav className="md:card p-0 md:p-2 flex md:flex-col gap-1 overflow-x-auto hide-scrollbar">
           {TABS.map(({ key, label, Icon, path }) => (
             <button
@@ -618,7 +618,7 @@ export default function MerchantDashboardPage() {
               className={`shrink-0 flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm whitespace-nowrap ${
                 (activeTab === key && !path)
                   ? 'bg-[var(--color-primary)] text-white font-semibold shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] font-medium'
+                  : 'text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] hover:text-[var(--color-text)] font-medium'
               }`}
             >
               <Icon className="w-5 h-5 shrink-0" />

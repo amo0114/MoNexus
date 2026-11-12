@@ -61,7 +61,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
       aria-label={disclosure ? `${disclosure.label}，${product.name}` : product.name}
       className={`relative overflow-hidden group cursor-pointer flex flex-col min-w-0 ${compact ? 'h-full' : 'h-[256px] md:h-[372px]'}
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
-        shadow-sm hover:shadow-xl hover:border-[var(--color-primary)]/50
+        shadow-sm hover:shadow-xl hover:border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)]
         shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.75)] dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12)]
         hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
         max-md:rounded-2xl max-md:shadow-sm max-md:hover:translate-y-0 max-md:active:scale-[0.98]

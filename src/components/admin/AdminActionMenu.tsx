@@ -175,9 +175,9 @@ export default function AdminActionMenu({
       case 'danger':
         return 'text-red-500 hover:bg-red-500/10 focus:bg-red-500/10'
       case 'primary':
-        return 'text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 focus:bg-[var(--color-primary)]/10'
+        return 'text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] focus:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]'
       case 'cta':
-        return 'text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 focus:bg-[var(--color-cta)]/10'
+        return 'text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] focus:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)]'
       default:
         return 'text-[var(--color-text)] hover:bg-[var(--color-background)] focus:bg-[var(--color-background)]'
     }

@@ -397,7 +397,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
                 form.visibility === PRODUCT_VISIBILITY.PUBLIC
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
+                  ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
                   : 'border-[var(--color-border)]'
               }`}>
                 <input type="radio" name="adminPlatformVisibility" value={PRODUCT_VISIBILITY.PUBLIC}
@@ -409,7 +409,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
               </label>
               <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
                 form.visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
+                  ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
                   : 'border-[var(--color-border)]'
               }`}>
                 <input type="radio" name="adminPlatformVisibility" value={PRODUCT_VISIBILITY.MEMBERS_ONLY}

@@ -21,7 +21,7 @@ export default function EmptyState({
   return (
     <div className={`flex flex-col items-center justify-center text-center ${compact ? 'py-8 px-4' : 'py-12 px-6'}`}>
       {Icon && (
-        <div className={`rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center ${compact ? 'w-10 h-10 mb-3' : 'w-14 h-14 mb-4'}`}>
+        <div className={`rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] flex items-center justify-center ${compact ? 'w-10 h-10 mb-3' : 'w-14 h-14 mb-4'}`}>
           <Icon className={compact ? 'w-5 h-5' : 'w-7 h-7'} />
         </div>
       )}

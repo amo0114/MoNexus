@@ -100,7 +100,7 @@ export default function MerchantOrdersPanel({
           onClick={() => { setOrderSortBooking(v => !v); setOrderPage(1) }}
           aria-pressed={orderSortBooking}
           className={`btn-secondary btn-sm ${
-            orderSortBooking ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[var(--color-primary)]/10' : ''
+            orderSortBooking ? 'border-[var(--color-primary)] text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]' : ''
           }`}
           data-testid="merchant-orders-sort-booking"
         >
@@ -166,7 +166,7 @@ export default function MerchantOrdersPanel({
                     <RegistryPill value={o.status} category="orderStatuses" />
                     {o.slaExceeded && (
                       <span
-                        className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
+                        className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded text-xs font-bold border bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]"
                         data-testid={`sla-exceeded-badge-${o.id}`}
                       >
                         <AlertTriangle className="w-3 h-3" /> {PROCESSING_TIMEOUT_LABEL}

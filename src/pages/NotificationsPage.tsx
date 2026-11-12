@@ -197,7 +197,7 @@ export default function NotificationsPage() {
             onClick={() => changeFilter(tab.id)}
             className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
               filter === tab.id
-                ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/30'
+                ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]'
                 : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)]'
             }`}
             data-testid={`notifications-tab-${tab.id}`}
@@ -227,8 +227,8 @@ export default function NotificationsPage() {
                   disabled={workingId === item.id}
                   className={`w-full text-left rounded-xl border p-4 transition-colors ${
                     unread
-                      ? 'border-[var(--color-primary)]/30 bg-[var(--color-primary)]/[0.035]'
-                      : 'border-[var(--color-border)] bg-[var(--color-surface)]/50'
+                      ? 'border-[color-mix(in_srgb,var(--color-primary)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_3.5%,transparent)]'
+                      : 'border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_50%,transparent)]'
                   }`}
                   data-testid={`notification-item-${item.id}`}
                   data-notification-category={item.category}

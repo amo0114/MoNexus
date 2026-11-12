@@ -146,7 +146,7 @@ export default function ProductDetailGallery({
         )}
 
         {/* Balanced Aspect Container for Contain Frame */}
-        <div className="flex-1 aspect-[16/10] sm:aspect-[4/3] max-h-[280px] sm:max-h-[400px] rounded-xl bg-[var(--color-image-placeholder)]/50 overflow-hidden relative select-none">
+        <div className="flex-1 aspect-[16/10] sm:aspect-[4/3] max-h-[280px] sm:max-h-[400px] rounded-xl bg-[color-mix(in_srgb,var(--color-image-placeholder)_50%,transparent)] overflow-hidden relative select-none">
           {videoActive && promoVideo && productId ? <div className="flex flex-col h-full">
             <div className="flex-1 min-h-0"><ProductVideoPlayer autoPlay assetId={promoVideo.assetId} productId={productId} cover={images[0]} /></div>
             <div role="group" aria-label="商品媒体切换" tabIndex={0} className="flex shrink-0 min-h-11 items-center justify-between text-xs px-3" onKeyDown={event => {

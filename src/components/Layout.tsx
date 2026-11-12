@@ -331,9 +331,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <NotificationRealtimeBridge />
       {/* Decorative background — soft indigo glow */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10">
-        <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-br from-[var(--color-primary)]/10 to-transparent" />
-        <div className="absolute top-[-10%] right-[-5%] w-[400px] h-[400px] rounded-full bg-[var(--color-primary)]/10 blur-[100px]" />
-        <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[var(--color-primary)]/5 blur-[120px]" />
+        <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-br from-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] to-transparent" />
+        <div className="absolute top-[-10%] right-[-5%] w-[400px] h-[400px] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] blur-[100px]" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] blur-[120px]" />
       </div>
 
       {/* Navigation — 灵动岛：下滑时内层收缩为居中悬浮药丸（compact）；
@@ -346,7 +346,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         data-chrome={chromeMode}
         className={`nav-safe-x mobile-navbar-chrome sticky top-0 z-40 w-full transition-[background-color,border-color,box-shadow,opacity] duration-200 ${
           chromeMode === 'expanded'
-            ? 'glass border-b border-[var(--color-border)] py-3 sm:py-4 bg-[var(--color-background)]/80 backdrop-blur-xl'
+            ? 'glass border-b border-[var(--color-border)] py-3 sm:py-4 bg-[color-mix(in_srgb,var(--color-background)_80%,transparent)] backdrop-blur-xl'
             : 'max-md:border-transparent max-md:bg-transparent max-md:py-2 max-md:pointer-events-none md:glass md:border-b md:border-[var(--color-border)] md:py-4'
         } ${
           isScrolled
@@ -380,7 +380,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           } mx-auto flex justify-between items-center relative w-full
           transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-200 ${
             shellChromeMode === 'compact'
-                ? 'max-md:max-w-[18.5rem] max-md:min-h-[42px] max-md:rounded-full max-md:px-3.5 max-md:py-0 max-md:bg-[var(--color-surface)]/95 max-md:backdrop-blur-2xl max-md:border max-md:border-[var(--color-border)] max-md:shadow-lg'
+                ? 'max-md:max-w-[18.5rem] max-md:min-h-[42px] max-md:rounded-full max-md:px-3.5 max-md:py-0 max-md:bg-[color-mix(in_srgb,var(--color-surface)_95%,transparent)] max-md:backdrop-blur-2xl max-md:border max-md:border-[var(--color-border)] max-md:shadow-lg'
                 : 'px-4 sm:px-6'
           }`}
           style={{
@@ -439,7 +439,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {user.role === 'user' && !user.merchant && (
                   <button
                     type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/merchant/apply')}
                     title="申请成为商家"
                   >
@@ -449,7 +449,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'pending' && (
                   <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full border border-[var(--color-border)]"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] rounded-full border border-[var(--color-border)]"
                     title="商家申请审核中"
                   >
                     <Clock className="w-4 h-4" />
@@ -459,7 +459,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {user?.role === 'user' && user.merchant?.status === 'rejected' && (
                   <button
                     type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] rounded-full cursor-pointer hover:bg-[var(--color-text-muted)]/15 transition-colors border border-[var(--color-border)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-text-muted)_15%,transparent)] transition-colors border border-[var(--color-border)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/merchant/apply')}
                     title="申请被拒绝，可重新申请"
                   >
@@ -469,7 +469,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'suspended' && (
                   <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded-full border border-[var(--color-danger)]/20"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] rounded-full border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
                     title="商家账号已被停用，请联系平台"
                   >
                     <AlertTriangle className="w-4 h-4" />
@@ -479,7 +479,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {user?.role === 'merchant' && user.merchant?.status === 'active' && (
                   <button
                     type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/merchant')}
                     title="商家后台"
                   >
@@ -491,7 +491,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {user?.role === 'admin' && (
                   <button
                     type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[var(--color-primary)]/8 text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[var(--color-primary)]/12 transition-colors border border-[var(--color-primary)]/20 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                     onClick={() => navigate('/admin')}
                     title="管理后台"
                   >
@@ -579,7 +579,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
                 {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
                 <div
-                  className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[var(--color-primary)]/35 transition-colors group"
+                  className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-2xl cursor-pointer hover:border-[color-mix(in_srgb,var(--color-primary)_35%,transparent)] transition-colors group"
                   onClick={() => navigate('/profile')}
                 >
                   <PointCoin className="w-5 h-5 shrink-0" />
@@ -593,7 +593,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   type="button"
                   onClick={() => navigate('/login')}
                   data-testid="nav-login"
-                  className="hidden md:inline-flex items-center px-4 py-2 rounded-full text-sm font-bold border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/12 transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                  className="hidden md:inline-flex items-center px-4 py-2 rounded-full text-sm font-bold border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
                 >
                   登录
                 </button>
@@ -609,7 +609,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 onClick={() => setSearchOpen(true)}
                 aria-label="搜索"
                 aria-expanded={islandSearch}
-                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
               >
                 <Search className="w-5 h-5" />
               </button>
@@ -619,7 +619,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setAnnouncementCenterOpen(true)}
-              className="md:hidden icon-btn inline-flex relative rounded-full w-10 h-10 items-center justify-center text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
+              className="md:hidden icon-btn inline-flex relative rounded-full w-10 h-10 items-center justify-center text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
               aria-label={totalBellUnread > 0 ? `通知中心，有 ${totalBellUnread} 条未读` : '通知中心'}
               data-testid="announcement-center-mobile-trigger"
             >
@@ -729,8 +729,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Footer */}
-      <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[var(--color-surface)]/50 backdrop-blur-md relative overflow-hidden z-10 shrink-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[var(--color-primary)]/5 pointer-events-none" />
+      <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_50%,transparent)] backdrop-blur-md relative overflow-hidden z-10 shrink-0">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] pointer-events-none" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 opacity-80">
             <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
@@ -739,7 +739,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {legalLinks && legalLinks.length > 0 && (
             <nav aria-label="法律与协议" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-medium text-[var(--color-text-muted)]" data-testid="footer-legal-links">
               <span className="flex items-center gap-4">
-                <span className="text-[var(--color-text-muted)]/60">协议</span>
+                <span className="text-[color-mix(in_srgb,var(--color-text-muted)_60%,transparent)]">协议</span>
                 {legalLinks
                   .filter((link) => ['terms', 'privacy', 'refund'].includes(link.slug))
                   .map((link) => (
@@ -750,7 +750,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </span>
               <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" aria-hidden="true" />
               <span className="flex items-center gap-4">
-                <span className="text-[var(--color-text-muted)]/60">支持</span>
+                <span className="text-[color-mix(in_srgb,var(--color-text-muted)_60%,transparent)]">支持</span>
                 {legalLinks
                   .filter((link) => ['points-rules', 'about'].includes(link.slug))
                   .map((link) => (

@@ -413,7 +413,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           </div>
 
           {/* ② 商品信息（精简扁平 Row，高度大幅缩减） */}
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)]/60 p-3 sm:p-3.5">
+          <div className="rounded-xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_60%,transparent)] p-3 sm:p-3.5">
             <div className="flex items-center gap-3">
               {order.product.imageUrl ? (
                 <SafeImage
@@ -469,7 +469,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 type="button"
                 onClick={() => setReviewOpen(true)}
                 data-testid="review-create-button"
-                className="btn-secondary h-7 px-3 text-xs text-[var(--color-primary)] border-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-medium cursor-pointer shrink-0"
+                className="btn-secondary h-7 px-3 text-xs text-[var(--color-primary)] border-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-medium cursor-pointer shrink-0"
               >
                 评价商品
               </button>
@@ -485,7 +485,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           {/* 争议进度：谁在等谁、等到什么时候 */}
           {order.status === 'disputed' && (order.disputeRespondBy || order.remedyProposedAt || order.disputeEscalatedAt) && (
             <div
-              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50 space-y-1.5"
+              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)] space-y-1.5"
               data-testid="order-dispute-progress"
             >
               <h3 className="font-heading text-xs font-bold text-[var(--color-text)]">争议处理进度</h3>
@@ -515,7 +515,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           {/* ④ 积分说明（条件展示） */}
           {(showHolding || isRefunded) && (
             <div
-              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50"
+              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)]"
               data-testid="order-holding-points"
             >
               <h3 className="font-heading text-xs font-bold text-[var(--color-text)] mb-1.5 flex items-center gap-1.5">
@@ -545,7 +545,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           {/* ⑤ 购买前填写信息（条件展示，响应式网格） */}
           {order.purchaseFormAnswers && Object.keys(order.purchaseFormAnswers).length > 0 && (
             <div
-              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[var(--color-background)]/50"
+              className="rounded-xl p-3 sm:p-3.5 border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)]"
               data-testid="order-purchase-form"
             >
               <h3 className="font-heading text-xs font-bold text-[var(--color-text)] mb-2 flex items-center gap-1.5">
@@ -556,7 +556,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
                 {Object.entries(order.purchaseFormAnswers).map(([key, value]) => {
                   const label = order.purchaseFormSnapshot?.find((f) => f.key === key)?.label ?? key
                   return (
-                    <div key={key} className="flex gap-1.5 bg-[var(--color-surface)] p-2 rounded-lg border border-[var(--color-border)]/60">
+                    <div key={key} className="flex gap-1.5 bg-[var(--color-surface)] p-2 rounded-lg border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]">
                       <dt className="text-[var(--color-text-muted)] shrink-0">{label}：</dt>
                       <dd className="text-[var(--color-text)] break-all font-mono">{value}</dd>
                     </div>
@@ -569,7 +569,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           {/* ⑥ 我的评价 */}
           {review && (
             <div
-              className="rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)] bg-[var(--color-background)]/50"
+              className="rounded-xl p-3.5 sm:p-4 border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)]"
               data-testid="own-review"
             >
               <h3 className="font-heading text-xs font-bold text-[var(--color-text)] mb-2.5">我的评价</h3>
@@ -599,7 +599,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
           )}
 
           {/* ⑦ 订单动态时间线 */}
-          <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)]/50 p-3.5 sm:p-4">
+          <div className="rounded-xl border border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)] p-3.5 sm:p-4">
             <h3 className="font-heading text-xs font-semibold text-[var(--color-text-muted)] mb-3 flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-[var(--color-primary)]" />
               <span>订单动态</span>

@@ -35,7 +35,7 @@ export default function AvatarPresetDialog({ currentUrl, defaultSeed, busy, onCl
                   <button
                     key={a.id} type="button" disabled={busy} aria-label={`选择${a.name}`} aria-pressed={selected?.id === a.id}
                     onClick={() => setSelected(a)}
-                    className={`relative flex min-w-0 flex-col items-center gap-2 rounded-xl border-2 px-1 py-3 cursor-pointer transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-60 ${selected?.id === a.id ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10' : 'border-transparent hover:bg-[var(--color-background)]'}`}
+                    className={`relative flex min-w-0 flex-col items-center gap-2 rounded-xl border-2 px-1 py-3 cursor-pointer transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-60 ${selected?.id === a.id ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]' : 'border-transparent hover:bg-[var(--color-background)]'}`}
                   >
                     <img src={a.thumbnailUrl} width={64} height={64} alt="" className="aspect-square w-full max-w-16 rounded-full object-cover" />
                     <span className="text-sm text-[var(--color-text)]">{a.name}</span>

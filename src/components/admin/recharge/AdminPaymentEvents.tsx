@@ -251,7 +251,7 @@ export default function AdminPaymentEvents() {
                 {detailTarget.lastErrorCode && (
                   <div>
                     <div className="text-[var(--color-danger)] font-medium mb-1">错误码 (Last Error Code)</div>
-                    <div className="p-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded border border-[var(--color-danger)]/20 font-mono text-[11px] select-all">
+                    <div className="p-2 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] font-mono text-[11px] select-all">
                       {detailTarget.lastErrorCode}
                     </div>
                   </div>

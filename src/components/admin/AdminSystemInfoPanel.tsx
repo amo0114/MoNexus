@@ -89,7 +89,7 @@ export default function AdminSystemInfoPanel() {
                 type="button"
                 onClick={() => void copyCommit()}
                 data-testid="admin-system-info-copy-commit"
-                className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer"
+                className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer"
               >
                 复制完整哈希
               </button>

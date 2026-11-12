@@ -48,7 +48,7 @@ function DashStat({
     <div
       className={`p-4 sm:p-5 rounded-xl border ${
         isCta
-          ? 'bg-[var(--color-cta)]/8 border-[var(--color-cta)]/25'
+          ? 'bg-[color-mix(in_srgb,var(--color-cta)_8%,transparent)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
           : 'bg-[var(--color-background)] border-[var(--color-border)]'
       }`}
     >

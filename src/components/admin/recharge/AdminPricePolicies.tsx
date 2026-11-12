@@ -338,7 +338,7 @@ export default function AdminPricePolicies() {
             </label>
 
             {/* 高级技术参数折叠 */}
-            <details className="sm:col-span-2 rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[var(--color-background)]/50">
+            <details className="sm:col-span-2 rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)]">
               <summary className="cursor-pointer font-bold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors">
                 高级技术参数（规则代号与时区）
               </summary>
@@ -537,7 +537,7 @@ export default function AdminPricePolicies() {
                 </div>
               </div>
 
-              <details className="rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[var(--color-background)]/50">
+              <details className="rounded-lg border border-[var(--color-border)] p-3 text-xs bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)]">
                 <summary className="cursor-pointer font-bold text-[var(--color-text)] hover:text-[var(--color-primary)] transition-colors">
                   技术参数
                 </summary>

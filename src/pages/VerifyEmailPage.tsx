@@ -111,7 +111,7 @@ export default function VerifyEmailPage() {
       <div className="card w-full max-w-md text-center backdrop-blur-xl">
         {status === 'checking' && (
           <>
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-primary)]/10">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]">
               <Loader2 className="h-8 w-8 animate-spin text-[var(--color-primary)]" />
             </div>
             <h2 className="mb-2 font-heading text-xl font-bold text-[var(--color-text)]">正在验证邮箱…</h2>
@@ -120,7 +120,7 @@ export default function VerifyEmailPage() {
         )}
         {status === 'success' && (
           <>
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-cta)]/10">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)]">
               <CheckCircle2 className="h-8 w-8 text-[var(--color-cta)]" />
             </div>
             <h2 className="mb-2 font-heading text-2xl font-bold text-[var(--color-text)]">邮箱已验证</h2>
@@ -146,7 +146,7 @@ export default function VerifyEmailPage() {
         )}
         {status === 'error' && (
           <>
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[var(--color-danger)]/10">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)]">
               <XCircle className="h-8 w-8 text-[var(--color-danger)]" />
             </div>
             <h2 className="mb-2 font-heading text-2xl font-bold text-[var(--color-text)]">验证失败</h2>

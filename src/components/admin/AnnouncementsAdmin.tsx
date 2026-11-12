@@ -37,9 +37,9 @@ const STATUS_LABEL: Record<AnnouncementStatus, string> = {
 }
 
 const STATUS_PILL: Record<AnnouncementStatus, string> = {
-  draft: 'bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] border-[var(--color-border)]',
-  published: 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25',
-  archived: 'bg-[var(--color-text-muted)]/10 text-[var(--color-text-muted)] border-[var(--color-border)]',
+  draft: 'bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] border-[var(--color-border)]',
+  published: 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]',
+  archived: 'bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] border-[var(--color-border)]',
 }
 
 const PRESENTATION_LABEL: Record<AnnouncementPresentation, string> = {
@@ -49,9 +49,9 @@ const PRESENTATION_LABEL: Record<AnnouncementPresentation, string> = {
 }
 
 const PRESENTATION_PILL: Record<AnnouncementPresentation, string> = {
-  notice: 'bg-[var(--color-primary)]/8 text-[var(--color-primary)] border-[var(--color-primary)]/20',
-  important: 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25',
-  acknowledgement_required: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25',
+  notice: 'bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)]',
+  important: 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]',
+  acknowledgement_required: 'bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]',
 }
 
 function toDateTimeLocalValue(iso: string): string {
@@ -344,7 +344,7 @@ export default function AnnouncementsAdmin() {
                 <td className="text-right space-x-2 whitespace-nowrap" data-label="操作">
                   <button
                     type="button"
-                    className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer inline-flex items-center gap-1"
+                    className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer inline-flex items-center gap-1"
                     data-testid={`admin-announcement-edit-${a.id}`}
                     onClick={() => openEdit(a)}
                   >
@@ -353,7 +353,7 @@ export default function AnnouncementsAdmin() {
                   </button>
                   <button
                     type="button"
-                    className="text-[var(--color-danger)] hover:bg-[var(--color-danger)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-danger)]/25 cursor-pointer inline-flex items-center gap-1"
+                    className="text-[var(--color-danger)] hover:bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] cursor-pointer inline-flex items-center gap-1"
                     data-testid={`admin-announcement-delete-${a.id}`}
                     onClick={() => setDeleteTarget(a)}
                   >
@@ -493,7 +493,7 @@ export default function AnnouncementsAdmin() {
                   : '生效时推送到已开启浏览器推送的用户（仅一次，需服务端开启 Web Push）'}
               </label>
               {editor.presentation === 'acknowledgement_required' && (
-                <p className="rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/8 px-3 py-2 text-xs leading-relaxed text-[var(--color-danger)]">
+                <p className="rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_8%,transparent)] px-3 py-2 text-xs leading-relaxed text-[var(--color-danger)]">
                   仅用于必须被用户明确知悉的事项。用户可在公告中心查看全文，点击“我已阅读并确认”后才会停止提示。
                 </p>
               )}

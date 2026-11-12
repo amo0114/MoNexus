@@ -134,7 +134,7 @@ export default function EmailVerificationBanner() {
           <button
             type="button"
             onClick={handleDismiss}
-            className="icon-btn min-h-[44px] min-w-[44px] rounded-lg transition-colors hover:bg-[var(--color-border)]/50 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] inline-flex items-center justify-center text-[var(--color-text-muted)] cursor-pointer"
+            className="icon-btn min-h-[44px] min-w-[44px] rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] inline-flex items-center justify-center text-[var(--color-text-muted)] cursor-pointer"
             aria-label="关闭邮箱验证提示"
           >
             <X className="h-4 w-4" />

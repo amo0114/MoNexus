@@ -243,7 +243,7 @@ export default function AdminConfigPanel() {
               className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
                 isActive
                   ? 'bg-[var(--color-primary)] text-white shadow-xs'
-                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-primary)]/8'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
               }`}
             >
               {group.title}
@@ -262,7 +262,7 @@ export default function AdminConfigPanel() {
         className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden"
       >
         {/* 组头 */}
-        <div className="px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-background)]/50">
+        <div className="px-5 py-4 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)]">
           <h3 className="font-heading text-base font-bold text-[var(--color-text)]">{currentGroupDef.title}</h3>
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{currentGroupDef.description}</p>
         </div>
@@ -320,7 +320,7 @@ export default function AdminConfigPanel() {
                         </div>
                       </details>
                       {error && (
-                        <div className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-1 rounded border border-[var(--color-danger)]/20 mt-1 max-w-sm">
+                        <div className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-2 py-1 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] mt-1 max-w-sm">
                           {error}
                         </div>
                       )}
@@ -349,7 +349,7 @@ export default function AdminConfigPanel() {
                           disabled={isSaving || savingKey !== null}
                           onClick={() => void handleSave(c.key, rawVal)}
                           data-testid={`admin-config-save-${c.key}`}
-                          className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                         >
                           {isSaving ? '保存中...' : '保存'}
                         </button>

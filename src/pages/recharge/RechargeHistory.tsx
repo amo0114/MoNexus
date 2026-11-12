@@ -16,7 +16,7 @@ function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => voi
     <button
       type="button"
       onClick={onOpen}
-      className="w-full text-left rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 hover:border-[var(--color-primary)]/40 transition-colors"
+      className="w-full text-left rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4 hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors"
     >
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <span className="text-sm font-bold text-[var(--color-text)]">{orderStatusLabel(order.status)}</span>

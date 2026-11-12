@@ -478,7 +478,7 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                 key={phase.id}
                 className={`relative rounded-xl border p-3 transition-all ${
                   isCurrentPhase
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary-tint)]/40 shadow-xs ring-1 ring-[var(--color-primary)]/30'
+                    ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary-tint)_40%,transparent)] shadow-xs ring-1 ring-[color-mix(in_srgb,var(--color-primary)_30%,transparent)]'
                     : isCompletedPhase
                       ? 'border-[var(--color-border)] bg-[var(--color-surface)] opacity-90'
                       : 'border-[var(--color-border)] bg-[var(--color-background)] opacity-60'
@@ -576,12 +576,12 @@ export default function ProductCreateWizard({ adapter = catalogApi }: Props) {
                       onClick={() => applyTemplate(template.key)}
                       className={`flex items-start gap-3 p-4 rounded-xl border text-left transition-colors cursor-pointer ${
                         templateKey === template.key
-                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
-                          : 'border-[var(--color-border)] hover:border-[var(--color-primary)]/50'
+                          ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
+                          : 'border-[var(--color-border)] hover:border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)]'
                       }`}
                       data-testid={`template-${template.key}`}
                     >
-                      <span className="w-10 h-10 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] flex items-center justify-center shrink-0">
+                      <span className="w-10 h-10 rounded-lg bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] flex items-center justify-center shrink-0">
                         <Icon className="w-5 h-5" />
                       </span>
                       <span>

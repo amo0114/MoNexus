@@ -252,7 +252,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)]">
+            <div className="w-12 h-12 rounded-xl bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] flex items-center justify-center text-[var(--color-primary)]">
               <Package className="w-6 h-6" />
             </div>
             <div>
@@ -368,7 +368,7 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
                   </div>
                 )}
                 {isInstantInventory && (
-                  <div className="md:col-span-2 rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 px-4 py-3 text-xs text-[var(--color-text-muted)]">
+                  <div className="md:col-span-2 rounded-lg border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
                     即时库存商品按“一个交付单元对应一位买家”管理。保存商品后，请在商品列表中进入“管理可售资源”，先选规格再导入账号、卡密、邀请码或其他独立交付内容。
                   </div>
                 )}

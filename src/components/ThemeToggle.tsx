@@ -40,7 +40,7 @@ export default function ThemeToggle() {
       {/* Sliding pill indicator */}
       <span
         aria-hidden="true"
-        className="absolute top-1 left-1 w-10 h-10 rounded-full bg-[var(--color-surface)] shadow-xs border border-[var(--color-border)]/50 pointer-events-none transition-transform duration-250 ease-[cubic-bezier(0.22,1,0.36,1)]"
+        className="absolute top-1 left-1 w-10 h-10 rounded-full bg-[var(--color-surface)] shadow-xs border border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] pointer-events-none transition-transform duration-250 ease-[cubic-bezier(0.22,1,0.36,1)]"
         style={{
           transform: `translateX(${activeIndex * 44}px)`,
         }}

@@ -55,9 +55,9 @@ function statusLabel(status: string) {
 function statusClass(status: string) {
   switch (status) {
     case 'active':
-      return 'text-[var(--color-cta)] bg-[var(--color-cta)]/10 border-[var(--color-cta)]/25'
+      return 'text-[var(--color-cta)] bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
     case 'verified':
-      return 'text-[var(--color-primary)] bg-[var(--color-primary)]/10 border-[var(--color-primary)]/25'
+      return 'text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)]'
     case 'disabled':
       return 'text-[var(--color-text-muted)] bg-[var(--color-background)] border-[var(--color-border)]'
     default:
@@ -230,7 +230,7 @@ export default function AdminStoragePanel() {
                   <span
                     className={`text-xs font-semibold px-2 py-0.5 rounded border ${
                       status.bootstrap.healthy
-                        ? 'text-[var(--color-cta)] bg-[var(--color-cta)]/10 border-[var(--color-cta)]/25'
+                        ? 'text-[var(--color-cta)] bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
                         : 'text-red-500 bg-red-500/10 border-red-500/25'
                     }`}
                   >
@@ -279,7 +279,7 @@ export default function AdminStoragePanel() {
           </section>
 
           {!status.credentialsEncKeyConfigured && (
-            <div className="flex gap-2 items-start rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]">
+            <div className="flex gap-2 items-start rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-danger)]">
               <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
               <div>
                 <p className="font-semibold">生产环境未配置凭证主密钥，后台无法保存云存储凭证。</p>
@@ -406,7 +406,7 @@ export default function AdminStoragePanel() {
                   type="button"
                   disabled={!writable}
                   onClick={() => applyPreset(p.type)}
-                  className="text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 hover:border-[var(--color-primary)]/40 transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                  className="text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] transition-colors disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
                   data-testid={`storage-preset-${p.type}`}
                 >
                   <ProviderIcon type={p.type} className="w-9 h-9 mb-2" />

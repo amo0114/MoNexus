@@ -2,9 +2,9 @@ import type { ProvisionTaskSummary } from '../types/merchant'
 import { provisionStatusLabel, provisionStatusTone, provisionErrorLabel, type ProvisionTone } from '../utils/provisionStatus'
 
 const TONE_CLASS: Record<ProvisionTone, string> = {
-  info: 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border-[var(--color-primary)]/25',
-  success: 'bg-[var(--color-success)]/10 text-[var(--color-success)] border-[var(--color-success)]/25',
-  danger: 'bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25',
+  info: 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)]',
+  success: 'bg-[color-mix(in_srgb,var(--color-success)_10%,transparent)] text-[var(--color-success)] border-[color-mix(in_srgb,var(--color-success)_25%,transparent)]',
+  danger: 'bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]',
   neutral: 'bg-[var(--color-border)] text-[var(--color-text-muted)] border-[var(--color-border)]',
 }
 

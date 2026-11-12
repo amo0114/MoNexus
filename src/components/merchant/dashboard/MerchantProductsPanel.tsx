@@ -61,8 +61,8 @@ function getOfferAvailabilityLabel(offer: NonNullable<MerchantProduct['offers']>
 
 function StatusPill({ kind }: { kind: 'active' | 'inactive' }) {
   const styles: Record<typeof kind, { bg: string; text: string; border: string; label: string }> = {
-    active:   { bg: 'bg-[var(--color-cta)]/10',          text: 'text-[var(--color-cta)]',          border: 'border-[var(--color-cta)]/25',          label: '上架中' },
-    inactive: { bg: 'bg-[var(--color-text-muted)]/10',   text: 'text-[var(--color-text-muted)]',   border: 'border-[var(--color-text-muted)]/25',   label: '未上架' },
+    active:   { bg: 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)]',          text: 'text-[var(--color-cta)]',          border: 'border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]',          label: '上架中' },
+    inactive: { bg: 'bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)]',   text: 'text-[var(--color-text-muted)]',   border: 'border-[color-mix(in_srgb,var(--color-text-muted)_25%,transparent)]',   label: '未上架' },
   }
   const s = styles[kind]
   return (
@@ -264,7 +264,7 @@ export default function MerchantProductsPanel({
                       )}
                       {isLowStock && (
                         <span
-                          className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-danger)]/10 text-[var(--color-danger)] border-[var(--color-danger)]/25"
+                          className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-xs font-bold border bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]"
                           data-testid={`low-stock-badge-${p.id}`}
                         >
                           <AlertTriangle className="w-3 h-3" /> 低库存

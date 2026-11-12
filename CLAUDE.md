@@ -49,7 +49,7 @@ DATABASE_URL="$TEST_DATABASE_URL" npm run e2e # main suite; requires migrated + 
 - Calendar days use `server/src/lib/businessTime.ts` (Asia/Shanghai); no host-local date math. Date-only values use `calendarDayToUtc` for canonical UTC-midnight storage. Timestamp filters use `businessDayRange` / `businessMonthRange` for actual Shanghai boundaries; these are not interchangeable with date-only storage values. CI runs in UTC.
 - Cron jobs must go through `server/src/lib/cronLease.ts` (multi-instance safety).
 - Production must never run with simulator/sandbox recharge; default `RECHARGE_MODE=disabled`.
-- Tailwind opacity on `var()` colors (`bg-[var(--x)]/8`) generates nothing — use `--color-primary-tint(-strong)` from `src/index.css`.
+- Tailwind opacity on `var()` colors (`bg-[var(--x)]/8`) generates nothing — use `--color-primary-tint(-strong)` or `bg-[color-mix(in_srgb,var(--x)_8%,transparent)]` (guarded by `src/styles/tailwindVarOpacity.test.ts`).
 
 ## Testing & branching rules
 

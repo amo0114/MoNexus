@@ -66,10 +66,10 @@ const MAX_REORDER_IDS = 500
 function ApplicationStatusBadge({ status }: { status: CategoryApplicationStatus }) {
   const tone =
     status === CATEGORY_APPLICATION_STATUS.PENDING
-      ? 'bg-[var(--color-warning)]/10 text-[var(--color-warning)]'
+      ? 'bg-[color-mix(in_srgb,var(--color-warning)_10%,transparent)] text-[var(--color-warning)]'
       : status === CATEGORY_APPLICATION_STATUS.APPROVED
-        ? 'bg-[var(--color-success)]/10 text-[var(--color-success)]'
-        : 'bg-[var(--color-muted)]/20 text-[var(--color-text-muted)]'
+        ? 'bg-[color-mix(in_srgb,var(--color-success)_10%,transparent)] text-[var(--color-success)]'
+        : 'bg-[color-mix(in_srgb,var(--color-muted)_20%,transparent)] text-[var(--color-text-muted)]'
   return (
     <span data-testid={`application-status-${status}`} className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>
       {CATEGORY_APPLICATION_STATUS_LABEL[status]}
@@ -583,7 +583,7 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
                         )}
                         <button
                           type="button"
-                          className="icon-btn p-1.5 rounded-md hover:bg-[var(--color-danger)]/10 text-[var(--color-danger)] cursor-pointer"
+                          className="icon-btn p-1.5 rounded-md hover:bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] cursor-pointer"
                           aria-label={`删除分类 ${c.label}`}
                           data-testid={`category-delete-${c.id}`}
                           disabled={busy !== null}

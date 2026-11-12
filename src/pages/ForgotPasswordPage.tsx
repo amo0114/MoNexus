@@ -107,8 +107,8 @@ export default function ForgotPasswordPage() {
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-[var(--color-background)] px-4 py-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] fade-in sm:items-center">
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[var(--color-primary)]/10 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[var(--color-primary)]/8 blur-[100px]" />
+        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] blur-[100px]" />
       </div>
 
       <div className="card relative z-10 my-auto w-full max-w-md shrink-0 overflow-hidden backdrop-blur-xl">
@@ -121,7 +121,7 @@ export default function ForgotPasswordPage() {
 
         {submitted ? (
           <div className="text-center py-6">
-            <div className="w-16 h-16 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] flex items-center justify-center mx-auto mb-4">
               <CheckCircle2 className="w-8 h-8 text-[var(--color-primary)]" />
             </div>
             <h2 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-2">请查收邮件</h2>
@@ -133,7 +133,7 @@ export default function ForgotPasswordPage() {
         ) : (
           <>
             <div className="text-center mb-6">
-              <div className="w-16 h-16 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center mx-auto mb-3">
+              <div className="w-16 h-16 rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] flex items-center justify-center mx-auto mb-3">
                 <Mail className="w-7 h-7 text-[var(--color-primary)]" />
               </div>
               <h1 className="font-heading text-2xl font-bold text-[var(--color-text)] mb-1">忘记密码？</h1>
@@ -169,7 +169,7 @@ export default function ForgotPasswordPage() {
                 </p>
               )}
               {protectionState.kind === 'unavailable' && (
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/10 px-3 py-2 text-left">
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-left">
                   <p className="text-xs text-[var(--color-text-muted)]">安全验证暂不可用，请稍后重试。</p>
                   <button
                     type="button"

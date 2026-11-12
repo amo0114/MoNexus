@@ -63,7 +63,7 @@ export default function MfaVerification({ challengeId, expectedAuthEpoch, onComp
   if (challengeExpired) {
     return (
       <section className="text-left" data-testid="mfa-verification">
-        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)]">
+        <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]">
           <KeyRound className="h-6 w-6" />
         </div>
         <h2 className="font-heading text-center text-2xl font-semibold text-[var(--color-text)]">需要重新登录</h2>
@@ -80,7 +80,7 @@ export default function MfaVerification({ challengeId, expectedAuthEpoch, onComp
 
   return (
     <section className="text-left" data-testid="mfa-verification">
-      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)]">
         <ShieldCheck className="h-6 w-6" />
       </div>
       <h2 className="font-heading text-center text-2xl font-semibold text-[var(--color-text)]">验证身份</h2>
@@ -110,7 +110,7 @@ export default function MfaVerification({ challengeId, expectedAuthEpoch, onComp
       </div>
 
       <form className="mt-5 space-y-3" onSubmit={handleSubmit}>
-        {error && <p className="rounded-lg bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{error}</p>}
+        {error && <p className="rounded-lg bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-sm text-[var(--color-danger)]" role="alert">{error}</p>}
         <label className="block text-sm font-medium text-[var(--color-text)]" htmlFor="mfa-verify-code">{label}</label>
         <input
           id="mfa-verify-code"

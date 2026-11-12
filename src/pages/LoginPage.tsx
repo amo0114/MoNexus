@@ -50,8 +50,8 @@ function LoginShell({ children }: { children: ReactNode }) {
       data-testid="login-shell"
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[var(--color-primary)]/10 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[var(--color-primary)]/8 blur-[100px]" />
+        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] blur-[100px]" />
         <div className="absolute inset-0 bg-grid-pattern opacity-40" />
       </div>
 
@@ -724,21 +724,21 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => { setEmail('test@moyuan.net'); setPassword('user123') }}
-              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-text)]"
+              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:text-[var(--color-text)]"
             >
               普通用户
             </button>
             <button
               type="button"
               onClick={() => { setEmail('merchant@moyuan.net'); setPassword('merchant123') }}
-              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:text-[var(--color-primary)]"
             >
               商家账号
             </button>
             <button
               type="button"
               onClick={() => { setEmail('admin@moyuan.net'); setPassword('admin123') }}
-              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-danger)]/50 hover:text-[var(--color-danger)]"
+              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[color-mix(in_srgb,var(--color-danger)_50%,transparent)] hover:text-[var(--color-danger)]"
             >
               管理员
             </button>
@@ -746,7 +746,7 @@ export default function LoginPage() {
         </div>
       )}
 
-      <div className="mt-6 flex items-start gap-2 rounded-lg border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/10 px-3 py-2.5 text-left text-[var(--color-cta)]">
+      <div className="mt-6 flex items-start gap-2 rounded-lg border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] px-3 py-2.5 text-left text-[var(--color-cta)]">
         <Gift className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <p className="min-w-0 text-xs font-medium leading-snug sm:text-sm">
           {isRegister
