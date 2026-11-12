@@ -12,6 +12,7 @@
 | 最终编号/HTTP 回归 | governance-v1、p7b-lifecycle-races、p7b-auto-provision、sla-remind、booking、subscription-remind 共 6 文件 65 项通过；包含真实 HTTP 契约校验、导出 kind/时区输入与跨管理员任务隐藏 |
 | 账务及其他回归 | commerce-accounting-closure、accounting-concurrency、offers、refund-inventory-policy、chatbot-bind-abuse、xboard-bot-v2、leaderboard、announcements、admin-ai-settings、recharge-reconcile-resolution、p7b-result-settlement 全部通过；同轮仅 p7b-lifecycle-races 的旧邮件编号断言失败，该文件已在最终 65 项回归中通过 |
 | CI 修复定向回归 | pagination-policy、admin-query、user-status-cache 共 3 文件 24 项通过；refund-reconcile-required-items、recharge-migration-replay 共 2 文件 6 项通过。保留已有分页配置，验证跨实例封禁不能被暖缓存绕过，以及空库/历史支付升级迁移 |
+| 完整后端 CI | [运行 43257132934](https://github.com/amo0114/MoNexus/actions/runs/43257132934)：六个分片全部通过，323 个文件通过、1 个文件跳过；3,147 项通过、4 项按既有配置跳过 |
 | 契约夹具 | 39 个操作、64 个 schema 引用有效；20 个合成 response 通过 schema 校验；导出按 kind 拒绝无关字段 |
 | 真实存储 | [storage-evidence.txt](storage-evidence.txt)：真实本机 MinIO，私有访问、冻结快照、切换提供商后读取旧报告、有效文件保活和到期清理通过；可重跑 server/scripts/verify-governance-storage.mjs |
 | 数据迁移 | [migration-verified.json](migration-verified.json)：回填、约束、索引验证通过。完整从旧 schema 的 118 个历史迁移升级：旧用户/商家/商品/订单/结算批次/售后均在扩展迁移前写入；未知状态阻止回填、最终约束缺项检测与修复均通过 |
@@ -63,6 +64,10 @@
 ## 首轮 CI 与修正
 
 [首轮 CI](https://github.com/amo0114/MoNexus/actions/runs/43254126492) 的架构、生产 compose、真实 Redis/存储、全部四个 E2E 任务及后端分片 1/6 通过。其余分片发现用户主列表未沿用系统分页配置、历史支付迁移夹具未排除依赖迁移、旧缓存实现断言与跨实例授权语义冲突、种子源码断言范围过宽，以及退款对账显式空外键被回退覆盖。已修复并通过上述 30 项定向回归；完整 CI 复验状态以 PR 为准。鉴权直接读取当前事实，避免进程内暖缓存放过其他实例写入的封禁或已撤销会话。
+
+## 既有浏览器测试的复核
+
+后端全量通过后的浏览器任务曾出现两类问题：通知探针被导航打断，在同一提交重跑 10 项全部通过；AI 配置重载断言重复失败。后者的轨迹确认 StrictMode 两次初始 GET 中，较晚响应在填写 URL 后返回，实际 PUT 已是默认 URL，后端按请求正确持久化。共享持久化 E2E 等待初始读取结束后再编辑，并额外断言真实 PUT 请求与响应中的非敏感 URL/模型；前端加载的取消/代次隔离交由前端 PR，详情见交接书第 8 节。没有修改 src/**，也没有为通过 E2E 改变后端持久化行为。本地使用独立 PostgreSQL 16 容器与锁文件安装的前端依赖，`playwright test e2e/admin-config.spec.ts --grep "admin manages AI" --repeat-each=3 --workers=1` 连续 3 次通过；本地容器和 API/Vite 进程已清理。
 
 ## 尚需发布门禁
 

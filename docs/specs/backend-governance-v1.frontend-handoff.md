@@ -1,6 +1,6 @@
 # 后台运营治理 v1：前端 agent 交接书
 
-日期：2026-11-13｜状态：契约 1.0.2 与后端已交付，完整 CI 复验中｜运行时代码：2c53ba7（基线 develop@8da71e0）
+日期：2026-11-13｜状态：契约 1.0.2 与后端已交付，完整 CI 见后端 PR｜运行时代码：2c53ba7（基线 develop@8da71e0）
 
 主方案：[后端业务闭环与运营治理实施书](../implementation/2026-11-12-backend-governance-implementation-plan.md)。本交接书只给页面方向和协作边界，具体视觉与组件由前端 agent 决定。
 
@@ -87,3 +87,9 @@ GET /api/admin/capabilities 返回 contractVersion=governance-v1、permissions�
 本批涉及鉴权、封禁与资金关键旅程，按项目 testing-policy.md 和 branching-and-ci.md 打 run-e2e 并取得 CI OK。前端完成组件测试、类型检查、生产构建、移动浏览器回归，并在交付说明中写清实际联调的后端 SHA。
 
 前端交付包括：一个前端 PR、页面与客户端实现、必要测试、使用的契约版本、仍未接入项清单（若有必须明确，不以演示数据替代）。后端负责人交付可执行 API、迁移和证据；双方以同一业务场景结果验收。
+
+## 8. 联调时发现的既有表单加载竞争
+
+后端全量测试通过后，CI 的既有 AI 配置 E2E 暴露了开发模式 StrictMode 重复挂载的竞争：两次初始 GET 并行，第一份响应使表单可编辑，第二份响应在输入 Base URL 后返回并覆盖输入。浏览器轨迹确认 PUT 已携带默认 URL，后端按该请求正确保存；并非后端丢失字段。现有 `AdminAiSettingsPanel.load` 没有取消或隔离过期响应。
+
+后端 PR 仅将共享 `e2e/admin-config.spec.ts` 的持久化旅程改为等待初始配置读取结束，并断言实际 PUT 请求和响应中的非敏感 URL/模型字段，不修改 src/**。前端 agent 请在前端 PR 中为加载加取消或请求代次隔离，确保卸载后的响应和旧加载不能覆盖新表单；用延迟响应的 StrictMode 组件回归验证用户输入不被覆盖。共享 E2E 本段由后端负责，避免双方同时编辑。
