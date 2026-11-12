@@ -164,14 +164,14 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           </p>
         )}
         {/* Compact cards are narrow on phones: long prices wrap instead of overlapping the status column. */}
-        <div className={`flex items-end justify-between mt-auto ${compact ? 'flex-wrap gap-x-2 gap-y-1' : 'gap-2 md:gap-3'}`}>
+        <div className={`flex flex-wrap items-end justify-between mt-auto ${compact ? 'gap-x-2 gap-y-1' : 'gap-x-2 gap-y-1 md:gap-x-3'}`}>
           <div className="flex flex-col min-w-0">
             {product.originalPrice && product.originalPrice > product.price && (
               <span className="product-text-readable text-xs text-[var(--color-text-muted)] line-through mb-0.5 tabular-nums">
                 {product.originalPrice}
               </span>
             )}
-            <div className={`flex items-baseline gap-1 text-[var(--color-points)] font-bold text-lg md:text-xl tracking-tight ${compact ? 'flex-wrap' : ''}`}>
+            <div className={`flex items-baseline gap-1 text-[var(--color-points)] font-bold text-lg md:text-xl tracking-tight ${compact ? 'flex-wrap' : 'whitespace-nowrap'}`}>
               <PointCoin className="w-4 h-4 shrink-0 self-center" />
               <span className="tabular-nums font-semibold" style={{ fontFeatureSettings: '"tnum" 1' }}>
                 {product.price}
@@ -179,7 +179,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
               <span className="product-text-readable text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-0.5 text-[10px] md:text-xs text-[var(--color-text-muted)] shrink-0 tabular-nums">
+          <div className="flex flex-col items-end gap-0.5 text-[10px] md:text-xs text-[var(--color-text-muted)] ml-auto whitespace-nowrap tabular-nums">
             {hasRating && (
               <span className="flex items-center gap-1">
                 <Star className="w-3 h-3 star-filled" />
@@ -187,9 +187,10 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
                 <span className="opacity-70">({product.ratingCount})</span>
               </span>
             )}
-            <span>
-              已售 {product.sales}
-              <span aria-hidden="true" className="mx-1 opacity-50">·</span>
+            {/* Phones stack the two facts so the fixed-height card never wraps the price row. */}
+            <span className="flex flex-col items-end gap-0.5 md:flex-row md:items-center md:gap-0">
+              <span>已售 {product.sales}</span>
+              <span aria-hidden="true" className="hidden md:inline mx-1 opacity-50">·</span>
               <span data-testid={`store-stock-${product.id}`}>{stockText}</span>
             </span>
           </div>

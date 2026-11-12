@@ -56,7 +56,7 @@ function DashStat({
         <Icon className="w-3.5 h-3.5 shrink-0" /> <span className="sm:truncate">{label}</span>
       </div>
       <div className={`font-heading text-xl sm:text-2xl font-bold truncate ${isCta ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
-        {value}
+        {typeof value === 'number' ? value.toLocaleString('zh-CN') : value}
       </div>
       {hint && (
         <div className="text-[11px] text-[var(--color-text-muted)] mt-1 sm:truncate" title={hint}>
