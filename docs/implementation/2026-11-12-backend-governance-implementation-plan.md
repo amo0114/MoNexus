@@ -183,6 +183,8 @@ approve/reject 必须同时匹配 pending、currentApplicationVersion 和 lifecy
 
 购买事务中对 Merchant 取得共享行锁并在扣款前复核 active；停用取得排他锁。允许已通过锁内检查的交易先完成，停用提交后新的购买检查不能再通过。停用事务不反向锁 Product；缓存失效在提交后完成，购买资格始终由数据库复核。
 
+历史只读范围仅含上述订单、结算、财务及已列明的库存批次/规格追溯；不包括商品经营配置列表或独立 dashboard 报表路由。停用商家前端默认进入订单，需扩大读取范围时先单独定义 DTO 和能力，不直接放开全部 GET。
+
 ### 7.5 接口
 
 新增 GET /api/merchant/application、POST /api/merchant/application/resubmit、GET /api/admin/merchants/:id/history、POST /api/admin/merchants/:id/restore。旧 /merchant/register、approve、reject、suspend 保留，内部委托新命令。

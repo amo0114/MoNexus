@@ -29,6 +29,61 @@ const actions = new Set([
   'export.succeeded',
   'wallet.integrity.rechecked',
 ])
+const paymentAttempts = new Set([
+  'payment.event.retry',
+  'payment.order.reconcile',
+  'payment.order.resolve_reconcile',
+  'payment.recon_item.review',
+  'payment.order.refund',
+  'payment.recon.rerun',
+])
+const attempt = z.object({ operationState: z.literal('attempt') }).strict()
+const mailAudit = z
+  .object({
+    phase: z.enum(['attempt', 'sent', 'failed', 'rejected', 'rate_limited']),
+    recipient: z.string().max(320),
+    correlationId: z.string().uuid(),
+    failure: z.enum(['EAUTH', 'ETIMEDOUT', 'ENOTFOUND', 'UNKNOWN']).optional(),
+  })
+  .strict()
+
+function operationState(
+  row: {
+    action: string
+    actionCode: string | null
+    targetType: string | null
+    detailSchemaVersion: number | null
+    detailSafe: unknown
+    detail: string | null
+  },
+  committed: boolean,
+) {
+  // A committed decision is not proof of downstream cash settlement or delivery.
+  if (committed) return 'committed' as const
+  if (
+    row.actionCode &&
+    paymentAttempts.has(row.actionCode) &&
+    row.detailSchemaVersion === 1 &&
+    attempt.safeParse(row.detailSafe).success
+  )
+    return 'attempt' as const
+  // This legacy producer already wrote an explicit, closed phase vocabulary.
+  // Parse only its exact envelope; never expose arbitrary legacy detail JSON.
+  if (
+    row.action === '测试邮件投递' &&
+    row.targetType === 'mailDelivery' &&
+    row.detail &&
+    row.detail.length <= 4096
+  ) {
+    try {
+      const parsed = mailAudit.safeParse(JSON.parse(row.detail))
+      if (parsed.success) return parsed.data.phase
+    } catch {
+      /* Unknown or malformed history stays unknown. */
+    }
+  }
+  return 'unknown' as const
+}
 export async function auditDetail(actor: number, id: number) {
   await assertPermission(actor, 'audit.details.read')
   const row = await prisma.adminLog.findUnique({ where: { id } })
@@ -48,6 +103,7 @@ export async function auditDetail(actor: number, id: number) {
     detailSchemaVersion: row.detailSchemaVersion,
     detailSafe: parsed?.success ? parsed.data : null,
     detailAvailability: parsed?.success ? 'available' : 'legacy_detail_unavailable',
+    operationState: operationState(row, parsed?.success === true),
     requestId: row.requestId,
   }
 }

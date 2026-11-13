@@ -41,6 +41,8 @@ import { cleanupUnreferencedObjects } from '../lib/fileCleanup.js'
 import { type AuthPayload } from '../middlewares/auth.js'
 import { userDetail } from '../modules/admin/userQueries.js'
 import { createAfterSalesCase, executeAfterSalesCase } from '../modules/orders/afterSales.js'
+import { writeMailTestAudit } from '../modules/admin/mailOperations.js'
+import { writePaymentAdminLog } from '../modules/payment/audit.js'
 
 function nullable(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(nullable)
@@ -104,6 +106,62 @@ it('AC-20: live HTTP capabilities, user sections and task summaries match the pu
   for (const [path, schema] of routes) {
     const response = await api.get(`/api/admin${path}`).set(authHeader(a.accessToken)).expect(200)
     contract(schema, response.body)
+  }
+})
+
+it('audit details distinguish committed decisions, explicit attempts and mail results without guessing legacy success', async () => {
+  const a = await admin()
+  const { user } = await createTestUser('gov-audit-state@test.local', 'pass123')
+  await createBan(a.user.id, user.id, 'audit-ban', {
+    reasonCode: 'abuse',
+    reason: '合成理由',
+    expiresAt: null,
+  })
+  const committed = await prisma.adminLog.findFirstOrThrow({
+    where: { actionCode: 'account.ban.created' },
+  })
+  const cases: Array<[number, string]> = [[committed.id, 'committed']]
+  for (const phase of ['attempt', 'sent', 'failed', 'rejected', 'rate_limited'] as const) {
+    await writeMailTestAudit({
+      adminUserId: a.user.id,
+      phase,
+      recipientMasked: 'a***@example.test',
+      correlationId: randomUUID(),
+    })
+    const row = await prisma.adminLog.findFirstOrThrow({ orderBy: { id: 'desc' } })
+    cases.push([row.id, phase])
+  }
+  await writePaymentAdminLog({
+    adminUserId: a.user.id,
+    action: 'payment.event.retry',
+    targetType: 'PaymentEvent',
+    targetKey: randomUUID(),
+    operationState: 'attempt',
+  })
+  cases.push([(await prisma.adminLog.findFirstOrThrow({ orderBy: { id: 'desc' } })).id, 'attempt'])
+  for (const data of [
+    { action: 'payment.event.retry', detail: '{"outcome":"succeeded","token":"private-value"}' },
+    { action: '支付成功', detail: '{"phase":"sent","token":"private-value"}' },
+    { action: '测试邮件投递', targetType: 'mailDelivery', detail: '{"phase":"sent"}' },
+    {
+      action: 'unknown.writer',
+      actionCode: 'unknown.writer',
+      detailSchemaVersion: 1,
+      detailSafe: { operationState: 'attempt', token: 'private-value' },
+    },
+  ]) {
+    const row = await prisma.adminLog.create({ data: { adminUserId: a.user.id, ...data } })
+    cases.push([row.id, 'unknown'])
+  }
+  for (const [id, state] of cases) {
+    const response = await api
+      .get(`/api/admin/audit/${id}`)
+      .set(authHeader(a.accessToken))
+      .expect(200)
+    contract('GVAuditDetail', response.body)
+    expect(response.body.operationState).toBe(state)
+    expect(JSON.stringify(response.body)).not.toContain('private-value')
+    if (state !== 'committed') expect(response.body.detailSafe).toBeNull()
   }
 })
 

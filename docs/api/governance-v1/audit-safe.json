@@ -19,6 +19,7 @@
       "reason": "合成运营理由"
     },
     "detailAvailability": "available",
-    "requestId": null
+    "requestId": null,
+    "operationState": "committed"
   }
 }

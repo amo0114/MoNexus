@@ -1,6 +1,6 @@
 # 后台运营治理 v1：前端 agent 交接书
 
-日期：2026-11-13｜状态：契约 1.0.2 与后端已交付，完整 CI 见后端 PR｜运行时代码：2c53ba7（基线 develop@8da71e0）
+日期：2026-11-13｜状态：契约 1.0.3 与后端已交付，完整 CI 见后端 PR｜运行时代码：2c53ba7（基线 develop@8da71e0）
 
 主方案：[后端业务闭环与运营治理实施书](../implementation/2026-11-12-backend-governance-implementation-plan.md)。本交接书只给页面方向和协作边界，具体视觉与组件由前端 agent 决定。
 
@@ -10,7 +10,7 @@
 
 请使用独立工作树。共享代码库内不要撤销他人的修改，不修改 server 逻辑来迎合页面 mock。根 package.json、e2e 公共夹具和工作流若有交叉变更，先声明具体文件与原因，由双方约定单一编辑者。
 
-后端已提供 [OpenAPI、夹具索引和 20 份合成响应](../api/governance-v1/README.md)，契约 1.0.2。后端 PR 为 [#349](https://github.com/amo0114/MoNexus/pull/349)。联调使用后端最终 SHA；字段或行为冲突反馈给后端负责人统一修订契约，不在前端另造规则。
+后端已提供 [OpenAPI、夹具索引和 20 份合成响应](../api/governance-v1/README.md)，契约 1.0.3。后端 PR 为 [#349](https://github.com/amo0114/MoNexus/pull/349)。联调使用后端最终 SHA；字段或行为冲突反馈给后端负责人统一修订契约，不在前端另造规则。
 
 ## 2. 建议页面方向
 
@@ -21,7 +21,7 @@
 | 用户详情 | 新页面或抽屉，由前端决定 | 概览；订单；积分和来源；会话；邀请；风险；操作记录，各区懒加载 |
 | 商家审核 | 现有商家管理组件，实施时定位 | 当前申请版本、历史决定、拒绝理由、停用和恢复 |
 | 商家申请 | 现有商家入驻流程 | 待审核、被拒理由、修改重提；不重复创建 Merchant |
-| 商家停用 | 商家入口、RoleGuard、商家导航 | 保留历史只读和受限存量处置；禁止新增经营 |
+| 商家停用 | 商家入口、RoleGuard、商家导航 | 保留订单/结算/财务与追溯的历史读取及受限存量处置；禁止新增经营 |
 | 审计 | src/components/admin/AdminAuditPanel.tsx | 安全详情，区分请求尝试与成功决定 |
 | 库存与规格 | 现有商品编辑/库存页面 | 批次概要、剩余库存作废、已售关联、商业配置修订 |
 | 导出 | 列表上的导出入口+任务列表或抽屉 | 排队、执行、失败、完成、过期；完成后申请下载 |
@@ -34,6 +34,8 @@
 GET /api/admin/capabilities 返回 contractVersion=governance-v1、permissions、features、limits。新页面按权限展示入口；接口 403 时明确显示无权限，不自动重复提交。
 
 旧后端没有该端点时，新功能显示不可用；不能无条件沿用 super 权限或用 mock 数据冒充成功。现有基础功能保持原行为。新后端兼容旧前端，但新前端不承诺在旧后端上执行新业务。
+
+本批 `history.read` 的精确范围是本人资料、历史订单/结算、stats、财务 summary/entries、库存批次和规格修订。`GET /merchant/products` 与 `/merchant/dashboard/*` 不放行；商品列表含付费交付及经营配置，不因“历史只读”一词扩大授权。停用默认落到订单页，提示“可查看历史订单与结算”。
 
 商家身份与经营状态分开：商家被停用可能仍拥有历史资料读取能力。不要单凭 User.role 决定所有商家导航；登录及当前用户 DTO 增量返回 merchantCapabilities、merchantStatus、merchantLifecycleVersion，申请查询返回同一能力词表，业务详情返回 allowedActions。账号封禁优先于商家只读资格。
 
@@ -93,3 +95,11 @@ GET /api/admin/capabilities 返回 contractVersion=governance-v1、permissions�
 后端全量测试通过后，CI 的既有 AI 配置 E2E 暴露了开发模式 StrictMode 重复挂载的竞争：两次初始 GET 并行，第一份响应使表单可编辑，第二份响应在输入 Base URL 后返回并覆盖输入。浏览器轨迹确认 PUT 已携带默认 URL，后端按该请求正确保存；并非后端丢失字段。现有 `AdminAiSettingsPanel.load` 没有取消或隔离过期响应。
 
 后端 PR 仅将共享 `e2e/admin-config.spec.ts` 的持久化旅程改为等待初始配置读取结束，并断言实际 PUT 请求和响应中的非敏感 URL/模型字段，不修改 src/**。前端 agent 请在前端 PR 中为加载加取消或请求代次隔离，确保卸载后的响应和旧加载不能覆盖新表单；用延迟响应的 StrictMode 组件回归验证用户输入不被覆盖。共享 E2E 本段由后端负责，避免双方同时编辑。
+
+## 9. 联调反馈补齐（契约 1.0.3）
+
+审计详情使用 `operationState`，按入口说明的闭集状态显示；`committed` 是决定已提交，不是现金成功。`attempt` 不得显示成执行完成；`unknown` 显示历史结果未知。`detailSafe: null` 与明确阶段可以同时成立。新邮件阶段只说明发送操作的事实，不证明收件人收到。
+
+[全部 20 个标签权限映射](../api/governance-v1/admin-permissions.md)及同目录 admin-navigation.json 由后端维护；前端将原有标签也纳入 permissions 过滤，入口按 entryAllOf，按钮和子分区按 actions。无权限的 keep-alive 面板也须停止请求；当前标签被撤权时切到仍可访问的第一个入口，无入口则显示无可用权限。不能让无权限后台先默认挂载 dashboard，再等 403。
+
+此次补齐只修改后端与契约文档，不触碰 monexus-gov-ui 中未提交的前端修复。契约 1.0.2 下已关闭的 merchantCapabilities、orderNo、currentApplication=null 缺口保持关闭。前端报告的 1,837 项单测和真实联调结果属于前端证据；导出下载尚由前端补测，后端真实 MinIO 证据不能代替浏览器下载验收。

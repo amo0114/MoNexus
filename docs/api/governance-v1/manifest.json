@@ -21,9 +21,13 @@
     "export-expired.json",
     "integrity-issue.json",
     "inventory-batch.json",
-    "offer-revision.json"
+    "offer-revision.json",
+    "audit-attempt.json",
+    "audit-unknown.json",
+    "audit-mail-sent.json"
   ],
   "validatedRuntimeCommit": "2c53ba7",
   "pullRequest": "https://github.com/amo0114/MoNexus/pull/349",
-  "deploymentStatus": "not_deployed"
+  "deploymentStatus": "not_deployed",
+  "contractRevision": "1.0.3"
 }

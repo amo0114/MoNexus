@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "MoNexus governance-v1 contract",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "description": "后端已实现并完成本地定向验证；完整 CI 见 PR #349，未部署生产。admin 要求当前管理员及 MFA；夹具为合成数据。"
   },
   "servers": [
@@ -6364,6 +6364,19 @@
           "requestId": {
             "type": "string",
             "nullable": true
+          },
+          "operationState": {
+            "type": "string",
+            "enum": [
+              "attempt",
+              "committed",
+              "sent",
+              "failed",
+              "rejected",
+              "rate_limited",
+              "unknown"
+            ],
+            "description": "审计事实语义：attempt 只证明已发起，committed 只证明本地治理决定已提交（拒绝决定也属于此类，不代表现金已退或任务已完成）；sent 仅表示测试邮件已提交发送，failed/rejected/rate_limited 为邮件显式终态；缺少可信标记的历史为 unknown，不能按 action 文案猜成功。"
           }
         },
         "required": [
@@ -6377,7 +6390,8 @@
           "detailSchemaVersion",
           "detailSafe",
           "detailAvailability",
-          "requestId"
+          "requestId",
+          "operationState"
         ],
         "additionalProperties": false
       },

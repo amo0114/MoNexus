@@ -1,12 +1,13 @@
 # 后端治理 v1：前端协作契约
 
-版本：`governance-v1 / 1.0.2`。基线：`develop@8da71e0`。
+版本：`governance-v1 / 1.0.3`。基线：`develop@8da71e0`。
 
 **契约和后端实现已交付；运行时代码 2c53ba7 已完成本地定向验证，完整 CI 见 [PR #349](https://github.com/amo0114/MoNexus/pull/349)。尚未部署生产；此目录 JSON 均为合成数据。**
 
 - `openapi.json`：可独立导入的 OpenAPI 3.0.3；39 个方法、64 个 schema。相同增量已合入 `docs/superpowers/specs/monexus-api-openapi.json`。
 - `manifest.json`：夹具索引。每个文件带 method/path/status/schema/response；mock 返回 `response`，不要返回整个夹具包装。
 - `permissions.json`：管理员权限与商家能力词表。
+- `admin-navigation.json`：全部 20 个新旧后台标签的入口与动作权限映射；可读说明见 [权限映射](admin-permissions.md)。入口过滤不能代替分区及动作鉴权。
 - 实现状态以真实 `GET /api/admin/capabilities` 为准。不存在该端点时显示新能力未提供，不能自动认为是 super。
 
 ## 前端现在可以开始的工作
@@ -49,6 +50,14 @@
 ## 1.0.2 分页兼容校准
 
 `GET /api/admin/users` 沿用既有 `SystemConfig.defaultPageSize/maxPageSize`：省略 pageSize 时使用配置默认值，请求值按配置上限截断，绝对上限 500；出厂默认 20、上限 100。新增游标明细列表及 capabilities.limits.pageSize 仍为 100。路径、响应结构和夹具不变。
+
+## 1.0.3 联调补齐
+
+审计详情新增必返回 `operationState`：`attempt` 只证明请求已发起；`committed` 证明本地治理决定已提交，拒绝决定也属于此类，不能显示为现金已退；`sent/failed/rejected/rate_limited` 是测试邮件明确记录的阶段；其他历史为 `unknown`。`detailSafe` 仍可能为空，不得为显示阶段而解析原始 detail。新增三份夹具覆盖请求尝试、发送提交和未知历史。路径、命令输入及既有字段不变。
+
+`history.read` 不是所有 GET 的通行证。本批停用商家可读本人 `/merchant/me`、`/orders[/:id]`、`/settlements`、`/stats`、`/finance/summary`、`/finance/entries`、库存批次及规格修订；商品列表 `/merchant/products`、经营看板 `/merchant/dashboard/*`、原始库存条目/日志及经营配置不在该范围，继续返回 403。账号封禁优先。前端默认落到订单页，并表述为“可查看历史订单与结算”，无需恢复商品或经营看板入口。
+
+旧后台标签按 `admin-navigation.json` 的 entryAllOf 过滤，再对 actions 独立判断；写权限不隐含读权限。配置父面板现有加载要求 settings.manage，AI 子面板还要 ai.manage；仅有 AI 权限的独立入口需要前端先拆分父级加载。
 
 ## 真实接口联调
 
