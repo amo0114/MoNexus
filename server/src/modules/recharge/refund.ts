@@ -1,3 +1,4 @@
+import { paymentRevisionEnvironment } from '../payment/providers/runtime.js'
 import { Prisma } from '@prisma/client'
 import {
   conflict,
@@ -19,7 +20,7 @@ import {
   type LotFilter,
   type WalletContext,
 } from '../wallet/index.js'
-import { getHistoricalProvider } from '../payment/providers/registry.js'
+import { resolveHistoricalProvider } from '../payment/providers/registry.js'
 import {
   recordNormalizedPaymentFact,
   recordPaymentObservation,
@@ -95,14 +96,15 @@ function asProviderName(value: string): PaymentProviderName {
 export async function providerSupportsRefunds(input: {
   provider: string
   providerAccountKey: string
+  providerCredentialRevisionId?: string | null
   paymentMethod: string
   currency: string
 }): Promise<boolean> {
   try {
-    const provider = getHistoricalProvider(asProviderName(input.provider))
+    const provider = await resolveHistoricalProvider(asProviderName(input.provider), input.providerCredentialRevisionId)
     const capabilities = await provider.getCapabilities({
       providerAccountKey: input.providerAccountKey,
-      environment: providerEnvironment(),
+      environment: await paymentRevisionEnvironment(input.providerCredentialRevisionId),
       currency: input.currency as RechargeCurrency,
       paymentMethod: input.paymentMethod,
     })
@@ -115,6 +117,7 @@ export async function providerSupportsRefunds(input: {
 async function assertProviderSupportsRefunds(input: {
   provider: string
   providerAccountKey: string
+  providerCredentialRevisionId?: string | null
   paymentMethod: string
   currency: string
 }) {
@@ -191,11 +194,12 @@ export async function requestRechargeRefund(input: {
           currency: string
           provider: string
           providerAccountKey: string
+          providerCredentialRevisionId: string | null
           paymentMethod: string
           adminSandbox: boolean
         }>
       >`
-        SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "paymentMethod", "adminSandbox"
+        SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "providerCredentialRevisionId", "paymentMethod", "adminSandbox"
         FROM "RechargeOrder" WHERE "id" = ${input.orderId}::uuid FOR UPDATE`
       const order = orders[0]
       if (!order || order.userId !== input.userId) throw notFound('充值订单不存在')
@@ -422,7 +426,7 @@ export async function submitProviderRefund(refundId: string) {
   })
   if (cas.count !== 1 && refund.status !== 'processing') return refund
 
-  const provider = getHistoricalProvider(asProviderName(refund.rechargeOrder.provider))
+  const provider = await resolveHistoricalProvider(asProviderName(refund.rechargeOrder.provider), refund.rechargeOrder.providerCredentialRevisionId)
   let result
   try {
     if (paymentTestHooks.throwAfterRefundProcessingCas) {
@@ -484,7 +488,7 @@ export async function queryProviderRefund(refundId: string) {
     include: { rechargeOrder: true, paymentAttempt: true },
   })
   if (!refund?.providerRefundId || !refund.paymentAttempt.providerPaymentId) return refund
-  const provider = getHistoricalProvider(asProviderName(refund.rechargeOrder.provider))
+  const provider = await resolveHistoricalProvider(asProviderName(refund.rechargeOrder.provider), refund.rechargeOrder.providerCredentialRevisionId)
   const result = await provider.queryRefund({
     providerRefundId: refund.providerRefundId,
     providerAccountKey: refund.rechargeOrder.providerAccountKey,

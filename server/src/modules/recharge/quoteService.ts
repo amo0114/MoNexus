@@ -1,6 +1,6 @@
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
-import { listEnabledProviders } from '../payment/providers/registry.js'
+import { listAvailableProviderNames } from '../payment/providers/registry.js'
 import type { AmountSource, PaymentProviderName } from './types.js'
 import { serializeAmountMinor } from './money.js'
 import { assertCurrencyEnabled, assertRechargeAcceptsNewOrders, assertRechargeNotRestricted, isAdminSandboxMode, assertAdminSandboxActor, assertAdminSandboxSelection } from './gates.js'
@@ -38,13 +38,13 @@ export async function getRechargeConfig(userId: number, currencyRaw: string, rol
     prisma,
   )
   const providers = []
-  for (const adapter of listEnabledProviders()) {
+  for (const providerName of await listAvailableProviderNames()) {
     const methods = []
-    const probeMethods = isAdminSandboxMode() ? ['card'] : PROVIDER_PAYMENT_METHODS[adapter.name]
+    const probeMethods = isAdminSandboxMode() ? ['card'] : PROVIDER_PAYMENT_METHODS[providerName]
     for (const paymentMethod of probeMethods) {
       try {
         const resolved = await resolveCapabilities({
-          providerName: adapter.name,
+          providerName,
           currency,
           paymentMethod,
         })
@@ -62,7 +62,7 @@ export async function getRechargeConfig(userId: number, currencyRaw: string, rol
       }
     }
     if (methods.length > 0) {
-      providers.push({ provider: adapter.name, paymentMethods: methods })
+      providers.push({ provider: providerName, paymentMethods: methods })
     }
   }
   const sandboxBalance = isAdminSandboxMode()
@@ -131,6 +131,7 @@ export async function createQuote(userId: number, input: {
       provider: providerName,
       paymentMethod: input.paymentMethod,
       providerAccountKey: resolved.accountKey,
+      providerCredentialRevisionId: resolved.revisionId,
       capabilityVersion: resolved.capabilities.capabilityVersion,
       capabilityDigest: resolved.capabilities.capabilityDigest,
       currency,

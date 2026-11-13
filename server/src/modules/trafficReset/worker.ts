@@ -1,3 +1,5 @@
+import { historicalFakaSnapshot, withFakaSnapshot } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig, fakaInstanceId, fakaClientId } from '../../lib/runtimeSettings/fakaBridge.js'
 import { isAccountBanned } from '../accountGovernance/status.js'
 import { randomUUID } from 'node:crypto'
 import type { XboardTrafficResetOperation } from '@prisma/client'
@@ -18,7 +20,7 @@ export function operationPayload(op: XboardTrafficResetOperation): ResetPayload 
 }
 function sameTarget(op: XboardTrafficResetOperation) {
   const current = accountSettings()
-  return current.instanceId === op.instanceIdSnapshot && current.origin === op.originSnapshot && config.trafficReset.clientId === op.clientIdSnapshot
+  return current.instanceId === op.instanceIdSnapshot && current.origin === op.originSnapshot && fakaClientId() === op.clientIdSnapshot
 }
 async function actorStillEligible(tx: Tx, op: XboardTrafficResetOperation) {
   const [link, intent, user] = await Promise.all([
@@ -55,6 +57,11 @@ async function park(op: XboardTrafficResetOperation, code: string) {
 }
 
 export async function processResetOperation(id: string) {
+  const observed = await prisma.xboardTrafficResetOperation.findUnique({ where: { id } })
+  if (!observed) return
+  return withFakaSnapshot(await historicalFakaSnapshot(observed.configRevisionId), () => processBoundResetOperation(id))
+}
+async function processBoundResetOperation(id: string) {
   const observed = await prisma.xboardTrafficResetOperation.findUnique({ where: { id } })
   if (!observed || !sameTarget(observed)) return
   const claimed = await prisma.$transaction(async tx => {
@@ -130,7 +137,7 @@ export async function runResetBatch(limit = 20) {
 let timer: NodeJS.Timeout | null = null
 let running: Promise<void> | null = null
 export function startResetCron() {
-  if (config.nodeEnv === 'test' || timer || !config.fakaBridge.enabled || !config.xboardAccounts.instanceId) return
+  if (config.nodeEnv === 'test' || timer) return
   const tick = () => { if (!running) running = runResetBatch().catch(() => { logger.warn('xboard reset batch unavailable') }).finally(() => { running = null }) }
   tick(); timer = setInterval(tick, 5000); timer.unref()
 }

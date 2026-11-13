@@ -1,6 +1,7 @@
+import { paymentRevisionEnvironment } from '../payment/providers/runtime.js'
 import { prisma } from '../../lib/prisma.js'
 import { conflict, notFound, paymentAlreadyInProgress, paymentCompletionNotSupported } from '../../lib/httpError.js'
-import { getHistoricalProvider } from '../payment/providers/registry.js'
+import { resolveHistoricalProvider } from '../payment/providers/registry.js'
 import { recordNormalizedPaymentFact } from '../payment/observations/record.js'
 import { applyConfirmedPayment } from '../payment/events/applyConfirmedPayment.js'
 import { PAYMENT_ATTEMPT_NON_TERMINAL_STATUSES, type PaymentAttemptStatus, type RechargeCurrency } from './types.js'
@@ -78,10 +79,10 @@ export async function completeOrder(userId: number, orderId: string, idempotency
     if (!attempt) throw paymentAlreadyInProgress('没有可完成的支付尝试')
     if (!attempt.providerPaymentId) throw paymentCompletionNotSupported()
 
-    const provider = getHistoricalProvider(asProviderName(order.provider))
+    const provider = await resolveHistoricalProvider(asProviderName(order.provider), order.providerCredentialRevisionId)
     const capabilities = await provider.getCapabilities({
       providerAccountKey: order.providerAccountKey,
-      environment: providerEnvironment(),
+      environment: await paymentRevisionEnvironment(order.providerCredentialRevisionId),
       currency: order.currency as RechargeCurrency,
       paymentMethod: order.paymentMethod,
     })

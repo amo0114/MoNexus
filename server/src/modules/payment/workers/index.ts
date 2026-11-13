@@ -3,7 +3,7 @@ import { logger } from '../../../lib/logger.js'
 import { prisma } from '../../../lib/prisma.js'
 import { applyConfirmedPayment, writeOpenReconItem } from '../events/applyConfirmedPayment.js'
 import { recordNormalizedPaymentFact } from '../observations/record.js'
-import { getHistoricalProvider } from '../providers/registry.js'
+import { resolveHistoricalProvider } from '../providers/registry.js'
 import { executeRechargeCredit } from '../../recharge/credit.js'
 import { applyRefundObservation, queryProviderRefund, submitProviderRefund } from '../../recharge/refund.js'
 import { applyDisputeObservation } from '../disputes/service.js'
@@ -234,7 +234,7 @@ export async function recoverUnknownPayments(): Promise<number> {
     const order = attempt.paymentIntent.rechargeOrder
     if (['credited', 'refunded', 'cancelled', 'expired', 'failed'].includes(order.status)) continue
     try {
-      const provider = getHistoricalProvider(name)
+      const provider = await resolveHistoricalProvider(name, attempt.providerCredentialRevisionId)
       const queried = await provider.queryPayment({
         providerPaymentId: attempt.providerPaymentId,
         providerAccountKey: attempt.providerAccountKey,

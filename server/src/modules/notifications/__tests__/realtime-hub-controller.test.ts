@@ -226,13 +226,13 @@ describe('PR-5 hub.broadcastRead — read invalidation control routing', () => {
 })
 
 describe('stream controller timer cleanup (R-RT-003B)', () => {
-  it('does not start heartbeat or auth timers when ready registration fails', () => {
+  it('does not start heartbeat or auth timers when ready registration fails', async () => {
     vi.useFakeTimers()
     const hub = makeHub({ heartbeatMs: 60_000 })
     const response = fakeResponse(() => false)
     const next = vi.fn() as unknown as NextFunction
 
-    notificationRealtimeStream(
+    await notificationRealtimeStream(
       requestWithExpiry(Math.floor(Date.now() / 1000) + 120),
       response,
       next,
@@ -254,7 +254,7 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
       return writes === 1
     })
 
-    notificationRealtimeStream(
+    await notificationRealtimeStream(
       requestWithExpiry(Math.floor(Date.now() / 1000) + 61),
       response,
       vi.fn() as unknown as NextFunction,
@@ -270,7 +270,7 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('does not install expiry after an immediate auth.expiring write failure', () => {
+  it('does not install expiry after an immediate auth.expiring write failure', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-09T12:00:00.000Z'))
     let writes = 0
@@ -280,7 +280,7 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
       return writes === 1
     })
 
-    notificationRealtimeStream(
+    await notificationRealtimeStream(
       requestWithExpiry(Math.floor(Date.now() / 1000) + 30),
       response,
       vi.fn() as unknown as NextFunction,
@@ -291,7 +291,7 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
-  it('does not install expiry when close fires synchronously during auth.expiring', () => {
+  it('does not install expiry when close fires synchronously during auth.expiring', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-09T12:00:00.000Z'))
     let writes = 0
@@ -302,7 +302,7 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
       return true
     })
 
-    notificationRealtimeStream(
+    await notificationRealtimeStream(
       requestWithExpiry(Math.floor(Date.now() / 1000) + 30),
       response,
       vi.fn() as unknown as NextFunction,

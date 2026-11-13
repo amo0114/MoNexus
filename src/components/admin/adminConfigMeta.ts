@@ -8,7 +8,7 @@ export type ConfigGroupId =
   | 'inventory' // 库存提醒 (2)
   | 'merchandising' // 商品运营 (8)
   | 'ai' // AI 辅助 (3)
-  | 'ops' // 高级运维 (3)
+  | 'ops' // 高级运维 (5)
   | 'system' // 系统信息 (build artifact)
 
 export interface ConfigGroupDef {
@@ -26,7 +26,7 @@ export const CONFIG_GROUPS: ConfigGroupDef[] = [
   { id: 'inventory', title: '库存提醒', description: '商品可用库存低位阈值与重发告警冷却', legacyGroup: '库存' },
   { id: 'merchandising', title: '商品运营', description: '自然热卖与合作伙伴权益自动计算参数' },
   { id: 'ai', title: 'AI 辅助', description: '管理 API 地址、模型、密钥、连接测试、AI 开关与每日调用配额' },
-  { id: 'ops', title: '高级运维', description: '凭证有效期限、列表分页上限与邮件投递服务', legacyGroup: '分页限制' },
+  { id: 'ops', title: '高级运维', description: '站内通知、凭证有效期限、列表分页上限与邮件投递服务', legacyGroup: '分页限制' },
   { id: 'system', title: '系统信息', description: '当前 API 镜像的运行版本与构建元数据，仅管理员可见' },
 ]
 
@@ -45,6 +45,14 @@ export interface ConfigItemMeta {
 }
 
 export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
+  notificationEnabled: {
+    key: 'notificationEnabled', group: 'ops', type: 'switch', label: '启用站内通知',
+    description: '保存后对后续请求和新通知生效；保留历史通知，不影响验证码、密码重置等业务邮件。',
+  },
+  notificationExpiryDays: {
+    key: 'notificationExpiryDays', group: 'ops', type: 'integer', min: 1, max: 365, unit: '天',
+    label: '新通知保留天数', description: '仅影响之后创建的通知，已有通知的到期时间保持不变。',
+  },
   // a. 注册与邀请 (10 项)
   registrationEnabled: {
     key: 'registrationEnabled',

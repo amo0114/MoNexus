@@ -1,3 +1,4 @@
+import { fakaBridgeConfig } from '../../lib/runtimeSettings/fakaBridge.js'
 import { isAccountBanned } from '../accountGovernance/status.js'
 import type { Offer } from '@prisma/client'
 import { z } from 'zod'
@@ -162,7 +163,7 @@ export const xboardCheckout: CheckoutExtension<Prepared, Target> = {
       orderId,
       email: target.email,
       sku: target.sku,
-      maxAttempts: config.fakaBridge.maxAttempts,
+      maxAttempts: fakaBridgeConfig().maxAttempts,
       ...(target.paidReset ? { period: 'reset_traffic', paidReset: target.paidReset } : {}),
     })
     return () => scheduleFakaBridgeFirstAttempt(task.id)

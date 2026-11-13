@@ -1,6 +1,9 @@
 import api from './client'
+import { invalidateRegistryCache } from './registry'
 
 export type AdminSystemConfigKey =
+  | 'notificationEnabled'
+  | 'notificationExpiryDays'
   // 注册与邀请 (10)
   | 'registrationEnabled'
   | 'registrationInviteOnly'
@@ -93,5 +96,6 @@ export async function updateAdminConfig(
   value: number,
 ): Promise<AdminSystemConfig> {
   const { data } = await api.put<AdminSystemConfig>(`/admin/config/${key}`, { value })
+  invalidateRegistryCache()
   return data
 }

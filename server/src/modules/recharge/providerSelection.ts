@@ -1,3 +1,5 @@
+import { runtimePaymentSelection } from '../payment/providers/runtime.js'
+import type { Prisma } from '@prisma/client'
 import { paymentProviderUnavailable } from '../../lib/httpError.js'
 import { getEnabledProvider } from '../payment/providers/registry.js'
 import type { PaymentProvider, ProviderCapabilities } from '../payment/providers/types.js'
@@ -15,10 +17,12 @@ export async function resolveCapabilities(input: {
   providerName: PaymentProviderName
   currency: RechargeCurrency
   paymentMethod: string
-}): Promise<{ provider: PaymentProvider; accountKey: string; capabilities: ProviderCapabilities }> {
-  assertProviderEnabled(input.providerName)
-  const provider = getEnabledProvider(input.providerName)
-  const environment = providerEnvironment()
+  db?: Prisma.TransactionClient
+}): Promise<{ provider: PaymentProvider; accountKey: string; capabilities: ProviderCapabilities; revisionId: string | null }> {
+  const runtime = await runtimePaymentSelection(input.providerName, input.db)
+  if (!runtime) assertProviderEnabled(input.providerName)
+  const provider = runtime?.provider ?? getEnabledProvider(input.providerName)
+  const environment = runtime?.environment ?? providerEnvironment()
   const { providerAccountKey } = await provider.selectAccount({
     environment,
     currency: input.currency,
@@ -36,5 +40,5 @@ export async function resolveCapabilities(input: {
   if (!capabilities.paymentMethods.includes(input.paymentMethod)) {
     throw paymentProviderUnavailable()
   }
-  return { provider, accountKey: providerAccountKey, capabilities }
+  return { provider, accountKey: providerAccountKey, capabilities, revisionId: runtime?.revisionId ?? null }
 }

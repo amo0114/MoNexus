@@ -1,3 +1,4 @@
+import { fakaBridgeConfig } from '../runtimeSettings/fakaBridge.js'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { config } from '../../config/index.js'
@@ -66,10 +67,10 @@ function target(action: string, configuredUrl: string, allowInsecure: boolean): 
 export async function callFakaV2<T>(action: string, input: Record<string, string>, schema: z.ZodType<T>,
   matches: (body: T) => boolean, options: Options, requestId: string): Promise<FakaV2Result<T>> {
   if (!uuid.safeParse(requestId).success) return { ok: false, code: 'INVALID_REQUEST', httpStatus: 0 }
-  const url = options.url ?? config.fakaBridge.url
-  const secret = options.secret ?? config.fakaBridge.secret
+  const url = options.url ?? fakaBridgeConfig().url
+  const secret = options.secret ?? fakaBridgeConfig().secret
   if (!url || !secret) return { ok: false, code: 'NOT_CONFIGURED', httpStatus: 0 }
-  const allowInsecure = options.allowInsecureTargets ?? config.fakaBridge.allowInsecureTargets
+  const allowInsecure = options.allowInsecureTargets ?? fakaBridgeConfig().allowInsecureTargets
   const endpoint = target(action, url, allowInsecure)
   if (!endpoint) return { ok: false, code: 'INVALID_TARGET', httpStatus: 0 }
   const signed = prepareSignedJsonV2({ audience: 'xboard', path: endpoint.pathname, secret,
@@ -79,7 +80,7 @@ export async function callFakaV2<T>(action: string, input: Record<string, string
   try {
     response = await transport({ method: 'POST', url: endpoint.toString(), body: signed.body,
       headers: { ...signed.headers, accept: 'application/json', 'content-length': String(Buffer.byteLength(signed.body)) },
-      timeoutMs: options.timeoutMs ?? config.fakaBridge.timeoutMs })
+      timeoutMs: options.timeoutMs ?? fakaBridgeConfig().timeoutMs })
   } catch (err) {
     return { ok: false, code: err instanceof Error && /timeout/i.test(err.message) ? 'TIMEOUT' : 'NETWORK', httpStatus: 0 }
   }

@@ -1,5 +1,5 @@
 import crypto from 'crypto'
-import { config } from '../../config/index.js'
+import { getMailRuntimeConfig } from '../../lib/mailer/runtimeConfig.js'
 import { maskEmail } from '../../lib/email.js'
 import { HttpError, mailerNotConfigured } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
@@ -18,7 +18,7 @@ export interface MailDeliveryStatus {
   deliveryReady: boolean
   from: string | null
   authConfigured: boolean
-  configuredVia: 'environment'
+  configuredVia: 'environment' | 'database'
 }
 
 /** 审计与前端提示都固定使用这个主题（C9）；与模板层同源。 */
@@ -61,15 +61,15 @@ interface MailTestAuditInput {
  * 基于已解析的 `config.mailer` 生成状态 DTO；**不做任何 SMTP 网络探测**——
  * 刷新一次后台页面就对外建连，既会阻塞请求，也会把内网拓扑暴露成可探测面。
  */
-export function getMailDeliveryStatus(): MailDeliveryStatus {
-  const mailer = config.mailer
+export async function getMailDeliveryStatus(runtime?: Awaited<ReturnType<typeof getMailRuntimeConfig>>): Promise<MailDeliveryStatus> {
+  const { mailer, source } = runtime ?? await getMailRuntimeConfig()
   if (mailer.kind === 'console') {
     return {
       mode: 'console',
       deliveryReady: false,
       from: null,
       authConfigured: false,
-      configuredVia: 'environment',
+      configuredVia: source,
     }
   }
 
@@ -82,7 +82,7 @@ export function getMailDeliveryStatus(): MailDeliveryStatus {
     // 的一半（MAIL-01）。`deliveryReady: true` + `from: null` 是合法组合。
     from: mailer.displayFrom ?? null,
     authConfigured: Boolean(mailer.user && mailer.pass),
-    configuredVia: 'environment',
+    configuredVia: source,
   }
 }
 
@@ -133,7 +133,8 @@ export async function writeMailTestAudit(input: MailTestAuditInput) {
  */
 export async function sendMailDeliveryTest(params: { adminUserId: number; email: string }) {
   const { adminUserId, email } = params
-  const status = getMailDeliveryStatus()
+  const runtime = await getMailRuntimeConfig()
+  const status = await getMailDeliveryStatus(runtime)
   const recipientMasked = maskRecipientForAudit(email)
   const correlationId = crypto.randomUUID()
 
@@ -144,7 +145,7 @@ export async function sendMailDeliveryTest(params: { adminUserId: number; email:
 
   await writeMailTestAudit({ adminUserId, phase: 'attempt', recipientMasked, correlationId })
 
-  const mailer = await getMailer()
+  const mailer = await getMailer(runtime)
   try {
     await mailer.send(
       renderMail('mail_delivery_test', {

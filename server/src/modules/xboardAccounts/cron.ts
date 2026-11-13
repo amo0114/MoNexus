@@ -1,3 +1,4 @@
+import { withActiveFaka } from '../../lib/runtimeSettings/fakaBridge.js'
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
 import { runAccountBackfill } from './backfill.js'
@@ -9,7 +10,7 @@ let running: Promise<void> | null = null
 function tick() {
   if (running || !config.xboardAccounts.enabled) return
   // runAccountBackfill owns the shared cron lease and checkpoint CAS.
-  running = runAccountBackfill({ apply: true, limit: 50 }).then(result => {
+  running = withActiveFaka(() => runAccountBackfill({ apply: true, limit: 50 })).then(result => {
     if (!result.skipped) logger.info({ scanned: result.scanned, counts: result.counts }, 'xboard account recovery batch completed')
   }).catch(() => {
     // Never log upstream contents or account identifiers.

@@ -34,7 +34,10 @@ type Perspective = 'guest' | 'member'
 interface CacheSlot {
   response: RegistryResponse | null
   promise: Promise<RegistryResponse> | null
+  expiresAt: number
 }
+
+export const REGISTRY_CACHE_TTL_MS = 30_000
 
 /** key = `${perspective}:${authEpoch}`；authEpoch 对游客恒为 0。 */
 const slots = new Map<string, CacheSlot>()
@@ -120,11 +123,11 @@ export async function getConfigRegistry(): Promise<RegistryResponse> {
 
   let slot = slots.get(key)
   if (!slot) {
-    slot = { response: null, promise: null }
+    slot = { response: null, promise: null, expiresAt: 0 }
     slots.set(key, slot)
   }
 
-  if (slot.response) {
+  if (slot.response && slot.expiresAt > Date.now()) {
     return slot.response
   }
   if (slot.promise) {
@@ -141,6 +144,7 @@ export async function getConfigRegistry(): Promise<RegistryResponse> {
         if (liveSlot) {
           liveSlot.response = res.data
           liveSlot.promise = null
+          liveSlot.expiresAt = Date.now() + REGISTRY_CACHE_TTL_MS
         }
       }
       return res.data

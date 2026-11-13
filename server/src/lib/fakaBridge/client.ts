@@ -1,3 +1,4 @@
+import { fakaBridgeConfig } from '../runtimeSettings/fakaBridge.js'
 import { request as httpsRequest } from 'node:https'
 import { request as httpRequest } from 'node:http'
 import type { IncomingMessage, ClientRequest } from 'node:http'
@@ -33,7 +34,7 @@ export interface FakaBridgeClientOptions {
 }
 
 function resolveConfig(overrides: FakaBridgeClientOptions = {}) {
-  const cfg = config.fakaBridge
+  const cfg = fakaBridgeConfig()
   const url = overrides.url ?? cfg.url
   const secret = overrides.secret ?? cfg.secret
   const timeoutMs = overrides.timeoutMs ?? cfg.timeoutMs

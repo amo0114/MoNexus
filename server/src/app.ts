@@ -1,3 +1,4 @@
+import { fakaRuntimeMiddleware } from './lib/runtimeSettings/fakaBridge.js'
 // Registers fulfillment providers before any route or job can use the registry.
 import './bootstrap/extensions.js'
 import { productVideoRoutes } from './modules/productVideos/routes.js'
@@ -174,6 +175,7 @@ app.get('/api/metrics', metricsAuthLimiter, async (req, res) => {
 })
 
 app.use('/api', apiLimiter)
+app.use('/api', fakaRuntimeMiddleware)
 
 app.use('/api/auth', authRoutes)
 app.use('/api/traffic', trafficRoutes)

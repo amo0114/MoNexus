@@ -11,6 +11,7 @@ export async function getConfigRegistry(
     defaultPageSize,
     maxPageSize,
     lowStockThreshold,
+    notificationEnabled,
     memberTierSilverThreshold: silverThreshold,
     memberTierGoldThreshold: goldThreshold,
     memberTierPlatinumThreshold: platinumThreshold,
@@ -19,7 +20,7 @@ export async function getConfigRegistry(
     memberTierPlatinumBonusBps: platinumBonusBps,
   }, catalog] = await Promise.all([
     getSystemConfigValues([
-      'defaultPageSize', 'maxPageSize', 'lowStockThreshold',
+      'defaultPageSize', 'maxPageSize', 'lowStockThreshold', 'notificationEnabled',
       'memberTierSilverThreshold', 'memberTierGoldThreshold', 'memberTierPlatinumThreshold',
       'memberTierSilverBonusBps', 'memberTierGoldBonusBps', 'memberTierPlatinumBonusBps',
     ]),
@@ -55,8 +56,8 @@ export async function getConfigRegistry(
       lowStockThreshold,
     },
     capabilities: {
-      notifications: config.notification.enabled,
-      notificationRealtime: config.notification.enabled && config.notificationRealtime.enabled,
+      notifications: notificationEnabled === 1,
+      notificationRealtime: notificationEnabled === 1 && config.notificationRealtime.enabled,
     },
   }
 }

@@ -2,9 +2,10 @@ import { FormEvent, useEffect, useState } from 'react'
 import { AdminMailStatus, getAdminMailStatus, sendAdminMailTest } from '../../api/adminMail'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
+import AdminMailSettingsPanel from './AdminMailSettingsPanel'
 
 const OPS_HINT =
-  'SMTP_HOST / SMTP_PORT / SMTP_SECURE / SMTP_USER / SMTP_PASS / SMTP_FROM 需在部署环境中配置，修改后重启后端。'
+  '业务邮件可在下方配置并激活，对后续发送生效。首次接管前沿用部署环境配置；监控告警邮件仍由运维独立管理。'
 
 /**
  * SPEC-OPS-REGMAIL-001 §5.2「邮件投递」卡片。
@@ -100,7 +101,7 @@ export default function AdminMailPanel() {
             <div className="flex flex-wrap gap-x-2">
               <dt className="text-[var(--color-text-muted)]">配置来源：</dt>
               <dd data-testid="admin-mail-configured-via" className="text-[var(--color-text)]">
-                {status.configuredVia === 'environment' ? '部署环境变量' : status.configuredVia}
+                {status.configuredVia === 'environment' ? '部署环境变量' : '管理员后台'}
               </dd>
             </div>
           </dl>
@@ -137,6 +138,7 @@ export default function AdminMailPanel() {
           )}
         </div>
       )}
+      <AdminMailSettingsPanel onActivated={() => void fetchStatus()} />
     </section>
   )
 }

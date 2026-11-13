@@ -213,6 +213,7 @@ export function refundFromStripe(refund: Stripe.Refund, fallbackCurrency: Rechar
 }
 
 export function accountKeyForLivemode(livemode: boolean | undefined, fallback?: string): string {
+  if (fallback && (livemode == null || modeFromAccountKey(fallback) === (livemode ? 'live' : 'test'))) return fallback
   if (livemode === true) return stripeAccountKey('live')
   if (livemode === false) return stripeAccountKey('test')
   return fallback ?? stripeAccountKey('test')

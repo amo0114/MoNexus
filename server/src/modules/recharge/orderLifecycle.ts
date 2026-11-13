@@ -1,7 +1,7 @@
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
 import { conflict, HttpError, notFound, paymentStateUnknown, rechargeQuoteChanged, rechargeQuoteExpired } from '../../lib/httpError.js'
-import { getHistoricalProvider } from '../payment/providers/registry.js'
+import { resolveHistoricalProvider } from '../payment/providers/registry.js'
 import { recordNormalizedPaymentFact } from '../payment/observations/record.js'
 import { isPaymentDeadlock } from '../payment/workers/lease.js'
 import { PAYMENT_ATTEMPT_NON_TERMINAL_STATUSES, type PaymentAttemptStatus, type RechargeCurrency, type RechargeOrderStatus } from './types.js'
@@ -30,6 +30,7 @@ const CLOSING_ORDER = ['cancelled', 'expired', 'failed', 'closure_pending'] as c
 const OPEN_INTENT = ['requires_method', 'processing'] as const
 
 type OrderWithAttempts = {
+  providerCredentialRevisionId?: string | null
   id: string
   userId: number
   status: string
@@ -150,7 +151,7 @@ async function persistProviderCreate(
   }
   if (attempt.status !== 'created') return
 
-  const provider = getHistoricalProvider(asProviderName(order.provider))
+  const provider = await resolveHistoricalProvider(asProviderName(order.provider), order.providerCredentialRevisionId)
   let created
   try {
     created = await provider.createPayment({
@@ -313,6 +314,7 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
         provider: string
         paymentMethod: string
         providerAccountKey: string
+        providerCredentialRevisionId: string | null
         capabilityVersion: string
         capabilityDigest: string
         currency: string
@@ -340,10 +342,12 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
       const policy = await tx.rechargePricePolicy.findUniqueOrThrow({ where: { id: quote.pricePolicyId } })
       if (policy.status !== 'active') throw rechargeQuoteChanged()
 
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`monexus:integration:payment:${providerName}`}))`
       const resolved = await resolveCapabilities({
         providerName,
         currency: quote.currency as RechargeCurrency,
         paymentMethod: quote.paymentMethod,
+        db: tx,
       })
       const bounds = effectiveAmountBounds(
         quote.currency as RechargeCurrency,
@@ -352,7 +356,8 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
         resolved.capabilities.maximumAmountMinor,
       )
       if (
-        resolved.accountKey !== quote.providerAccountKey
+        resolved.revisionId !== quote.providerCredentialRevisionId
+        || resolved.accountKey !== quote.providerAccountKey
         || resolved.capabilities.capabilityDigest !== quote.capabilityDigest
         || resolved.capabilities.capabilityVersion !== quote.capabilityVersion
         || bounds.minAmountMinor !== quote.effectiveMinAmountMinor
@@ -392,6 +397,7 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
           provider: quote.provider,
           paymentMethod: quote.paymentMethod,
           providerAccountKey: quote.providerAccountKey,
+          providerCredentialRevisionId: quote.providerCredentialRevisionId,
           capabilityVersion: quote.capabilityVersion,
           capabilityDigest: quote.capabilityDigest,
           effectiveMinAmountMinor: quote.effectiveMinAmountMinor,
@@ -415,6 +421,7 @@ export async function createOrder(userId: number, quoteId: string, idempotencyKe
           paymentIntentId: intent.id,
           provider: order.provider,
           providerAccountKey: order.providerAccountKey,
+          providerCredentialRevisionId: order.providerCredentialRevisionId,
           method: order.paymentMethod,
           status: 'created',
           requestIdempotencyKey: `recharge:${order.id}:attempt:v1`,
@@ -527,7 +534,7 @@ async function confirmProviderClosure(
     return { status: 'closure_pending' as const, released: false }
   }
 
-  const provider = getHistoricalProvider(asProviderName(order.provider))
+  const provider = await resolveHistoricalProvider(asProviderName(order.provider), order.providerCredentialRevisionId)
   if (NON_TERMINAL_ATTEMPT.has(payable.status)) {
     await provider.closePayment({
       providerPaymentId: payable.providerPaymentId,

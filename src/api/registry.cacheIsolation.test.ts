@@ -34,9 +34,21 @@ function registryPayload(codes: string[]) {
 
 afterEach(() => {
   getMock.mockReset()
+  vi.useRealTimers()
 })
 
 describe('SPEC-CATALOG-VIS-001 §3.5 registry 缓存按身份隔离', () => {
+  it('refreshes runtime capabilities after the TTL without changing identity', async () => {
+    vi.useFakeTimers()
+    const mod = await loadRegistryModule()
+    mod.setRegistryIdentity({ isAuthenticated: true, authEpoch: 1 })
+    getMock.mockResolvedValueOnce({ data: { ...registryPayload([]).data, capabilities: { notifications: false, notificationRealtime: false } } })
+    expect((await mod.getConfigRegistry()).capabilities?.notifications).toBe(false)
+    await vi.advanceTimersByTimeAsync(mod.REGISTRY_CACHE_TTL_MS)
+    getMock.mockResolvedValueOnce({ data: { ...registryPayload([]).data, capabilities: { notifications: true, notificationRealtime: true } } })
+    expect((await mod.getConfigRegistry()).capabilities?.notifications).toBe(true)
+    expect(getMock).toHaveBeenCalledTimes(2)
+  })
   it('游客与登录用户各自请求一次，不共用缓存', async () => {
     const mod = await loadRegistryModule()
 

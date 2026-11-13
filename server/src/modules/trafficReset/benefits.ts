@@ -1,3 +1,4 @@
+import { fakaInstanceId } from '../../lib/runtimeSettings/fakaBridge.js'
 import type { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
@@ -17,9 +18,10 @@ async function trustedOrder(tx: Tx, orderId: number, frozenProof = false) {
 }
 
 export async function eligibleSource(tx: Tx, userId: number) {
-  if (!config.xboardAccounts.instanceId) return null
+  const instanceId = fakaInstanceId()
+  if (!instanceId) return null
   const evidence = await tx.xboardAccountEvidence.findMany({ where: { userId,
-    accountLink: { userId, instanceId: config.xboardAccounts.instanceId, status: 'active' },
+    accountLink: { userId, instanceId, status: 'active' },
     sourceOrder: { status: { in: ['delivered', 'closed'] }, fakaBridgeTask: { status: 'succeeded', cancelRequested: false, revokeStatus: null,
       revokedAt: null, periodSnapshot: { in: periods } } } }, orderBy: { sourceOrderId: 'desc' }, take: 100 })
   for (const row of evidence) {
