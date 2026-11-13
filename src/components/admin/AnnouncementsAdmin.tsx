@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dia
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 20
 
@@ -101,6 +102,7 @@ const emptyEditor: EditorState = {
 }
 
 export default function AnnouncementsAdmin() {
+  const can = useTabActions('announcements')
   const showToast = useAppStore((s) => s.showToast)
 
   const [items, setItems] = useState<AdminAnnouncement[]>([])
@@ -283,6 +285,7 @@ export default function AnnouncementsAdmin() {
           <option value="admin">管理员</option>
         </select>
         <div className="flex-1" />
+        {can('write') && (<>
         <button
           type="button"
           className="btn-primary px-4 py-2 text-sm flex items-center gap-1.5 cursor-pointer"
@@ -292,6 +295,7 @@ export default function AnnouncementsAdmin() {
           <Plus className="w-4 h-4" />
           新建公告
         </button>
+        </>)}
       </div>
 
       <div className="overflow-x-auto">
@@ -342,6 +346,7 @@ export default function AnnouncementsAdmin() {
                   {formatTimeWindow(a)}
                 </td>
                 <td className="text-right space-x-2 whitespace-nowrap" data-label="操作">
+                  {can('write') && (<>
                   <button
                     type="button"
                     className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer inline-flex items-center gap-1"
@@ -360,6 +365,7 @@ export default function AnnouncementsAdmin() {
                     <Trash2 className="w-3 h-3" />
                     删除
                   </button>
+                  </>)}
                 </td>
               </tr>
             ))}

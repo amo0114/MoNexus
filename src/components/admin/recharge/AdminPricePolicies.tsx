@@ -24,6 +24,7 @@ import {
   previewTenYuanCredit,
   vmqfoxCnyExampleRateMismatch,
 } from '../../../pages/recharge/pricePolicyPreview'
+import { useTabActions } from '../../../auth/adminAccess'
 
 const PAGE_SIZE = 50
 const POLICY_STATUS_LABEL: Record<string, string> = {
@@ -129,6 +130,8 @@ function buildCreateBody(form: FormState): AdminCreatePricePolicyBody {
 }
 
 export default function AdminPricePolicies() {
+  const can = useTabActions('recharge')
+  const canCommand = can('otherPaymentCommands')
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminPricePolicy[]>([])
   const [total, setTotal] = useState(0)
@@ -181,6 +184,7 @@ export default function AdminPricePolicies() {
             配置不同币种下的充值换算比率与充值限额。创建只生成草稿，激活将替换同币种当前生效政策。
           </p>
         </div>
+        {canCommand && (
         <button
           type="button"
           className="btn-primary"
@@ -189,6 +193,7 @@ export default function AdminPricePolicies() {
         >
           创建生产草稿
         </button>
+        )}
       </div>
 
       {loading && items.length === 0 ? (
@@ -253,7 +258,7 @@ export default function AdminPricePolicies() {
                       >
                         详情
                       </button>
-                      {item.status === 'draft' && (
+                      {canCommand && item.status === 'draft' && (
                         <button
                           type="button"
                           className="text-sm font-bold text-[var(--color-cta)] hover:underline cursor-pointer"

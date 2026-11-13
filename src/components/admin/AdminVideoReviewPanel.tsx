@@ -3,7 +3,8 @@ import { listVideoReviews, reviewProductVideo, type VideoReview } from '../../ap
 import { getApiErrorMessage } from '../../api/error'
 import ProductVideoPlayer from '../catalog/ProductVideoPlayer'
 
-export default function AdminVideoReviewPanel() {
+/** canManage: videos.manage — reviewers with only videos.read can browse but not decide. */
+export default function AdminVideoReviewPanel({ canManage = true }: { canManage?: boolean }) {
   const [filter, setFilter] = useState('pending')
   const [open, setOpen] = useState(false)
   const [page, setPage] = useState(1)
@@ -63,6 +64,7 @@ export default function AdminVideoReviewPanel() {
       {current && <div className="space-y-3" key={`${current.assetId}:${current.moderationVersion}`}>
         <p className="font-medium">{current.product.name}</p>
         <div className="max-w-lg h-64"><ProductVideoPlayer assetId={current.assetId} actor="admin" /></div>
+        {canManage ? (<>
         <p className="text-sm">检查完整画面、文字、二维码；有声音时请打开声音并听完。以下勾选记录你的审核声明。</p>
         <label className="block"><input type="checkbox" checked={watched} onChange={e => setWatched(e.target.checked)} /> 我已完整观看视频</label>
         {current.hasAudio && <label className="block"><input type="checkbox" checked={listened} onChange={e => setListened(e.target.checked)} /> 我已听完音频</label>}
@@ -71,6 +73,7 @@ export default function AdminVideoReviewPanel() {
           <button type="button" className="btn-primary" disabled={busy || !watched || (current.hasAudio && !listened)} onClick={() => void submit('approve')}>批准视频内容</button>
           <button type="button" className="btn-secondary" disabled={busy || !reason.trim()} onClick={() => void submit('reject')}>拒绝或撤销视频</button>
         </div>
+        </>) : <p className="text-sm text-[var(--color-text-muted)]">仅可查看，审核需要视频管理权限。</p>}
       </div>}
     </>}
     {error && <p role="alert">{error}</p>}

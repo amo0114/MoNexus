@@ -18,6 +18,7 @@ import AdminOrderDetailDialog from './AdminOrderDetailDialog'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 20
 
@@ -35,6 +36,7 @@ interface AppliedFilters {
 
 /** 订单记录 Tab：支持状态下拉、买家/订单号搜索、北京时间日期范围筛选、分页与订单履约详情 */
 export default function AdminOrderTable({ active = true }: Props) {
+  const can = useTabActions('orders')
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
 
@@ -293,7 +295,7 @@ export default function AdminOrderTable({ active = true }: Props) {
               {orders.map((o) => (
                 <tr key={o.id}>
                   <td data-label="订单号 / 时间">
-                    <div className="font-mono text-xs text-[var(--color-text-muted)]">ORD-{o.id}</div>
+                    <div className="font-mono text-xs text-[var(--color-text-muted)]" title={`订单 ID ${o.id}`}>{o.orderNo || `ORD-${o.id}`}</div>
                     <div className="text-xs text-[var(--color-text-muted)] mt-1">
                       {new Date(o.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
                     </div>
@@ -353,15 +355,18 @@ export default function AdminOrderTable({ active = true }: Props) {
                     <RegistryPill value={o.status} category="orderStatuses" />
                   </td>
                   <td className="text-right space-x-2 whitespace-nowrap" data-label="操作">
-                    <button
-                      type="button"
-                      className="btn-secondary btn-sm text-xs px-2.5 py-1 cursor-pointer"
-                      data-testid={`admin-order-detail-${o.id}`}
-                      onClick={() => handleOpenDetail(o.id)}
-                    >
-                      详情
-                    </button>
-                    {o.status === 'disputed' && (
+                    {/* The detail payload carries delivery secrets: orders.read alone must not fetch it. */}
+                    {can('detail') && (
+                      <button
+                        type="button"
+                        className="btn-secondary btn-sm text-xs px-2.5 py-1 cursor-pointer"
+                        data-testid={`admin-order-detail-${o.id}`}
+                        onClick={() => handleOpenDetail(o.id)}
+                      >
+                        详情
+                      </button>
+                    )}
+                    {o.status === 'disputed' && can('resolve') && (
                       <button
                         type="button"
                         className="btn-primary btn-sm text-xs px-2.5 py-1 cursor-pointer"

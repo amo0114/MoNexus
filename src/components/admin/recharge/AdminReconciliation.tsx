@@ -20,6 +20,7 @@ import { TableSkeleton } from '../../ui/Skeleton'
 import { formatCurrencyAmount } from '../../../pages/recharge/money'
 import { PAYMENT_PROVIDERS, providerLabel, RECON_STATUS_LABEL } from '../../../pages/recharge/status'
 import { getAdminRechargeStatusConfig } from '../../../utils/adminRechargeDisplay'
+import { useTabActions } from '../../../auth/adminAccess'
 
 const SCOPE_TYPE_LABELS: Record<string, string> = {
   statement: '渠道账单',
@@ -59,6 +60,8 @@ const RECON_ITEM_STATUS_LABEL: Record<string, string> = {
 }
 
 export default function AdminReconciliation() {
+  const can = useTabActions('recharge')
+  const canCommand = can('otherPaymentCommands')
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminReconRun[]>([])
   const [loading, setLoading] = useState(true)
@@ -151,6 +154,7 @@ export default function AdminReconciliation() {
         </div>
         <div className="flex items-center gap-2">
           <AdminStatementImport provider={provider} onImported={() => void load()} />
+          {canCommand && (
           <button
             type="button"
             className="btn-primary btn-sm text-xs cursor-pointer"
@@ -158,6 +162,7 @@ export default function AdminReconciliation() {
           >
             发起对账
           </button>
+          )}
         </div>
       </div>
 
@@ -428,15 +433,15 @@ export default function AdminReconciliation() {
                             </td>
                             <td data-label="处理">
                               <div className="flex flex-wrap gap-1 justify-end sm:justify-start">
-                                {ri.allowedActions?.includes('requery_order') && (
+                                {canCommand && ri.allowedActions?.includes('requery_order') && (
                                   <button type="button" className="btn-secondary btn-sm text-[11px]" disabled={itemBusy === ri.id}
                                     onClick={() => void actOnItem(ri, 'requery_order')}>渠道重查</button>
                                 )}
-                                {ri.allowedActions?.includes('resolve') && (
+                                {canCommand && ri.allowedActions?.includes('resolve') && (
                                   <button type="button" className="btn-secondary btn-sm text-[11px]" disabled={itemBusy === ri.id || !reviewReason.trim()}
                                     onClick={() => void actOnItem(ri, 'resolve')}>标记已核实</button>
                                 )}
-                                {ri.allowedActions?.includes('ignore') && (
+                                {canCommand && ri.allowedActions?.includes('ignore') && (
                                   <button type="button" className="btn-secondary btn-sm text-[11px]" disabled={itemBusy === ri.id || !reviewReason.trim()}
                                     onClick={() => void actOnItem(ri, 'ignore')}>忽略</button>
                                 )}

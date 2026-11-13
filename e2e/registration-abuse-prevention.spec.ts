@@ -295,6 +295,8 @@ test('admin abuse panel renders masked records and requires a ticketed confirmat
   }, { authenticatedProfile: adminProfile, accessToken: adminAccessToken })
   await mockRegistry(page)
   await page.route(apiRoute('/auth/me'), route => route.fulfill({ json: adminProfile }))
+  // Mocked pre-governance backend: capabilities absent, legacy tabs stay available.
+  await page.route(apiRoute('/admin/capabilities'), route => route.fulfill({ status: 404, json: { error: { code: 'NOT_FOUND', message: 'not found' } } }))
   // Keep the browser fixture independent of a real refresh cookie. The
   // production API itself has separate MFA coverage; this test asserts the
   // panel's masked rendering and confirmation contract.

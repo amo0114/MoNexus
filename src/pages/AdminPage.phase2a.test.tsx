@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminPage from './AdminPage'
 import { useAppStore } from '../stores/appStore'
+import { signInLegacyAdmin } from '../test/adminAccess'
 
 const mocks = vi.hoisted(() => ({
   getMerchants: vi.fn(),
@@ -71,6 +72,7 @@ function createDeferred<T>() {
 
 describe('Phase 2A: AdminPage Activation-Aware Keep-Alive & Decoupling', () => {
   beforeEach(() => {
+    signInLegacyAdmin()
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [], islandNotice: null })
 

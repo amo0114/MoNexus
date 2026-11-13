@@ -30,6 +30,7 @@ import AdminPagination from '../admin/AdminPagination'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 10
 const MAX_REASON_LENGTH = 500
@@ -97,6 +98,7 @@ export default function AdminEntitlementManager({
   adapter = DEFAULT_ADAPTER,
   className = '',
 }: AdminEntitlementManagerProps) {
+  const canWrite = useTabActions('merchandising')('write')
   const [items, setItems] = useState<AdminMerchantEntitlementDTO[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -289,6 +291,7 @@ export default function AdminEntitlementManager({
             权益为限时商业合作权益，仅用于标识平台与商家的合作关系，不代表平台对商品质量作出背书；到期或被撤销后自动失效。
           </p>
         </div>
+        {canWrite && (
         <button
           type="button"
           className="btn-primary px-4 py-2 text-sm flex items-center gap-2 shrink-0"
@@ -297,6 +300,7 @@ export default function AdminEntitlementManager({
           <Plus className="w-4 h-4" />
           手工授予
         </button>
+        )}
       </div>
 
       {feedback && (
@@ -421,7 +425,7 @@ export default function AdminEntitlementManager({
                         <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">内部记录，仅管理员可见</div>
                       </td>
                       <td className="px-3 py-3">
-                        {ent.status === 'active' ? (
+                        {ent.status === 'active' && canWrite ? (
                           <button
                             type="button"
                             aria-label={`撤销商家 ${ent.merchantId} 的权益`}

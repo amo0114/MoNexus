@@ -14,6 +14,7 @@ import AdminPagination from '../admin/AdminPagination'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 10
 
@@ -60,6 +61,7 @@ export default function AdminMerchandisingRunPanel({
   adapter = DEFAULT_ADAPTER,
   className = '',
 }: AdminMerchandisingRunPanelProps) {
+  const canWrite = useTabActions('merchandising')('write')
   const [runs, setRuns] = useState<AdminMerchandisingRunDTO[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -126,6 +128,7 @@ export default function AdminMerchandisingRunPanel({
             仅展示脱敏计算配置与任务执行状态，不展示订单或用户明细。计算参数请在系统配置中调整。
           </p>
         </div>
+        {canWrite && (
         <button
           type="button"
           className="btn-primary px-4 py-2 text-sm flex items-center gap-2 shrink-0"
@@ -134,6 +137,7 @@ export default function AdminMerchandisingRunPanel({
           <RefreshCw className="w-4 h-4" />
           重新计算排名
         </button>
+        )}
       </div>
 
       {feedback && (

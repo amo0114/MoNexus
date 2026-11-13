@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import AdminMerchandisingRunPanel, {
   type AdminMerchandisingRunAdapter,
 } from './AdminMerchandisingRunPanel'
@@ -8,6 +8,10 @@ import type {
   AdminMerchandisingRunPage,
   AdminRecomputeResult,
 } from '../../types/merchandising'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 // Complete fixtures covering every time/config/snapshot/failure field of the DTO.
 const completedRun: AdminMerchandisingRunDTO = {

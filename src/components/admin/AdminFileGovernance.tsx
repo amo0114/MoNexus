@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dia
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 20
 const GRANTS_PAGE_SIZE = 10
@@ -334,6 +335,7 @@ function FileRow({
   onGrantsPageChange: (page: number) => void
   onRevoke: () => void
 }) {
+  const can = useTabActions('files')
   return (
     <>
       <tr>
@@ -374,6 +376,7 @@ function FileRow({
           >
             {expanded ? '收起流水' : '查看流水'}
           </button>
+          {can('revoke') && (
           <button
             type="button"
             onClick={onRevoke}
@@ -383,6 +386,7 @@ function FileRow({
           >
             吊销
           </button>
+          )}
         </td>
       </tr>
       {expanded && (

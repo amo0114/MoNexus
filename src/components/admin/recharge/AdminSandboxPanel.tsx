@@ -21,10 +21,13 @@ import {
   parseMajorInput,
   validateAmountBounds,
 } from '../../../pages/recharge/money'
+import { useTabActions } from '../../../auth/adminAccess'
 
 type Step = 'config' | 'quote' | 'order' | 'confirm'
 
 export default function AdminSandboxPanel() {
+  const can = useTabActions('recharge')
+  const canCommand = can('otherPaymentCommands')
   const showToast = useAppStore((state) => state.showToast)
   const [config, setConfig] = useState<RechargeConfig | null>(null)
   const [amount, setAmount] = useState('10.00')
@@ -186,15 +189,21 @@ export default function AdminSandboxPanel() {
           </label>
 
           <div className="grid gap-3 md:grid-cols-3">
+            {canCommand && (
             <button type="button" className="btn-secondary" disabled={!config || Boolean(amountError) || loading != null || quote != null} onClick={() => void createQuote()}>
               {loading === 'quote' ? '创建中…' : quote ? '✓ 报价已创建' : '1. 创建报价'}
             </button>
+            )}
+            {canCommand && (
             <button type="button" className="btn-secondary" disabled={!quote || loading != null || order != null} onClick={() => void createOrder()}>
               {loading === 'order' ? '创建中…' : order ? '✓ 订单已创建' : '2. 创建沙箱订单'}
             </button>
+            )}
+            {canCommand && (
             <button type="button" className="btn-primary !bg-amber-700 hover:!bg-amber-800" disabled={!order || loading != null || result != null} onClick={() => void confirmOrder()}>
               {loading === 'confirm' ? '确认中…' : result ? '✓ 已确认入账' : '3. 身份二次验证（MFA）'}
             </button>
+            )}
           </div>
 
           {(quote || order || result) && (

@@ -10,7 +10,7 @@
 // switch that no existing case exercises.
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import AdminPromotionPackageManager, {
   type AdminPromotionPackageAdapter,
 } from '../AdminPromotionPackageManager'
@@ -19,6 +19,10 @@ import type {
   AdminPromotionPackageDTO,
   AdminPromotionPackageUpdatePayload,
 } from '../../../types/merchandising'
+import { signInLegacyAdmin } from '../../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 const homePackage: AdminPromotionPackageDTO = {
   id: 11,

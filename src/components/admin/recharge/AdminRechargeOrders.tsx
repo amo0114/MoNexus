@@ -26,10 +26,14 @@ import {
   getAdminRechargeStatusConfig,
   ATTEMPT_STATUS_LABEL,
 } from '../../../utils/adminRechargeDisplay'
+import { useTabActions } from '../../../auth/adminAccess'
 
 const PAGE_SIZE = 20
 
 export default function AdminRechargeOrders() {
+  const can = useTabActions('recharge')
+  const canCommand = can('otherPaymentCommands')
+  const canRefund = can('reviewRefund')
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminRechargeOrder[]>([])
   const [total, setTotal] = useState(0)
@@ -157,12 +161,12 @@ export default function AdminRechargeOrders() {
                       </span>
                     </td>
                     <td className="text-right whitespace-nowrap space-x-3" data-label="操作">
-                      {(item.status === 'credited' || item.status === 'paid') && !item.refundId && !item.adminSandbox && item.supportsRefunds && (
+                      {canRefund && (item.status === 'credited' || item.status === 'paid') && !item.refundId && !item.adminSandbox && item.supportsRefunds && (
                         <button type="button" className="text-sm font-bold text-[var(--color-danger)] cursor-pointer" onClick={() => setRefundTarget(item)}>
                           退款
                         </button>
                       )}
-                      {item.status === 'reconcile_required' && (
+                      {canCommand && item.status === 'reconcile_required' && (
                         <button type="button" className="text-sm font-bold text-[var(--color-primary)] cursor-pointer" onClick={() => setReconcileTarget(item)}>
                           对账
                         </button>

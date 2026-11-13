@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import AdminSettlementPanel from './AdminSettlementPanel'
 import * as adminMerchantApi from '../../api/adminMerchant'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 vi.mock('../../api/adminMerchant', () => ({
   previewSettlements: vi.fn((settlementIds: number[]) => Promise.resolve({ items: [], payableCount: settlementIds.length, payableTotal: 0 })),

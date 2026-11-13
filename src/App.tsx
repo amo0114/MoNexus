@@ -11,6 +11,7 @@ import ScrollToTop from './components/ScrollToTop'
 import StorePage from './pages/StorePage'
 import LoginPage from './pages/LoginPage'
 import RoleGuard from './components/RoleGuard'
+import AdminAccessGate from './components/admin/AdminAccessGate'
 import RouteFallback from './components/ui/RouteFallback'
 import MerchantShell from './components/merchant/MerchantShell'
 
@@ -158,7 +159,9 @@ export default function App() {
                       path="/admin/products/new"
                       element={
                         <RoleGuard allowedRoles={['admin']}>
-                          <ProductCreatePage />
+                          <AdminAccessGate tab="products" action="edit">
+                            <ProductCreatePage />
+                          </AdminAccessGate>
                         </RoleGuard>
                       }
                     />
@@ -166,7 +169,9 @@ export default function App() {
                       path="/admin/products/:id/edit"
                       element={
                         <RoleGuard allowedRoles={['admin']}>
-                          <ProductEditPage actor="admin" />
+                          <AdminAccessGate tab="products" action="edit">
+                            <ProductEditPage actor="admin" />
+                          </AdminAccessGate>
                         </RoleGuard>
                       }
                     />
@@ -174,7 +179,7 @@ export default function App() {
                     <Route
                       path="/merchant/products/new"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="catalog.write">
                           <ProductCreateWizard />
                         </RoleGuard>
                       }
@@ -182,7 +187,7 @@ export default function App() {
                     <Route
                       path="/merchant/products/:id/edit"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="catalog.write">
                           <ProductEditPage actor="merchant" />
                         </RoleGuard>
                       }
@@ -190,7 +195,7 @@ export default function App() {
                     <Route
                       path="/merchant/dashboard"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="history.read">
                           <MerchantShell active="operations">
                             <Dashboard />
                           </MerchantShell>
@@ -200,7 +205,7 @@ export default function App() {
                     <Route
                       path="/merchant/workbench"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="history.read">
                           <MerchantShell active="dashboard">
                             <WorkbenchPage />
                           </MerchantShell>
@@ -210,7 +215,7 @@ export default function App() {
                     <Route
                       path="/merchant/promotions"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="marketing.write">
                           <MerchantShell active="promotions">
                             <MerchantPromotionPage />
                           </MerchantShell>
@@ -220,7 +225,7 @@ export default function App() {
                     <Route
                       path="/merchant/*"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="history.read">
                           <MerchantDashboardPage />
                         </RoleGuard>
                       }

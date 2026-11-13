@@ -31,6 +31,10 @@ import type {
   AdminEditorialUpdatePayload,
   EditorialPlacement,
 } from '../../types/merchandising'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 vi.mock('../../api/client', () => ({ default: { get: vi.fn() } }))
 const apiGet = vi.mocked(api.get)

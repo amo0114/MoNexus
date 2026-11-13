@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminFakaTasksPanel from './AdminFakaTasksPanel'
 import * as adminApi from '../../api/admin'
 import { useAppStore } from '../../stores/appStore'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 vi.mock('../../api/admin', () => ({
   listAdminFakaTasks: vi.fn(),

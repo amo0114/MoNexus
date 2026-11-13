@@ -58,6 +58,7 @@ import {
   type CategoryApplicationStatus,
   type CategoryStatus,
 } from '../../types/catalog'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 10
 const MAX_REORDER_IDS = 500
@@ -126,6 +127,7 @@ export interface AdminCategoryManagerProps {
 }
 
 export default function AdminCategoryManager({ adapter = catalogGovernanceApi }: AdminCategoryManagerProps) {
+  const canWrite = useTabActions('catalogGovernance')('write')
   const showToast = useAppStore((s) => s.showToast)
 
   /* ---- category repository list state ---- */
@@ -464,7 +466,7 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
               label="状态筛选"
               testId="admin-category-status-filter"
             />
-            {reorderActive ? (
+            {!canWrite ? null : reorderActive ? (
               <>
                 <button type="button" className="btn-primary px-4 py-2 text-sm" data-testid="reorder-save" disabled={busy !== null} onClick={() => void saveReorder()}>
                   {busy === 'reorder' ? <Loader2 className="w-4 h-4 animate-spin" /> : '保存排序'}
@@ -547,6 +549,7 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
                     <td><CategoryStatusBadge status={c.status} /></td>
                     <td className="text-sm text-[var(--color-text-muted)]">{c.sortOrder}</td>
                     <td>
+                      {canWrite && (
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <button
                           type="button"
@@ -592,6 +595,7 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -662,7 +666,9 @@ export default function AdminCategoryManager({ adapter = catalogGovernanceApi }:
                     </td>
                     <td><ApplicationStatusBadge status={a.status} /></td>
                     <td>
-                      {a.status === CATEGORY_APPLICATION_STATUS.PENDING ? (
+                      {a.status === CATEGORY_APPLICATION_STATUS.PENDING && !canWrite ? (
+                        <span className="text-sm text-[var(--color-text-muted)]">待审核</span>
+                      ) : a.status === CATEGORY_APPLICATION_STATUS.PENDING ? (
                         <span className="text-sm text-[var(--color-text-muted)]">待处理</span>
                       ) : (
                         <div className="text-xs text-[var(--color-text-muted)]">

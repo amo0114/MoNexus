@@ -40,6 +40,7 @@ import ProductCategorySelect from './ProductCategorySelect'
 import ProductDetailsFields from './ProductDetailsFields'
 import TemplateAttributeFields from './TemplateAttributeFields'
 import ProductDraftAssistant from './ProductDraftAssistant'
+import { useTabActions } from '../../auth/adminAccess'
 
 const RichTextEditor = lazy(() => import('./RichTextEditor'))
 
@@ -91,6 +92,7 @@ interface Props {
 
 /** T-CAT-FE-004 / SPEC-PRODUCT-COMMERCE-002 P5: admin-authored v2 Product draft. */
 export default function AdminPlatformProductWizard({ open, onClose, onCreated, onAssistantCreated }: Props) {
+  const can = useTabActions('products')
   const showToast = useAppStore((state) => state.showToast)
   const [categories, setCategories] = useState<CategoryRegistryItem[]>([])
   const [templates, setTemplates] = useState<ProductTemplateDefinition[]>([])
@@ -340,7 +342,7 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
         <DialogDescription>
           创建结果固定为平台自营草稿；可售量和发布需在后续独立完成。
         </DialogDescription>
-        {open && <div className="mt-5"><ProductDraftAssistant actor="admin" templates={templates} categories={categories} onCategoriesChange={setCategories}
+        {open && can('ai') && <div className="mt-5"><ProductDraftAssistant actor="admin" templates={templates} categories={categories} onCategoriesChange={setCategories}
           createDraft={createAdminPlatformProductV2} disabled={submitting || videoBusy}
           onActiveChange={setAssistantActive} onBusyChange={setAssistantBusy}
           onCreated={id => {
@@ -379,13 +381,13 @@ export default function AdminPlatformProductWizard({ open, onClose, onCreated, o
             onChange={(categoryId) => setForm({ ...form, categoryId })}
             disabled={submitting || videoBusy}
           />
-          <ProductVideoUploader value={promoVideo} onChange={setPromoVideo} onBusyChange={setVideoBusy} actor="admin" disabled={submitting || videoBusy} />
+          {can('manageVideos') && <ProductVideoUploader value={promoVideo} onChange={setPromoVideo} onBusyChange={setVideoBusy} actor="admin" disabled={submitting || videoBusy} />}
           <ProductImageUploader
             images={images}
             imageKeys={imageKeys}
             onChange={setImages}
             onImageKeysChange={setImageKeys}
-            disabled={submitting || videoBusy}
+            disabled={submitting || videoBusy || !can('uploadImage')}
           />
           <div>
             <label htmlFor="admin-platform-description" className="block text-sm font-bold mb-1.5">一句话简介</label>

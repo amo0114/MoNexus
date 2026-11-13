@@ -3,6 +3,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import AdminOrderDetailDialog from './AdminOrderDetailDialog'
 import { AdminOrderDetail } from '../../api/admin'
 import { useAppStore } from '../../stores/appStore'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 const fulfillmentMocks = vi.hoisted(() => ({
   startAdminPlatformFulfillment: vi.fn(),

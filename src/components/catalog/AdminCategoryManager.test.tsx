@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import type { CatalogGovernanceAdapter } from '../../api/catalogGovernance'
 import {
   fixtureAdminCategories,
@@ -7,6 +7,10 @@ import {
   fixtureCategoryList,
 } from '../../api/catalogGovernance.fixtures'
 import AdminCategoryManager from './AdminCategoryManager'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 function adapter(overrides: Partial<CatalogGovernanceAdapter> = {}): CatalogGovernanceAdapter {
   return {
