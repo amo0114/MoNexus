@@ -1,0 +1,71 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "POST",
+  "path": "/api/admin/recharge/refunds/00000000-0000-4000-8000-000000000001/review",
+  "status": 200,
+  "schema": "GVRefundReviewResult",
+  "response": {
+    "refund": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "rechargeOrderId": "00000000-0000-4000-8000-000000000002",
+      "userId": 42,
+      "status": "points_held",
+      "amountMinor": "10000",
+      "currency": "CNY",
+      "pointsToReverse": "1000",
+      "reasonCode": "source_insufficient",
+      "reviewVersion": 1,
+      "qualification": {
+        "sourceKind": "recharge",
+        "requiredPoints": "1000",
+        "availablePoints": "1000",
+        "asOf": "2026-11-12T08:00:00.000Z"
+      },
+      "allowedActions": [],
+      "blockers": [],
+      "history": [
+        {
+          "id": "00000000-0000-4000-8000-000000000003",
+          "refundId": "00000000-0000-4000-8000-000000000001",
+          "kind": "resume",
+          "actorUserId": 1,
+          "reasonCode": "source_restored",
+          "note": "已核对原来源恢复",
+          "evidenceRef": null,
+          "fromStatus": "manual_review",
+          "toStatus": "points_held",
+          "expectedReviewVersion": 0,
+          "createdAt": "2026-11-12T08:00:00.000Z"
+        }
+      ],
+      "createdAt": "2026-11-12T08:00:00.000Z",
+      "updatedAt": "2026-11-12T08:00:00.000Z"
+    },
+    "reviewAction": {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "refundId": "00000000-0000-4000-8000-000000000001",
+      "kind": "resume",
+      "actorUserId": 1,
+      "reasonCode": "source_restored",
+      "note": "已核对原来源恢复",
+      "evidenceRef": null,
+      "fromStatus": "manual_review",
+      "toStatus": "points_held",
+      "expectedReviewVersion": 0,
+      "createdAt": "2026-11-12T08:00:00.000Z"
+    },
+    "replayed": false
+  },
+  "request": {
+    "headers": {
+      "Idempotency-Key": "00000000-0000-4000-8000-000000000090"
+    },
+    "body": {
+      "action": "resume",
+      "expectedReviewVersion": 0,
+      "reasonCode": "source_restored",
+      "note": "已核对原来源恢复"
+    }
+  }
+}

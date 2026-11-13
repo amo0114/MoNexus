@@ -26,6 +26,7 @@ const DAY_MS = 24 * HOUR_MS
 
 interface CandidateOrder {
   id: number
+  orderNo: string | null
   status: string
   createdAt: Date
   fulfillmentDeadline: Date | null
@@ -74,6 +75,7 @@ function buildMail(to: string, order: CandidateOrder, now: Date) {
   return renderMail('sla_overdue', {
     to,
     orderId: order.id,
+    orderNo: order.orderNo,
     productLabel: label,
     deadlineLabel: formatTime(deadline),
     waitDurationLabel: formatWaitDuration(order.createdAt, now),
@@ -119,6 +121,7 @@ export async function runSlaRemindBatch(now = new Date()) {
       },
       select: {
         id: true,
+        orderNo: true,
         status: true,
         createdAt: true,
         fulfillmentDeadline: true,

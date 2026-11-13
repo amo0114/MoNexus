@@ -1,3 +1,4 @@
+import { setCommercialActor } from '../catalog/offerRevisions.js'
 import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -213,6 +214,7 @@ export async function createMyProduct(
   })
 
   const product = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { merchantId }, 'merchant/productService')
     // B_CAT：用事务内 client 解析 categoryId/type（不开启嵌套事务）。
     const { categoryId, type } = await resolveProductCategory(
       { categoryId: data.categoryId, type: data.type },
@@ -274,12 +276,12 @@ export async function getMyProductReadiness(merchantId: number, productId: numbe
 
 export async function publishMyProduct(merchantId: number, productId: number) {
   await assertProductOwnedByMerchant(merchantId, productId)
-  return publishCatalogProduct(productId)
+  return publishCatalogProduct(productId, merchantId)
 }
 
 export async function unpublishMyProduct(merchantId: number, productId: number) {
   await assertProductOwnedByMerchant(merchantId, productId)
-  return unpublishCatalogProduct(productId)
+  return unpublishCatalogProduct(productId, merchantId)
 }
 
 export async function updateMyProduct(merchantId: number, productId: number, data: Record<string, unknown>) {
@@ -362,6 +364,7 @@ export async function updateMyProduct(merchantId: number, productId: number, dat
   const switchedToInstantInventory =
     deliveryMode === 'instant_inventory' && product.deliveryMode !== 'instant_inventory'
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { merchantId }, 'merchant/productService')
     // SPEC-CATALOG-VIS-001 §4.5（P1.5-A）：展示写入与准入失效必须共用商品行锁，
     // 否则两个并发编辑可能各自基于不同版本递增 revision，导致批准失效错乱。
     await lockProductRow(tx, productId)

@@ -1,3 +1,4 @@
+import { assertMerchantOperation } from '../merchantGovernance/capability.js'
 import { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
@@ -116,6 +117,7 @@ export async function adjustMyProductCapacity(
   if (!product) throw notFound('商品不存在')
 
   const result = await prisma.$transaction(async tx => {
+    await assertMerchantOperation(tx,merchantId)
     const offer = await resolveMyOffer(tx, productId, input.offerId)
     return adjustOfferCapacity(tx, productId, offer, merchantId, actorUserId, input)
   })
@@ -139,6 +141,7 @@ export async function adjustMyOfferCapacity(
   if (!product) throw notFound('商品不存在')
 
   const result = await prisma.$transaction(async tx => {
+    await assertMerchantOperation(tx,merchantId)
     const offer = await resolveMyOffer(tx, productId, offerId)
     return adjustOfferCapacity(tx, productId, offer, merchantId, actorUserId, input)
   })
@@ -159,12 +162,14 @@ async function confirmOfferInventoryImport(
   const analysis = await analyzeInventoryForOffer(productId, offer, payload, tx)
   assertConfirmableInventoryAnalysis(analysis)
 
+  const batch = await tx.inventoryBatch.create({ data: { productId, offerId: offer.id, merchantId, actorUserId: actorUserId, importedCount: analysis.itemsToImport.length } })
   await tx.inventoryItem.createMany({
     data: analysis.itemsToImport.map(item =>
       typeof item === 'string'
-        ? { productId, offerId: offer.id, content: item }
+        ? { productId, offerId: offer.id, batchId: batch.id, content: item }
         : {
             productId,
+            batchId: batch.id,
             offerId: offer.id,
             content: item.content,
             structuredContent: structuredContentToJson(item.structuredContent),
@@ -178,7 +183,7 @@ async function confirmOfferInventoryImport(
     actorUserId,
     action: 'import',
     delta: analysis.itemsToImport.length,
-    batchId: randomUUID(),
+    batchId: batch.id,
   })
   return {
     imported: analysis.itemsToImport.length,
@@ -201,6 +206,7 @@ export async function importMyInventory(
 
   try {
     const result = await prisma.$transaction(async tx => {
+    await assertMerchantOperation(tx,merchantId)
       // 旧兼容路径：未指定 offerId 时落到默认 Offer（单 SKU 无感）。
       const offer = await resolveMyOffer(tx, productId, payload.offerId)
       if (offer.deliveryMode !== 'instant_inventory') {
@@ -236,6 +242,7 @@ export async function importMyOfferInventory(
 
   try {
     const result = await prisma.$transaction(async tx => {
+    await assertMerchantOperation(tx,merchantId)
       const offer = await resolveMyOffer(tx, productId, offerId)
       if (offer.deliveryMode !== 'instant_inventory') {
         throw badRequest('仅即时库存发货商品支持库存管理')
@@ -322,6 +329,7 @@ export async function voidMyInventory(
 
   // 单事务完成：InventoryItem 置 void + InventoryLog 落账。
   const result = await prisma.$transaction(async tx => {
+    await assertMerchantOperation(tx,merchantId)
     // 旧兼容路径：未指定 offerId 时落到默认 Offer（单 SKU 无感）。
     const offer = await resolveMyOffer(tx, productId, input.offerId)
     if (offer.deliveryMode !== 'instant_inventory') {
@@ -346,6 +354,7 @@ export async function voidMyOfferInventory(
   if (!product) throw notFound('商品不存在')
 
   const result = await prisma.$transaction(async tx => {
+    await assertMerchantOperation(tx,merchantId)
     const offer = await resolveMyOffer(tx, productId, offerId)
     if (offer.deliveryMode !== 'instant_inventory') {
       throw badRequest('仅即时库存发货商品支持库存管理')

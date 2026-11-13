@@ -1,3 +1,4 @@
+import { setCommercialActor } from './offerRevisions.js'
 import { countOpenFakaTasksForOffer } from '../fakaBridge/taskQueries.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -398,6 +399,7 @@ export async function confirmAdminFakaSync(
 
   try {
   const outcome = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'catalog/fakaSync')
     await lockProductRow(tx, productId)
     const claimed = await claimFakaSyncIdempotency(tx, {
       productId,

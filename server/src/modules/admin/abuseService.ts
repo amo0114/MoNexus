@@ -1,3 +1,4 @@
+import { activeUserWhere } from '../accountGovernance/status.js'
 import { Prisma } from '@prisma/client'
 import { HttpError, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
@@ -87,7 +88,7 @@ export async function getAbuseOverview(window: AbuseOverviewWindow = '24h') {
     }),
     prisma.emailVerificationToken.count({ where: { createdAt: { gte: since } } }),
     prisma.abuseEvent.count({ where: { createdAt: { gte: since }, type: 'mail_throttled' } }),
-    prisma.user.count({ where: { emailVerified: null, status: { not: '已封禁' } } }),
+    prisma.user.count({ where: { emailVerified: null, ...activeUserWhere() } }),
     prisma.inviteRelation.groupBy({ by: ['status'], _count: { _all: true } }),
     prisma.growthReward.groupBy({ by: ['state'], _count: { _all: true } }),
   ])

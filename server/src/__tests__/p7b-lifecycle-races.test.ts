@@ -360,7 +360,7 @@ describe('R2-P2 复审回归:并发写侧的商家级稳定锁', () => {
   it('并发轮换互相排队:无双 active(P2002)、无误判 404,收敛为恰一条 active', async () => {
     const seed = await seedAutoProvision({ autoProvision: false })
     // 旧实现锁「当前 active 行」:并发轮换的锁定语句快照看不到对方插入的
-    // 新行,双双走「无 previous」分支撞部分唯一索引。Merchant 父行锁下,
+    // 新行,双双走「无 previous」分支撞部分唯一索引。每商家 advisory lock 下,
     // 六路并发全部成功且串行化。
     const results = await Promise.all(
       Array.from({ length: 6 }, (_, i) =>
@@ -403,7 +403,8 @@ describe('R2-P2 复审回归:降级邮件的多实例认领', () => {
     })
     await Promise.all([notifyDegradedTasks(), notifyDegradedTasks()])
     expect(sent).toHaveLength(1)
-    expect(sent[0].subject).toContain(`#${orderId}`)
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    expect(sent[0].subject).toContain(order.orderNo)
     const task = await prisma.provisionTask.findUniqueOrThrow({ where: { orderId } })
     expect(task.merchantNotifiedAt).not.toBeNull()
     expect(task.leaseToken).toBeNull()

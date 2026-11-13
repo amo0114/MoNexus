@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { Prisma } from '@prisma/client'
 import {
   businessDateString,
@@ -18,7 +19,6 @@ import { prisma } from '../../lib/prisma.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 
 const DAY_MS = 24 * 60 * 60 * 1_000
-const NORMAL_USER_STATUS = '正常'
 /** IV-01：撞唯一约束的重试上限；每次重试只重掷码值。 */
 const CODE_GENERATION_MAX_ATTEMPTS = 5
 /** 个人中心列表上限——名额封顶了增长速度，这只是读侧的兜底 LIMIT。 */
@@ -111,12 +111,12 @@ async function evaluateInviteEligibility(
   now: Date,
 ): Promise<EligibilityOutcome> {
   if (user.role === 'admin') {
-    return user.status === NORMAL_USER_STATUS
+    return !await isAccountBanned(user.id, client)
       ? { eligible: true, monthlyLimit: null }
       : { eligible: false, reason: 'suspended' }
   }
 
-  if (user.status !== NORMAL_USER_STATUS || user.referralSuspended) {
+  if (await isAccountBanned(user.id, client) || user.referralSuspended) {
     return { eligible: false, reason: 'suspended' }
   }
   if (user.emailVerified === null) {
@@ -351,7 +351,7 @@ export async function claimInviteCodeForRegistration(
     WHERE "id" = ${row.issuerId}
     FOR UPDATE`
   const issuer = issuerRows[0]
-  if (!issuer || issuer.status !== NORMAL_USER_STATUS || issuer.referralSuspended) {
+  if (!issuer || await isAccountBanned(issuer.id, tx) || issuer.referralSuspended) {
     throw inviteCodeInvalid()
   }
   return { issuerId: row.issuerId }

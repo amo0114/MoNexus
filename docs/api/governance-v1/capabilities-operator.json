@@ -1,0 +1,30 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/admin/capabilities",
+  "status": 200,
+  "schema": "GVCapabilities",
+  "response": {
+    "contractVersion": "governance-v1",
+    "permissions": [
+      "users.read",
+      "merchants.read"
+    ],
+    "features": {
+      "refundReview": true,
+      "merchantLifecycle": true,
+      "accountBans": true,
+      "userDetails": true,
+      "inventoryTraceability": true,
+      "exports": true,
+      "walletIntegrity": true
+    },
+    "limits": {
+      "pageSize": 100,
+      "exportRows": 100000,
+      "exportBytes": 134217728,
+      "exportRetentionSeconds": 86400
+    }
+  }
+}

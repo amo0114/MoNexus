@@ -1,0 +1,34 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "POST",
+  "path": "/api/admin/users/42/bans",
+  "status": 201,
+  "schema": "GVBan",
+  "response": {
+    "id": "00000000-0000-4000-8000-000000000006",
+    "userId": 42,
+    "version": 0,
+    "reasonCode": "abuse",
+    "reason": "合成运营理由",
+    "startsAt": "2026-11-12T08:00:00.000Z",
+    "expiresAt": "2026-11-13T08:00:00.000Z",
+    "createdByUserId": 1,
+    "source": "admin",
+    "releasedAt": null,
+    "releasedByUserId": null,
+    "releaseReason": null,
+    "createdAt": "2026-11-12T08:00:00.000Z",
+    "effective": true
+  },
+  "request": {
+    "headers": {
+      "Idempotency-Key": "00000000-0000-4000-8000-000000000091"
+    },
+    "body": {
+      "reasonCode": "abuse",
+      "reason": "合成运营理由",
+      "expiresAt": "2026-11-13T08:00:00.000Z"
+    }
+  }
+}

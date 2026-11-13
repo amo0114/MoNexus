@@ -1,0 +1,49 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/merchant/application",
+  "status": 200,
+  "schema": "GVMerchantApplication",
+  "response": {
+    "merchantId": 8,
+    "status": "rejected",
+    "lifecycleVersion": 1,
+    "applicationVersion": 1,
+    "currentApplication": {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "merchantId": 8,
+      "version": 1,
+      "name": "示例商家",
+      "description": "合成申请资料",
+      "contactEmail": "merchant@example.invalid",
+      "contactPhone": "",
+      "submittedAt": "2026-11-12T08:00:00.000Z",
+      "submittedByUserId": 42,
+      "isLegacyBaseline": false
+    },
+    "history": [
+      {
+        "id": "00000000-0000-4000-8000-000000000005",
+        "merchantId": 8,
+        "applicationRevisionId": "00000000-0000-4000-8000-000000000004",
+        "action": "reject",
+        "fromStatus": "pending",
+        "toStatus": "rejected",
+        "reasonCode": "incomplete",
+        "note": "请补充联系资料",
+        "actorUserId": 1,
+        "versionAfter": 1,
+        "createdAt": "2026-11-12T08:00:00.000Z"
+      }
+    ],
+    "merchantCapabilities": [
+      "application.read",
+      "application.resubmit"
+    ],
+    "allowedActions": [
+      "resubmit"
+    ],
+    "blockers": []
+  }
+}

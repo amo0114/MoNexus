@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { logger } from '../../lib/logger.js'
 import { exportVideoObjects, restoreVideoObjects, rebindRestoredVideos, validateVideoManifest, videoRestoreSql, type VideoBackupObject } from '../productVideos/backup.js'
 import { getDeliveryStorageForProvider } from '../../lib/storage/delivery.js'
@@ -137,7 +138,7 @@ export async function importPortableBackup(
         status: true,
       },
     })
-    if (!operator || operator.role !== 'admin' || operator.status === '已封禁') {
+    if (!operator || operator.role !== 'admin' || await isAccountBanned(operator.id)) {
       throw notFound('当前引导管理员不存在')
     }
 
@@ -213,7 +214,7 @@ export async function importPortableBackup(
         nickname: operator.nickname,
         emailVerified: operator.emailVerified,
         role: 'admin',
-        status: '正常',
+        status: 'active',
       },
       create: {
         email: operator.email,
@@ -221,7 +222,7 @@ export async function importPortableBackup(
         nickname: operator.nickname,
         emailVerified: operator.emailVerified,
         role: 'admin',
-        status: '正常',
+        status: 'active',
       },
     })
     if (manifest.formatVersion !== 3) await rebindRestoredVideos([])

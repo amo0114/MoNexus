@@ -73,3 +73,35 @@ groups:
           routing: ai-p1
         annotations:
           summary: "AI token consumption exceeded the initial operational threshold; verify quotas and traffic."
+      - alert: MoNexusRefundReviewOverdue
+        expr: max(monexus_governance_oldest_age_seconds{state="refund_manual"}) > 86400
+        for: 5m
+        labels:
+          severity: P1
+          routing: governance-p1
+        annotations:
+          summary: "Recharge refund manual review exceeded 24 hours; assign an owner and inspect source evidence."
+      - alert: MoNexusExportBacklog
+        expr: max(monexus_governance_oldest_age_seconds{state="export_pending"}) > 1800 or max(monexus_governance_backlog{state="export_failed"}) > 0
+        for: 5m
+        labels:
+          severity: P1
+          routing: governance-p1
+        annotations:
+          summary: "Private exports are delayed or failed; inspect storage and task error codes."
+      - alert: MoNexusWalletIntegrityDifference
+        expr: max(monexus_governance_backlog{state="wallet_issue"}) > 0
+        for: 0m
+        labels:
+          severity: P1
+          routing: governance-p1
+        annotations:
+          summary: "Wallet source conservation differs; investigate evidence without automatically adjusting balances."
+      - alert: MoNexusWalletIntegrityStale
+        expr: time() - max(monexus_wallet_integrity_last_success_timestamp_seconds) > 7200
+        for: 5m
+        labels:
+          severity: P1
+          routing: governance-p1
+        annotations:
+          summary: "Wallet integrity scans have not completed for two scheduled rounds; inspect leases and checkpoints."

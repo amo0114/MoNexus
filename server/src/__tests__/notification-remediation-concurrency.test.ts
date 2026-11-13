@@ -101,7 +101,7 @@ describe('notification remediation announcement concurrency gates', () => {
       if (operation === 'archive') {
         await blocker.query('UPDATE "Announcement" SET "status" = $2 WHERE "id" = $1', [fixture.announcement.id, 'archived'])
       } else {
-        await blocker.query('UPDATE "Announcement" SET "endsAt" = $2 WHERE "id" = $1', [fixture.announcement.id, new Date(Date.now() - 1_000)])
+        await blocker.query('UPDATE "Announcement" SET "endsAt" = $2 WHERE "id" = $1', [fixture.announcement.id, new Date(Date.now() - 1_000).toISOString()])
       }
       requestPromise = api.post(`/api/announcements/${fixture.announcement.id}/acknowledge`)
         .set(authHeader(fixture.accessToken)).send({ version: 1 }).then((response) => response)

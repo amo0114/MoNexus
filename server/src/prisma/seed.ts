@@ -56,6 +56,7 @@ async function main() {
     password: 'admin123',
     role: 'admin',
   })
+  await prisma.adminAuthorization.upsert({where:{userId:admin.id},create:{userId:admin.id,tier:'super'},update:{}})
   if (e2eMfaFactor) {
     await prisma.user.update({
       where: { id: admin.id },
@@ -93,7 +94,7 @@ async function main() {
     email: 'merchant@moyuan.net',
     password: 'merchant123',
     role: 'merchant',
-    extraUpdate: { status: '正常' },
+    extraUpdate: { status: 'active' },
   })
   await prisma.pointAccount.upsert({
     where: { userId: merchantUser.id },

@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { createHash, randomInt } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, tooManyRequests, provisionEmailUnverified } from '../../lib/httpError.js'
@@ -57,7 +58,7 @@ export async function isProvisionEmailTrusted(
     where: { id: userId },
     select: { email: true, emailVerified: true, status: true },
   })
-  if (!user || user.status !== '正常') return false
+  if (!user || await isAccountBanned(userId)) return false
 
   if (user.emailVerified && user.email.toLowerCase() === email) {
     return true
@@ -113,7 +114,7 @@ export async function sendProvisionEmailCode(userId: number, emailRaw: string) {
     where: { id: userId },
     select: { email: true, emailVerified: true, status: true },
   })
-  if (!user || user.status !== '正常') throw badRequest('账号状态异常')
+  if (!user || await isAccountBanned(userId)) throw badRequest('账号状态异常')
 
   // Already trusted → no mail needed
   if (await isProvisionEmailTrusted(userId, email)) {

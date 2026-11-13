@@ -1,0 +1,29 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/merchant/products/3/inventory/batches",
+  "status": 200,
+  "schema": "GVInventoryBatchPage",
+  "response": {
+    "items": [
+      {
+        "id": "00000000-0000-4000-8000-000000000009",
+        "productId": 3,
+        "offerId": 4,
+        "merchantId": 8,
+        "actorUserId": 42,
+        "importedCount": 10,
+        "availableCount": 6,
+        "soldCount": 3,
+        "voidCount": 1,
+        "createdAt": "2026-11-12T08:00:00.000Z"
+      }
+    ],
+    "pageInfo": {
+      "nextCursor": null,
+      "hasNextPage": false
+    },
+    "asOf": "2026-11-12T08:00:00.000Z"
+  }
+}

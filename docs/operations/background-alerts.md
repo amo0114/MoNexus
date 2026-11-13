@@ -25,3 +25,13 @@
 5. AI 告警先检查按错误码聚合的日志、配额与供应商状态，不向日志追加模型原文或商品秘密。模型诊断仅显示本地固定文案。
 
 接入第二个真实 provider 前必须运行通用任务人工操作隔离、取消不确定性和批次隔离回归；R2-04/SR-01 已由 #333 修复，新增 provider 不得绕过该守卫。
+
+治理任务使用 `governance-p1` 路由，由现有运维 receiver 接入；本次不自动创建外部接收人。
+
+- MoNexusRefundReviewOverdue：`max(monexus_governance_oldest_age_seconds{state="refund_manual"}) > 86400`。Recharge refund manual review exceeded 24 hours; assign an owner and inspect source evidence.
+
+- MoNexusExportBacklog：`max(monexus_governance_oldest_age_seconds{state="export_pending"}) > 1800 or max(monexus_governance_backlog{state="export_failed"}) > 0`。Private exports are delayed or failed; inspect storage and task error codes.
+
+- MoNexusWalletIntegrityDifference：`max(monexus_governance_backlog{state="wallet_issue"}) > 0`。Wallet source conservation differs; investigate evidence without automatically adjusting balances.
+
+- MoNexusWalletIntegrityStale：`time() - max(monexus_wallet_integrity_last_success_timestamp_seconds) > 7200`。Wallet integrity scans have not completed for two scheduled rounds; inspect leases and checkpoints.

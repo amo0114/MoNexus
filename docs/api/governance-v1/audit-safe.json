@@ -1,0 +1,25 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/admin/audit/10",
+  "status": 200,
+  "schema": "GVAuditDetail",
+  "response": {
+    "id": 10,
+    "adminId": 1,
+    "action": "封禁用户",
+    "actionCode": "account.ban.created",
+    "targetType": "user",
+    "targetId": 42,
+    "createdAt": "2026-11-12T08:00:00.000Z",
+    "detailSchemaVersion": 1,
+    "detailSafe": {
+      "reasonCode": "abuse",
+      "reason": "合成运营理由"
+    },
+    "detailAvailability": "available",
+    "requestId": null,
+    "operationState": "committed"
+  }
+}

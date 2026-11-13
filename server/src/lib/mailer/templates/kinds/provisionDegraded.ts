@@ -13,6 +13,7 @@ import { resolveMailBrand, type MailBrandContext } from '../tokens.js'
 export interface ProvisionDegradedVars {
   to: string
   orderId: number
+  orderNo?: string | null
   productLabel: string
   errorCode: string
   brand?: Partial<MailBrandContext>
@@ -20,7 +21,7 @@ export interface ProvisionDegradedVars {
 
 export function renderProvisionDegraded(vars: ProvisionDegradedVars): MailMessage {
   const brand = resolveMailBrand(vars.brand)
-  const subject = `【自动开通失败，请人工履约】订单 #${vars.orderId}`
+  const subject = `【自动开通失败，请人工履约】订单 ${vars.orderNo ?? '#' + vars.orderId}`
   const title = '自动开通失败'
   const lead = '您好，以下订单的自动开通未能完成，已转为人工履约：'
   const tip =
@@ -30,7 +31,7 @@ export function renderProvisionDegraded(vars: ProvisionDegradedVars): MailMessag
     lead,
     [
       `商品：${vars.productLabel}`,
-      `订单号：#${vars.orderId}`,
+      `订单号：${vars.orderNo ?? '#' + vars.orderId}`,
       `失败原因代码：${vars.errorCode}`,
     ].join('\n'),
     tip,
@@ -42,7 +43,7 @@ export function renderProvisionDegraded(vars: ProvisionDegradedVars): MailMessag
     paragraphHtml(lead, 'left'),
     kvTableHtml([
       { label: '商品', value: vars.productLabel },
-      { label: '订单号', value: `#${vars.orderId}` },
+      { label: '订单号', value: `${vars.orderNo ?? '#' + vars.orderId}` },
       { label: '失败原因代码', value: vars.errorCode },
     ]),
     mutedParagraphHtml(tip, 'left'),

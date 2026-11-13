@@ -85,7 +85,7 @@ describe('PUT /api/admin/users/:id/ban and /unban', () => {
     expect(res.body.status).toBe('已封禁')
 
     const updated = await prisma.user.findUniqueOrThrow({ where: { id: target.id } })
-    expect(updated.status).toBe('已封禁')
+    expect(updated.status).toBe('banned')
 
     await api
       .post('/api/auth/login')
@@ -125,7 +125,7 @@ describe('PUT /api/admin/users/:id/ban and /unban', () => {
     expect(res.body.status).toBe('正常')
 
     const updated = await prisma.user.findUniqueOrThrow({ where: { id: target.id } })
-    expect(updated.status).toBe('正常')
+    expect(updated.status).toBe('active')
 
     await api
       .post('/api/auth/login')

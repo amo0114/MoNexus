@@ -94,6 +94,9 @@ describe('admin payment repair audit', () => {
     for (const log of logs) {
       expect(log.detail ?? '').not.toMatch(/rawPayload|sk_|secret|password/i)
       expect(log.targetType).toMatch(/PaymentEvent|RechargeOrder/)
+      const response = await api.get(`/api/admin/audit/${log.id}`)
+        .set(authHeader(adminAuth.accessToken)).expect(200)
+      expect(response.body.operationState).toBe('attempt')
     }
   })
 })

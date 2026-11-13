@@ -22,6 +22,8 @@
     "db:migrate:deploy": "node scripts/migrate-deploy.mjs",
     "db:seed": "tsx src/prisma/seed.ts",
     "db:seed:force": "tsx src/prisma/seed.ts --force-reset",
+    "governance:migrate": "tsx src/scripts/governanceMigrate.ts",
+    "governance:migrate:runtime": "node dist/scripts/governanceMigrate.js",
     "traffic-reset:reconcile": "tsx src/scripts/reconcileTrafficReset.ts",
     "xboard-accounts:backfill": "tsx src/scripts/backfillXboardAccounts.ts",
     "auth:revoke-legacy-admin-sessions": "tsx src/scripts/revokeLegacyAdminRefreshSessions.ts",

@@ -7,6 +7,7 @@ export async function writePaymentAdminLog(input: {
   action: string
   targetType: string
   targetKey: string
+  operationState?: 'attempt'
   extra?: Record<string, string | number | boolean | null>
 }) {
   const payload = {
@@ -23,6 +24,13 @@ export async function writePaymentAdminLog(input: {
       action: input.action,
       targetType: input.targetType,
       detail,
+      ...(input.operationState
+        ? {
+            actionCode: input.action,
+            detailSchemaVersion: 1,
+            detailSafe: { operationState: input.operationState },
+          }
+        : {}),
     },
   })
 }

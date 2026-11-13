@@ -339,6 +339,13 @@ export const revokeDeliveryFileSchema = z.object({
 }).strict()
 
 export const listUsersQuerySchema = z.object({
+  accountStatus: z.enum(['active','banned']).optional(),
+  role: z.enum(['user','merchant','admin']).optional(),
+  merchantStatus: z.enum(['pending','active','rejected','suspended']).optional(),
+  emailVerified: z.enum(['true','false']).transform(v=>v==='true').optional(),
+  registeredFrom: z.string().datetime({offset:true}).optional(), registeredTo: z.string().datetime({offset:true}).optional(),
+  lastLoginFrom: z.string().datetime({offset:true}).optional(), lastLoginTo: z.string().datetime({offset:true}).optional(),
+  sort: z.enum(['createdAt','lastLoginAt','orderCount','netSpentPoints']).optional(), direction: z.enum(['asc','desc']).optional(),
   q: z.string().trim().min(1).max(100).optional(),
   page: z.coerce.number().int().positive('page 必须是正整数').optional(),
   pageSize: z.coerce.number().int().positive('pageSize 必须是正整数')

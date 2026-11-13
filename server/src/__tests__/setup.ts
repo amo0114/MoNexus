@@ -24,7 +24,7 @@ beforeEach(async ({ task }) => {
   profileFile = relative(process.cwd(), task.file.filepath)
   profileTests += 1
   await timeTestOperation('reset.cache', () => __resetCacheForTests())
-  await timeTestOperation('reset.truncate', () => prisma.$executeRawUnsafe(`TRUNCATE TABLE
+  await timeTestOperation('reset.truncate', () => prisma.$executeRawUnsafe(`TRUNCATE TABLE "AdminCommandReceipt", "WalletIntegrityScanRun", "OfferCommercialRevision",
     "MerchantRecoveryAction",
     "MerchantRecoveryCase",
     "SettlementAdjustment",

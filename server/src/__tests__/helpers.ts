@@ -52,6 +52,7 @@ export async function createTestUser(
       role,
     },
   }))
+  if(role==='admin')await prisma.adminAuthorization.create({data:{userId:user.id,tier:'super'}})
   // B_CAT：resolver 驱动的建品/导入 API 需要 frozen seed categories 在场；
   // 用本测试用户作 actor 惰性补齐（create-if-missing），不引入额外 fixture 用户。
   await timeTestOperation('fixture.seedCategories', () => ensureSeedCategories(user.id))

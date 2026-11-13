@@ -61,4 +61,4 @@ ENTRYPOINT ["/sbin/tini", "--"]
 # Run migrations then start the server. If migrations fail, the
 # container exits and Docker's restart policy + healthcheck will surface
 # the issue instead of silently starting against an outdated schema.
-CMD ["sh", "-c", "node scripts/migrate-deploy.mjs && node dist/main.js"]
+CMD ["sh", "-c", "node scripts/migrate-deploy.mjs && node dist/scripts/governanceMigrate.js verify && node dist/main.js"]

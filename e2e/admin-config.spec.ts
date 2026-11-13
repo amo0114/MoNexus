@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Request } from '@playwright/test'
 import { loginAs, SEED_ACCOUNTS } from './helpers'
 
 /**
@@ -57,20 +57,41 @@ test('admin config tab shows Chinese groups and saves checkinReward', async ({ p
 // Global configuration is a critical admin journey (testing-policy §3).
 // Uses only a dummy key and never sends a request to OpenAI.
 test('admin manages AI credentials and switches from the unified configuration page', async ({ page }) => {
+  // This journey verifies configuration persistence. The Vite development app
+  // mounts effects twice under StrictMode; finish both initial reads before
+  // editing so a late initial response cannot replace the values being tested.
+  const initialReads = new Set<Request>()
+  page.on('request', request => {
+    if (request.method() === 'GET' && request.url().endsWith('/api/admin/ai/config')) {
+      initialReads.add(request)
+    }
+  })
+  const finishRead = (request: Request) => { initialReads.delete(request) }
+  page.on('requestfinished', finishRead)
+  page.on('requestfailed', finishRead)
   await loginAs(page, SEED_ACCOUNTS.admin)
   await page.goto('/admin')
   await page.getByRole('button', { name: '系统配置' }).click()
   await page.getByRole('tab', { name: 'AI 辅助' }).click()
   const key = page.getByLabel('API Key', { exact: true })
   await expect(key).toBeEnabled()
+  await expect.poll(() => initialReads.size).toBe(0)
   await page.getByLabel('API 地址（Base URL）', { exact: true }).fill('https://e2e-gateway.example/v1')
   await page.getByLabel('模型名称', { exact: true }).fill('vendor/e2e-model')
   await key.fill('sk-e2e-dummy-never-send-to-openai-5678')
   await page.getByLabel('AI 总开关', { exact: true }).check()
   await page.getByLabel('商品 Copilot（新建与说明整理）', { exact: true }).check()
+  await expect(page.getByLabel('API 地址（Base URL）', { exact: true })).toHaveValue('https://e2e-gateway.example/v1')
   const saved = page.waitForResponse(r => r.url().endsWith('/api/admin/ai/config') && r.request().method() === 'PUT')
   await page.getByRole('button', { name: '保存 AI 配置', exact: true }).click()
-  expect((await saved).status()).toBe(200)
+  const savedResponse = await saved
+  expect(savedResponse.status()).toBe(200)
+  // Inspect only non-secret fields, including when an assertion fails.
+  expect(savedResponse.request().postDataJSON().baseUrl).toBe('https://e2e-gateway.example/v1')
+  expect(savedResponse.request().postDataJSON().model).toBe('vendor/e2e-model')
+  const savedSettings = await savedResponse.json()
+  expect(savedSettings.baseUrl).toBe('https://e2e-gateway.example/v1')
+  expect(savedSettings.model).toBe('vendor/e2e-model')
   await expect(key).toHaveValue('')
   await page.reload()
   await page.getByRole('button', { name: '系统配置' }).click()

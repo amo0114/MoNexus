@@ -1,3 +1,4 @@
+import { decideMerchant } from '../merchantGovernance/lifecycle.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
@@ -43,105 +44,18 @@ export async function getMerchantDetail(id: number) {
   return merchant
 }
 
-export async function approveMerchant(adminUserId: number, merchantId: number) {
-  return prisma.$transaction(async tx => {
-    const merchant = await tx.merchant.findUnique({ where: { id: merchantId } })
-    if (!merchant) throw notFound('商家不存在')
-    if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
-
-    await lockUserRefreshSessionMutations(tx, merchant.userId)
-
-    const updated = await tx.merchant.update({
-      where: { id: merchantId },
-      data: { status: 'active', approvedAt: new Date(), approvedBy: adminUserId },
-    })
-
-    await tx.user.update({
-      where: { id: merchant.userId },
-      data: { role: 'merchant' },
-    })
-
-    await revokeAllUserRefreshTokens(merchant.userId, tx)
-
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '审核通过商家',
-        targetType: 'merchant',
-        targetId: merchantId,
-        detail: `商家 ${merchant.name} 审核通过`,
-      },
-    })
-
-    return updated
-  })
+export async function approveMerchant(actor: number, id: number) {
+  await decideMerchant(actor, id, 'approve', { reasonCode: 'approved', note: '审核通过' })
+  return prisma.merchant.findUniqueOrThrow({where:{id}})
 }
-
-export async function rejectMerchant(adminUserId: number, merchantId: number, reason: string) {
-  const trimmedReason = (reason ?? '').trim()
-  if (!trimmedReason || trimmedReason.length < 2) {
-    throw badRequest('拒绝理由至少 2 个字符')
-  }
-  if (trimmedReason.length > 500) {
-    throw badRequest('拒绝理由最多 500 个字符')
-  }
-
-  return prisma.$transaction(async tx => {
-    const merchant = await tx.merchant.findUnique({ where: { id: merchantId } })
-    if (!merchant) throw notFound('商家不存在')
-    if (merchant.status !== 'pending') throw badRequest('只能审核待审核的商家')
-
-    const updated = await tx.merchant.update({
-      where: { id: merchantId },
-      data: { status: 'rejected' },
-    })
-
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '拒绝商家入驻',
-        targetType: 'merchant',
-        targetId: merchantId,
-        detail: `拒绝原因: ${trimmedReason}`,
-      },
-    })
-
-    return updated
-  })
+export async function rejectMerchant(actor: number, id: number, reason: string) {
+  if (!reason?.trim() || reason.trim().length < 2 || reason.length > 500) throw badRequest('拒绝理由需要 2–500 个字符')
+  await decideMerchant(actor, id, 'reject', { reasonCode: 'rejected', note: reason.trim() })
+  return prisma.merchant.findUniqueOrThrow({where:{id}})
 }
-
-export async function suspendMerchant(adminUserId: number, merchantId: number) {
-  const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
-  if (!merchant) throw notFound('商家不存在')
-  if (merchant.status !== 'active') throw badRequest('只能停用已激活的商家')
-
-  return prisma.$transaction(async tx => {
-    await lockUserRefreshSessionMutations(tx, merchant.userId)
-
-    const updated = await tx.merchant.update({
-      where: { id: merchantId },
-      data: { status: 'suspended' },
-    })
-
-    await tx.user.update({
-      where: { id: merchant.userId },
-      data: { role: 'user' },
-    })
-
-    await revokeAllUserRefreshTokens(merchant.userId, tx)
-
-    await tx.adminLog.create({
-      data: {
-        adminUserId,
-        action: '停用商家',
-        targetType: 'merchant',
-        targetId: merchantId,
-        detail: `商家 ${merchant.name} 已停用`,
-      },
-    })
-
-    return updated
-  })
+export async function suspendMerchant(actor: number, id: number) {
+  await decideMerchant(actor, id, 'suspend', { reasonCode: 'suspended', note: '管理员停用' })
+  return prisma.merchant.findUniqueOrThrow({where:{id}})
 }
 
 /** SPEC-MERCHANT-AGENT-001 pilot allowlist; only changes who may use the operations agent. */
@@ -162,12 +76,13 @@ export async function updateCommission(adminUserId: number, merchantId: number, 
   const merchant = await prisma.merchant.findUnique({ where: { id: merchantId } })
   if (!merchant) throw notFound('商家不存在')
 
-  const updated = await prisma.merchant.update({
+  return prisma.$transaction(async tx => {
+  const updated = await tx.merchant.update({
     where: { id: merchantId },
     data: { commissionRate },
   })
 
-  await prisma.adminLog.create({
+  await tx.adminLog.create({
     data: {
       adminUserId,
       action: '调整抽成比例',
@@ -178,4 +93,5 @@ export async function updateCommission(adminUserId: number, merchantId: number, 
   })
 
   return updated
+  })
 }

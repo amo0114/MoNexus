@@ -303,6 +303,7 @@ async function buildReplayResponse(orderId: number, userId: number) {
   const replayExpired = order.delivery?.expiresAt != null && order.delivery.expiresAt.getTime() <= Date.now()
   return {
     orderId: order.id,
+    orderNo: order.orderNo,
     productName: order.productNameSnapshot ?? order.product.name,
     price: order.price,
     status: normalizeOrderStatus(order.status),
@@ -546,6 +547,7 @@ async function createOrderOnce(
     let commissionAmount = 0
 
     if (product.merchantId != null) {
+      await tx.$queryRaw`SELECT id FROM "Merchant" WHERE id=${product.merchantId} FOR SHARE`
       const merchant = await tx.merchant.findUnique({ where: { id: product.merchantId } })
       if (!merchant || merchant.status !== 'active') throw badRequest('商家暂不可用')
       const restriction = buyerRestrictionReason(buyer, merchant.userId)
@@ -929,6 +931,7 @@ async function createOrderOnce(
 
     return {
       orderId: order.id,
+      orderNo: order.orderNo,
       productName: product.name,
       price: offer.price,
       status: normalizeOrderStatus(order.status),

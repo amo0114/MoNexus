@@ -12,6 +12,7 @@ import { resolveMailBrand, type MailBrandContext } from '../tokens.js'
 export interface SubscriptionMailVars {
   to: string
   orderId: number
+  orderNo?: string | null
   productLabel: string
   expiresAtLabel: string
   brand?: Partial<MailBrandContext>
@@ -28,7 +29,7 @@ export function renderSubscriptionExpiring(vars: SubscriptionMailVars): MailMess
     lead,
     [
       `商品：${vars.productLabel}`,
-      `订单号：#${vars.orderId}`,
+      `订单号：${vars.orderNo ?? '#' + vars.orderId}`,
       `到期时间：${vars.expiresAtLabel}`,
     ].join('\n'),
     tip,
@@ -39,7 +40,7 @@ export function renderSubscriptionExpiring(vars: SubscriptionMailVars): MailMess
     paragraphHtml(lead, 'left'),
     kvTableHtml([
       { label: '商品', value: vars.productLabel },
-      { label: '订单号', value: `#${vars.orderId}` },
+      { label: '订单号', value: `${vars.orderNo ?? '#' + vars.orderId}` },
       { label: '到期时间', value: vars.expiresAtLabel },
     ]),
     mutedParagraphHtml(tip, 'left'),
@@ -64,7 +65,7 @@ export function renderSubscriptionExpired(vars: SubscriptionMailVars): MailMessa
     lead,
     [
       `商品：${vars.productLabel}`,
-      `订单号：#${vars.orderId}`,
+      `订单号：${vars.orderNo ?? '#' + vars.orderId}`,
       `到期时间：${vars.expiresAtLabel}`,
     ].join('\n'),
     tip,
@@ -75,7 +76,7 @@ export function renderSubscriptionExpired(vars: SubscriptionMailVars): MailMessa
     paragraphHtml(lead, 'left'),
     kvTableHtml([
       { label: '商品', value: vars.productLabel },
-      { label: '订单号', value: `#${vars.orderId}` },
+      { label: '订单号', value: `${vars.orderNo ?? '#' + vars.orderId}` },
       { label: '到期时间', value: vars.expiresAtLabel },
     ]),
     mutedParagraphHtml(tip, 'left'),

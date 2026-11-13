@@ -402,6 +402,7 @@ export async function notifyDegradedTasks(): Promise<void> {
           order: {
             select: {
               id: true,
+              orderNo: true,
               productNameSnapshot: true,
               offerNameSnapshot: true,
               product: { select: { name: true } },
@@ -422,6 +423,7 @@ export async function notifyDegradedTasks(): Promise<void> {
           renderMail('provision_degraded', {
             to: recipient,
             orderId: task.order.id,
+            orderNo: task.order.orderNo,
             productLabel: label,
             errorCode: task.lastError ?? 'unknown',
           }),

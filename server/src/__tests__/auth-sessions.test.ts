@@ -411,7 +411,7 @@ describe('device session families', () => {
       prisma.merchant.findUniqueOrThrow({ where: { id: pendingMerchant.id }, select: { status: true } }),
       prisma.merchant.findUniqueOrThrow({ where: { id: activeMerchant.id }, select: { status: true } }),
     ])
-    expect(banned.status === '已封禁' && approved.status === 'active' && suspended.status === 'suspended').toBe(true)
+    expect(banned.status === 'banned' && approved.status === 'active' && suspended.status === 'suspended').toBe(true)
   })
 
   it('requires sid for session management without changing ordinary legacy access-token compatibility', async () => {

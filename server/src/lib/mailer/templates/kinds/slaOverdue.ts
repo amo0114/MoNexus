@@ -13,6 +13,7 @@ import { resolveMailBrand, type MailBrandContext } from '../tokens.js'
 export interface SlaOverdueVars {
   to: string
   orderId: number
+  orderNo?: string | null
   productLabel: string
   deadlineLabel: string
   waitDurationLabel: string
@@ -21,14 +22,14 @@ export interface SlaOverdueVars {
 
 export function renderSlaOverdue(vars: SlaOverdueVars): MailMessage {
   const brand = resolveMailBrand(vars.brand)
-  const subject = `【履约超时提醒】订单 #${vars.orderId} 已超过履约截止时间`
+  const subject = `【履约超时提醒】订单 ${vars.orderNo ?? '#' + vars.orderId} 已超过履约截止时间`
   const title = '履约超时提醒'
   const lead = '您好，您有一笔人工服务订单已超过履约截止时间，买家仍在等待：'
 
   const text = joinText(
     lead,
     [
-      `订单号：#${vars.orderId}`,
+      `订单号：${vars.orderNo ?? '#' + vars.orderId}`,
       `商品：${vars.productLabel}`,
       `履约截止时间：${vars.deadlineLabel}`,
       `买家已等待：${vars.waitDurationLabel}`,
@@ -41,7 +42,7 @@ export function renderSlaOverdue(vars: SlaOverdueVars): MailMessage {
     warningBannerHtml('该订单已超过履约截止时间，请尽快处理。'),
     paragraphHtml(lead, 'left'),
     kvTableHtml([
-      { label: '订单号', value: `#${vars.orderId}` },
+      { label: '订单号', value: `${vars.orderNo ?? '#' + vars.orderId}` },
       { label: '商品', value: vars.productLabel },
       { label: '履约截止时间', value: vars.deadlineLabel },
       { label: '买家已等待', value: vars.waitDurationLabel },

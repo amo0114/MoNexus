@@ -23,6 +23,7 @@ export async function adminRetryEvent(eventId: string, actorUserId: number) {
   await writePaymentAdminLog({
     adminUserId: actorUserId,
     action: 'payment.event.retry',
+    operationState: 'attempt',
     targetType: 'PaymentEvent',
     targetKey: eventId,
     extra: { provider: event.provider, source: event.source },
@@ -50,6 +51,7 @@ export async function adminReconcileOrder(orderId: string, actorUserId: number) 
   await writePaymentAdminLog({
     adminUserId: actorUserId,
     action: 'payment.order.reconcile',
+    operationState: 'attempt',
     targetType: 'RechargeOrder',
     targetKey: orderId,
   })
@@ -60,6 +62,7 @@ export async function adminResolveReconcileRequired(orderId: string, actorUserId
   await writePaymentAdminLog({
     adminUserId: actorUserId,
     action: 'payment.order.resolve_reconcile',
+    operationState: 'attempt',
     targetType: 'RechargeOrder',
     targetKey: orderId,
     extra: { resolution: action },
@@ -71,6 +74,7 @@ export async function adminReviewReconItem(itemId: string, actorUserId: number, 
   await writePaymentAdminLog({
     adminUserId: actorUserId,
     action: 'payment.recon_item.review',
+    operationState: 'attempt',
     targetType: 'ReconciliationItem',
     targetKey: itemId,
     extra: { status },
@@ -85,6 +89,7 @@ export async function adminRequestRefund(orderId: string, actorUserId: number, r
   await writePaymentAdminLog({
     adminUserId: actorUserId,
     action: 'payment.order.refund',
+    operationState: 'attempt',
     targetType: 'RechargeOrder',
     targetKey: orderId,
     extra: { reasonCode: reasonCode ?? 'admin_requested' },
@@ -232,6 +237,7 @@ export async function adminRerunRecon(runId: string, actorUserId: number) {
   await writePaymentAdminLog({
     adminUserId: actorUserId,
     action: 'payment.recon.rerun',
+    operationState: 'attempt',
     targetType: 'ReconciliationRun',
     targetKey: runId,
   })

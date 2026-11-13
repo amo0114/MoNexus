@@ -28,6 +28,7 @@ function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
 
   if (query.q) {
     const conditions: Prisma.OrderWhereInput[] = [
+      { orderNo: query.q },
       { user: { email: { contains: query.q, mode: 'insensitive' } } },
     ]
     const numeric = Number(query.q)

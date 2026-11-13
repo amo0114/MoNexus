@@ -1,0 +1,291 @@
+{
+  "asOf": "2026-11-12T15:27:07.051Z",
+  "environment": {
+    "node": "v22.23.1",
+    "cpu": "12th Gen Intel(R) Core(TM) i5-12500H",
+    "logicalCpus": 8,
+    "memoryBytes": 8327389184,
+    "postgresql": "PostgreSQL 14.24 (Ubuntu 14.24-0ubuntu0.22.04.1) on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit"
+  },
+  "timings": {
+    "users_createdAt": {
+      "samples": 20,
+      "firstMs": 74.60065399999996,
+      "p50Ms": 11.76851499999998,
+      "p95Ms": 15.624987999999917,
+      "maxMs": 74.60065399999996
+    },
+    "users_netSpentPoints": {
+      "samples": 20,
+      "firstMs": 314.01034400000003,
+      "p50Ms": 294.9118090000002,
+      "p95Ms": 314.3952039999999,
+      "maxMs": 315.733741
+    },
+    "users_exact_uid": {
+      "samples": 20,
+      "firstMs": 6.987732000000506,
+      "p50Ms": 4.974405999999362,
+      "p95Ms": 6.757060999999339,
+      "maxMs": 6.987732000000506
+    },
+    "users_fuzzy": {
+      "samples": 20,
+      "firstMs": 17.797685999999885,
+      "p50Ms": 16.88880699999936,
+      "p95Ms": 17.861656999999468,
+      "maxMs": 18.211660999999367
+    },
+    "user_detail": {
+      "samples": 20,
+      "firstMs": 13.721623000000363,
+      "p50Ms": 9.454340999999658,
+      "p95Ms": 13.170063999999911,
+      "maxMs": 13.721623000000363
+    },
+    "user_orders_keyset": {
+      "samples": 20,
+      "firstMs": 7.093840999999884,
+      "p50Ms": 5.662355000000389,
+      "p95Ms": 7.093840999999884,
+      "maxMs": 7.602729000000181
+    },
+    "user_point_logs_keyset": {
+      "samples": 20,
+      "firstMs": 5.6633010000005015,
+      "p50Ms": 4.115561999999954,
+      "p95Ms": 5.641329999999471,
+      "maxMs": 5.6633010000005015
+    },
+    "export_enqueue": {
+      "samples": 20,
+      "firstMs": 41.08286399999997,
+      "p50Ms": 30.548032999999123,
+      "p95Ms": 36.932158999999956,
+      "maxMs": 41.08286399999997
+    }
+  },
+  "plans": {
+    "orders_keyset": [
+      {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 0.42,
+          "Total Cost": 8.59,
+          "Plan Rows": 10,
+          "Plan Width": 12,
+          "Actual Startup Time": 0.023,
+          "Actual Total Time": 0.025,
+          "Actual Rows": 10,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 3,
+          "Shared Read Blocks": 1,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Index Only Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Backward",
+              "Index Name": "Order_userId_createdAt_id_idx",
+              "Relation Name": "Order",
+              "Alias": "Order",
+              "Startup Cost": 0.42,
+              "Total Cost": 8.59,
+              "Plan Rows": 10,
+              "Plan Width": 12,
+              "Actual Startup Time": 0.022,
+              "Actual Total Time": 0.023,
+              "Actual Rows": 10,
+              "Actual Loops": 1,
+              "Index Cond": "(\"userId\" = 5004)",
+              "Rows Removed by Index Recheck": 0,
+              "Heap Fetches": 0,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 1,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 10,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.099,
+        "Triggers": [],
+        "Execution Time": 0.033
+      }
+    ],
+    "point_logs_keyset": [
+      {
+        "Plan": {
+          "Node Type": "Limit",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 0.42,
+          "Total Cost": 4.59,
+          "Plan Rows": 10,
+          "Plan Width": 12,
+          "Actual Startup Time": 0.016,
+          "Actual Total Time": 0.017,
+          "Actual Rows": 10,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 3,
+          "Shared Read Blocks": 1,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Index Only Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Scan Direction": "Backward",
+              "Index Name": "PointLog_userId_createdAt_id_idx",
+              "Relation Name": "PointLog",
+              "Alias": "PointLog",
+              "Startup Cost": 0.42,
+              "Total Cost": 4.59,
+              "Plan Rows": 10,
+              "Plan Width": 12,
+              "Actual Startup Time": 0.015,
+              "Actual Total Time": 0.016,
+              "Actual Rows": 10,
+              "Actual Loops": 1,
+              "Index Cond": "(\"userId\" = 5004)",
+              "Rows Removed by Index Recheck": 0,
+              "Heap Fetches": 0,
+              "Shared Hit Blocks": 3,
+              "Shared Read Blocks": 1,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 15,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.052,
+        "Triggers": [],
+        "Execution Time": 0.023
+      }
+    ],
+    "exact_order_no": [
+      {
+        "Plan": {
+          "Node Type": "Index Scan",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "Order_orderNo_key",
+          "Relation Name": "Order",
+          "Alias": "Order",
+          "Startup Cost": 0.42,
+          "Total Cost": 8.44,
+          "Plan Rows": 1,
+          "Plan Width": 4,
+          "Actual Startup Time": 0.015,
+          "Actual Total Time": 0.015,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Index Cond": "(\"orderNo\" = 'MN20260611-FZ5MMD9KW1ST'::text)",
+          "Rows Removed by Index Recheck": 0,
+          "Shared Hit Blocks": 1,
+          "Shared Read Blocks": 3,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning": {
+          "Shared Hit Blocks": 0,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.025,
+        "Triggers": [],
+        "Execution Time": 0.019
+      }
+    ]
+  },
+  "exportLimit": {
+    "rows": 100000,
+    "attemptedRows": 100001,
+    "errorCode": "EXPORT_LIMIT_EXCEEDED",
+    "materializedRows": 0
+  },
+  "integrity": {
+    "id": "c4088864-c172-48af-9a0e-e4e1e8f53cc6",
+    "firstBatchCount": 500,
+    "scannedCount": 10000,
+    "status": "succeeded"
+  },
+  "counts": {
+    "users": "10004",
+    "orders": "100001",
+    "point_logs": "100000",
+    "lots": "30000"
+  },
+  "budget": {
+    "listDetailMs": 500,
+    "keysetMs": 300,
+    "exceeded": []
+  }
+}
