@@ -648,6 +648,21 @@ describe('ProductDetailPage createOrder term fields', () => {
     fireEvent(window, new Event('resize'))
     // Floating bottom bar must yield and disappear to maintain strict Single-CTA
     expect(screen.queryByTestId('mobile-buy-bar')).toBeNull()
+
+    // 3. A long tablet layout pushes the in-flow CTA below the first screen: the bar stands in for it
+    vi.spyOn(inflowCard, 'getBoundingClientRect').mockReturnValue({
+      bottom: window.innerHeight + 180,
+      top: window.innerHeight + 20,
+      height: 160,
+      width: 700,
+      left: 0,
+      right: 700,
+      x: 0,
+      y: window.innerHeight + 20,
+      toJSON: () => {},
+    })
+    fireEvent(window, new Event('scroll'))
+    expect(screen.getByTestId('mobile-buy-bar')).toBeInTheDocument()
   })
 
   it('recovers from HTTP 409 CHECKOUT_CHANGED: catches error, shows notice, preserves input, and confirms with new checkoutVersion and rotated idempotencyKey', async () => {
