@@ -7,6 +7,22 @@
 .hide-scrollbar::-webkit-scrollbar { display: none; }
 .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+/* Horizontal overflow hint for scrollers with hidden scrollbars: an edge
+   fades only while more content lies that way. A row that fits has an
+   inactive scroll timeline, so it keeps the zero base values (no fade). */
+@property --scroll-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --scroll-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes scrollFadeStart { from { --scroll-fade-start: 0px; } to { --scroll-fade-start: 28px; } }
+@keyframes scrollFadeEnd { from { --scroll-fade-end: 28px; } to { --scroll-fade-end: 0px; } }
+@supports (animation-timeline: scroll()) {
+  .scroll-fade-x {
+    mask-image: linear-gradient(to right, transparent, #000 var(--scroll-fade-start), #000 calc(100% - var(--scroll-fade-end)), transparent);
+    animation: scrollFadeStart linear both, scrollFadeEnd linear both;
+    animation-timeline: scroll(self inline), scroll(self inline);
+    animation-range: 0 28px, calc(100% - 28px) 100%;
+  }
+}
+
 /* Stars (rating system) */
 .star-filled { color: #F59E0B; fill: #F59E0B; }
 .star-empty { color: var(--color-image-placeholder); fill: var(--color-image-placeholder); }

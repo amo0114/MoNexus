@@ -53,7 +53,7 @@ function DashStat({
       }`}
     >
       <div className={`text-xs font-bold mb-1.5 flex items-center gap-1.5 ${isCta ? 'text-[var(--color-cta)]' : 'text-[var(--color-text-muted)]'}`}>
-        <Icon className="w-3.5 h-3.5 shrink-0" /> <span className="sm:truncate">{label}</span>
+        <Icon className="w-3.5 h-3.5 shrink-0" /> <span className="text-balance sm:truncate">{label}</span>
       </div>
       <div className={`font-heading text-xl sm:text-2xl font-bold truncate ${isCta ? 'text-[var(--color-cta)]' : 'text-[var(--color-text)]'}`}>
         {typeof value === 'number' ? value.toLocaleString('zh-CN') : value}

@@ -348,8 +348,8 @@ export default function AdminOrderTable({ active = true }: Props) {
                       </div>
                     )}
                   </td>
-                  <td className="text-[var(--color-cta)] font-bold" data-label="扣除积分">
-                    {o.price}
+                  <td className="text-[var(--color-cta)] font-bold tabular-nums" data-label="扣除积分">
+                    {o.price.toLocaleString('zh-CN')}
                   </td>
                   <td data-label="状态">
                     <RegistryPill value={o.status} category="orderStatuses" />
