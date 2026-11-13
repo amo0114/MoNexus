@@ -6359,7 +6359,8 @@
             "enum": [
               "available",
               "legacy_detail_unavailable"
-            ]
+            ],
+            "description": "控制可公开的 detailSafe 明细是否可用；兼容值 legacy_detail_unavailable 表示没有已公开可展示的安全详情，不能推断记录年代或 operationState。显式请求标记可有 operationState=attempt，同时 detailSafe=null。"
           },
           "requestId": {
             "type": "string",
@@ -6376,7 +6377,7 @@
               "rate_limited",
               "unknown"
             ],
-            "description": "审计事实语义：attempt 只证明已发起，committed 只证明本地治理决定已提交（拒绝决定也属于此类，不代表现金已退或任务已完成）；sent 仅表示测试邮件已提交发送，failed/rejected/rate_limited 为邮件显式终态；缺少可信标记的历史为 unknown，不能按 action 文案猜成功。"
+            "description": "审计事实语义：attempt 只证明请求已发起；committed 只证明本地治理决定已提交（拒绝决定也属于此类，不代表现金已退或任务已完成）；sent 表示测试邮件本地发送调用已提交；failed 表示本地发送调用报错，超时不能证明远端未接受；rejected/rate_limited 表示本地拒绝。未标记或无法确认的记录，包括历史及现有未标记写入路径，均为 unknown，不能按 action 文案猜成功。"
           }
         },
         "required": [

@@ -53,7 +53,7 @@
 
 ## 1.0.3 联调补齐
 
-审计详情新增必返回 `operationState`：`attempt` 只证明请求已发起；`committed` 证明本地治理决定已提交，拒绝决定也属于此类，不能显示为现金已退；`sent/failed/rejected/rate_limited` 是测试邮件明确记录的阶段；其他历史为 `unknown`。`detailSafe` 仍可能为空，不得为显示阶段而解析原始 detail。新增三份夹具覆盖请求尝试、发送提交和未知历史。路径、命令输入及既有字段不变。
+审计详情新增必返回 `operationState`：`attempt` 只证明请求已发起；`committed` 证明本地治理决定已提交，拒绝决定也属于此类，不能显示为现金已退；`sent/failed/rejected/rate_limited` 是测试邮件明确记录的本地调用阶段；未标记或无法确认的记录（含历史与现有未标记写入路径）为 `unknown`。`failed` 只表示本地发送调用报错，超时不能证明远端未接受邮件，不应据此自动重发。`detailSafe` 仍可能为空；`legacy_detail_unavailable` 是安全明细缺失的兼容值，不代表记录年代，也不等于阶段未知。不得为显示阶段而解析原始 detail。新增三份夹具覆盖请求尝试、发送提交和未知历史。路径、命令输入及既有字段不变。
 
 `history.read` 不是所有 GET 的通行证。本批停用商家可读本人 `/merchant/me`、`/orders[/:id]`、`/settlements`、`/stats`、`/finance/summary`、`/finance/entries`、库存批次及规格修订；商品列表 `/merchant/products`、经营看板 `/merchant/dashboard/*`、原始库存条目/日志及经营配置不在该范围，继续返回 403。账号封禁优先。前端默认落到订单页，并表述为“可查看历史订单与结算”，无需恢复商品或经营看板入口。
 

@@ -98,7 +98,7 @@ GET /api/admin/capabilities 返回 contractVersion=governance-v1、permissions�
 
 ## 9. 联调反馈补齐（契约 1.0.3）
 
-审计详情使用 `operationState`，按入口说明的闭集状态显示；`committed` 是决定已提交，不是现金成功。`attempt` 不得显示成执行完成；`unknown` 显示历史结果未知。`detailSafe: null` 与明确阶段可以同时成立。新邮件阶段只说明发送操作的事实，不证明收件人收到。
+审计详情使用 `operationState`，按入口说明的闭集状态显示；`committed` 是决定已提交，不是现金成功。`attempt` 不得显示成执行完成；`unknown` 显示历史结果未知。`detailSafe: null` 与明确阶段可以同时成立。新邮件阶段只说明本地发送调用的事实，不证明收件人收到；failed 包括超时，不能证明远端未接受，不要自动重发。unknown 也可能来自现有未标记的写入路径，不能把它当作成功或失败。legacy_detail_unavailable 只说明安全明细不可展示，不推断记录年代。
 
 [全部 20 个标签权限映射](../api/governance-v1/admin-permissions.md)及同目录 admin-navigation.json 由后端维护；前端将原有标签也纳入 permissions 过滤，入口按 entryAllOf，按钮和子分区按 actions。无权限的 keep-alive 面板也须停止请求；当前标签被撤权时切到仍可访问的第一个入口，无入口则显示无可用权限。不能让无权限后台先默认挂载 dashboard，再等 403。
 
