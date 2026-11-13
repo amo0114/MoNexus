@@ -31,7 +31,7 @@ export const MERCHANT_TAB_STATE = 'merchantTab'
 export function MerchantNav({ activeKey, onSelect }: { activeKey: MerchantTabKey | null; onSelect: (tab: MerchantTab) => void }) {
   return (
     <aside className="w-full md:w-64 flex-shrink-0 max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[color-mix(in_srgb,var(--color-background)_95%,transparent)] max-md:backdrop-blur-md md:sticky md:top-[calc(var(--navbar-current-h)+1rem)] md:self-start">
-      <nav aria-label="商家中心" className="md:card p-0 md:p-2 flex md:flex-col gap-1 overflow-x-auto hide-scrollbar">
+      <nav aria-label="商家中心" className="md:card p-0 md:p-2 flex md:flex-col gap-1 overflow-x-auto hide-scrollbar scroll-fade-x">
         {MERCHANT_TABS.map((tab) => {
           const active = tab.key === activeKey
           return (
