@@ -98,6 +98,7 @@ case "$action" in
   prepare-runtime)
     # An explicit, protected staging-only operation. Never rotate existing keys
     # or change an explicitly selected verification provider/proxy topology.
+    # The dedicated Caddy -> bundled Nginx staging chain requires two hops.
     [[ "$env_file" == /etc/monexus/staging.env ]] || { echo '[ERROR] Runtime preparation requires the dedicated staging env file.' >&2; exit 2; }
     [[ "${2:-}" == PREPARE_STAGING_RUNTIME ]] || { echo '[ERROR] Missing staging preparation confirmation.' >&2; exit 2; }
     candidate="$(mktemp /etc/monexus/.staging.env.runtime.candidate.XXXXXX)"

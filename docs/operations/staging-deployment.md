@@ -181,7 +181,8 @@ operational switches.
 For a legacy staging environment, `prepare_runtime=true` on a protected deploy
 adds missing runtime encryption roots directly on the staging host. It pins a
 missing verification provider to the existing Turnstile configuration and a
-missing topology to Caddy only when `TRUST_PROXY=2` already matches. Explicit
+missing topology to Caddy, correcting the legacy single-hop value to
+`TRUST_PROXY=2` for Caddy -> bundled Nginx. Explicit
 provider/topology choices and existing roots remain unchanged. Preparation
 requires the dedicated origin and env path, validates a private candidate,
 retains a mode-0600 pre-change env backup, and never prints key values. Back up

@@ -21,10 +21,11 @@ export function prepareStagingRuntime(text) {
     values.set(match[1], value)
   }
   if (values.get('FRONTEND_ORIGIN') !== 'https://staging.monexus.oai-o.com') throw new Error('Dedicated staging origin required')
-  if (values.get('TRUST_PROXY') !== '2') throw new Error('Existing staging TRUST_PROXY must be 2')
+  if (!['1', '2'].includes(values.get('TRUST_PROXY'))) throw new Error('Existing staging TRUST_PROXY must be a known numeric hop count')
   if (values.get('DEPLOY_TOPOLOGY') && values.get('DEPLOY_TOPOLOGY') !== 'caddy') throw new Error('Existing staging topology is incompatible')
   const additions = new Map()
   if (!values.get('DEPLOY_TOPOLOGY')) additions.set('DEPLOY_TOPOLOGY', 'caddy')
+  if (values.get('TRUST_PROXY') !== '2') additions.set('TRUST_PROXY', '2')
   if (!values.get('HUMAN_VERIFICATION_PROVIDER')) {
     if (!values.get('TURNSTILE_SITE_KEY') || !values.get('TURNSTILE_SECRET_KEY')) throw new Error('Existing staging Turnstile configuration required')
     additions.set('HUMAN_VERIFICATION_PROVIDER', 'turnstile')

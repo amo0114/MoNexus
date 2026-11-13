@@ -20,10 +20,14 @@ test('prepares only missing staging fields, preserving existing credentials and 
   assert.ok(repeated.text.includes(keys[0]))
   assert.ok(repeated.text.includes(keys[1]))
   assert.deepEqual(prepareStagingRuntime(result.text.replace('PROVIDER=turnstile', 'PROVIDER=altcha')).keys, [])
+  const legacy = prepareStagingRuntime(base.replace('TRUST_PROXY=2', 'TRUST_PROXY=1'))
+  assert.ok(legacy.keys.includes('TRUST_PROXY'))
+  assert.ok(legacy.text.includes('TRUST_PROXY=2'))
+  assert.ok(!legacy.text.includes('TRUST_PROXY=1'))
 })
 
 test('rejects another origin, incompatible topology, duplicate assignments and malformed keys without exposing values', () => {
-  for (const text of [base.replace('https://staging.monexus.oai-o.com', 'https://monexus.oai-o.com'), base.replace('TRUST_PROXY=2', 'TRUST_PROXY=1'), base + 'DEPLOY_TOPOLOGY=nginx', base + 'TRUST_PROXY=2', base + 'MAIL_CREDENTIALS_ENC_KEY=secret-sentinel']) {
+  for (const text of [base.replace('https://staging.monexus.oai-o.com', 'https://monexus.oai-o.com'), base.replace('TRUST_PROXY=2', 'TRUST_PROXY=true'), base + 'DEPLOY_TOPOLOGY=nginx', base + 'TRUST_PROXY=2', base + 'MAIL_CREDENTIALS_ENC_KEY=secret-sentinel']) {
     assert.throws(() => prepareStagingRuntime(text), error => !error.message.includes('secret-sentinel'))
   }
 })
