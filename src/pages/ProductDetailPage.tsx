@@ -142,8 +142,9 @@ export default function ProductDetailPage() {
       const cta = el.querySelector('[data-testid="inflow-buy-cta"]') as HTMLElement | null
       const ctaRect = cta && cta.getBoundingClientRect().height > 0 ? cta.getBoundingClientRect() : cardRect
 
-      // The in-flow purchase CTA has completely scrolled past the sticky navbar
-      setMidScreenScrolledPast(ctaRect.bottom <= navHeight)
+      // Show the bar whenever the in-flow CTA is not fully on screen: scrolled past
+      // the sticky navbar, or (partly) below the first screen on long tablet layouts.
+      setMidScreenScrolledPast(ctaRect.bottom <= navHeight || ctaRect.bottom > window.innerHeight)
     }
 
     window.addEventListener('scroll', checkPosition, { passive: true })

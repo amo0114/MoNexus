@@ -57,6 +57,10 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           ? '查看套餐'
           : `库存 ${product.stockMode === 'unlimited' ? '不限' : product.stock}`
 
+  const extraRows = Number(Boolean(disclosure?.kind === 'editorial' && disclosure.publicReason))
+    + Number(Boolean(product.merchandising?.merchantPartner))
+  const descriptionLines = Math.max(0, 2 - extraRows)
+
   return (
     <div
       key={product.id}
@@ -158,8 +162,13 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
             <MerchantPartnerMark merchantPartner={product.merchandising.merchantPartner} />
           </div>
         )}
-        {!compact && (
-          <p className="product-text-readable hidden md:block text-[var(--color-text-muted)] text-xs flex-grow mb-4 leading-relaxed line-clamp-2">
+        {!compact && descriptionLines > 0 && (
+          // The card height is fixed: each extra row above takes one description line,
+          // otherwise the shrinking box cuts the clamped text through the middle of a line.
+          <p
+            className={`product-text-readable hidden md:block text-[var(--color-text-muted)] text-xs flex-grow mb-4 leading-relaxed ${descriptionLines === 2 ? 'line-clamp-2' : 'line-clamp-1'}`}
+            data-testid={`store-product-description-${product.id}`}
+          >
             {product.description}
           </p>
         )}

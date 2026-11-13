@@ -1,9 +1,18 @@
 @media (min-width: 1024px) {
-  /* Same content width as the global header/footer (Layout max-w-7xl px-6)
-     so the page edges line up at every desktop size. */
+  /* The product page uses the screen on large displays; the header, banners
+     and footer (.chrome-bound) widen with it so all edges stay aligned. */
   .product-layout > main {
-    max-width: 80rem;
-    padding: 0 24px 48px;
+    max-width: 2064px;
+    padding: 0 32px 48px;
+  }
+  .product-layout .chrome-bound {
+    max-width: 2064px;
+    padding-inline: 32px;
+  }
+  /* The navbar shell already sits inside the nav's 24px gutter. */
+  .product-layout .navbar-shell.chrome-bound {
+    max-width: 2016px;
+    padding-inline: 8px;
   }
   .product-layout.bg-grid-pattern {
     background-color: var(--color-background);

@@ -75,7 +75,8 @@ function getColumnCount(width: number, isMobile: boolean) {
   if (isMobile) return 2
   if (width >= 1200) return 4
   if (width >= 1024) return 3
-  if (width >= 768) return 2
+  // A 768px tablet leaves ~720px after main's gutters; it must not drop below the phone's 2 columns.
+  if (width >= 520) return 2
   return 1
 }
 

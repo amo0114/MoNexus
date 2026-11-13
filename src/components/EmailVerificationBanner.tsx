@@ -113,7 +113,7 @@ export default function EmailVerificationBanner() {
   if (!eligible || onIsland) return null
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 pt-2.5 sm:px-6">
+    <div className="chrome-bound mx-auto w-full max-w-7xl px-4 pt-2.5 sm:px-6">
       <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-xs px-3.5 py-2 text-[var(--color-text)] fade-in">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <MailWarning className="h-4 w-4 shrink-0 text-amber-500" />
