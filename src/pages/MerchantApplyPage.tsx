@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../api/error'
 import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
 import { useAppStore } from '../stores/appStore'
 import { showCompletionActivity } from '../lib/completionFeedback'
+import MerchantApplicationStatus from '../components/merchant/MerchantApplicationStatus'
 
 export default function MerchantApplyPage() {
   const authEpoch = useAuthStore((s) => s.authEpoch)
@@ -87,6 +88,11 @@ function MerchantApplyContent() {
         </button>
       </div>
     )
+  }
+
+  // governance-v1 backends send merchantCapabilities; they own pending/rejected/suspended flows.
+  if (user?.merchant && !isActive && Array.isArray(user.merchantCapabilities)) {
+    return <MerchantApplicationStatus onChanged={refreshStatus} />
   }
 
   if (isPending) {

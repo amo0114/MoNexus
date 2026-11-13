@@ -30,6 +30,7 @@ import PurchaseModal from './PurchaseModal'
 import SuccessModal from './SuccessModal'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 import { copyToClipboard } from '../utils/clipboard'
+import { formatOrderRef } from '../utils/governance'
 
 interface OrderDetailModalProps {
   order: UserOrderDetail
@@ -225,7 +226,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       showCompletionActivity({
         title: cancelPending ? '取消处理中，等待核对履约结果' : actionCopy[action].successTitle,
         message: '操作成功',
-        subtitle: `订单 #${order.id} · ${order.product.name}`,
+        subtitle: `订单 ${formatOrderRef(order.orderNo, order.id)} · ${order.product.name}`,
         groupKey: `buyer:order:${order.id}`,
         actionLabel: '查看订单',
         onAction: () => navigate(`/orders?focus=${order.id}`),
@@ -334,7 +335,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
               title="点击复制订单号"
               className="font-mono flex items-center gap-1 hover:text-[var(--color-text)] transition-colors cursor-pointer select-all group"
             >
-              <span>单号 #{order.id}</span>
+              <span>单号 {formatOrderRef(order.orderNo, order.id)}</span>
               {copiedOrderId ? (
                 <Check className="w-3 h-3 text-[var(--color-points)]" />
               ) : (

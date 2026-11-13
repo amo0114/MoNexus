@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dia
 import { useAppStore } from '../../stores/appStore'
 import { MerchantOrder } from '../../types/merchant'
 import { captureFeedbackOwner } from '../../lib/completionFeedback'
+import { formatOrderRef } from '../../utils/governance'
 
 interface Props {
   isOpen: boolean
@@ -40,7 +41,7 @@ export default function MerchantDisputeDialog({ isOpen, onClose, order, onSubmit
       <DialogContent data-testid="merchant-dispute-dialog">
         <DialogTitle>提交补救方案</DialogTitle>
         <DialogDescription>
-          订单 #{order?.id ?? ''} · {order?.product?.name ?? ''}。请说明你将如何处理（例如补发时间、重新交付内容）。买家接受后争议结束：人工服务回到履约中，即时交付恢复为已交付；买家 48 小时内未回应视为接受，拒绝则由平台裁决。
+          订单 {order ? formatOrderRef(order.orderNo, order.id) : ''} · {order?.product?.name ?? ''}。请说明你将如何处理（例如补发时间、重新交付内容）。买家接受后争议结束：人工服务回到履约中，即时交付恢复为已交付；买家 48 小时内未回应视为接受，拒绝则由平台裁决。
         </DialogDescription>
         <textarea
           className="input mt-4 min-h-[88px] resize-y"

@@ -36,7 +36,11 @@ import {
 } from '../types/merchant'
 import { DollarSign, Loader2, Store } from 'lucide-react'
 import { MerchantNav, MERCHANT_TAB_STATE, type MerchantTabKey } from '../components/merchant/MerchantShell'
+import MerchantReadOnlyBanner from '../components/merchant/MerchantReadOnlyBanner'
+import ProductTraceSheet, { type TraceProduct } from '../components/admin/governance/ProductTraceSheet'
+import { hasMerchantCapability, isMerchantReadOnly } from '../auth/merchantAccess'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
 import ProvisionBadge from '../components/ProvisionBadge'
 import MerchantInventoryLogModal, { type InventoryLogProduct } from '../components/merchant/MerchantInventoryLogModal'
@@ -80,7 +84,10 @@ export default function MerchantDashboardPage() {
   const categoryApplicationRoute = /^\/merchant\/category-applications\/?$/.test(location.pathname)
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
-  const [activeTab, setActiveTab] = useState<TabKey>(orderRoute ? 'orders' : categoryApplicationRoute ? 'categoryApplications' : 'dashboard')
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    // A suspended merchant's backend read scope is orders/settlements, not the live overview.
+    orderRoute || isMerchantReadOnly(useAuthStore.getState().user) ? 'orders' : categoryApplicationRoute ? 'categoryApplications' : 'dashboard',
+  )
   const requestedTab = (location.state as Record<string, unknown> | null)?.[MERCHANT_TAB_STATE] as TabKey | undefined
   useEffect(() => {
     if (/^\/merchant\/orders(?:\/\d+)?\/?$/.test(location.pathname)) setActiveTab('orders')
@@ -336,6 +343,10 @@ export default function MerchantDashboardPage() {
   const [isCapacityAdjustOpen, setIsCapacityAdjustOpen] = useState(false)
   const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
 
+  const [traceProduct, setTraceProduct] = useState<TraceProduct | null>(null)
+  const authUser = useAuthStore((s) => s.user)
+  // Only governance-v1 backends send merchantCapabilities and serve batch/revision history.
+  const canTrace = Array.isArray(authUser?.merchantCapabilities) && hasMerchantCapability(authUser, 'history.read')
   const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
   const [logProduct, setLogProduct] = useState<InventoryLogProduct | null>(null)
   const inventoryLogParam = new URLSearchParams(location.search).get('inventoryLog')
@@ -609,6 +620,7 @@ export default function MerchantDashboardPage() {
 
       {/* Main Content */}
       <div className="flex-1 min-w-0">
+        <MerchantReadOnlyBanner />
         <div className="card max-md:p-4 max-md:min-h-0 min-h-[500px]">
           {activeTab === 'dashboard' && (
             <div className="fade-in">
@@ -660,6 +672,9 @@ export default function MerchantDashboardPage() {
               onManageInventory={(product) => { setImportingProduct({ id: product.id, name: product.name, offers: product.offers }); setIsInventoryModalOpen(true) }}
               onAdjustCapacity={(product) => { setCapacityProduct(product); setIsCapacityAdjustOpen(true) }}
               onViewInventoryLog={(product) => { setLogProduct(product); setIsInventoryLogOpen(true) }}
+              onOpenTrace={canTrace
+                ? (product) => setTraceProduct({ id: product.id, name: product.name, offers: (product.offers ?? []).map((o) => ({ id: o.id, name: o.name })) })
+                : undefined}
               onManageOffers={(product) => { setOfferProduct(product); setIsOfferManagerOpen(true) }}
             />
           )}
@@ -830,6 +845,17 @@ export default function MerchantDashboardPage() {
         }}
       />
 
+      {canTrace && (
+        <ProductTraceSheet
+          scope="merchant"
+          product={traceProduct}
+          canReadBatches
+          canVoid={hasMerchantCapability(authUser, 'inventory.write')}
+          canReadRevisions
+          onOpenChange={(open) => { if (!open) setTraceProduct(null) }}
+          onInventoryChanged={() => void loadData({ background: true })}
+        />
+      )}
       <MerchantInventoryLogModal
         isOpen={isInventoryLogOpen}
         onClose={() => {
