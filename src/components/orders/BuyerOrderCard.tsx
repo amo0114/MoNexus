@@ -64,7 +64,7 @@ export default function BuyerOrderCard({
 
         <div className="flex items-center text-[var(--color-points)] font-bold tabular-nums text-sm shrink-0">
           -<PointCoin className="w-3.5 h-3.5 mx-0.5 inline shrink-0" />
-          {order.price}
+          {order.price.toLocaleString('zh-CN')}
         </div>
       </div>
 
