@@ -102,9 +102,12 @@ The `Auth` module reads these values transactionally inside register / check-in 
 | GET | `/api/admin/mail/status` | Read-only, non-sensitive state of the effective mailer: exactly `mode`, `deliveryReady`, `from`, `authConfigured`, `configuredVia`. No SMTP probe is performed. |
 | POST | `/api/admin/mail/test` | Sends one fixed-content test email. 3 per administrator per 10 minutes; `409 MAILER_NOT_CONFIGURED` under the console fallback. |
 
-SMTP connection parameters are **not** editable here or anywhere else in the product. They come
-from the deployment environment and require a backend restart to change — see
-`docs/operations/runbook.md` §14.
+Business SMTP can now be managed through `/api/admin/mail/config`: GET settings,
+PUT a draft, then POST `/test`, `/activate`, or `/rollback`. All require MFA and
+`settings.manage`; writes use `expectedVersion`. Credentials are encrypted under
+the external `MAIL_CREDENTIALS_ENC_KEY` and never returned. Activation requires a
+successful test of the same draft version. See `docs/operations/runtime-settings.md`.
+Environment SMTP remains the initial bootstrap and the independent Alertmanager source.
 
 Secret boundary (MAIL-01): the status DTO is built by constructing the five allowed fields, not
 by stripping fields off `config.mailer`. `from` returns only an explicitly configured

@@ -240,3 +240,7 @@ Portable backup is a logical PostgreSQL dump. New recharge tables are included
 automatically. See the recharge table note in
 `docs/operations/portable-backup-restore.md`. Do not restore onto a non-empty
 production database from this PR.
+
+## 后台商户配置与历史版本
+
+运行时配置第二阶段新增五个渠道的加密草稿/校验/激活/停收/回滚。完整接入、专用账号回调、旧环境交易兼容及根密钥恢复步骤见 [运行时配置](runtime-settings.md#第二阶段支付商户与历史凭据)。后台停收不关闭历史回调或支付 worker；校验不会自动创建真实订单、扣款或退款，仍需执行本 runbook 的受控验收。

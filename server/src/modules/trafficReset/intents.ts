@@ -1,3 +1,5 @@
+import { pinFakaSnapshot } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaClientId } from '../../lib/runtimeSettings/fakaBridge.js'
 import { createHash, createHmac, randomUUID, timingSafeEqual } from 'node:crypto'
 import type { TrafficResetIntent } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -121,9 +123,10 @@ export async function confirmReset(actor: AccountActor, input: { intentId: strin
     if (grant.status !== 'active' || grant.reserved + grant.consumed >= grant.granted) throw ineligible()
     const link = await liveLink(tx, actor, intent.accountLinkId, settings.instanceId)
     await tx.trafficResetBenefitGrant.update({ where: { id: grant.id }, data: { reserved: { increment: 1 }, version: { increment: 1 } } })
-    const op = await tx.xboardTrafficResetOperation.create({ data: { id: randomUUID(), userId: actor.userId, intentId: intent.id,
+    const configRevisionId = await pinFakaSnapshot(tx)
+    const op = await tx.xboardTrafficResetOperation.create({ data: { configRevisionId, id: randomUUID(), userId: actor.userId, intentId: intent.id,
       benefitGrantId: grant.id, accountLinkId: link.id, instanceIdSnapshot: settings.instanceId, originSnapshot: accountSettings().origin,
-      clientIdSnapshot: config.trafficReset.clientId, xboardUserIdSnapshot: link.xboardUserId, benefitCodeSnapshot: BENEFIT_CODE,
+      clientIdSnapshot: fakaClientId(), xboardUserIdSnapshot: link.xboardUserId, benefitCodeSnapshot: BENEFIT_CODE,
       sourceOrderId: grant.sourceOrderId, expectedPlanId: intent.expectedPlanId, expectedFingerprint: intent.expectedFingerprint,
       requestId: input.requestId, requestHash } })
     await tx.trafficResetConfirmationRequest.create({ data: { userId: actor.userId, requestId: input.requestId, requestHash, operationId: op.id } })

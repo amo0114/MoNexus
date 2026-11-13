@@ -618,9 +618,18 @@ notification_enabled="$(get NOTIFICATION_ENABLED)"
 if [[ -n "$realtime_enabled" && "$realtime_enabled" != "true" && "$realtime_enabled" != "false" ]]; then
   fail "NOTIFICATION_REALTIME_ENABLED must be true or false"
 fi
-if [[ "$realtime_enabled" == "true" && "$notification_enabled" != "true" ]]; then
-  fail "NOTIFICATION_REALTIME_ENABLED=true requires NOTIFICATION_ENABLED=true"
+# Notification enablement is database-owned after the first admin save. The
+# realtime listener may be prepared while the env bootstrap is disabled.
+if [[ -n "$notification_enabled" && "$notification_enabled" != "true" && "$notification_enabled" != "false" ]]; then
+  fail "NOTIFICATION_ENABLED must be true or false"
 fi
+for mail_key in MAIL_CREDENTIALS_ENC_KEY MAIL_CREDENTIALS_ENC_KEY_PREVIOUS INTEGRATION_CREDENTIALS_ENC_KEY INTEGRATION_CREDENTIALS_ENC_KEY_PREVIOUS; do
+  mail_key_value="$(get "$mail_key")"
+  if [[ -n "$mail_key_value" && ! "$mail_key_value" =~ ^[a-fA-F0-9]{64}$ ]]; then
+    fail "$mail_key must be 64 hex characters"
+  fi
+done
+unset mail_key_value
 
 check_realtime_int() {
   local key="$1" min="$2" max="$3" value

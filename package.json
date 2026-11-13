@@ -9,7 +9,7 @@
   },
   "scripts": {
     "check:runtime": "node scripts/check-runtime.mjs",
-    "check:architecture": "node scripts/check-architecture.mjs",
+    "check:architecture": "node scripts/check-compose-env.mjs && node scripts/check-architecture.mjs",
     "check:migrations": "node --test scripts/migration-safety.test.mjs && node scripts/check-migration-safety.mjs",
     "test:architecture": "node --test scripts/architecture-rules.test.mjs",
     "check:package-versions": "node scripts/check-package-versions.mjs",

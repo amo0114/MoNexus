@@ -1,7 +1,8 @@
+import { reconciliationPaymentSelection } from '../providers/runtime.js'
 import { randomUUID } from 'node:crypto'
 import { conflict, notFound, paymentRefundNotSupported } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
-import { getHistoricalProvider } from '../providers/registry.js'
+import { resolveHistoricalProvider } from '../providers/registry.js'
 import { recordNormalizedPaymentFact } from '../observations/record.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
 import { applyRefundObservation, providerSupportsRefunds, REFUND_BUSINESS_EVENT_KEY } from '../../recharge/refund.js'
@@ -32,9 +33,11 @@ export async function createReconciliationRun(input: {
   periodEnd?: Date
 }) {
   const providerName = asProviderName(input.provider)
-  const adapter = getHistoricalProvider(providerName)
-  const environment = providerEnvironment()
+  const selection = await reconciliationPaymentSelection(providerName, input.providerAccountKey)
+  const adapter = selection?.provider ?? await resolveHistoricalProvider(providerName)
+  const environment = selection?.environment ?? providerEnvironment()
   const accountKey = input.providerAccountKey
+    ?? selection?.providerAccountKey
     ?? (await adapter.selectAccount({
       environment,
       currency: 'CNY',
@@ -54,6 +57,7 @@ export async function createReconciliationRun(input: {
       },
     },
     create: {
+      providerCredentialRevisionId: selection?.revisionId ?? null,
       provider: providerName,
       providerAccountKey: accountKey,
       environment,
@@ -104,7 +108,8 @@ export async function importStatement(input: {
   const parsed = parseStatementCsv(input.csv, { start: input.periodStart, end: input.periodEnd })
   if (parsed.invalid.length > 0) throw conflict(`账单存在 ${parsed.invalid.length} 行无效数据，请先修正`)
   if (parsed.entries.length === 0) throw conflict('账单没有可导入的行')
-  const environment = providerEnvironment()
+  const selection = await reconciliationPaymentSelection(providerName, input.providerAccountKey)
+  const environment = selection?.environment ?? providerEnvironment()
   const scopeKey = `sha256:${parsed.sha256}`
   const run = await prisma.reconciliationRun.upsert({
     where: {
@@ -117,6 +122,7 @@ export async function importStatement(input: {
       },
     },
     create: {
+      providerCredentialRevisionId: selection?.revisionId ?? null,
       provider: providerName,
       providerAccountKey: input.providerAccountKey,
       environment,
@@ -159,7 +165,7 @@ export async function executeReconciliationRun(
   }
 
   try {
-    const adapter = getHistoricalProvider(asProviderName(run.provider))
+    const adapter = await resolveHistoricalProvider(asProviderName(run.provider), run.providerCredentialRevisionId)
     let itemCount = 0
     let mismatchCount = 0
     let providerEntries = 0
@@ -455,7 +461,7 @@ export async function reconcileOrder(orderId: string) {
     ?? order.paymentIntent?.attempts.at(-1)
   if (!attempt?.providerPaymentId) throw conflict('没有可对账的支付尝试')
 
-  const adapter = getHistoricalProvider(asProviderName(order.provider))
+  const adapter = await resolveHistoricalProvider(asProviderName(order.provider), order.providerCredentialRevisionId)
   const queried = await adapter.queryPayment({
     providerPaymentId: attempt.providerPaymentId,
     providerAccountKey: order.providerAccountKey,
@@ -543,7 +549,7 @@ export async function resolveReconcileRequiredOrder(input: {
     ?? intent?.attempts.find(item => item.providerPaymentId)
   if (!intent || !attempt?.providerPaymentId) throw conflict('没有可核验的支付尝试')
 
-  const queried = await getHistoricalProvider(asProviderName(order.provider)).queryPayment({
+  const queried = await (await resolveHistoricalProvider(asProviderName(order.provider), order.providerCredentialRevisionId)).queryPayment({
     providerPaymentId: attempt.providerPaymentId,
     providerAccountKey: order.providerAccountKey,
     providerOrderId: attempt.providerOrderId,

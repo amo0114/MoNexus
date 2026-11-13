@@ -8,6 +8,7 @@ import { config } from '../../config/index.js'
 import { notificationCreatedCounter } from '../../lib/metrics.js'
 import { logger } from '../../lib/logger.js'
 import { prisma } from '../../lib/prisma.js'
+import { getSystemConfigValues } from '../../lib/systemConfig.js'
 import { renderNotification, type NotificationRenderContext } from './templates.js'
 import { NOTIFICATION_REALTIME_CHANNEL } from './realtime/constants.js'
 import { serializePgPayload, serializeReadPgPayload } from './realtime/protocol.js'
@@ -19,8 +20,9 @@ import { serializePgPayload, serializeReadPgPayload } from './realtime/protocol.
  * 影响已读操作本身的成功与否。
  */
 export async function publishReadInvalidation(recipientUserId: number): Promise<void> {
-  if (!config.notification.enabled || !config.notificationRealtime.enabled) return
+  if (!config.notificationRealtime.enabled) return
   try {
+    if ((await getSystemConfigValues(['notificationEnabled'])).notificationEnabled !== 1) return
     const payload = serializeReadPgPayload(recipientUserId)
     await prisma.$queryRaw`SELECT pg_notify(${NOTIFICATION_REALTIME_CHANNEL}, ${payload})::text AS result`
   } catch (err) {
@@ -50,7 +52,7 @@ export type NotificationEvent = {
   occurrenceKey?: string
 }
 
-type NotificationWriter = Pick<Prisma.TransactionClient, 'notification' | '$queryRaw'> & Partial<Pick<Prisma.TransactionClient,'order'>>
+type NotificationWriter = Pick<Prisma.TransactionClient, 'notification' | '$queryRaw'> & Partial<Pick<Prisma.TransactionClient, 'order' | 'systemConfig'>>
 
 /** NTF-05: merchant new-order only for human manual attention after auto-task branches. */
 export function shouldNotifyMerchantNewOrder(input: {
@@ -125,8 +127,7 @@ export function orderNotificationSnapshot(order: {
   }
 }
 
-function expiresAtFromConfig(now = new Date()): Date {
-  const days = config.notification.expiryDays
+function expiresAtFromConfig(days: number, now = new Date()): Date {
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000)
 }
 
@@ -151,7 +152,11 @@ export class NotificationDispatcher {
    * Duplicate (recipient, eventType, dedupeKey) is ignored (NTF-02).
    */
   static async emit(event: NotificationEvent, tx: NotificationWriter): Promise<void> {
-    if (!config.notification.enabled) return
+    const settings = await getSystemConfigValues(
+      ['notificationEnabled', 'notificationExpiryDays'],
+      tx.systemConfig ? { systemConfig: tx.systemConfig } : undefined,
+    )
+    if (settings.notificationEnabled !== 1) return
 
     if (!Number.isInteger(event.recipientUserId) || event.recipientUserId <= 0) {
       return
@@ -178,7 +183,7 @@ export class NotificationDispatcher {
         dedupeKey,
         relatedOrderId: event.order.id,
         relatedMerchantId: event.order.merchantId ?? null,
-        expiresAt: expiresAtFromConfig(),
+        expiresAt: expiresAtFromConfig(settings.notificationExpiryDays),
       }],
       skipDuplicates: true,
     })

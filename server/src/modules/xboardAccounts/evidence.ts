@@ -5,7 +5,7 @@ import { prisma } from '../../lib/prisma.js'
 type DB = typeof prisma | Prisma.TransactionClient
 export async function readRecoverySource(taskId: number, db: DB = prisma) {
   const source = await db.fakaBridgeTask.findUnique({ where: { id: taskId }, select: {
-    id: true, status: true, completedAt: true, requestOrderNo: true, emailSnapshot: true, xboardTradeNo: true,
+    id: true, configRevisionId: true, status: true, completedAt: true, requestOrderNo: true, emailSnapshot: true, xboardTradeNo: true,
     order: { select: { id: true, userId: true, status: true, createdAt: true,
       user: { select: { status: true, email: true, emailVerified: true } },
       delivery: { select: { status: true, deliveredAt: true, userId: true } },

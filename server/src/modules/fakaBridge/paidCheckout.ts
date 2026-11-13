@@ -1,3 +1,4 @@
+import { fakaClientId } from '../../lib/runtimeSettings/fakaBridge.js'
 import { isAccountBanned } from '../accountGovernance/status.js'
 import { createHmac } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
@@ -24,9 +25,9 @@ function target(userId: number, offer: Offer, link: { id: string; xboardUserId: 
   const settings = accountSettings(), planId = paidResetPlanId(offer.externalSku)
   if (!planId) throw changed()
   const identity = [userId, offer.id, link.id, settings.instanceId, settings.origin, link.xboardUserId,
-    planId, config.trafficReset.clientId, offer.externalSku!.trim().toLowerCase()]
+    planId, fakaClientId(), offer.externalSku!.trim().toLowerCase()]
   return { accountLinkId: link.id, ...settings, xboardUserId: link.xboardUserId, planId,
-    clientId: config.trafficReset.clientId, email: link.currentEmail,
+    clientId: fakaClientId(), email: link.currentEmail,
     version: createHmac('sha256', config.jwtSecret).update(JSON.stringify(['paid-checkout-v1', ...identity])).digest('hex') }
 }
 export async function readPaidCheckoutTarget(userId: number, offer: Offer, accountLinkId: string,

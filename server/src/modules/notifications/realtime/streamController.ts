@@ -9,6 +9,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import rateLimit from 'express-rate-limit'
 import { config } from '../../../config/index.js'
+import { getSystemConfigValue } from '../../../lib/systemConfig.js'
 import { notFound, tooManyRequests } from '../../../lib/httpError.js'
 import {
   NOTIFICATION_REALTIME_AUTH_EXPIRING_LEAD_MS,
@@ -111,14 +112,17 @@ function clearTimers(timers: StreamTimers): void {
   }
 }
 
-export function notificationRealtimeStream(
+export async function notificationRealtimeStream(
   req: Request,
   res: Response,
   next: NextFunction,
   dependencies: NotificationRealtimeStreamDependencies = DEFAULT_STREAM_DEPENDENCIES,
-): void {
+): Promise<void> {
   // Feature flags (spec 8.2): realtime or notifications off -> 404 JSON.
-  if (!config.notification.enabled || !config.notificationRealtime.enabled) {
+  let notificationEnabled: number
+  try { notificationEnabled = await getSystemConfigValue('notificationEnabled') }
+  catch (err) { next(err); return }
+  if (notificationEnabled !== 1 || !config.notificationRealtime.enabled) {
     next(notFound('页面不存在'))
     return
   }

@@ -6,6 +6,8 @@ import { prisma } from './prisma.js'
 import { MAX_CONFIGURABLE_PAGE_SIZE } from './paginationPolicy.js'
 
 export const systemConfigKeys = [
+  'notificationEnabled',
+  'notificationExpiryDays',
   'registerReward',
   'checkinReward',
   'inviteReward',
@@ -96,6 +98,9 @@ const TIER_KEYS = [...TIER_THRESHOLD_KEYS, ...TIER_BONUS_KEYS] as const
 type TierKey = typeof TIER_KEYS[number]
 
 export const systemConfigDefaults: Record<SystemConfigKey, number> = {
+  // Env bootstraps missing rows; saving in the admin panel makes DB authoritative.
+  get notificationEnabled() { return config.notification.enabled ? 1 : 0 },
+  get notificationExpiryDays() { return config.notification.expiryDays },
   registerReward: config.registerReward,
   checkinReward: config.checkinReward,
   // SPEC-ENGAGE-001 §3.6：按签到 5/天测算，满勤月 = 150 + 75 = 225（用户确认 200–250）。
@@ -160,6 +165,8 @@ export const systemConfigDefaults: Record<SystemConfigKey, number> = {
 
 
 export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
+  notificationEnabled: '启用站内通知',
+  notificationExpiryDays: '新通知保留天数',
   registerReward: '新用户注册奖励积分',
   checkinReward: '每日签到奖励积分',
   checkinStreakReward3: '连签 3 天奖励积分',
@@ -220,6 +227,8 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
 
 /** 管理端配置项分组（中文），供配置页按组渲染。 */
 export const systemConfigGroups: Record<SystemConfigKey, string> = {
+  notificationEnabled: '通知',
+  notificationExpiryDays: '通知',
   registerReward: '奖励发放',
   checkinReward: '奖励发放',
   checkinStreakReward3: '奖励发放',
@@ -280,6 +289,7 @@ export const systemConfigGroups: Record<SystemConfigKey, string> = {
 
 /** 可选单位标注。 */
 export const systemConfigUnits: Partial<Record<SystemConfigKey, string>> = {
+  notificationExpiryDays: '天',
   registerReward: '积分',
   checkinReward: '积分',
   checkinStreakReward3: '积分',
@@ -341,6 +351,8 @@ const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
 
 /** 可选填写提示，配置页用于校验说明。 */
 export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
+  notificationEnabled: '保存后对后续请求和通知写入生效；不删除已有通知，不影响验证码等业务邮件。',
+  notificationExpiryDays: '1–365 天，仅影响之后创建的通知；已有通知的到期时间保持不变。',
   refreshTokenMaxAgeDays: '修改后对新签发的 Refresh Token 生效',
   defaultPageSize: '列表接口未显式传 pageSize 时使用，需 ≤ 最大分页大小',
   maxPageSize: '请求 pageSize 超过该值会被拒绝或截断',
@@ -414,6 +426,7 @@ export function assertSystemConfigKey(key: string): asserts key is SystemConfigK
  * 写入侧一律拒绝，读取侧再按 `=== 1` fail-closed（REG-02 / C2）。
  */
 const BOOLEAN_CONFIG_KEYS = [
+  'notificationEnabled',
   'registrationEnabled',
   'emailVerificationRequiredForValue',
   'registrationInviteOnly',
@@ -437,6 +450,7 @@ const MAX_THRESHOLD_POINTS = 2_000_000_000
  * 布尔开关（BOOLEAN_CONFIG_KEYS）固定为 0..1。
  */
 const RANGE_CONFIG_KEYS = {
+  notificationExpiryDays: { min: 1, max: 365, message: '通知保留天数必须在 1–365 天之间' },
   registerReward: { max: MAX_REWARD_POINTS, message: `注册奖励必须在 0..${MAX_REWARD_POINTS} 积分之间` },
   checkinReward: { max: MAX_REWARD_POINTS, message: `签到奖励必须在 0..${MAX_REWARD_POINTS} 积分之间` },
   checkinStreakReward3: { max: MAX_REWARD_POINTS, message: `连签奖励必须在 0..${MAX_REWARD_POINTS} 积分之间` },
@@ -682,10 +696,10 @@ function formatSystemConfig(key: SystemConfigKey, row?: SystemConfigRow | null) 
 /** Read just the requested keys, preserving the single-key default semantics. */
 export async function getSystemConfigValues<K extends SystemConfigKey>(
   keys: readonly K[],
-  tx?: Prisma.TransactionClient,
+  tx?: Pick<Prisma.TransactionClient, 'systemConfig'>,
 ): Promise<Record<K, number>> {
   const uniqueKeys = [...new Set(keys)]
-  const client: ConfigClient = tx ?? prisma
+  const client = tx ?? prisma
   const rows = uniqueKeys.length ? await client.systemConfig.findMany({
     where: { key: { in: uniqueKeys } },
     select: { key: true, value: true },

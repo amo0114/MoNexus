@@ -247,6 +247,15 @@ const envSchema = z.object({
    * Default applied below when SMTP is configured.
    */
   SMTP_FROM_NAME: optionalStringEnvSchema,
+  // Business SMTP only. Alertmanager continues to use the host SMTP_* settings.
+  MAIL_CREDENTIALS_ENC_KEY: optionalStringEnvSchema.refine(
+    value => !value || /^[a-fA-F0-9]{64}$/.test(value),
+    'MAIL_CREDENTIALS_ENC_KEY must be 64 hex characters',
+  ),
+  MAIL_CREDENTIALS_ENC_KEY_PREVIOUS: optionalStringEnvSchema.refine(
+    value => !value || /^[a-fA-F0-9]{64}$/.test(value),
+    'MAIL_CREDENTIALS_ENC_KEY_PREVIOUS must be 64 hex characters',
+  ),
 
   // --- Registration abuse protection. These are deliberately independent
   // from JWT/MFA keys. `off` is only a local-development/test escape hatch;
@@ -276,6 +285,12 @@ const envSchema = z.object({
   SHORTLINK_USERNAME: optionalStringEnvSchema,
   SHORTLINK_PASSWORD: optionalStringEnvSchema,
   SHORTLINK_GROUP_ID: optionalStringEnvSchema,
+  INTEGRATION_CREDENTIALS_ENC_KEY: optionalStringEnvSchema.refine(
+    value => !value || /^[a-fA-F0-9]{64}$/.test(value), 'INTEGRATION_CREDENTIALS_ENC_KEY must be 64 hex characters',
+  ),
+  INTEGRATION_CREDENTIALS_ENC_KEY_PREVIOUS: optionalStringEnvSchema.refine(
+    value => !value || /^[a-fA-F0-9]{64}$/.test(value), 'INTEGRATION_CREDENTIALS_ENC_KEY_PREVIOUS must be 64 hex characters',
+  ),
 
   // --- Observability. SENTRY_DSN is optional so local/dev/test runs stay quiet.
   SENTRY_DSN: optionalUrlEnvSchema,
@@ -337,13 +352,13 @@ const envSchema = z.object({
   MERCHANT_WORKBENCH_ENABLED: realtimeBooleanEnvSchema(),
 
   // --- SPEC-NOTIFY-001：站内订单消息通知。总开关关闭时接口 404、写入跳过。
-  // 邮件通道 Phase 2；ENABLED=false 时 EMAIL_ENABLED 不得为 true。
+  // Legacy compatibility flag; no notification-email channel currently consumes it.
   NOTIFICATION_ENABLED: booleanEnvSchema.default(false),
   NOTIFICATION_EMAIL_ENABLED: booleanEnvSchema.default(false),
   NOTIFICATION_EXPIRY_DAYS: z.coerce.number().int().min(1).max(365).default(90),
 
   // --- SPEC-NOTIFY-RT-001：订单通知实时化（SSE + PostgreSQL LISTEN/NOTIFY）。
-  // 默认全部关闭 / 保守默认值；realtime=true 必须在 config 层要求 NOTIFICATION_ENABLED=true。
+  // 默认关闭；监听器可先启动，通知准入由数据库中的运行时开关控制。
   // 类型 / 范围错误在 config 初始化时非零退出，绝不静默 clamp 或回退默认值。
   NOTIFICATION_REALTIME_ENABLED: realtimeBooleanEnvSchema(),
   NOTIFICATION_REALTIME_HEARTBEAT_MS: integerEnvSchema(5000, 60_000, 20_000),
@@ -702,18 +717,8 @@ if (
   process.exit(1)
 }
 
-// SPEC-NOTIFY-001：邮件通道依赖站内通知总开关；总关时邮件不得单独开启。
-if (env.NOTIFICATION_EMAIL_ENABLED && !env.NOTIFICATION_ENABLED) {
-  console.error('[Config] NOTIFICATION_EMAIL_ENABLED=true requires NOTIFICATION_ENABLED=true')
-  process.exit(1)
-}
-
-// SPEC-NOTIFY-RT-001：realtime 依赖站内通知总开关。固定错误必须同时包含两个变量名；
-// 在 Zod parse 后、config 导出前执行（所有环境一致）。
-if (env.NOTIFICATION_REALTIME_ENABLED && !env.NOTIFICATION_ENABLED) {
-  console.error('[Config] NOTIFICATION_REALTIME_ENABLED=true requires NOTIFICATION_ENABLED=true')
-  process.exit(1)
-}
+// Realtime listener readiness is deployment-owned. Notification admission is
+// checked against SystemConfig at runtime, so the env bootstrap may be off.
 
 // SPEC-ENGAGE-001 PW-09：开启 Web Push 必须配齐 VAPID 密钥与联系方式。
 if (env.WEB_PUSH_ENABLED && (!env.WEB_PUSH_VAPID_PUBLIC_KEY || !env.WEB_PUSH_VAPID_PRIVATE_KEY
@@ -722,15 +727,9 @@ if (env.WEB_PUSH_ENABLED && (!env.WEB_PUSH_VAPID_PUBLIC_KEY || !env.WEB_PUSH_VAP
   process.exit(1)
 }
 
-// SPEC-AI-001 §15：feature flag 依赖总闸；总闸开启必须有 provider 凭据。
-if (env.AI_PRODUCT_COPILOT_ENABLED && !env.AI_ENABLED) {
-  console.error('[Config] AI_PRODUCT_COPILOT_ENABLED=true requires AI_ENABLED=true')
-  process.exit(1)
-}
-if (env.AI_ENABLED && !env.OPENAI_API_KEY) {
-  console.error('[Config] AI_ENABLED=true requires OPENAI_API_KEY')
-  process.exit(1)
-}
+// AI_* and OPENAI_API_KEY only bootstrap an absent database row. A stale
+// bootstrap must not prevent booting an installation managed from the admin UI.
+// Missing bootstrap credentials disable AI at runtime, not the whole server.
 
 // FakaBridge: URL and SECRET are all-or-nothing. Status URL is optional.
 const fakaUrl = env.FAKA_BRIDGE_URL
@@ -984,6 +983,11 @@ export const config = {
     .split(',')
     .map(s => s.trim())
     .filter(Boolean),
+  mailCredentialsEncKey: env.MAIL_CREDENTIALS_ENC_KEY ?? null,
+  integrationCredentialsEncKey: env.INTEGRATION_CREDENTIALS_ENC_KEY ?? null,
+  integrationCredentialsEncKeyPrevious: env.INTEGRATION_CREDENTIALS_ENC_KEY_PREVIOUS ?? null,
+  mailCredentialsEncKeyPrevious: env.MAIL_CREDENTIALS_ENC_KEY_PREVIOUS ?? null,
+  smtpFromName: env.SMTP_FROM_NAME === undefined ? 'MoNexus' : env.SMTP_FROM_NAME.trim(),
   mailer: hasSmtp
     ? {
         kind: 'smtp' as const,

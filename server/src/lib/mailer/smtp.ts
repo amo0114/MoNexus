@@ -44,7 +44,7 @@ export class SmtpMailer implements Mailer {
     // 官方的自备连接路径(smtp-transport getSocket → smtp-connection 的
     // options.connection 分支,secure:true 时自动做 TLS 升级)。deadline 到点
     // 直接 destroy,SMTP 连接被实际切断。socket 按次一一对应,故 transport
-    // 按次创建(getMailer 单例被多个 cron 并发共用,不能共享可变 socket 槽)。
+    // 按次创建(多个 cron 并发发送时不能共享可变 socket 槽)。
     let socket: Socket | null = null
     let timedOut = false
     const deadlineError = () => new Error(`SMTP send exceeded total deadline (${this.totalDeadlineMs}ms)`)
@@ -58,6 +58,8 @@ export class SmtpMailer implements Mailer {
       host: this.cfg.host,
       port: this.cfg.port,
       secure: this.cfg.secure,
+      // Authentication must never fall back to plaintext when STARTTLS is absent.
+      requireTLS: Boolean(this.cfg.user && this.cfg.pass),
       greetingTimeout: SMTP_GREETING_TIMEOUT_MS,
       socketTimeout: SMTP_SOCKET_TIMEOUT_MS,
       ...(this.cfg.user && this.cfg.pass ? { auth: { user: this.cfg.user, pass: this.cfg.pass } } : {}),

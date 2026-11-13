@@ -1037,7 +1037,7 @@ Runbook 必须说明 provider 熔断、充值总开关、paid-not-credited 修�
 ## 12. 安全与隐私
 
 - 前端使用 Stripe Checkout/官方 SDK、PayPal approval redirect、微信二维码或支付宝结构化 form-post/redirect；服务端不接触银行卡 PAN/CVV；
-- provider secret、私钥、API v3 key、webhook secret 不入库、不入 Git、不进日志；
+- provider secret、私钥、API v3 key、webhook secret 不入 Git、不进日志；运行时配置第二阶段允许将完整凭据组作为不可变版本加密入库，使用数据库外独立部署根密钥与 AAD 身份绑定。根密钥不入库，历史版本随交易恢复保留；详见 `../operations/runtime-settings.md`；
 - client secret/action payload 只返回给订单所属用户，设置有效期并禁止记录；
 - webhook 原始 body 有大小上限，验签前不信任任何字段；
 - 支付接口使用独立速率限制、账户状态检查和邮箱验证；

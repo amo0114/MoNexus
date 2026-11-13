@@ -71,6 +71,7 @@ async function refundCapabilityByOrderId(
     adminSandbox: boolean
     provider: string
     providerAccountKey: string
+    providerCredentialRevisionId?: string | null
     paymentMethod: string
     currency: string
   }>,
@@ -82,7 +83,7 @@ async function refundCapabilityByOrderId(
       byOrderId.set(order.id, false)
       continue
     }
-    const key = `${order.provider}\0${order.providerAccountKey}\0${order.paymentMethod}\0${order.currency}`
+    const key = `${order.provider}\0${order.providerAccountKey}\0${order.providerCredentialRevisionId ?? 'legacy'}\0${order.paymentMethod}\0${order.currency}`
     if (!cache.has(key)) {
       cache.set(key, await providerSupportsRefunds(order))
     }

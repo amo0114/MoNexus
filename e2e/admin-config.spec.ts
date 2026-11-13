@@ -109,3 +109,38 @@ test('admin manages AI credentials and switches from the unified configuration p
   await expect(page.getByLabel('AI 总开关', { exact: true })).not.toBeChecked()
   await expect(page.getByRole('button', { name: '测试已保存的连接' })).toBeDisabled()
 })
+
+// Exercise the real DB-backed operational settings and registry without a restart.
+test('admin updates notification settings and public capabilities at runtime', async ({ page }) => {
+  await loginAs(page, SEED_ACCOUNTS.admin)
+  await page.goto('/admin')
+  await page.getByRole('button', { name: '系统配置' }).click()
+  await page.getByRole('tab', { name: '高级运维' }).click()
+  const toggle = page.getByRole('switch', { name: '启用站内通知' })
+  const originalEnabled = await toggle.getAttribute('aria-checked') === 'true'
+  const originalExpiry = await page.getByTestId('admin-config-input-notificationExpiryDays').inputValue()
+  const changeToggle = async () => {
+    const response = page.waitForResponse(r => r.url().endsWith('/api/admin/config/notificationEnabled') && r.request().method() === 'PUT')
+    await toggle.click()
+    expect((await response).status()).toBe(200)
+  }
+  await changeToggle()
+  await expect(toggle).toHaveAttribute('aria-checked', String(!originalEnabled))
+  expect((await (await page.request.get('/api/config/registry')).json()).capabilities.notifications).toBe(!originalEnabled)
+  await page.reload()
+  await page.getByRole('button', { name: '系统配置' }).click()
+  await page.getByRole('tab', { name: '高级运维' }).click()
+  await expect(toggle).toHaveAttribute('aria-checked', String(!originalEnabled))
+  await changeToggle()
+  await expect(toggle).toHaveAttribute('aria-checked', String(originalEnabled))
+  const expiry = page.getByTestId('admin-config-input-notificationExpiryDays')
+  const save = page.getByTestId('admin-config-save-notificationExpiryDays')
+  const nextExpiry = originalExpiry === '7' ? '3' : '7'
+  for (const value of [nextExpiry, originalExpiry]) {
+    await expiry.fill(value)
+    const response = page.waitForResponse(r => r.url().endsWith('/api/admin/config/notificationExpiryDays') && r.request().method() === 'PUT')
+    await save.click()
+    expect((await response).status()).toBe(200)
+    await expect(expiry).toHaveValue(value)
+  }
+})

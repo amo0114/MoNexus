@@ -1,3 +1,4 @@
+import { paymentRevision, runtimePaymentNames } from './runtime.js'
 import { config } from '../../../config/index.js'
 import { paymentProviderUnavailable } from '../../../lib/httpError.js'
 import { PAYMENT_PROVIDER_NAMES, type PaymentProviderName } from '../../recharge/types.js'
@@ -56,4 +57,13 @@ export function listRegisteredProviderNames(): PaymentProviderName[] {
 
 export function listMountedAdapterNames(): PaymentProviderName[] {
   return [...PAYMENT_PROVIDER_NAMES]
+}
+
+/** A null binding deliberately stays on the legacy environment adapter. */
+export async function resolveHistoricalProvider(name: PaymentProviderName, revisionId?: string | null): Promise<PaymentProvider> {
+  if (!revisionId) return getHistoricalProvider(name)
+  return (await paymentRevision(name, revisionId)).provider
+}
+export async function listAvailableProviderNames(): Promise<PaymentProviderName[]> {
+  return [...new Set([...config.recharge.enabledProviders, ...await runtimePaymentNames()])]
 }

@@ -105,6 +105,19 @@ export function NotificationRealtimeBridge(): null {
   // so poll at the same cadence the stream uses for its degraded fallback.
   const loggedIn = Boolean(user)
   useEffect(() => {
+    if (!loggedIn) return
+    const refreshCapabilities = () => {
+      if (document.visibilityState === 'visible') void useAppStore.getState().loadRegistry()
+    }
+    const timer = window.setInterval(refreshCapabilities, 30_000)
+    document.addEventListener('visibilitychange', refreshCapabilities)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshCapabilities)
+    }
+  }, [loggedIn])
+
+  useEffect(() => {
     if (!loggedIn || realtimeEnabled === true) return
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') publishAllVisible()

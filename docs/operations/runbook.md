@@ -393,6 +393,12 @@ Post-rollback: write an incident note (what, when, blast radius, follow-up ticke
 
 ## 14. Email Configuration (M3)
 
+Business SMTP can now be configured as an encrypted, tested admin draft and
+activated without restarting the backend. The environment selection below is
+the bootstrap before the first activation and still supplies independent
+Alertmanager alerts. See [runtime settings](./runtime-settings.md) for the new
+workflow, rollback and external encryption keys.
+
 M3 replaces the dev-only console mailer with a real SMTP adapter (nodemailer). The console fallback stays alive for local development so you can run the app without an SMTP relay.
 
 ### Selection rule
@@ -412,7 +418,7 @@ The selector lives in `server/src/config/index.ts`:
 | --- | --- | --- | --- |
 | `SMTP_HOST` | prod only | — | SMTP server hostname; opts into real delivery |
 | `SMTP_PORT` | no | `587` | Submission port (`587` STARTTLS / `465` implicit TLS / `25` MTA-only) |
-| `SMTP_SECURE` | no | `false` | `true` for implicit TLS (port 465); `false` lets nodemailer STARTTLS on 587 |
+| `SMTP_SECURE` | no | `false` | `true` for implicit TLS (port 465); `false` uses STARTTLS, required when authenticating |
 | `SMTP_USER` | provider-dep. | — | Auth username — leave empty for relays that accept unauthenticated submissions |
 | `SMTP_PASS` | provider-dep. | — | Auth password — pair with `SMTP_USER` |
 | `SMTP_FROM` | yes if `SMTP_HOST` set | `SMTP_USER` | `From:` header. Verified / DMARC-aligned addresses only |

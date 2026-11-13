@@ -1,5 +1,26 @@
 # Production Secrets Management
 
+Business SMTP settings use the optional external `MAIL_CREDENTIALS_ENC_KEY`
+(32 random bytes as 64 hex characters); `MAIL_CREDENTIALS_ENC_KEY_PREVIOUS`
+supports decrypting retained snapshots during rotation. Keep both in the host
+secret store and in recovery escrow, outside the database backup. They are
+never returned by the admin API. See [runtime settings](./runtime-settings.md)
+for activation, rollback and key retention. Alertmanager continues to use the
+host `SMTP_*` settings independently.
+
+Shortlink, FakaBridge/Xboard and payment credentials use the independent external
+`INTEGRATION_CREDENTIALS_ENC_KEY` (32 random bytes as 64 hex characters), with
+`INTEGRATION_CREDENTIALS_ENC_KEY_PREVIOUS` retained during rotation. Keep these
+roots separate from SMTP, storage, AI and payment-event encryption material.
+Every API instance must receive the same environment-specific key pair. Database
+backups contain encrypted drafts and all retained revisions, including inactive
+payment accounts and historical fulfillment targets; they do not contain roots.
+Escrow the corresponding root versions separately and rehearse restoring both.
+Rewrap every service's drafts and all historical revisions before removing the
+previous root; see [rotation and recovery](./runtime-settings.md#集成根密钥轮换与恢复).
+Legacy payment records with no credential revision still require the original
+environment adapter credentials until their historical processing window ends.
+
 Review date: 2026-09-02. Scope: M5 production and staging secret inventory for frontend, backend, PostgreSQL, JWT, MFA, registration-abuse protection, Redis, same-origin ALTCHA (default) with optional Turnstile adapter, Sentry, SMTP, S3-compatible storage, metrics, backup, deploy, and alert routing. No secret values belong in this repository.
 
 ## Default Approach
@@ -54,6 +75,8 @@ Use **environment secrets** for credential material and **environment variables*
 | `SMTP_USER` | Secret | `staging`, `production` | Backend/Ops | SMTP auth user when relay requires auth | Environment secrets | backend runtime |
 | `SMTP_PASS` | Secret | `staging`, `production` | Backend/Ops | SMTP auth password or provider token | Environment secrets | backend runtime |
 | `SMTP_FROM` | Environment variable | `staging`, `production` | Backend/Ops | Verified sender address | Environment variables | backend runtime |
+| `MAIL_CREDENTIALS_ENC_KEY` / `MAIL_CREDENTIALS_ENC_KEY_PREVIOUS` | Secret | `staging`, `production` | Security/Ops | Independent 64-hex AES-256-GCM root and optional previous root for business SMTP snapshots | Host secret store plus separate recovery escrow | backend runtime; admin SMTP settings |
+| `INTEGRATION_CREDENTIALS_ENC_KEY` / `INTEGRATION_CREDENTIALS_ENC_KEY_PREVIOUS` | Secret | `staging`, `production` | Security/Ops | Independent 64-hex AES-256-GCM root and optional previous root for shortlink, fulfillment and payment revisions | Host secret store plus separate recovery escrow; all API instances | backend runtime; admin integration settings |
 | `STORAGE_ENDPOINT` | Environment variable | `staging`, `production` | Storage/Ops | S3, R2, OSS, Backblaze, or MinIO endpoint | Environment variables | backend runtime; `docker-compose.prod.yml` |
 | `STORAGE_REGION` | Environment variable | `staging`, `production` | Storage/Ops | SDK signing region | Environment variables | backend runtime; `docker-compose.prod.yml` |
 | `STORAGE_BUCKET` | Environment variable | `staging`, `production` | Storage/Ops | Product image bucket | Environment variables | backend runtime; `docker-compose.prod.yml` |
@@ -118,6 +141,7 @@ Use **environment secrets** for credential material and **environment variables*
 | Redis credential | Redis access leak, operator departure, or managed-service rotation | Rotate the self-hosted Redis password or provider credential, update `REDIS_URL`/`REDIS_PASSWORD` atomically on every backend instance, deploy, and verify registration fails closed during any unavailable window rather than falling back locally. |
 | PostgreSQL credentials | DBA rotation window or access leak | Create new DB role credential, update GitHub environment and host env, restart backend, then remove old credential. |
 | SMTP credentials | Provider rotation window or mail abuse incident | Rotate provider credential, update environment secret, redeploy/restart backend, send test password-reset email in staging. |
+| Integration credential encryption root | Scheduled rotation or suspected exposure | Back up DB and separately escrow roots; deploy new current plus old previous root to all API instances; run each service's admin `config/rewrap` with its current version. Rewrap all drafts and retained revisions, verify historical processing and restore rehearsal, then remove previous. Never replace historical business bindings. Root rotation does not revoke compromised provider credentials. |
 | Storage credentials | Storage provider rotation window or object access leak | Create least-privilege replacement key, update environment secret, smoke upload/download in staging, revoke old key. |
 | `METRICS_TOKEN` | Scrape target leak or monitoring staff change | Update backend env and Prometheus scrape config in the same window, then restart backend. |
 | Deploy SSH key | Deploy host operator change, runner compromise, or scheduled rotation | Add new public key to deploy user, update environment secret, dry-run deploy, remove old public key. |

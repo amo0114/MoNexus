@@ -1,3 +1,5 @@
+import { withFakaTask, withFakaTaskInBatch, withActiveFaka } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig } from '../../lib/runtimeSettings/fakaBridge.js'
 import { grantForOrderInTx } from '../trafficReset/benefits.js'
 import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
@@ -39,7 +41,7 @@ import { callPaidTask, invalidatePaidSnapshot, paidActorStillEligible, paidEvide
 import type { PaidResetResult } from '../../lib/fakaBridge/paidResetV2.js'
 
 /** Lease covers HTTP timeout + result write headroom. */
-const LEASE_MS = () => config.fakaBridge.timeoutMs + 20_000
+const LEASE_MS = () => fakaBridgeConfig().timeoutMs + 20_000
 
 /** Backoff seconds after the n-th failed attempt (attempt already incremented). */
 const RETRY_DELAYS_SEC = [60, 300, 900]
@@ -47,7 +49,7 @@ const RETRY_DELAYS_SEC = [60, 300, 900]
 const BATCH_LIMIT = 10
 
 function panelUrl(): string {
-  return config.fakaBridge.panelUrl || 'https://v.uuwu.de'
+  return fakaBridgeConfig().panelUrl || 'https://v.uuwu.de'
 }
 
 /** Test-only client overrides (inject mock transport / secret). */
@@ -99,6 +101,9 @@ export type ProcessOutcome = 'succeeded' | 'failed' | 'retry_scheduled' | 'skipp
  * Claim (if still pending/due), call Xboard, then deliver or schedule retry / refund.
  */
 export async function processFakaBridgeTask(taskId: number): Promise<ProcessOutcome> {
+  return withFakaTask(taskId, () => processBoundFakaBridgeTask(taskId))
+}
+async function processBoundFakaBridgeTask(taskId: number): Promise<ProcessOutcome> {
   if (!hasClientCredentials()) {
     logger.warn({ taskId }, 'FakaBridge not configured; skip task')
     fakaProvisionTotal.inc({ outcome: 'skipped' })
@@ -778,10 +783,6 @@ async function markFailedAndRefund(
  * Process up to BATCH_LIMIT due pending tasks (best-effort; multi-instance safe via row CAS).
  */
 export async function runFakaBridgeBatch(): Promise<number> {
-  if (!hasClientCredentials()) {
-    return 0
-  }
-
   // One candidate list per batch: a task that is skipped (claim lost to
   // another instance, or no longer claimable) must not end the batch or keep
   // being re-selected ahead of the rest. cancelRequested tasks belong to the
@@ -798,7 +799,7 @@ export async function runFakaBridgeBatch(): Promise<number> {
 
   let processed = 0
   for (const task of due) {
-    const outcome = await processFakaBridgeTask(task.id)
+    const outcome = await withFakaTaskInBatch<ProcessOutcome>(task.id, () => processBoundFakaBridgeTask(task.id), 'skipped')
     if (outcome !== 'skipped') processed += 1
   }
   return processed
@@ -810,6 +811,9 @@ export async function runFakaBridgeBatch(): Promise<number> {
  * prewarm; fetchFakaCapacityForSku's TTL/inflight coalescing bounds the calls.
  */
 export async function runFakaCapacityPrewarm(): Promise<number> {
+  return withActiveFaka(runBoundFakaCapacityPrewarm)
+}
+async function runBoundFakaCapacityPrewarm(): Promise<number> {
   if (!hasClientCredentials()) return 0
   const offers = await prisma.offer.findMany({
     where: {
@@ -852,10 +856,6 @@ function scheduleFakaCapacityPrewarm(): void {
 
 export function startFakaBridgeCron(): void {
   if (timer) return
-  if (!config.fakaBridge.enabled && config.nodeEnv === 'production') {
-    logger.info('FakaBridge cron not started (FAKA_BRIDGE_* unset)')
-    return
-  }
   timer = setInterval(() => {
     void tick()
   }, INTERVAL_MS)

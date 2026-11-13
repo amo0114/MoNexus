@@ -133,7 +133,7 @@ function resolveReturnUrls(input: CreateProviderPaymentInput, config: StripeRunt
 
 function assertAccount(accountKey: string, config: StripeRuntimeConfig) {
   const mode = modeFromAccountKey(accountKey)
-  if (mode !== config.mode) {
+  if (mode !== config.mode || accountKey !== stripeAccountKey(config.mode, config.accountId)) {
     throw paymentProviderUnavailable('stripe account does not match configured mode')
   }
 }
@@ -194,7 +194,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
 
   const retrievePayment = async (providerPaymentId: string, providerOrderId?: string | null): Promise<NormalizedPayment> => {
     const config = configOf()
-    const accountKey = stripeAccountKey(config.mode)
+    const accountKey = stripeAccountKey(config.mode, config.accountId)
     try {
       const sessionId = providerPaymentId.startsWith('cs_')
         ? providerPaymentId
@@ -255,7 +255,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         throw paymentProviderUnavailable('stripe mode does not match recharge environment')
       }
       assertStripeCredentialIsolation(config)
-      return { providerAccountKey: stripeAccountKey(mode) }
+      return { providerAccountKey: stripeAccountKey(mode, config.accountId) }
     },
 
     async getCapabilities(context: ProviderContext): Promise<ProviderCapabilities> {
@@ -409,7 +409,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
           providerEventId: null,
           providerPaymentId: null,
           providerCaptureId: null,
-          providerAccountKey: stripeAccountKey(config.mode),
+          providerAccountKey: stripeAccountKey(config.mode, config.accountId),
           dedupeKey: unverifiedDedupeKey(rawBody),
           payment: null,
           signatureVerified: false,
@@ -426,14 +426,14 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
           providerEventId: null,
           providerPaymentId: null,
           providerCaptureId: null,
-          providerAccountKey: stripeAccountKey(config.mode),
+          providerAccountKey: stripeAccountKey(config.mode, config.accountId),
           dedupeKey: unverifiedDedupeKey(rawBody),
           payment: null,
           signatureVerified: false,
         }
       }
 
-      const providerAccountKey = accountKeyForLivemode(event.livemode, stripeAccountKey(config.mode))
+      const providerAccountKey = accountKeyForLivemode(event.livemode, stripeAccountKey(config.mode, config.accountId))
       const object = event.data.object
       const dedupeKey = stripeEventDedupeKey(event.id)
 

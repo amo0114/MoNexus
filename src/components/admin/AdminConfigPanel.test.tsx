@@ -1,3 +1,5 @@
+vi.mock('./AdminPaymentSettingsPanel', () => ({ default: () => null }))
+vi.mock('./AdminFakaSettingsPanel', () => ({ default: () => null }))
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminConfigPanel from './AdminConfigPanel'
@@ -5,6 +7,7 @@ import * as adminConfigApi from '../../api/adminConfig'
 import * as adminBuildInfoApi from '../../api/adminBuildInfo'
 import { bpsToPercentString, percentStringToBps } from './adminConfigMeta'
 import { signInLegacyAdmin } from '../../test/adminAccess'
+import { useAppStore } from '../../stores/appStore'
 
 // Panels render standalone here; in the app AdminPage mounts them only after access settles.
 beforeEach(() => signInLegacyAdmin())
@@ -18,6 +21,8 @@ vi.mock('../../api/adminConfig', () => ({
 vi.mock('../../api/adminBuildInfo', () => ({
   getAdminBuildInfo: vi.fn(),
 }))
+vi.mock('./AdminMailPanel', () => ({ default: () => null }))
+vi.mock('./AdminShortlinkSettingsPanel', () => ({ default: () => null }))
 
 const MOCK_CONFIGS: adminConfigApi.AdminSystemConfig[] = [
   // 注册与邀请
@@ -273,6 +278,33 @@ describe('AdminConfigPanel & B2 Specifications', () => {
     expect(percentStringToBps('5.255').error).toBe('百分比最多支持两位小数')
     expect(percentStringToBps('101').error).toBe('百分比必须在 0% ~ 100% 之间')
     expect(percentStringToBps('-1').error).toBe('百分比最多支持两位小数')
+  })
+
+  it('keeps the notification switch at the confirmed value until a save succeeds', async () => {
+    const notification: adminConfigApi.AdminSystemConfig = {
+      key: 'notificationEnabled', value: 0, defaultValue: 0,
+      description: '启用站内通知', group: '通知', unit: null, hint: null, updatedAt: null, updatedBy: null,
+    }
+    vi.mocked(adminConfigApi.getAdminConfig).mockResolvedValue([...MOCK_CONFIGS, notification])
+    vi.mocked(adminConfigApi.updateAdminConfig).mockRejectedValueOnce({
+      response: { data: { error: { message: 'notification save failed' } } },
+    })
+    render(<AdminConfigPanel />)
+    fireEvent.click(await screen.findByRole('tab', { name: '高级运维' }))
+    const toggle = screen.getByRole('switch', { name: '启用站内通知' })
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    fireEvent.click(toggle)
+    await screen.findByText('notification save failed')
+    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    const refresh = vi.spyOn(useAppStore.getState(), 'loadRegistry').mockResolvedValue()
+    try {
+      vi.mocked(adminConfigApi.updateAdminConfig).mockResolvedValueOnce({ ...notification, value: 1 })
+      fireEvent.click(toggle)
+      await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'))
+      expect(adminConfigApi.updateAdminConfig).toHaveBeenLastCalledWith('notificationEnabled', 1)
+      expect(refresh).toHaveBeenCalledOnce()
+      expect(screen.queryByTestId('admin-config-save-notificationEnabled')).not.toBeInTheDocument()
+    } finally { refresh.mockRestore() }
   })
 
   it('renders all group tabs and loads configs from single source', async () => {

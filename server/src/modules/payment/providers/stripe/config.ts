@@ -22,6 +22,7 @@ export const STRIPE_META = {
 export type StripeMode = 'test' | 'live'
 
 export type StripeRuntimeConfig = {
+  accountId?: string
   mode: StripeMode
   secretKey: string
   webhookSecret: string
@@ -61,13 +62,13 @@ export type StripeAdapterClient = {
   }
 }
 
-export function stripeAccountKey(mode: StripeMode): string {
-  return `stripe:${mode}:default`
+export function stripeAccountKey(mode: StripeMode, accountId?: string): string {
+  return `stripe:${mode}:${accountId ?? 'default'}`
 }
 
 export function modeFromAccountKey(accountKey: string): StripeMode | null {
-  if (accountKey === stripeAccountKey('live')) return 'live'
-  if (accountKey === stripeAccountKey('test')) return 'test'
+  if (/^stripe:live:(default|acct_[A-Za-z0-9]+)$/.test(accountKey)) return 'live'
+  if (/^stripe:test:(default|acct_[A-Za-z0-9]+)$/.test(accountKey)) return 'test'
   return null
 }
 

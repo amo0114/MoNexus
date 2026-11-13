@@ -305,7 +305,7 @@ CI 与部署工作流见 [`.github/workflows/`](./.github/workflows/)。
 | **C — 在主机本地构建镜像** | GHCR 不可用或离线预演 |
 | **D — 非 Docker 产物**（legacy） | 经 SSH 部署到 nginx + systemd 主机 |
 
-所有路径的前置相同：将 [`.env.example`](./.env.example) 复制为 `.env` 并填入真实密钥（JWT ≥ 32 字符、Postgres、SMTP、对象存储、指标令牌等），然后执行 `npm run prod:env`。
+首次部署可将 [`.env.minimal.example`](./.env.minimal.example) 复制为 `.env`，填入基础设施、安全根密钥、监控与备份参数，再执行 `npm run prod:env`。完整可选参数保留在 [`.env.example`](./.env.example)。业务 SMTP、站内通知、AI 和存储可由后台管理，生效范围与配置来源见[运行时配置说明](./docs/operations/runtime-settings.md)。
 
 <details>
 <summary><b>镜像与 Tag（GHCR）</b></summary>
