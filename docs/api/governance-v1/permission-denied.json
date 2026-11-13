@@ -1,0 +1,15 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "POST",
+  "path": "/api/admin/recharge/refunds/00000000-0000-4000-8000-000000000001/review",
+  "status": 403,
+  "schema": "GVError",
+  "response": {
+    "requestId": "synthetic-request",
+    "error": {
+      "code": "PERMISSION_DENIED",
+      "message": "没有执行此操作的权限"
+    }
+  }
+}

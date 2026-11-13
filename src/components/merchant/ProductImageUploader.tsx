@@ -364,7 +364,7 @@ export default function ProductImageUploader({
                 type="button"
                 onClick={() => applyPreset(preset)}
                 disabled={busy || images.length >= MAX_IMAGES}
-                className="group p-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)] transition-all text-left flex flex-col cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
+                className="group p-1.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)] transition text-left flex flex-col cursor-pointer focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]"
                 data-testid={`product-preset-${preset.id}`}
               >
                 <div className="aspect-[4/3] w-full rounded-lg overflow-hidden relative bg-[var(--color-surface)] mb-1.5 border border-[var(--color-border)]">
@@ -392,7 +392,7 @@ export default function ProductImageUploader({
             >
               <SafeImage src={url} alt={`商品图 ${index + 1}`} className="w-full h-20 object-cover" />
               {index === 0 && (
-                <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-white">
+                <span className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-xs font-bold bg-[var(--color-cta)] text-[var(--color-on-cta)]">
                   封面
                 </span>
               )}

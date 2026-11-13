@@ -1,3 +1,4 @@
+import { setCommercialActor } from '../catalog/offerRevisions.js'
 import { countOpenFakaTasksForOffer } from '../fakaBridge/taskQueries.js'
 import { assertOriginalPrice } from '../catalog/offerPolicy.js'
 import { Prisma, type Offer } from '@prisma/client'
@@ -91,6 +92,7 @@ export async function patchAdminOffer(
   input: AdminOfferPatchInput,
 ) {
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/offerAdmin')
     const product = await lockProductRow(tx, productId)
     const offer = await loadOffer(tx, productId, offerId)
     if (
@@ -228,6 +230,7 @@ export async function createPlatformOffer(
   },
 ) {
   const created = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/offerAdmin')
     const product = await lockProductRow(tx, productId)
     if (product.merchantId != null) {
       throw badRequest('平台套餐接口仅用于平台自营商品')
@@ -303,6 +306,7 @@ export async function archiveAdminOffer(
   offerId: number,
 ) {
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/offerAdmin')
     const product = await lockProductRow(tx, productId)
     const offer = await loadOffer(tx, productId, offerId)
     if (offer.status === 'inactive') return offer
@@ -350,6 +354,7 @@ export async function restoreAdminOffer(
   offerId: number,
 ) {
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/offerAdmin')
     const product = await lockProductRow(tx, productId)
     if (product.archivedAt) {
       throw new HttpError(
@@ -391,6 +396,7 @@ export async function makeDefaultAdminOffer(
   offerId: number,
 ) {
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/offerAdmin')
     await lockProductRow(tx, productId)
     const offer = await loadOffer(tx, productId, offerId)
     if (offer.status !== 'active') {
@@ -480,6 +486,7 @@ export async function rebindAdminOfferSku(
   }
 
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/offerAdmin')
     await lockProductRow(tx, productId)
     const offer = await loadOffer(tx, productId, offerId)
     const openTasks = await countOpenFakaTasksForOffer(tx, offer.id)

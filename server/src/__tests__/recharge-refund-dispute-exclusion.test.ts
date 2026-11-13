@@ -3,7 +3,7 @@ import type { Prisma } from '@prisma/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
-import { applyConfirmedPayment } from '../modules/payment/events/applyConfirmedPayment.js'
+import { writeOpenReconItem, applyConfirmedPayment } from '../modules/payment/events/applyConfirmedPayment.js'
 import { applyDisputeObservation, openPaymentDispute } from '../modules/payment/disputes/service.js'
 import { hashNormalizedPayload, recordPaymentObservation } from '../modules/payment/observations/record.js'
 import { resetSimulatorState } from '../modules/payment/providers/simulator/index.js'
@@ -120,7 +120,7 @@ async function refundSucceeds(ctx: Ctx) {
     providerAccountKey: ACCOUNT,
     paymentAttemptId: ctx.attempt.id,
     providerPaymentId: ctx.attempt.providerPaymentId!,
-    providerRefundId: `rf_${randomUUID()}`,
+    providerRefundId: `rf_${ctx.order.id}`,
     status: 'succeeded',
     amountMinor: ctx.order.amountMinor,
     currency: ctx.order.currency,
@@ -212,4 +212,89 @@ describe('recharge refund and payment dispute are mutually exclusive', () => {
     const account = await expectConserved(ctx.user.id, ctx.creditPoints)
     expect(account.balance + account.frozenBalance).toBe(START_BALANCE + ctx.creditPoints)
   })
+})
+
+// Governance uses the same real credit, source lots and payment worker as the original refund flow.
+import { reviewRefund, getRefundReview } from '../modules/recharge/refundReview.js'
+import { creditInTx } from '../modules/wallet/index.js'
+import { createAfterSalesCase, executeAfterSalesCase } from '../modules/orders/afterSales.js'
+import { createTestProduct, spendTestPoints } from './helpers.js'
+
+async function reviewReady() {
+  const ctx=await creditedOrder(`gov-refund-${randomUUID()}@test.local`)
+  const {user:admin}=await createTestUser(`gov-review-${randomUUID()}@test.local`,'admin123','admin')
+  await spendTestPoints(ctx.user.id,START_BALANCE)
+  const login=await loginAs(ctx.user.email,'pass12345')
+  const product=await createTestProduct('原来源消费测试',ctx.creditPoints,1,['private-secret'])
+  const bought=await api.post('/api/orders').set(authHeader(login.accessToken)).send({productId:product.id}).expect(201)
+  await expect(refund(ctx)).rejects.toMatchObject({code:'REFUND_REQUIRES_REVIEW'})
+  const row=await prisma.rechargeRefund.findUniqueOrThrow({where:{rechargeOrderId:ctx.order.id}})
+  await prisma.$transaction(tx=>creditInTx(tx,{operationKey:`gov-other:${ctx.order.id}`,userId:ctx.user.id,source:{kind:'test',id:ctx.order.id},reasonCode:'test',log:{reason:'其他奖励来源'}},{amount:ctx.creditPoints,origin:'reward'}))
+  return {ctx,admin,login,bought:bought.body.orderId as number,row}
+}
+async function restoreOriginal(r:Awaited<ReturnType<typeof reviewReady>>) {
+  await api.post(`/api/orders/${r.bought}/close`).set(authHeader(r.login.accessToken)).expect(200)
+  const c=await createAfterSalesCase(r.admin.id,r.bought,{reason:'退回原充值来源'})
+  await executeAfterSalesCase(r.admin.id,c.id,'确认原订单全额售后')
+}
+const decideInput={action:'resume' as const,expectedReviewVersion:0,reasonCode:'source_verified',note:'核验原来源后恢复'}
+it('GOV AC-01/02/03: other-source rewards do not qualify; original refund permits one reserve and one economic reversal',async()=>{
+  const r=await reviewReady()
+  const preview=await getRefundReview(r.admin.id,r.row.id)
+  expect(preview.blockers).toContainEqual(expect.objectContaining({code:'REFUND_SOURCE_INSUFFICIENT'}))
+  await expect(reviewRefund(r.admin.id,r.row.id,'review-insufficient',decideInput)).rejects.toMatchObject({code:'REFUND_SOURCE_INSUFFICIENT'})
+  await restoreOriginal(r)
+  const accepted=await reviewRefund(r.admin.id,r.row.id,'review-resume',decideInput)
+  expect(accepted.refund.status).toBe('points_held')
+  expect(accepted.refund.blockers).toEqual([])
+  expect((await reviewRefund(r.admin.id,r.row.id,'review-resume',decideInput)).replayed).toBe(true)
+  expect(await prisma.pointHold.count({where:{sourceType:'recharge_refund',sourceId:r.row.id}})).toBe(1)
+  await refundSucceeds(r.ctx)
+  await refundSucceeds(r.ctx)
+  expect(await prisma.rechargeReversal.count({where:{rechargeRefundId:r.row.id}})).toBe(1)
+  const account=await prisma.pointAccount.findUniqueOrThrow({where:{userId:r.ctx.user.id}})
+  expect(account.balance).toBe(r.ctx.creditPoints) // independent reward is untouched
+  expect(account.frozenBalance).toBe(0)
+})
+it('GOV AC-03: racing resume/reject and stale versions produce one decision only',async()=>{
+  const r=await reviewReady();await restoreOriginal(r)
+  const decisions=await Promise.allSettled([
+    reviewRefund(r.admin.id,r.row.id,'race-resume',decideInput),
+    reviewRefund(r.admin.id,r.row.id,'race-reject',{...decideInput,action:'reject'}),
+  ])
+  expect(decisions.filter(x=>x.status==='fulfilled')).toHaveLength(1)
+  expect(await prisma.rechargeRefundReviewAction.count({where:{refundId:r.row.id}})).toBe(1)
+  await expect(reviewRefund(r.admin.id,r.row.id,'stale-review',decideInput)).rejects.toMatchObject({code:'STATE_CONFLICT'})
+})
+it('GOV AC-04: dispute and manual resume share the recharge root lock; no double hold or reversal',async()=>{
+  const r=await reviewReady();await restoreOriginal(r)
+  const decisions=await Promise.allSettled([reviewRefund(r.admin.id,r.row.id,'resume-v-dispute',decideInput),dispute(r.ctx)])
+  expect(decisions.filter(x=>x.status==='fulfilled')).toHaveLength(1)
+  const holds=await prisma.pointHold.findMany({where:{userId:r.ctx.user.id,status:'active'}})
+  expect(holds).toHaveLength(1)
+  expect(await prisma.rechargeReversal.count({where:{rechargeRefundId:r.row.id}})).toBe(0)
+})
+it('GOV: a provider success with missing hold creates reconciliation evidence and blocks manual replay',async()=>{
+  const r=await reviewReady();await restoreOriginal(r)
+  await refundSucceeds(r.ctx) // manual_review cannot be economically reversed without a hold
+  expect(await prisma.reconciliationItem.count({where:{rechargeOrderId:r.ctx.order.id,status:'open'}})).toBeGreaterThan(0)
+  await expect(reviewRefund(r.admin.id,r.row.id,'review-needs-recon',decideInput)).rejects.toMatchObject({code:'RECONCILIATION_REQUIRED'})
+  expect(await prisma.pointHold.count({where:{sourceType:'recharge_refund',sourceId:r.row.id}})).toBe(0)
+})
+
+
+it('GOV: a provider refund arriving before a local request blocks any new refund',async()=>{
+  const ctx=await creditedOrder('gov-early-provider-refund@test.local')
+  await refundSucceeds(ctx)
+  expect(await prisma.reconciliationItem.count({where:{rechargeOrderId:ctx.order.id,status:'open'}})).toBe(1)
+  await expect(refund(ctx)).rejects.toMatchObject({code:'RECONCILIATION_REQUIRED'})
+  expect(await prisma.rechargeRefund.count({where:{rechargeOrderId:ctx.order.id}})).toBe(0)
+})
+
+it('GOV: historical reconciliation linked only by payment attempt also blocks manual resume',async()=>{
+  const r=await reviewReady();await restoreOriginal(r)
+  await prisma.$transaction(tx=>writeOpenReconItem(tx,{scopePrefix:'test-historical',mismatchType:'refund_mismatch',attemptId:r.ctx.attempt.id,provider:'simulator',providerAccountKey:ACCOUNT,providerEntryKey:'historical-provider-refund'}))
+  expect(await prisma.reconciliationItem.count({where:{rechargeOrderId:null,paymentAttemptId:r.ctx.attempt.id,status:'open'}})).toBe(1)
+  await expect(reviewRefund(r.admin.id,r.row.id,'review-attempt-only-recon',decideInput)).rejects.toMatchObject({code:'RECONCILIATION_REQUIRED'})
+  expect(await prisma.pointHold.count({where:{sourceType:'recharge_refund',sourceId:r.row.id}})).toBe(0)
 })

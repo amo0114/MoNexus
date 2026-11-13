@@ -16,6 +16,7 @@ export type NotificationTemplate = {
 
 export type NotificationRenderContext = {
   orderId: number
+  orderNo?: string | null
   productName?: string | null
   offerName?: string | null
   deliveryMode?: string | null
@@ -109,6 +110,7 @@ export function renderNotification(
     throw new Error('renderNotification requires a positive orderId')
   }
 
+  const orderLabel = plainText(context.orderNo, 50) || '#' + orderId
   const label = productLabel(context)
   const payload = safePayload(context)
   const category = 'order'
@@ -117,13 +119,13 @@ export function renderNotification(
     case 'order.remedy_proposed_buyer':
       return {
         title: '请确认订单补救方案',
-        body: `订单 #${orderId} 已提出补救方案，请在 48 小时内查看并回应；逾期将视为接受。`,
+        body: `订单 ${orderLabel} 已提出补救方案，请在 48 小时内查看并回应；逾期将视为接受。`,
         payload, deeplink: buyerOrderLink(orderId), level: 'warning', category,
       }
     case 'order.remedy_lapsed_buyer':
       return {
         title: '补救方案回应期限已过',
-        body: `订单 #${orderId} 的补救方案已按逾期规则接受，请查看订单；如有异议请联系平台。`,
+        body: `订单 ${orderLabel} 的补救方案已按逾期规则接受，请查看订单；如有异议请联系平台。`,
         payload, deeplink: buyerOrderLink(orderId), level: 'warning', category,
       }
     case 'order.created_merchant':
@@ -186,7 +188,7 @@ export function renderNotification(
     case 'order.disputed_merchant':
       return {
         title: '订单进入争议',
-        body: `订单 #${orderId} 状态更新，请查看`,
+        body: `订单 ${orderLabel} 状态更新，请查看`,
         payload,
         deeplink: eventType.endsWith('_merchant') ? merchantOrderLink(orderId) : buyerOrderLink(orderId),
         level: 'warning',
@@ -197,7 +199,7 @@ export function renderNotification(
     case 'order.refunded_merchant':
       return {
         title: '订单已退款',
-        body: `订单 #${orderId} 已退款，积分已返还`,
+        body: `订单 ${orderLabel} 已退款，积分已返还`,
         payload,
         deeplink: eventType.endsWith('_merchant') ? merchantOrderLink(orderId) : buyerOrderLink(orderId),
         level: 'info',
@@ -208,7 +210,7 @@ export function renderNotification(
     case 'order.dispute_resolved_merchant':
       return {
         title: '争议已处理',
-        body: `订单 #${orderId} 的争议已有结果，请查看`,
+        body: `订单 ${orderLabel} 的争议已有结果，请查看`,
         payload,
         deeplink: eventType.endsWith('_merchant') ? merchantOrderLink(orderId) : buyerOrderLink(orderId),
         level: 'info',
@@ -218,7 +220,7 @@ export function renderNotification(
     case 'order.closed_buyer':
       return {
         title: '订单已完成',
-        body: `订单 #${orderId}「${label}」已关闭`,
+        body: `订单 ${orderLabel}「${label}」已关闭`,
         payload,
         deeplink: buyerOrderLink(orderId),
         level: 'info',

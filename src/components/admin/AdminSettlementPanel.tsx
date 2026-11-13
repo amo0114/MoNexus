@@ -15,6 +15,7 @@ import { blockReasonToUserMessage } from '../../utils/settlementCopy'
 import { formatCommissionRate } from '../../utils/adminRechargeDisplay'
 import AdminSettlementBatches from './AdminSettlementBatches'
 import AdminMerchantRecoveryPanel from './AdminMerchantRecoveryPanel'
+import { useTabActions } from '../../auth/adminAccess'
 
 interface Props {
   active?: boolean
@@ -25,6 +26,7 @@ function SettlementStatusPill({ status }: { status: string }) {
 }
 
 export default function AdminSettlementPanel({ active = true }: Props) {
+  const can = useTabActions('settlements')
   const showToast = useAppStore((s) => s.showToast)
   const [settlements, setSettlements] = useState<Settlement[]>([])
   const [settlementPage, setSettlementPage] = useState(1)
@@ -260,6 +262,7 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                 </button>
               </>
             )}
+            {can('execute') && (
             <button
               onClick={handleBatchSettleClick}
               disabled={selectedSettlementsMap.size === 0}
@@ -268,6 +271,7 @@ export default function AdminSettlementPanel({ active = true }: Props) {
             >
               批量结算 ({selectedSettlementsMap.size})
             </button>
+            )}
           </div>
         }
       />

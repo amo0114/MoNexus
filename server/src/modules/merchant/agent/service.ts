@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../../accountGovernance/status.js'
 // SPEC-MERCHANT-AGENT-001 §8 / §9 — turn orchestration. Initial access and the
 // selected resource are verified before a quota slot is taken; the same checks
 // run again before every step and before the result is returned.
@@ -43,7 +44,7 @@ async function assertStillAllowed(user: AuthPayload): Promise<number> {
       ? prisma.refreshToken.findFirst({ where: { userId: user.userId, sessionId: user.sid, revoked: false, expiresAt: { gt: new Date() } }, select: { id: true } })
       : Promise.resolve({ id: 0 }),
   ])
-  if (!account || account.status === '已封禁') throw forbidden('账号不可用')
+  if (!account || await isAccountBanned(user.userId)) throw forbidden('账号不可用')
   if (!session) throw sessionRevoked()
   const merchantId = await activeMerchantId(user.userId)
   if (!await isAiFeatureEnabled(AGENT_FEATURE) || !await inAgentAudience(merchantId)) throw notFound()

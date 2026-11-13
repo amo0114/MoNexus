@@ -1,3 +1,4 @@
+import { setCommercialActor } from '../catalog/offerRevisions.js'
 import { lockProductRow } from '../catalog/productLock.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -25,6 +26,7 @@ export async function archiveAdminProduct(
   input: { reason?: string | null } = {},
 ) {
   const result = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/productLifecycle')
     const product = await lockProductRow(tx, productId)
     if (product.archivedAt) {
       return {
@@ -83,6 +85,7 @@ export async function archiveAdminProduct(
 
 export async function restoreAdminProduct(adminUserId: number, productId: number) {
   const result = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/productLifecycle')
     const product = await lockProductRow(tx, productId)
     if (!product.archivedAt) {
       return {
@@ -158,6 +161,7 @@ export async function countProductPurgeDependencies(tx: Tx | typeof prisma, prod
 
 export async function purgeAdminProduct(adminUserId: number, productId: number) {
   const result = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/productLifecycle')
     const product = await lockProductRow(tx, productId)
     const dependencies = await countProductPurgeDependencies(tx, productId)
     const blocked = Object.values(dependencies).some(count => count > 0)

@@ -462,7 +462,7 @@ export default function EditorialFormDialog({
           {fieldError && (
             <div
               role="alert"
-              className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
+              className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
             >
               {fieldError}
             </div>
@@ -470,7 +470,7 @@ export default function EditorialFormDialog({
           {submitError && (
             <div
               role="alert"
-              className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
+              className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
             >
               {submitError}
             </div>

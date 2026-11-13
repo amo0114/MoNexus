@@ -14,6 +14,10 @@ vi.mock('../../../api/adminRecharge', () => ({
 }))
 
 import AdminRechargeOrders from './AdminRechargeOrders'
+import { signInLegacyAdmin } from '../../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 function order(overrides: Partial<AdminRechargeOrder> = {}): AdminRechargeOrder {
   return {

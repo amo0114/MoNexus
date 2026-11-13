@@ -457,7 +457,7 @@ export default function AdminPointLogPanel({ active = true }: AdminPointLogPanel
                           </div>
                         )}
                         {visual.hint && (
-                          <div className="text-[11px] text-[var(--color-text-muted)]/80 mt-0.5">
+                          <div className="text-[11px] text-[color-mix(in_srgb,var(--color-text-muted)_80%,transparent)] mt-0.5">
                             {visual.hint}
                           </div>
                         )}

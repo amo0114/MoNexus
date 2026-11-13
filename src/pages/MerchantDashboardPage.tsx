@@ -34,8 +34,13 @@ import {
   Settlement,
   Merchant
 } from '../types/merchant'
-import { Store, Package, ShoppingBag, DollarSign, Settings, Loader2, BarChart3, Megaphone, FilePlus2 } from 'lucide-react'
+import { DollarSign, Loader2, Store } from 'lucide-react'
+import { MerchantNav, MERCHANT_TAB_STATE, type MerchantTabKey } from '../components/merchant/MerchantShell'
+import MerchantReadOnlyBanner from '../components/merchant/MerchantReadOnlyBanner'
+import ProductTraceSheet, { type TraceProduct } from '../components/admin/governance/ProductTraceSheet'
+import { hasMerchantCapability, isMerchantReadOnly } from '../auth/merchantAccess'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
 import MerchantWebhookConfigSection from '../components/merchant/MerchantWebhookConfigSection'
 import ProvisionBadge from '../components/ProvisionBadge'
 import MerchantInventoryLogModal, { type InventoryLogProduct } from '../components/merchant/MerchantInventoryLogModal'
@@ -60,21 +65,11 @@ import MerchantFinanceSummary from '../components/merchant/dashboard/MerchantFin
 import { parsePositiveId } from '../components/merchant/workbench/navigation'
 import { useMerchantWorkbenchStore } from '../stores/merchantWorkbench'
 
-type TabKey = 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions' | 'categoryApplications'
+type TabKey = MerchantTabKey
 type MerchantOrderSetter = Dispatch<SetStateAction<MerchantOrder | null>>
 type AvailabilityTarget = Pick<MerchantProduct, 'id' | 'name' | 'offers' | 'availableStock'>
 type ProductRef = Pick<MerchantProduct, 'id' | 'name' | 'offers'>
 
-const TABS: { key: TabKey; label: string; Icon: typeof Store; path?: string }[] = [
-  { key: 'dashboard', label: '概览', Icon: Store },
-  { key: 'products', label: '商品管理', Icon: Package },
-  { key: 'orders', label: '订单管理', Icon: ShoppingBag },
-  { key: 'settlements', label: '结算管理', Icon: DollarSign },
-  { key: 'profile', label: '商家资料', Icon: Settings },
-  { key: 'operations', label: '经营数据', Icon: BarChart3, path: '/merchant/dashboard' },
-  { key: 'promotions', label: '推广中心', Icon: Megaphone, path: '/merchant/promotions' },
-  { key: 'categoryApplications', label: '分类申请', Icon: FilePlus2 },
-]
 
 function isGoneOrForbidden(error: any) {
   const status = error?.response?.status
@@ -89,11 +84,16 @@ export default function MerchantDashboardPage() {
   const categoryApplicationRoute = /^\/merchant\/category-applications\/?$/.test(location.pathname)
   const showToast = useAppStore((s) => s.showToast)
   const registry = useAppStore((s) => s.registry)
-  const [activeTab, setActiveTab] = useState<TabKey>(orderRoute ? 'orders' : categoryApplicationRoute ? 'categoryApplications' : 'dashboard')
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    // A suspended merchant's backend read scope is orders/settlements, not the live overview.
+    orderRoute || isMerchantReadOnly(useAuthStore.getState().user) ? 'orders' : categoryApplicationRoute ? 'categoryApplications' : 'dashboard',
+  )
+  const requestedTab = (location.state as Record<string, unknown> | null)?.[MERCHANT_TAB_STATE] as TabKey | undefined
   useEffect(() => {
     if (/^\/merchant\/orders(?:\/\d+)?\/?$/.test(location.pathname)) setActiveTab('orders')
     else if (categoryApplicationRoute) setActiveTab('categoryApplications')
-  }, [location.pathname, location.key, categoryApplicationRoute])
+    else if (requestedTab) setActiveTab(requestedTab)
+  }, [location.pathname, location.key, categoryApplicationRoute, requestedTab])
   const [stats, setStats] = useState<MerchantStats | null>(null)
   const [loading, setLoading] = useState(true)
   const loadCoordinatorRef = useRef(createLatestRequestCoordinator(true))
@@ -343,6 +343,10 @@ export default function MerchantDashboardPage() {
   const [isCapacityAdjustOpen, setIsCapacityAdjustOpen] = useState(false)
   const [capacityProduct, setCapacityProduct] = useState<MerchantProduct | null>(null)
 
+  const [traceProduct, setTraceProduct] = useState<TraceProduct | null>(null)
+  const authUser = useAuthStore((s) => s.user)
+  // Only governance-v1 backends send merchantCapabilities and serve batch/revision history.
+  const canTrace = Array.isArray(authUser?.merchantCapabilities) && hasMerchantCapability(authUser, 'history.read')
   const [isInventoryLogOpen, setIsInventoryLogOpen] = useState(false)
   const [logProduct, setLogProduct] = useState<InventoryLogProduct | null>(null)
   const inventoryLogParam = new URLSearchParams(location.search).get('inventoryLog')
@@ -607,29 +611,16 @@ export default function MerchantDashboardPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 mt-4">
+    <div className="flex flex-col md:flex-row gap-6">
       {/* Sidebar — <md: sticky horizontal pill strip (spec M4); ≥md: card rail */}
-      <aside className="w-full md:w-64 flex-shrink-0 max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[var(--color-background)]/95 max-md:backdrop-blur-md">
-        <nav className="md:card p-0 md:p-2 flex md:flex-col gap-1 overflow-x-auto hide-scrollbar">
-          {TABS.map(({ key, label, Icon, path }) => (
-            <button
-              key={key}
-              onClick={() => { if (path) { navigate(path) } else { setActiveTab(key) } }}
-              className={`shrink-0 flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm whitespace-nowrap ${
-                (activeTab === key && !path)
-                  ? 'bg-[var(--color-primary)] text-white font-semibold shadow-sm'
-                  : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)] font-medium'
-              }`}
-            >
-              <Icon className="w-5 h-5 shrink-0" />
-              {label}
-            </button>
-          ))}
-        </nav>
-      </aside>
+      <MerchantNav
+        activeKey={activeTab}
+        onSelect={({ key, path }) => { if (path) { navigate(path) } else { setActiveTab(key) } }}
+      />
 
       {/* Main Content */}
       <div className="flex-1 min-w-0">
+        <MerchantReadOnlyBanner />
         <div className="card max-md:p-4 max-md:min-h-0 min-h-[500px]">
           {activeTab === 'dashboard' && (
             <div className="fade-in">
@@ -681,6 +672,9 @@ export default function MerchantDashboardPage() {
               onManageInventory={(product) => { setImportingProduct({ id: product.id, name: product.name, offers: product.offers }); setIsInventoryModalOpen(true) }}
               onAdjustCapacity={(product) => { setCapacityProduct(product); setIsCapacityAdjustOpen(true) }}
               onViewInventoryLog={(product) => { setLogProduct(product); setIsInventoryLogOpen(true) }}
+              onOpenTrace={canTrace
+                ? (product) => setTraceProduct({ id: product.id, name: product.name, offers: (product.offers ?? []).map((o) => ({ id: o.id, name: o.name })) })
+                : undefined}
               onManageOffers={(product) => { setOfferProduct(product); setIsOfferManagerOpen(true) }}
             />
           )}
@@ -851,6 +845,17 @@ export default function MerchantDashboardPage() {
         }}
       />
 
+      {canTrace && (
+        <ProductTraceSheet
+          scope="merchant"
+          product={traceProduct}
+          canReadBatches
+          canVoid={hasMerchantCapability(authUser, 'inventory.write')}
+          canReadRevisions
+          onOpenChange={(open) => { if (!open) setTraceProduct(null) }}
+          onInventoryChanged={() => void loadData({ background: true })}
+        />
+      )}
       <MerchantInventoryLogModal
         isOpen={isInventoryLogOpen}
         onClose={() => {

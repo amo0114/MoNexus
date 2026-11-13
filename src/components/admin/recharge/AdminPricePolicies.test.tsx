@@ -24,6 +24,10 @@ vi.mock('../../../api/adminRecharge', async (importOriginal) => {
 
 import AdminPricePolicies from './AdminPricePolicies'
 import { RP_CNY_VMQFOX_V1_CREATE_EXAMPLE } from '../../../api/adminRecharge'
+import { signInLegacyAdmin } from '../../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 function policy(overrides: Partial<AdminPricePolicy> = {}): AdminPricePolicy {
   return {

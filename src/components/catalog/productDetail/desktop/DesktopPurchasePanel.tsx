@@ -214,31 +214,20 @@ export default function DesktopPurchasePanel({
           />
         )}
         <div className="pd-rating" data-testid="rating-summary">
-          {(product.ratingCount ?? 0) > 0 ? (
+          {(product.ratingCount ?? 0) > 0 && (
             <>
               <StarRating value={product.ratingAvg ?? 0} />
               <strong>{(product.ratingAvg ?? 0).toFixed(1)}</strong>
               <button onClick={onScrollToReviews}>
                 （{product.ratingCount?.toLocaleString()} 条评价）
               </button>
+              <i />
             </>
-          ) : (
-            <span>暂无评分</span>
           )}
-          <i />
           <span>
             已售 {(product.sales ?? 0).toLocaleString()}
             {preview ? '+' : ''}
           </span>
-        </div>
-        <div className="pd-features">
-          {features.map(({ icon: Icon, title, note }) => (
-            <div key={title}>
-              <Icon size={24} strokeWidth={1.8} />
-              <strong>{title}</strong>
-              <span>{note}</span>
-            </div>
-          ))}
         </div>
 
         {(offers.length > 1 || preview) && (
@@ -279,7 +268,7 @@ export default function DesktopPurchasePanel({
                         </span>
                       )
                     )}
-                    <strong>{offer.name}</strong>
+                    <strong title={offer.name}>{offer.name}</strong>
                     {selected && <Check className="pd-offer-check" size={15} />}
                     <b>
                       {preview ? '¥ ' : ''}
@@ -316,6 +305,17 @@ export default function DesktopPurchasePanel({
           </>
         )}
         {!offers.length && <p className="pd-muted">暂无可售套餐</p>}
+
+        {/* Reassurance comes after the package choice so the decision stays above the fold. */}
+        <div className="pd-features">
+          {features.map(({ icon: Icon, title, note }) => (
+            <div key={title}>
+              <Icon size={24} strokeWidth={1.8} />
+              <strong>{title}</strong>
+              <span>{note}</span>
+            </div>
+          ))}
+        </div>
 
         {preview && (
           <div className="pd-assurances">

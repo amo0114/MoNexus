@@ -243,9 +243,9 @@ describe('P7b 认领/启动/退避/降级状态机', () => {
 
     const mail = mailer.lastTo(seed.merchantEmail)
     expect(mail).toBeDefined()
-    expect(mail!.subject).toContain(`#${orderId}`)
     // 订单不因降级回退,仍为 processing 等人工交付。
     const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } })
+    expect(mail!.subject).toContain(order.orderNo)
     expect(order.status).toBe('processing')
   })
 })

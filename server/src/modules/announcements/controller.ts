@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { Request, Response, NextFunction } from 'express'
 import { prisma } from '../../lib/prisma.js'
 import { announcementVersionRequired } from '../../lib/httpError.js'
@@ -28,7 +29,7 @@ async function resolveCurrentAudience(auth?: AuthPayload): Promise<AnnouncementA
       merchant: { select: { status: true } },
     },
   })
-  if (!user || user.status !== '正常') return undefined
+  if (!user || await isAccountBanned(auth.userId)) return undefined
 
   // The endpoint itself stays public, but admin-targeted notices are not.
   // A stale/no-MFA administrator token deliberately falls back to visitor

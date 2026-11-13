@@ -1,3 +1,7 @@
+import { requireMerchantRoute } from './lifecycleGuard.js'
+import { merchantApplication, submitMerchantApplication } from '../merchantGovernance/lifecycle.js'
+import { mountTraceRoutes } from '../catalog/traceRoutes.js'
+import { parseRequestKey } from '../governance/common.js'
 import { Router } from 'express'
 import { workbenchRoutes } from './workbench/routes.js'
 import { agentRoutes } from './agent/routes.js'
@@ -42,8 +46,14 @@ const router = Router()
 // Registration: any authenticated user can apply
 router.post('/register', authenticate, requireActiveUser, validate(applyMerchantSchema), requireVerifiedEmail, controller.apply)
 
-// All other routes require merchant role
-router.use(authenticate, requireActiveUser, requireMerchant)
+router.get('/application', authenticate, requireActiveUser, async(req,res,next)=>{try{res.json(await merchantApplication(req.user!.userId))}catch(e){next(e)}})
+router.post('/application/resubmit', authenticate, requireActiveUser, requireVerifiedEmail, async(req,res,next)=>{try{
+  const {expectedLifecycleVersion,...data}=z.object({name:z.string().trim().min(1).max(100),description:z.string().max(2000),contactEmail:z.string().email(),contactPhone:z.string().max(50),expectedLifecycleVersion:z.number().int().nonnegative()}).strict().parse(req.body)
+  res.json(await submitMerchantApplication(req.user!.userId,data,parseRequestKey(req.header('Idempotency-Key')),expectedLifecycleVersion))
+}catch(e){next(e)}})
+// Ownership and current capability protect all remaining merchant routes.
+router.use(authenticate, requireActiveUser, requireMerchantRoute)
+mountTraceRoutes(router,false)
 router.use(createDraftAssistantRouter('merchant'))
 router.use('/workbench', workbenchRoutes)
 router.use('/agent', agentRoutes)

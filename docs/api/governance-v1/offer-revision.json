@@ -1,0 +1,38 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/merchant/products/3/offers/4/revisions",
+  "status": 200,
+  "schema": "GVOfferRevisionPage",
+  "response": {
+    "items": [
+      {
+        "id": "00000000-0000-4000-8000-000000000010",
+        "offerId": 4,
+        "revision": 2,
+        "actorType": "user",
+        "actorUserId": 42,
+        "sourceRef": null,
+        "reasonCode": "commercial_update",
+        "beforeSafe": {
+          "price": 100,
+          "status": "active"
+        },
+        "afterSafe": {
+          "price": 120,
+          "status": "active"
+        },
+        "changedFields": [
+          "price"
+        ],
+        "createdAt": "2026-11-12T08:00:00.000Z"
+      }
+    ],
+    "pageInfo": {
+      "nextCursor": null,
+      "hasNextPage": false
+    },
+    "asOf": "2026-11-12T08:00:00.000Z"
+  }
+}

@@ -70,5 +70,37 @@ export const BACKGROUND_ALERTS = [
     "routing": "ai-p1",
     "severity": "P1",
     "summary": "AI token consumption exceeded the initial operational threshold; verify quotas and traffic."
-  }
+  },
+{
+  "name": "MoNexusRefundReviewOverdue",
+  "expr": "max(monexus_governance_oldest_age_seconds{state=\"refund_manual\"}) > 86400",
+  "for_": "5m",
+  "routing": "governance-p1",
+  "severity": "P1",
+  "summary": "Recharge refund manual review exceeded 24 hours; assign an owner and inspect source evidence."
+},
+{
+  "name": "MoNexusExportBacklog",
+  "expr": "max(monexus_governance_oldest_age_seconds{state=\"export_pending\"}) > 1800 or max(monexus_governance_backlog{state=\"export_failed\"}) > 0",
+  "for_": "5m",
+  "routing": "governance-p1",
+  "severity": "P1",
+  "summary": "Private exports are delayed or failed; inspect storage and task error codes."
+},
+{
+  "name": "MoNexusWalletIntegrityDifference",
+  "expr": "max(monexus_governance_backlog{state=\"wallet_issue\"}) > 0",
+  "for_": "0m",
+  "routing": "governance-p1",
+  "severity": "P1",
+  "summary": "Wallet source conservation differs; investigate evidence without automatically adjusting balances."
+},
+{
+  "name": "MoNexusWalletIntegrityStale",
+  "expr": "time() - max(monexus_wallet_integrity_last_success_timestamp_seconds) > 7200",
+  "for_": "5m",
+  "routing": "governance-p1",
+  "severity": "P1",
+  "summary": "Wallet integrity scans have not completed for two scheduled rounds; inspect leases and checkpoints."
+}
 ] as const

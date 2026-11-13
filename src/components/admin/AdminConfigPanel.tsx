@@ -4,6 +4,7 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import AdminMailPanel from './AdminMailPanel'
 import AdminAiSettingsPanel from './AdminAiSettingsPanel'
+import { useTabActions } from '../../auth/adminAccess'
 import AdminSystemInfoPanel from './AdminSystemInfoPanel'
 import MemberTierConfigPanel from './MemberTierConfigPanel'
 import RegistrationControlPanel from './RegistrationControlPanel'
@@ -16,6 +17,7 @@ import {
 } from './adminConfigMeta'
 
 export default function AdminConfigPanel() {
+  const can = useTabActions('config')
   const showToast = useAppStore((s) => s.showToast)
   const [configs, setConfigs] = useState<AdminSystemConfig[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -228,7 +230,7 @@ export default function AdminConfigPanel() {
         aria-label="系统配置分组"
         className="flex flex-wrap items-center gap-1.5 p-1 bg-[var(--color-background)] rounded-xl border border-[var(--color-border)]"
       >
-        {CONFIG_GROUPS.map((group) => {
+        {CONFIG_GROUPS.filter((group) => group.id !== 'ai' || can('ai')).map((group) => {
           const isActive = activeGroup === group.id
           return (
             <button
@@ -240,10 +242,10 @@ export default function AdminConfigPanel() {
               aria-controls={`config-tabpanel-${group.id}`}
               data-testid={`admin-config-tab-${group.id}`}
               onClick={() => setActiveGroup(group.id)}
-              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
+              className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
                 isActive
-                  ? 'bg-[var(--color-primary)] text-white shadow-xs'
-                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-primary)]/8'
+                  ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-xs'
+                  : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
               }`}
             >
               {group.title}
@@ -262,14 +264,14 @@ export default function AdminConfigPanel() {
         className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] overflow-hidden"
       >
         {/* 组头 */}
-        <div className="px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-background)]/50">
+        <div className="px-5 py-4 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_50%,transparent)]">
           <h3 className="font-heading text-base font-bold text-[var(--color-text)]">{currentGroupDef.title}</h3>
           <p className="text-xs text-[var(--color-text-muted)] mt-0.5">{currentGroupDef.description}</p>
         </div>
 
         {/* 组内主体 */}
         <div className="p-4 sm:p-6">
-          {activeGroup === 'ai' && <AdminAiSettingsPanel />}
+          {activeGroup === 'ai' && can('ai') && <AdminAiSettingsPanel />}
           {activeGroup === 'system' ? (
             <AdminSystemInfoPanel />
           ) : activeGroup === 'registration' ? (
@@ -320,7 +322,7 @@ export default function AdminConfigPanel() {
                         </div>
                       </details>
                       {error && (
-                        <div className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-1 rounded border border-[var(--color-danger)]/20 mt-1 max-w-sm">
+                        <div className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-2 py-1 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] mt-1 max-w-sm">
                           {error}
                         </div>
                       )}
@@ -349,7 +351,7 @@ export default function AdminConfigPanel() {
                           disabled={isSaving || savingKey !== null}
                           onClick={() => void handleSave(c.key, rawVal)}
                           data-testid={`admin-config-save-${c.key}`}
-                          className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                         >
                           {isSaving ? '保存中...' : '保存'}
                         </button>

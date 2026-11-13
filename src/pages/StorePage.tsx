@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Search, SearchX, X } from 'lucide-react'
+import { LayoutGrid, LogIn, Search, SearchX, X } from 'lucide-react'
 import { listStoreProducts, loadStoreCandidates, type StoreProductQuery } from '../api/storeFeed'
 import { getApiErrorCode } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -73,6 +73,7 @@ function getProductQueryKey(
 
 function getColumnCount(width: number, isMobile: boolean) {
   if (isMobile) return 2
+  if (width >= 1200) return 4
   if (width >= 1024) return 3
   if (width >= 768) return 2
   return 1
@@ -751,7 +752,7 @@ export default function StorePage() {
   }, [columnCount, loadMore, feedItems.length, visibleEndIndex])
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
+    <div className="space-y-8">
       {/* Header — compacted on mobile (V2-M2), explanatory subtitle preserved.
           登录用户换成今日面板（SPEC-ENGAGE-001 HM-01）。 */}
       {showTodayPanel ? (
@@ -784,7 +785,7 @@ export default function StorePage() {
       {/* Search & Categories — 全视口常驻，移动端紧凑直出（与顶栏搜索共用 appStore 状态） */}
       <div className="max-w-3xl mx-auto w-full space-y-2.5 md:space-y-4">
         <div className="relative group">
-          <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition-all duration-200 pointer-events-none" />
+          <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition duration-200 pointer-events-none" />
           <input
             type="text"
             value={draftSearchQuery}
@@ -794,13 +795,13 @@ export default function StorePage() {
             }}
             placeholder={isMobile ? '搜索商品、服务...' : '搜账号、卡密、教程...'}
             aria-label="搜索商品"
-            className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[var(--color-primary)]/40 focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition-all text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+            className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:scale-90 rounded-full hover:bg-[var(--color-border)]/50 transition-all duration-150 cursor-pointer animate-in fade-in zoom-in-75"
+              className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:scale-90 rounded-full hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] transition duration-150 cursor-pointer animate-in fade-in zoom-in-75"
               aria-label="清除搜索词"
             >
               <X className="w-4 h-4" />
@@ -849,11 +850,42 @@ export default function StorePage() {
           </div>
         </div>
       ) : feedItems.length === 0 ? (
-        <EmptyState
-          icon={SearchX}
-          title="未找到相关好物"
-          description="请尝试更换搜索词，或者看下其他分类"
-        />
+        searchQuery ? (
+          <EmptyState
+            icon={SearchX}
+            title={`没有找到「${searchQuery}」相关的商品`}
+            description="换个关键词试试，或浏览其他分类"
+            action={
+              <button type="button" className="btn-secondary px-6 py-2" onClick={() => setSearchQuery('')}>
+                清除搜索
+              </button>
+            }
+          />
+        ) : category !== '全部' ? (
+          <EmptyState
+            icon={LayoutGrid}
+            title="这个分类暂时没有商品"
+            description="去看看全部商品"
+            action={
+              <button type="button" className="btn-secondary px-6 py-2" onClick={() => setCategory('全部')}>
+                查看全部
+              </button>
+            }
+          />
+        ) : !isLoggedIn ? (
+          <EmptyState
+            icon={LogIn}
+            title="登录后查看全部商品"
+            description="部分商品仅对登录用户开放，登录即可浏览与兑换"
+            action={
+              <button type="button" className="btn-primary px-6 py-2" onClick={() => navigate('/login')}>
+                登录 / 注册
+              </button>
+            }
+          />
+        ) : (
+          <EmptyState icon={SearchX} title="暂时还没有上架商品" description="稍后再来看看" />
+        )
       ) : (
         <>
           <div className="pt-2">
@@ -886,7 +918,7 @@ export default function StorePage() {
                         imageFetchPriority={visibleStartIndex + i === 0 ? 'high' : 'auto'}
                       />
                   return initialCard ? <div key={item.productId}>{card}</div> : (
-                    <Reveal key={item.productId} delay={(i % columnCount) * 60}>{card}</Reveal>
+                    <Reveal key={item.productId}>{card}</Reveal>
                   )
                 })}
               </div>

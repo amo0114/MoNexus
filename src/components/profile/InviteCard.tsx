@@ -133,7 +133,7 @@ export default function InviteCard() {
         )}
       </div>
 
-      <div className="border-t border-[var(--color-border)]/60 pt-3">
+      <div className="border-t border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] pt-3">
         {activeCodes.length === 0 ? (
           <div className="text-center py-5 bg-[var(--color-background)] rounded-xl border border-dashed border-[var(--color-border)]">
             <p className="text-xs text-[var(--color-text-muted)]">暂无可用邀请码</p>
@@ -158,14 +158,14 @@ export default function InviteCard() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => copyCode(code.code)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] hover:bg-[var(--color-primary)]/20 transition-colors inline-flex items-center gap-1 cursor-pointer font-medium"
+                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] transition-colors inline-flex items-center gap-1 cursor-pointer font-medium"
                     title="复制邀请码"
                   >
                     <Copy className="w-3.5 h-3.5" /> 复制码
                   </button>
                   <button
                     onClick={() => copyLink(code.code)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)] transition-colors inline-flex items-center gap-1 cursor-pointer font-medium"
+                    className="text-xs px-2.5 py-1.5 rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)] transition-colors inline-flex items-center gap-1 cursor-pointer font-medium"
                     title="复制邀请链接"
                   >
                     <LinkIcon className="w-3.5 h-3.5" /> 复制链接
@@ -185,7 +185,7 @@ export default function InviteCard() {
               {inactiveCodes.map((code) => (
                 <div
                   key={code.code}
-                  className="flex items-center justify-between px-3 py-2 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)]/50 opacity-60 text-xs"
+                  className="flex items-center justify-between px-3 py-2 bg-[var(--color-background)] rounded-lg border border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] opacity-60 text-xs"
                 >
                   <span className="font-mono text-[var(--color-text-muted)]">{code.code}</span>
                   <span className="text-[var(--color-text-muted)]">

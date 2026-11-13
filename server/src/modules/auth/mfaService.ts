@@ -91,7 +91,7 @@ async function recordMfaFactorFailure(input: {
 }
 
 function isActiveAdmin(user: { role: string; status: string }) {
-  return user.role === 'admin' && user.status !== '已封禁'
+  return user.role === 'admin' && ['active','正常'].includes(user.status)
 }
 
 /**
@@ -265,6 +265,7 @@ export async function confirmAdminMfaEnrollment(input: {
 
       const recoveryCodes = await replaceMfaRecoveryCodes(user.id, { tx })
       await revokeAllUserRefreshTokens(user.id, tx, 'mfa_migration', { ip: input.ip, userAgent: input.userAgent })
+      await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
       const session = await createStoredRefreshToken(user.id, input.ip, input.userAgent, tx, maxAgeMs)
       const enrolled = await tx.user.findUniqueOrThrow({
         where: { id: user.id },
@@ -366,6 +367,7 @@ export async function verifyAdminMfaLogin(input: {
         throw new MfaChallengeChangedError()
       }
 
+      await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
       const session = await createStoredRefreshToken(user.id, input.ip, input.userAgent, tx, maxAgeMs)
       const recoveryCodeRemaining = input.method === 'recovery'
         ? await countUnusedMfaRecoveryCodes(user.id, tx)

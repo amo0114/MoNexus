@@ -1,3 +1,4 @@
+import { startGovernanceWorker, stopGovernanceWorker } from './modules/governance/worker.js'
 import { startVideoWorker, stopVideoWorker } from './modules/productVideos/worker.js'
 import { app } from './app.js'
 import { config } from './config/index.js'
@@ -63,6 +64,7 @@ const server = app.listen(config.port, () => {
   startCampaignLifecycleCron()
   startEditorialLifecycleCron()
   startPartnerEntitlementCron()
+  startGovernanceWorker()
   startPaymentWorkers()
   startPaymentPayloadRetentionCron()
   startVideoWorker()
@@ -121,6 +123,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopCampaignLifecycleCron()
   stopEditorialLifecycleCron()
   stopPartnerEntitlementCron()
+  const governanceStopPromise=stopGovernanceWorker()
   stopPaymentWorkers()
   stopPaymentPayloadRetentionCron()
   const videoStopPromise = stopVideoWorker()
@@ -146,6 +149,7 @@ async function shutdown(signal: NodeJS.Signals) {
     await serverClosePromise
     await listenerStopPromise
     await drainPromise
+    await governanceStopPromise
     await videoStopPromise
     await fulfillmentStopPromise
     await quitRedis()

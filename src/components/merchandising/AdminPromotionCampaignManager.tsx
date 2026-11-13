@@ -81,6 +81,7 @@ import {
   isKnownCampaignStatus,
   PLACEMENT_LABEL,
 } from './promotionCopy'
+import { useTabActions } from '../../auth/adminAccess'
 
 /**
  * Real adapter — passthrough to the frozen admin promotion campaign API.
@@ -255,6 +256,7 @@ export default function AdminPromotionCampaignManager({
   adapter = DEFAULT_ADAPTER,
   className = '',
 }: AdminPromotionCampaignManagerProps) {
+  const canWrite = useTabActions('merchandising')('write')
   const [campaigns, setCampaigns] = useState<AdminPromotionCampaignDTO[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -527,7 +529,7 @@ export default function AdminPromotionCampaignManager({
         ) : loadError ? (
           <div
             role="alert"
-            className="flex flex-col items-start gap-3 rounded border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-4 text-sm text-[var(--color-danger)]"
+            className="flex flex-col items-start gap-3 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-4 py-4 text-sm text-[var(--color-danger)]"
           >
             <div>{loadError}</div>
             <button type="button" className="btn-secondary btn-sm" onClick={() => void load()}>
@@ -639,7 +641,7 @@ export default function AdminPromotionCampaignManager({
                       <td className="px-3 py-3">
                         {availableActions(campaign).length > 0 ? (
                           <div className="flex flex-wrap items-center gap-2">
-                            {availableActions(campaign).map((kind) => (
+                            {(canWrite ? availableActions(campaign) : []).map((kind) => (
                               <button
                                 key={kind}
                                 type="button"

@@ -53,6 +53,7 @@ import EditPackageDialog, {
   type EditPackageDialogHandle,
 } from './packageManager/EditPackageDialog'
 import { PLACEMENT_LABEL } from './promotionCopy'
+import { useTabActions } from '../../auth/adminAccess'
 /**
  * Real adapter — passthrough to the frozen admin promotion package API.
  * `updatePackage` backs the per-row edit dialog.
@@ -90,6 +91,7 @@ export default function AdminPromotionPackageManager({
   adapter = DEFAULT_ADAPTER,
   className = '',
 }: AdminPromotionPackageManagerProps) {
+  const canWrite = useTabActions('merchandising')('write')
   const [packages, setPackages] = useState<AdminPromotionPackageDTO[]>([])
   const [includeInactive, setIncludeInactive] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -165,6 +167,7 @@ export default function AdminPromotionPackageManager({
             推广套餐决定推广位的展位、时长与积分价格，由平台统一维护。可在编辑弹窗中调整套餐内容与启停状态。
           </p>
         </div>
+        {canWrite && (
         <button
           type="button"
           className="btn-primary px-4 py-2 text-sm flex items-center gap-2 shrink-0"
@@ -173,6 +176,7 @@ export default function AdminPromotionPackageManager({
           <Plus className="w-4 h-4" />
           新建套餐
         </button>
+        )}
       </div>
 
       {feedback && (
@@ -203,7 +207,7 @@ export default function AdminPromotionPackageManager({
         ) : loadError ? (
           <div
             role="alert"
-            className="flex flex-col items-start gap-3 rounded border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-4 text-sm text-[var(--color-danger)]"
+            className="flex flex-col items-start gap-3 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-4 py-4 text-sm text-[var(--color-danger)]"
           >
             <div>{loadError}</div>
             <button type="button" className="btn-secondary btn-sm" onClick={() => void load()}>
@@ -262,6 +266,7 @@ export default function AdminPromotionPackageManager({
                     <td className="px-3 py-3">{pkg.sortOrder}</td>
                     <td className="px-3 py-3">{PACKAGE_STATUS_LABEL[pkg.status] ?? pkg.status}</td>
                     <td className="px-3 py-3">
+                      {canWrite && (
                       <button
                         type="button"
                         aria-label={`编辑套餐 ${pkg.code}（套餐 ID ${pkg.id}）`}
@@ -270,6 +275,7 @@ export default function AdminPromotionPackageManager({
                       >
                         编辑
                       </button>
+                      )}
                     </td>
                   </tr>
                 ))}

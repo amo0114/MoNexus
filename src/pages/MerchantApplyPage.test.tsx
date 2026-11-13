@@ -56,7 +56,7 @@ it('uses the confirmed application and refreshes current status when its island 
   expect(JSON.stringify(notice)).not.toContain('private@example.test')
   vi.mocked(getMe).mockResolvedValue({ ...user, role: 'merchant', merchant: { ...application, status: 'active' } })
   act(() => notice.onAction?.())
-  await screen.findByRole('heading', { name: '您已经是商家了' })
+  await screen.findByRole('heading', { name: '你已经是商家了' })
   expect(screen.getByTestId('route')).toHaveTextContent('/merchant/apply?view=status')
   expect(getMe).toHaveBeenCalledTimes(2)
   expect(applyMerchant).toHaveBeenCalledOnce()

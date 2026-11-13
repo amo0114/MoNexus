@@ -10,6 +10,10 @@ test.describe('Admin Grouped Navigation Mobile Verification @375px', () => {
     page,
   }) => {
     // Intercept auth and admin endpoints to ensure deterministic execution
+    // Mocked pre-governance backend: capabilities absent, legacy tabs stay available.
+    await page.route('**/api/admin/capabilities', (route) =>
+      route.fulfill({ status: 404, contentType: 'application/json', json: { error: { code: 'NOT_FOUND', message: 'not found' } } }),
+    )
     await page.route('**/api/auth/me', (route) =>
       route.fulfill({
         status: 200,

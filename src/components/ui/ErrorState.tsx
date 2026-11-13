@@ -33,7 +33,7 @@ export default function ErrorState({
       }`}
     >
       <div
-        className={`rounded-full bg-red-500/10 text-red-500 flex items-center justify-center ${
+        className={`rounded-full bg-[var(--color-danger-bg)] text-[var(--color-danger)] flex items-center justify-center ${
           compact ? 'w-10 h-10 mb-3' : 'w-14 h-14 mb-4'
         }`}
       >

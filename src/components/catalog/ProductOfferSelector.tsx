@@ -76,12 +76,12 @@ export default function ProductOfferSelector({
               disabled={soldOut || disabled}
               data-testid={`sku-option-${offer.id}`}
               aria-pressed={isSelected}
-              className={`group relative inline-flex items-center gap-2 py-2 px-3 rounded-lg border text-left transition-all duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
+              className={`group relative inline-flex items-center gap-2 py-2 px-3 rounded-lg border text-left transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                 soldOut
                   ? 'opacity-40 cursor-not-allowed border-[var(--color-border)] bg-[var(--color-background)]'
                   : isSelected
-                  ? 'border-2 border-[var(--color-primary)] bg-[var(--color-primary-tint)]/40 text-[var(--color-primary)] font-semibold shadow-2xs'
-                  : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-primary)]/70 text-[var(--color-text)] cursor-pointer'
+                  ? 'border-2 border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary-tint)_40%,transparent)] text-[var(--color-primary)] font-semibold shadow-2xs'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[color-mix(in_srgb,var(--color-primary)_70%,transparent)] text-[var(--color-text)] cursor-pointer'
               }`}
             >
               <div className="flex items-center gap-1.5 flex-wrap">
@@ -115,7 +115,7 @@ export default function ProductOfferSelector({
                 )}
               </div>
 
-              <div className="flex items-baseline gap-1 pl-1 border-l border-[var(--color-border)]/60 text-xs tabular-nums font-bold text-[var(--color-points)]">
+              <div className="flex items-baseline gap-1 pl-1 border-l border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] text-xs tabular-nums font-bold text-[var(--color-points)]">
                 <span>{offer.price}</span>
                 <span className="text-[10px] font-normal text-[var(--color-text-muted)]">积分</span>
                 {offer.originalPrice != null && offer.originalPrice > offer.price && (

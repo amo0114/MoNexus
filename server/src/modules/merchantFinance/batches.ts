@@ -113,6 +113,7 @@ async function serializeBatch(db: Tx | typeof prisma, batchId: number, replayed:
   })
   return {
     batchId: batch.id,
+    batchNo: batch.batchNo,
     requestKey: batch.requestKey,
     settled: batch.itemCount,
     creditedTotal: batch.totalPoints,

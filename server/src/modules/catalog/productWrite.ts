@@ -1,3 +1,4 @@
+import { setCommercialActor } from './offerRevisions.js'
 import { prepareVideoChange, videoSummary } from '../productVideos/service.js'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
@@ -222,6 +223,7 @@ export async function createProductFromV2(
     ? null
     : await resolveRichDescription(input.richDescription, input.descriptionImages)
   const product = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, actor.kind === 'admin' ? { adminUserId: actor.adminUserId } : { merchantId: actor.merchantId }, 'catalog/productWrite')
     const { categoryId, type } = await resolveProductCategory({ categoryId: input.categoryId }, tx)
     const created = await tx.product.create({
       data: {
@@ -497,6 +499,7 @@ export async function patchProductContent(
   }
 
   const updated = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, actor.kind === 'admin' ? { adminUserId: actor.adminUserId } : { merchantId: actor.merchantId }, 'catalog/productWrite')
     await lockProductRow(tx, productId)
     const current = await tx.product.findFirst({
       where: actor.kind === 'merchant'

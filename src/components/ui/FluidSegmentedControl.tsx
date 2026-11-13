@@ -306,15 +306,6 @@ export function FluidSegmentedControl<T extends string | number = string>({
                     active && enableIconJump ? 'animate-symbol-jump' : ''
                   }`}
                 />
-                {opt.badgeCount != null && opt.badgeCount > 0 && (
-                  <span
-                    aria-hidden="true"
-                    data-testid={opt.badgeTestId}
-                    className="absolute -top-1 -right-2 min-w-3.5 h-3.5 px-0.5 rounded-full bg-[var(--color-danger)] text-[9px] leading-3.5 font-bold text-white text-center ring-2 ring-white dark:ring-slate-900 shadow-xs"
-                  >
-                    {opt.badgeCount > 99 ? '99+' : opt.badgeCount}
-                  </span>
-                )}
               </span>
             ) : null}
 
@@ -322,7 +313,8 @@ export function FluidSegmentedControl<T extends string | number = string>({
               <span className={`tracking-tight leading-tight text-center ${sizeStyles.text}`}>
                 {opt.label}
               </span>
-              {!Icon && opt.badgeCount != null && opt.badgeCount > 0 && (
+              {/* Count sits after the label (not on the icon) so it never covers the glyph. */}
+              {opt.badgeCount != null && opt.badgeCount > 0 && (
                 <span
                   aria-hidden="true"
                   data-testid={opt.badgeTestId}

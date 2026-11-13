@@ -26,7 +26,10 @@ import {
   hashNormalizedPayload,
   completeObservationDedupeKey,
 } from '../payment/observations/record.js'
-import { applyConfirmedPayment, writeOpenReconItem } from '../payment/events/applyConfirmedPayment.js'
+import {
+  applyConfirmedPayment,
+  writeOpenReconItem,
+} from '../payment/events/applyConfirmedPayment.js'
 import { paymentTestHooks } from '../payment/events/hooks.js'
 import { parseNormalizedPaymentPayload, rechargeCreditWalletKey } from './credit.js'
 import { claimPaymentEvent, commitPaymentEvent } from '../payment/workers/lease.js'
@@ -48,7 +51,7 @@ export const REFUND_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderI
 
 const refundReserveKey = (refundId: string) => `recharge-refund:${refundId}:reserve`
 
-function refundWalletCtx(
+export function refundWalletCtx(
   order: { id: string; userId: number },
   refundId: string,
   reason: string,
@@ -64,7 +67,10 @@ function refundWalletCtx(
 }
 
 /** The refunded recharge's own lot; pre-wallet credits only have legacy_unknown. */
-async function refundLotFilter(tx: Prisma.TransactionClient, rechargeOrderId: string): Promise<LotFilter> {
+async function refundLotFilter(
+  tx: Prisma.TransactionClient,
+  rechargeOrderId: string,
+): Promise<LotFilter> {
   const creditOp = await findOperationByKey(tx, rechargeCreditWalletKey(rechargeOrderId))
   return creditOp ? { onlySourceOperationIds: [creditOp.id] } : { origins: ['legacy_unknown'] }
 }
@@ -112,7 +118,7 @@ async function assertProviderSupportsRefunds(input: {
   paymentMethod: string
   currency: string
 }) {
-  if (!await providerSupportsRefunds(input)) {
+  if (!(await providerSupportsRefunds(input))) {
     recordRefundNotSupported(input.provider)
     throw paymentRefundNotSupported()
   }
@@ -120,24 +126,32 @@ async function assertProviderSupportsRefunds(input: {
 
 async function writeRefundNotification(
   tx: Prisma.TransactionClient,
-  input: { userId: number; orderId: string; points: bigint; eventType: 'recharge.refunded' | 'recharge.refund_failed' },
+  input: {
+    userId: number
+    orderId: string
+    points: bigint
+    eventType: 'recharge.refunded' | 'recharge.refund_failed'
+  },
 ) {
   await tx.notification.createMany({
-    data: [{
-      recipientUserId: input.userId,
-      recipientRole: 'user',
-      eventType: input.eventType,
-      category: 'system',
-      title: input.eventType === 'recharge.refunded' ? '充值已退款' : '充值退款失败',
-      body: input.eventType === 'recharge.refunded'
-        ? `已退回 ${serializeAmountMinor(input.points)} 积分`
-        : '充值退款未成功，冻结积分已释放',
-      payload: { rechargeOrderId: input.orderId, points: serializeAmountMinor(input.points) },
-      deeplink: `/recharge?order=${input.orderId}`,
-      level: input.eventType === 'recharge.refunded' ? 'warning' : 'critical',
-      dedupeKey: `recharge:${input.orderId}:${input.eventType}`,
-      relatedOrderId: null,
-    }],
+    data: [
+      {
+        recipientUserId: input.userId,
+        recipientRole: 'user',
+        eventType: input.eventType,
+        category: 'system',
+        title: input.eventType === 'recharge.refunded' ? '充值已退款' : '充值退款失败',
+        body:
+          input.eventType === 'recharge.refunded'
+            ? `已退回 ${serializeAmountMinor(input.points)} 积分`
+            : '充值退款未成功，冻结积分已释放',
+        payload: { rechargeOrderId: input.orderId, points: serializeAmountMinor(input.points) },
+        deeplink: `/recharge?order=${input.orderId}`,
+        level: input.eventType === 'recharge.refunded' ? 'warning' : 'critical',
+        dedupeKey: `recharge:${input.orderId}:${input.eventType}`,
+        relatedOrderId: null,
+      },
+    ],
     skipDuplicates: true,
   })
 }
@@ -158,25 +172,29 @@ export async function requestRechargeRefund(input: {
     resultType: 'RechargeRefund',
   })
   if (claim.kind === 'replay') {
-    const existing = await prisma.rechargeRefund.findUnique({ where: { rechargeOrderId: input.orderId } })
+    const existing = await prisma.rechargeRefund.findUnique({
+      where: { rechargeOrderId: input.orderId },
+    })
     return serializeRefund(existing)
   }
   if (claim.kind === 'in_flight') throw rechargeIdempotencyInFlight()
 
   try {
-    const created = await prisma.$transaction(async tx => {
-      const orders = await tx.$queryRaw<Array<{
-        id: string
-        userId: number
-        status: string
-        amountMinor: bigint
-        totalPoints: bigint
-        currency: string
-        provider: string
-        providerAccountKey: string
-        paymentMethod: string
-        adminSandbox: boolean
-      }>>`
+    const created = await prisma.$transaction(async (tx) => {
+      const orders = await tx.$queryRaw<
+        Array<{
+          id: string
+          userId: number
+          status: string
+          amountMinor: bigint
+          totalPoints: bigint
+          currency: string
+          provider: string
+          providerAccountKey: string
+          paymentMethod: string
+          adminSandbox: boolean
+        }>
+      >`
         SELECT "id", "userId", "status", "amountMinor", "totalPoints", "currency", "provider", "providerAccountKey", "paymentMethod", "adminSandbox"
         FROM "RechargeOrder" WHERE "id" = ${input.orderId}::uuid FOR UPDATE`
       const order = orders[0]
@@ -186,7 +204,11 @@ export async function requestRechargeRefund(input: {
       if (order.status === 'refunded') {
         return tx.rechargeRefund.findUnique({ where: { rechargeOrderId: order.id } })
       }
-      if (order.status !== 'paid' && order.status !== 'credited' && order.status !== 'refund_pending') {
+      if (
+        order.status !== 'paid' &&
+        order.status !== 'credited' &&
+        order.status !== 'refund_pending'
+      ) {
         throw conflict('订单未支付，不能退款')
       }
 
@@ -199,12 +221,29 @@ export async function requestRechargeRefund(input: {
         select: { id: true },
       })
       if (dispute) throw conflict('该充值存在支付争议，不能退款')
+      const unresolved = await tx.reconciliationItem.findFirst({
+        where: {
+          status: 'open',
+          OR: [
+            { rechargeOrderId: order.id },
+            { paymentAttempt: { paymentIntent: { rechargeOrderId: order.id } } },
+          ],
+        },
+        select: { id: true },
+      })
+      if (unresolved)
+        throw new HttpError(
+          409,
+          'RECONCILIATION_REQUIRED',
+          '支付存在待核对退款事实，不能发起新退款',
+        )
 
       const intent = await tx.paymentIntent.findUniqueOrThrow({
         where: { rechargeOrderId: order.id },
         include: { attempts: { orderBy: { createdAt: 'asc' } } },
       })
-      const attempt = intent.attempts.find(item => item.status === 'succeeded') ?? intent.attempts.at(-1)
+      const attempt =
+        intent.attempts.find((item) => item.status === 'succeeded') ?? intent.attempts.at(-1)
       if (!attempt) throw conflict('没有可退款的支付尝试')
 
       await lockAccountsInTx(tx, [order.userId])
@@ -215,7 +254,7 @@ export async function requestRechargeRefund(input: {
         // Only this recharge's own lot may be reversed; spending it and then
         // reversing other recharge/reward points would misstate "unused".
         const lots = await refundLotFilter(tx, order.id)
-        if (await availablePointsIn(tx, order.userId, lots) < points) {
+        if ((await availablePointsIn(tx, order.userId, lots)) < points) {
           const review = await tx.rechargeRefund.create({
             data: {
               rechargeOrderId: order.id,
@@ -242,7 +281,10 @@ export async function requestRechargeRefund(input: {
             createdByUserId: input.createdByUserId ?? input.userId,
           },
         })
-        await reserveInTx(tx, refundWalletCtx(order, refund.id, '充值退款冻结积分'), { amount: points, ...lots })
+        await reserveInTx(tx, refundWalletCtx(order, refund.id, '充值退款冻结积分'), {
+          amount: points,
+          ...lots,
+        })
         await tx.pointHold.create({
           data: {
             userId: order.userId,
@@ -310,17 +352,19 @@ export async function requestRechargeRefund(input: {
   }
 }
 
-export function serializeRefund(row: {
-  id: string
-  rechargeOrderId: string
-  status: string
-  amountMinor: bigint
-  pointsToReverse: bigint
-  reasonCode: string
-  providerRefundId: string | null
-  createdAt: Date
-  completedAt: Date | null
-} | null) {
+export function serializeRefund(
+  row: {
+    id: string
+    rechargeOrderId: string
+    status: string
+    amountMinor: bigint
+    pointsToReverse: bigint
+    reasonCode: string
+    providerRefundId: string | null
+    createdAt: Date
+    completedAt: Date | null
+  } | null,
+) {
   if (!row) throw conflict('退款不存在')
   return {
     refundId: row.id,
@@ -344,19 +388,33 @@ export async function submitProviderRefund(refundId: string) {
     },
   })
   if (!refund) return null
-  if (refund.status === 'manual_review' || refund.status === 'succeeded' || refund.status === 'cancelled') {
+  if (
+    refund.status === 'manual_review' ||
+    refund.status === 'succeeded' ||
+    refund.status === 'cancelled'
+  ) {
     return refund
   }
   if (refund.status === 'failed') return refund
   if (!refund.paymentAttempt.providerPaymentId) throw conflict('支付尝试缺少渠道单号')
   await assertProviderSupportsRefunds(refund.rechargeOrder)
+  const unresolved = await prisma.reconciliationItem.findFirst({
+    where: {
+      status: 'open',
+      OR: [
+        { rechargeOrderId: refund.rechargeOrderId },
+        { paymentAttempt: { paymentIntent: { rechargeOrderId: refund.rechargeOrderId } } },
+      ],
+    },
+    select: { id: true },
+  })
+  if (unresolved) return refund
 
   const hold = await prisma.pointHold.findUnique({
     where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.id } },
   })
-  const retryStatus = hold?.status === 'active' || refund.status === 'points_held'
-    ? 'points_held'
-    : 'requested'
+  const retryStatus =
+    hold?.status === 'active' || refund.status === 'points_held' ? 'points_held' : 'requested'
 
   const cas = await prisma.rechargeRefund.updateMany({
     where: { id: refund.id, status: { in: ['requested', 'points_held', 'processing'] } },
@@ -385,11 +443,14 @@ export async function submitProviderRefund(refundId: string) {
       where: { id: refund.id, status: 'processing' },
       data: { status: retryStatus },
     })
-    logger.warn({
-      event: 'payment.refund_provider_retry',
-      refundId: refund.id,
-      err: error instanceof Error ? error.message : 'createRefund_failed',
-    }, 'provider refund failed; will retry without releasing hold')
+    logger.warn(
+      {
+        event: 'payment.refund_provider_retry',
+        refundId: refund.id,
+        err: error instanceof Error ? error.message : 'createRefund_failed',
+      },
+      'provider refund failed; will retry without releasing hold',
+    )
     throw error
   }
 
@@ -458,22 +519,44 @@ export async function applyRefundObservation(observationId: string) {
   if (!claimed) return { observationId, outcome: 'lease_lost' as const }
 
   try {
-    const applied = await prisma.$transaction(async tx => {
+    const applied = await prisma.$transaction(async (tx) => {
       const payload = parseNormalizedPaymentPayload(observation.normalizedPayload)
+      const observedAttempt = await tx.paymentAttempt.findFirst({
+        where: observation.paymentAttemptId
+          ? { id: observation.paymentAttemptId }
+          : observation.providerPaymentId
+            ? {
+                provider: observation.provider,
+                providerAccountKey: observation.providerAccountKey,
+                providerPaymentId: observation.providerPaymentId,
+              }
+            : { id: '00000000-0000-0000-0000-000000000000' },
+        select: { id: true, paymentIntent: { select: { rechargeOrderId: true } } },
+      })
+      // Even an observation that predates the local refund shares its order
+      // root lock with creation/review and leaves an order-linked recon item.
+      if (observedAttempt)
+        await tx.$queryRaw`SELECT id FROM "RechargeOrder" WHERE id=${observedAttempt.paymentIntent.rechargeOrderId}::uuid FOR UPDATE`
       // Every reconcile_required exit leaves an open item: the operator's work
       // queue, and the reconciliation-mismatch metric its alert reads.
-      const requireReconciliation = async (reason: string, local: {
-        orderId?: string
-        attemptId?: string
-        localStatus?: string
-        localAmountMinor?: bigint
-        quotedAmountMinor?: bigint
-      } = {}) => {
+      const requireReconciliation = async (
+        reason: string,
+        local: {
+          orderId?: string | null
+          attemptId?: string
+          localStatus?: string
+          localAmountMinor?: bigint
+          quotedAmountMinor?: bigint
+        } = {},
+      ) => {
         await writeOpenReconItem(tx, {
           scopePrefix: 'refund',
           mismatchType: 'refund_mismatch',
-          orderId: local.orderId ?? null,
-          attemptId: local.attemptId ?? observation.paymentAttemptId,
+          orderId:
+            local.orderId !== undefined
+              ? local.orderId
+              : observedAttempt?.paymentIntent.rechargeOrderId ?? null,
+          attemptId: local.attemptId ?? observedAttempt?.id ?? observation.paymentAttemptId,
           eventId: observation.id,
           provider: observation.provider,
           providerAccountKey: observation.providerAccountKey,
@@ -491,7 +574,9 @@ export async function applyRefundObservation(observationId: string) {
         where: {
           OR: [
             ...(payload.providerRefundId ? [{ providerRefundId: payload.providerRefundId }] : []),
-            ...(observation.paymentAttemptId ? [{ paymentAttemptId: observation.paymentAttemptId }] : []),
+            ...(observation.paymentAttemptId
+              ? [{ paymentAttemptId: observation.paymentAttemptId }]
+              : []),
           ],
         },
         include: { rechargeOrder: true, paymentAttempt: true },
@@ -506,16 +591,20 @@ export async function applyRefundObservation(observationId: string) {
       }
 
       const expectedPaymentId = refund.paymentAttempt.providerPaymentId
-      const identityMismatch = observation.provider !== refund.rechargeOrder.provider
-        || observation.providerAccountKey !== refund.rechargeOrder.providerAccountKey
-        || (observation.paymentAttemptId != null && observation.paymentAttemptId !== refund.paymentAttemptId)
-        || !payload.providerPaymentId
-        || payload.providerPaymentId !== expectedPaymentId
-        || observation.providerPaymentId !== expectedPaymentId
-        || !payload.providerRefundId
-        || (refund.providerRefundId != null && payload.providerRefundId !== refund.providerRefundId)
-      const amountMismatch = payload.amountMinor == null || payload.amountMinor !== refund.amountMinor
-      const currencyMismatch = !payload.currency || payload.currency !== refund.rechargeOrder.currency
+      const identityMismatch =
+        observation.provider !== refund.rechargeOrder.provider ||
+        observation.providerAccountKey !== refund.rechargeOrder.providerAccountKey ||
+        (observation.paymentAttemptId != null &&
+          observation.paymentAttemptId !== refund.paymentAttemptId) ||
+        !payload.providerPaymentId ||
+        payload.providerPaymentId !== expectedPaymentId ||
+        observation.providerPaymentId !== expectedPaymentId ||
+        !payload.providerRefundId ||
+        (refund.providerRefundId != null && payload.providerRefundId !== refund.providerRefundId)
+      const amountMismatch =
+        payload.amountMinor == null || payload.amountMinor !== refund.amountMinor
+      const currencyMismatch =
+        !payload.currency || payload.currency !== refund.rechargeOrder.currency
       if (identityMismatch || amountMismatch || currencyMismatch) {
         return requireReconciliation(
           identityMismatch
@@ -532,7 +621,8 @@ export async function applyRefundObservation(observationId: string) {
         WHERE "id" = ${refund.rechargeOrderId}::uuid FOR UPDATE`
       const order = orderRows[0]
       // The order row was not found, so it must not be referenced by the item's foreign key.
-      if (!order) return requireReconciliation('REFUND_ORDER_MISSING', { ...refundLocal, orderId: undefined })
+      if (!order)
+        return requireReconciliation('REFUND_ORDER_MISSING', { ...refundLocal, orderId: null })
 
       const existingReversal = await tx.rechargeReversal.findUnique({
         where: { rechargeRefundId: refund.id },
@@ -542,15 +632,20 @@ export async function applyRefundObservation(observationId: string) {
       }
 
       if (payload.status === 'failed') {
-        if (refund.status === 'succeeded') return { outcome: 'processed' as const, refundId: refund.id }
+        if (refund.status === 'succeeded')
+          return { outcome: 'processed' as const, refundId: refund.id }
         const hold = await tx.pointHold.findUnique({
           where: { sourceType_sourceId: { sourceType: 'recharge_refund', sourceId: refund.id } },
         })
         if (hold?.status === 'active') {
-          await releaseInTx(tx, refundWalletCtx(order, refund.id, '充值退款失败释放积分', 'release'), {
-            reserveKey: refundReserveKey(refund.id),
-            legacyAmount: Number(hold.points),
-          })
+          await releaseInTx(
+            tx,
+            refundWalletCtx(order, refund.id, '充值退款失败释放积分', 'release'),
+            {
+              reserveKey: refundReserveKey(refund.id),
+              legacyAmount: Number(hold.points),
+            },
+          )
           await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'released' } })
         }
         await tx.rechargeRefund.update({
@@ -584,10 +679,14 @@ export async function applyRefundObservation(observationId: string) {
         if (!hold || hold.status !== 'active') {
           return requireReconciliation('REFUND_HOLD_MISSING', refundLocal)
         }
-        const consumed = await reverseReservedInTx(tx, refundWalletCtx(order, refund.id, '充值退款', 'reversal'), {
-          reserveKey: refundReserveKey(refund.id),
-          legacyAmount: Number(hold.points),
-        })
+        const consumed = await reverseReservedInTx(
+          tx,
+          refundWalletCtx(order, refund.id, '充值退款', 'reversal'),
+          {
+            reserveKey: refundReserveKey(refund.id),
+            legacyAmount: Number(hold.points),
+          },
+        )
         await tx.pointHold.update({ where: { id: hold.id }, data: { status: 'consumed' } })
         const log = { id: consumed.pointLogId! }
         await tx.rechargeReversal.create({
@@ -632,7 +731,11 @@ export async function applyRefundObservation(observationId: string) {
     const committed = await commitPaymentEvent(
       observationId,
       claimed.leaseToken,
-      applied.outcome === 'reconcile_required' ? 'reconcile_required' : applied.outcome === 'ignored' ? 'ignored' : 'processed',
+      applied.outcome === 'reconcile_required'
+        ? 'reconcile_required'
+        : applied.outcome === 'ignored'
+          ? 'ignored'
+          : 'processed',
       'reason' in applied ? applied.reason : undefined,
     )
     if (!committed) return { observationId, outcome: 'lease_lost' as const }
@@ -675,14 +778,14 @@ export async function recordRefundObservation(input: {
     const dedupeKey = input.providerEventId
       ? `webhook:${input.providerEventId}`
       : completeObservationDedupeKey({
-        source: 'webhook',
-        providerPaymentId: input.providerPaymentId,
-        providerCaptureId: input.providerRefundId,
-        normalizedStatus: input.status,
-        amountMinor: input.amountMinor,
-        currency: input.currency,
-        immutableStateVersion: input.immutableStateVersion,
-      })
+          source: 'webhook',
+          providerPaymentId: input.providerPaymentId,
+          providerCaptureId: input.providerRefundId,
+          normalizedStatus: input.status,
+          amountMinor: input.amountMinor,
+          currency: input.currency,
+          immutableStateVersion: input.immutableStateVersion,
+        })
     const payload = {
       status: input.status,
       providerPaymentId: input.providerPaymentId,

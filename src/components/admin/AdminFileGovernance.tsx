@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dia
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 20
 const GRANTS_PAGE_SIZE = 10
@@ -263,7 +264,7 @@ export default function AdminFileGovernance() {
       <Dialog open={!!revokeTarget} onOpenChange={(o) => { if (!o && !revoking) setRevokeTarget(null) }}>
         <DialogContent className="max-w-sm" data-testid="admin-file-revoke-dialog">
           <div className="flex items-start gap-3">
-            <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-full bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] flex items-center justify-center shrink-0">
               <AlertTriangle className="w-5 h-5" />
             </div>
             <div className="min-w-0">
@@ -334,6 +335,7 @@ function FileRow({
   onGrantsPageChange: (page: number) => void
   onRevoke: () => void
 }) {
+  const can = useTabActions('files')
   return (
     <>
       <tr>
@@ -374,6 +376,7 @@ function FileRow({
           >
             {expanded ? '收起流水' : '查看流水'}
           </button>
+          {can('revoke') && (
           <button
             type="button"
             onClick={onRevoke}
@@ -383,6 +386,7 @@ function FileRow({
           >
             吊销
           </button>
+          )}
         </td>
       </tr>
       {expanded && (
@@ -440,11 +444,11 @@ function FileRow({
 
 function FileStatusPill({ status }: { status: string }) {
   const styles: Record<string, { bg: string; text: string; border: string; label: string }> = {
-    active:  { bg: 'bg-[var(--color-cta)]/10', text: 'text-[var(--color-cta)]', border: 'border-[var(--color-cta)]/25', label: '正常' },
+    active:  { bg: 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)]', text: 'text-[var(--color-cta)]', border: 'border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]', label: '正常' },
     revoked: { bg: 'bg-red-500/10',            text: 'text-red-500',            border: 'border-red-500/25',            label: '已吊销' },
-    deleted: { bg: 'bg-[var(--color-text-muted)]/10', text: 'text-[var(--color-text-muted)]', border: 'border-[var(--color-text-muted)]/25', label: '已删除' },
+    deleted: { bg: 'bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)]', text: 'text-[var(--color-text-muted)]', border: 'border-[color-mix(in_srgb,var(--color-text-muted)_25%,transparent)]', label: '已删除' },
   }
-  const s = styles[status] || { bg: 'bg-[var(--color-text-muted)]/10', text: 'text-[var(--color-text-muted)]', border: 'border-[var(--color-text-muted)]/25', label: status }
+  const s = styles[status] || { bg: 'bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)]', text: 'text-[var(--color-text-muted)]', border: 'border-[color-mix(in_srgb,var(--color-text-muted)_25%,transparent)]', label: status }
   return (
     <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${s.bg} ${s.text} ${s.border}`}>
       {s.label}
@@ -458,7 +462,7 @@ function GrantOutcomePill({ outcome }: { outcome: string }) {
     <span
       className={`inline-flex items-center px-2 py-0.5 text-xs rounded font-bold border ${
         granted
-          ? 'bg-[var(--color-cta)]/10 text-[var(--color-cta)] border-[var(--color-cta)]/25'
+          ? 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]'
           : 'bg-red-500/10 text-red-500 border-red-500/25'
       }`}
     >

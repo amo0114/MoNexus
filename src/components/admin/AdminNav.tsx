@@ -19,6 +19,8 @@ import {
   Megaphone,
   Settings,
   DatabaseBackup,
+  FileSpreadsheet,
+  ScanSearch,
   ChevronDown,
   Menu,
   X,
@@ -44,11 +46,15 @@ export type AdminTab =
   | 'merchandising'
   | 'catalogGovernance'
   | 'recharge'
+  | 'walletIntegrity'
+  | 'exports'
 
 export interface AdminNavItem {
   id: AdminTab
   label: string
   icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean | 'true' | 'false' }>
+  /** governance-v1 entry: shown only when the host confirms the capability. */
+  gated?: boolean
 }
 
 export interface AdminNavGroup {
@@ -66,6 +72,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { id: 'orders', label: '订单记录', icon: ShoppingCart },
       { id: 'recharge', label: '充值支付', icon: Wallet },
       { id: 'logs', label: '积分流水', icon: Activity },
+      { id: 'walletIntegrity', label: '资金巡检', icon: ScanSearch, gated: true },
     ],
   },
   {
@@ -104,6 +111,7 @@ export const ADMIN_NAV_GROUPS: AdminNavGroup[] = [
       { id: 'announcements', label: '公告管理', icon: Megaphone },
       { id: 'config', label: '系统配置', icon: Settings },
       { id: 'backup', label: '数据备份与恢复', icon: DatabaseBackup },
+      { id: 'exports', label: '导出任务', icon: FileSpreadsheet, gated: true },
     ],
   },
 ]
@@ -123,9 +131,14 @@ export function findItemForTab(tab: AdminTab): AdminNavItem | undefined {
 interface AdminNavProps {
   activeTab: AdminTab
   onTabChange: (tab: AdminTab) => void
+  /** Decides every entry; without it only non-gated (legacy) entries show. */
+  isTabAvailable?: (tab: AdminTab) => boolean
 }
 
-export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
+export default function AdminNav({ activeTab, onTabChange, isTabAvailable }: AdminNavProps) {
+  const groups = ADMIN_NAV_GROUPS
+    .map((g) => ({ ...g, items: g.items.filter((item) => (isTabAvailable ? isTabAvailable(item.id) : !item.gated)) }))
+    .filter((g) => g.items.length > 0)
   // Multi-expand disclosure state for desktop: all groups expanded by default
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
     () => new Set(ADMIN_NAV_GROUPS.map((g) => g.id)),
@@ -168,13 +181,13 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
     <>
       {/* Mobile Sticky Trigger Bar and Radix Drawer Sheet (<md) */}
       <DialogPrimitive.Root open={mobileOpen} onOpenChange={setMobileOpen}>
-        <div className="xl:hidden sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 px-4 py-2 bg-[var(--color-background)]/95 backdrop-blur-md border-b border-[var(--color-border)] mb-4">
+        <div className="xl:hidden sticky top-[calc(var(--navbar-h)+var(--safe-top))] z-20 -mx-4 px-4 py-2 bg-[color-mix(in_srgb,var(--color-background)_95%,transparent)] backdrop-blur-md border-b border-[var(--color-border)] mb-4">
           <DialogPrimitive.Trigger asChild>
             <button
               type="button"
               aria-label="管理后台导航菜单"
               data-testid="admin-mobile-nav-trigger"
-              className="w-full flex items-center justify-between px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] text-sm font-medium shadow-xs active:scale-[0.99] transition-all cursor-pointer"
+              className="w-full flex items-center justify-between px-3.5 py-2.5 min-h-[44px] rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] text-sm font-medium shadow-xs active:scale-[0.99] transition cursor-pointer"
             >
               <div className="flex items-center gap-2 min-w-0">
                 {CurrentIcon && <CurrentIcon className="w-4 h-4 text-[var(--color-primary)] shrink-0" aria-hidden="true" />}
@@ -213,7 +226,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                   type="button"
                   aria-label="关闭导航"
                   data-testid="admin-mobile-nav-close"
-                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-border)]/50 transition-colors cursor-pointer"
+                  className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] transition-colors cursor-pointer"
                 >
                   <X className="w-5 h-5" aria-hidden="true" />
                 </button>
@@ -222,7 +235,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
 
             {/* Drawer Navigation List */}
             <nav aria-label="移动端管理导航" className="flex-1 overflow-y-auto p-4 space-y-5">
-              {ADMIN_NAV_GROUPS.map((group) => (
+              {groups.map((group) => (
                 <div key={group.id} className="space-y-2">
                   <div className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider px-1">
                     {group.title}
@@ -243,8 +256,8 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                           }}
                           className={`flex items-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
                             isActive
-                              ? 'bg-[var(--color-primary)] text-white font-bold shadow-sm'
-                              : 'bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-primary)]/8'
+                              ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] font-bold shadow-sm'
+                              : 'bg-[var(--color-background)] border border-[var(--color-border)] text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
                           }`}
                         >
                           <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />
@@ -263,12 +276,9 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
       {/* Desktop Vertical Disclosure Navigation (≥xl: 1280px) */}
       <nav
         aria-label="管理后台导航"
-        className="hidden xl:block w-56 flex-shrink-0 space-y-3"
+        className="hidden xl:block w-56 flex-shrink-0 space-y-3 xl:sticky xl:top-[calc(var(--navbar-current-h)+1rem)] xl:self-start xl:max-h-[calc(100dvh-var(--navbar-current-h)-2rem)] xl:overflow-y-auto hide-scrollbar"
       >
-        <div className="text-xs font-bold text-[var(--color-text-muted)] uppercase tracking-wider px-3 mb-2">
-          系统管理
-        </div>
-        {ADMIN_NAV_GROUPS.map((group) => {
+        {groups.map((group) => {
           const isExpanded = expandedGroups.has(group.id)
           return (
             <div key={group.id} className="space-y-1">
@@ -279,7 +289,7 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                 aria-controls={`admin-nav-group-${group.id}`}
                 data-testid={`admin-nav-group-trigger-${group.id}`}
                 onClick={() => toggleGroup(group.id)}
-                className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg hover:bg-[var(--color-primary)]/5 transition-colors cursor-pointer"
+                className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-[var(--color-text-muted)] hover:text-[var(--color-text)] rounded-lg hover:bg-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] transition-colors cursor-pointer"
               >
                 <span>{group.title}</span>
                 <ChevronDown
@@ -309,8 +319,8 @@ export default function AdminNav({ activeTab, onTabChange }: AdminNavProps) {
                       onClick={() => onTabChange(item.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg font-medium transition-colors cursor-pointer text-sm ${
                         isActive
-                          ? 'bg-[var(--color-primary)] text-white shadow-sm font-semibold'
-                          : 'text-[var(--color-text-muted)] hover:bg-[var(--color-primary)]/8 hover:text-[var(--color-text)]'
+                          ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-sm font-semibold'
+                          : 'text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] hover:text-[var(--color-text)]'
                       }`}
                     >
                       <Icon className="w-4 h-4 shrink-0" aria-hidden="true" />

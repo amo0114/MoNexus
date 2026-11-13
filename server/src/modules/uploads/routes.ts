@@ -1,6 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import multer, { MulterError } from 'multer'
-import { authenticate, requireActiveUser, requireVerifiedEmail } from '../../middlewares/auth.js'
+import { authenticate, requireActiveUser, requireMfaIfAdmin, requireVerifiedEmail } from '../../middlewares/auth.js'
 import { badRequest } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
 import { getStorageForWrite, getStorageForObjectKey } from '../../lib/storage/index.js'
@@ -81,7 +81,7 @@ function attachFile(req: Request, res: Response, next: NextFunction) {
 
 // Keep this authorization guard ahead of multer: an unverified account must
 // not make us parse, buffer, or persist a multipart payload at all.
-router.post('/image', authenticate, requireActiveUser, requireVerifiedEmail, attachFile, async (req, res, next) => {
+router.post('/image', authenticate, requireActiveUser, requireVerifiedEmail, requireMfaIfAdmin, attachFile, async (req, res, next) => {
   if (!req.file) {
     return next(badRequest('未选择文件', 'NO_FILE'))
   }

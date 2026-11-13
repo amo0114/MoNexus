@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
@@ -31,7 +32,7 @@ export async function sendEmailVerification(userId: number, ip?: string) {
       select: { id: true, email: true, emailVerified: true, status: true },
     })
     if (!currentUser) throw notFound('用户不存在')
-    if (currentUser.status === '已封禁') throw badRequest('账号已被封禁')
+    if (await isAccountBanned(currentUser.id, tx)) throw badRequest('账号已被封禁')
     if (currentUser.emailVerified) return null
 
     // One active verification credential per account. The user lock makes
@@ -78,7 +79,7 @@ export async function verifyEmailWithToken(userId: number, rawToken: string) {
       where: { id: userId },
       select: { id: true, emailVerified: true, status: true },
     })
-    if (!user || user.status === '已封禁' || user.emailVerified) return false
+    if (!user || await isAccountBanned(user.id, tx) || user.emailVerified) return false
 
     const claim = await tx.emailVerificationToken.updateMany({
       where: {

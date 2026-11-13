@@ -40,6 +40,7 @@ import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
 import EditorialFormDialog from './editorialManager/EditorialFormDialog'
 import RevokeEditorialDialog from './editorialManager/RevokeEditorialDialog'
+import { useTabActions } from '../../auth/adminAccess'
 
 const PAGE_SIZE = 10
 
@@ -100,6 +101,7 @@ export default function AdminEditorialManager({
   adapter = DEFAULT_ADAPTER,
   className = '',
 }: AdminEditorialManagerProps) {
+  const canWrite = useTabActions('merchandising')('write')
   const [items, setItems] = useState<AdminEditorialFeatureDTO[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -230,6 +232,7 @@ export default function AdminEditorialManager({
             平台精选是运营独立设置的展示位，与自然热卖和推广相互独立，不代表平台对商品质量的背书；仅在管理后台可配置。
           </p>
         </div>
+        {canWrite && (
         <button
           type="button"
           className="btn-primary px-4 py-2 text-sm flex items-center gap-2 shrink-0"
@@ -238,6 +241,7 @@ export default function AdminEditorialManager({
           <Plus className="w-4 h-4" />
           新建精选
         </button>
+        )}
       </div>
 
       {feedback && (
@@ -302,7 +306,7 @@ export default function AdminEditorialManager({
         ) : loadError ? (
           <div
             role="alert"
-            className="flex flex-col items-start gap-3 rounded border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 px-4 py-4 text-sm text-[var(--color-danger)]"
+            className="flex flex-col items-start gap-3 rounded border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-4 py-4 text-sm text-[var(--color-danger)]"
           >
             <div>{loadError}</div>
             <button type="button" className="btn-secondary btn-sm" onClick={() => void load()}>
@@ -368,6 +372,7 @@ export default function AdminEditorialManager({
                       <td className="px-3 py-3">
                         {canMutate(feature.status) ? (
                           <div className="flex items-center gap-2">
+                            {canWrite && (
                             <button
                               type="button"
                               aria-label={`编辑“${feature.productName}”的精选`}
@@ -376,6 +381,8 @@ export default function AdminEditorialManager({
                             >
                               编辑
                             </button>
+                            )}
+                            {canWrite && (
                             <button
                               type="button"
                               aria-label={`撤销“${feature.productName}”的精选`}
@@ -385,6 +392,7 @@ export default function AdminEditorialManager({
                               <Ban className="w-3.5 h-3.5" />
                               撤销
                             </button>
+                            )}
                           </div>
                         ) : (
                           <span className="text-[var(--color-text-muted)]">—</span>

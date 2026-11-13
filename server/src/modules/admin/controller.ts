@@ -1,3 +1,4 @@
+import { listGovernanceUsers } from './userQueries.js'
 import { listSellableProviders } from '../fulfillment/coordination.js'
 import * as guestEligibilityService from './guestEligibilityService.js'
 import type { GuestEligibilityActionInput } from './guestEligibilitySchema.js'
@@ -34,7 +35,7 @@ export async function stats(_req: Request, res: Response, next: NextFunction) {
 
 export async function users(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await userAdmin.listUsers(req.query as unknown as ListUsersQuery))
+    res.json(await listGovernanceUsers(req.user!.userId, req.query as unknown as ListUsersQuery))
   } catch (err) { next(err) }
 }
 

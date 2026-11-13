@@ -511,7 +511,7 @@ describe('offline administrator MFA break-glass reset', () => {
     const oldAccess = await api
       .get('/api/admin/stats')
       .set(authHeader(authenticated.accessToken))
-      .expect(403)
+      .expect(401)
     await api
       .post('/api/auth/mfa/break-glass')
       .send({ userId: user.id, caseRef: 'OPS-42' })
@@ -533,7 +533,7 @@ describe('offline administrator MFA break-glass reset', () => {
       && (audit.detailSafe as { caseRef?: string; revokedCount?: number }).revokedCount === 1
       && staleAttempt.body.error.code === 'MFA_VERIFICATION_FAILED'
       && reEnrollment.body.status === 'mfa_enrollment_required'
-      && oldAccess.body.error.code === 'MFA_REQUIRED',
+      && oldAccess.body.error.code === 'SESSION_REVOKED',
     ).toBe(true)
   })
 

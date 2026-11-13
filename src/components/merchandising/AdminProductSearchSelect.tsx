@@ -105,7 +105,7 @@ export default function AdminProductSearchSelect({
   if (readOnly) {
     return (
       <div data-testid={testId}>
-        <div id={resolvedInputId} role="textbox" aria-readonly="true" aria-labelledby={labelledBy} className="input bg-[var(--color-muted)]/10" data-testid={`${testId}-fixed`}>
+        <div id={resolvedInputId} role="textbox" aria-readonly="true" aria-labelledby={labelledBy} className="input bg-[color-mix(in_srgb,var(--color-muted)_10%,transparent)]" data-testid={`${testId}-fixed`}>
           {selectedName ?? '商品名称暂不可用'}
         </div>
         {technicalDetails}
@@ -196,7 +196,7 @@ export default function AdminProductSearchSelect({
               id={`${testId}-option-${option.id}`}
               role="option"
               aria-selected={index === activeIndex}
-              className={`cursor-pointer px-3 py-2 text-sm ${index === activeIndex ? 'bg-[var(--color-primary)]/8' : ''}`}
+              className={`cursor-pointer px-3 py-2 text-sm ${index === activeIndex ? 'bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]' : ''}`}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => selectOption(option)}
               data-testid={`${testId}-option-${option.id}`}

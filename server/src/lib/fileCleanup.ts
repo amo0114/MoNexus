@@ -22,6 +22,14 @@ async function listDeliveryProviderIdsForCleanup(): Promise<Array<number | null>
     // Fail closed: only scan env bootstrap; never invent provider list on DB errors.
     logger.warn({ err }, 'listDeliveryProviderIdsForCleanup query failed; scanning env only')
   }
+  const exportProviders = await prisma.adminExportJob.findMany({
+    select: { providerConfigId: true },
+    distinct: ['providerConfigId'],
+  })
+  for (const job of exportProviders) ids.add(job.providerConfigId)
+  // Orphan exports can belong to a previously active provider with no surviving job pointer.
+  const historicProviders = await prisma.storageProviderConfig.findMany({ select: { id: true } })
+  for (const provider of historicProviders) ids.add(provider.id)
   try {
     const runtime = await prisma.storageRuntime.findUnique({ where: { id: 1 } })
     if (runtime?.activeConfigId != null) ids.add(runtime.activeConfigId)
@@ -57,43 +65,70 @@ const ORPHAN_GRACE_MS = 24 * 60 * 60 * 1000
 const REFUND_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000
 
-/**
- * 同一 provider 作用域内是否还有其它非 deleted 行引用同 key。
- * 跨 provider 同 content-hash 不互相挡住删除（各桶独立）。
- */
-async function canDeleteObject(
-  key: string,
-  excludeFileId: number,
-  storageProviderId: number | null | undefined,
-): Promise<boolean> {
-  const sibling = await prisma.deliveryFile.findFirst({
-    where: {
-      key,
-      status: { not: 'deleted' },
-      id: { not: excludeFileId },
-      storageProviderId: storageProviderId ?? null,
-    },
-    select: { id: true },
+/** Recheck references under the same row lock used by file binding, and the
+ * object-key lock used by upload. Candidate discovery is never authorization
+ * to delete: a binding may have committed since the initial scan. */
+async function markDeletedAndMaybeRemoveObject(
+  file: { id: number; key: string; storageProviderId?: number | null },
+  mode: 'orphan' | 'refunded',
+  cutoff: Date,
+) {
+  return withDeliveryKeyLock(file.key, async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "DeliveryFile" WHERE id=${file.id} FOR UPDATE`
+    const current = await tx.deliveryFile.findUnique({
+      where: { id: file.id },
+      include: {
+        offers: { select: { id: true }, take: 1 },
+        deliveryRecords: {
+          select: {
+            order: {
+              select: {
+                status: true,
+                statusEvents: {
+                  where: { toStatus: 'refunded' },
+                  orderBy: { createdAt: 'desc' },
+                  take: 1,
+                  select: { createdAt: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+    if (!current || current.status === 'deleted' || current.offers.length) return false
+    if (mode === 'orphan' && (current.createdAt >= cutoff || current.deliveryRecords.length))
+      return false
+    if (
+      mode === 'refunded' &&
+      (!current.deliveryRecords.length ||
+        current.deliveryRecords.some(
+          (r) =>
+            r.order.status !== 'refunded' ||
+            !r.order.statusEvents[0] ||
+            r.order.statusEvents[0].createdAt >= cutoff,
+        ))
+    )
+      return false
+    await tx.deliveryFile.update({
+      where: { id: file.id },
+      data: { status: 'deleted', deletedAt: new Date() },
+    })
+    const sibling = await tx.deliveryFile.findFirst({
+      where: {
+        key: file.key,
+        status: { not: 'deleted' },
+        id: { not: file.id },
+        storageProviderId: file.storageProviderId ?? null,
+      },
+      select: { id: true },
+    })
+    if (!sibling) {
+      const storage = await getDeliveryStorageForProvider(file.storageProviderId ?? null)
+      await storage.delete(file.key)
+    }
+    return true
   })
-  return sibling == null
-}
-
-async function markDeletedAndMaybeRemoveObject(file: {
-  id: number
-  key: string
-  storageProviderId?: number | null
-}) {
-  // 先标记后删对象：标记使该行退出引用计数，对象删除失败可幂等重试。
-  await prisma.deliveryFile.update({
-    where: { id: file.id },
-    data: { status: 'deleted', deletedAt: new Date() },
-  })
-  const providerId = file.storageProviderId ?? null
-  if (await canDeleteObject(file.key, file.id, providerId)) {
-    // SPEC-STORAGE-001：按对象绑定的 provider 删除，禁止对 active 写路径乱删
-    const storage = await getDeliveryStorageForProvider(providerId)
-    await storage.delete(file.key)
-  }
 }
 
 /** 场景 1：孤儿上传（超过宽限期仍未挂接任何规格/交付记录）。 */
@@ -111,14 +146,15 @@ export async function cleanupOrphanFiles(now = new Date()): Promise<number> {
     select: { id: true, key: true, storageProviderId: true },
     take: 200,
   })
+  let cleaned = 0
   for (const file of orphans) {
     try {
-      await markDeletedAndMaybeRemoveObject(file)
+      if (await markDeletedAndMaybeRemoveObject(file, 'orphan', cutoff)) cleaned++
     } catch (err) {
       logger.warn({ err, fileId: file.id }, 'orphan delivery file cleanup failed')
     }
   }
-  return orphans.length
+  return cleaned
 }
 
 /** 场景 2：tmp/ 遗留临时对象（上传中断残留；无 DB 行）。扫 bootstrap + 已知 provider。 */
@@ -203,7 +239,7 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
 
   let cleaned = 0
   for (const file of candidates) {
-    const allRefundedPastRetention = file.deliveryRecords.every(record => {
+    const allRefundedPastRetention = file.deliveryRecords.every((record) => {
       if (record.order.status !== 'refunded') return false
       const refundedAt = record.order.statusEvents[0]?.createdAt
       if (!refundedAt) return false
@@ -211,8 +247,7 @@ export async function cleanupRefundedFiles(now = new Date()): Promise<number> {
     })
     if (!allRefundedPastRetention) continue
     try {
-      await markDeletedAndMaybeRemoveObject(file)
-      cleaned++
+      if (await markDeletedAndMaybeRemoveObject(file, 'refunded', cutoff)) cleaned++
     } catch (err) {
       logger.warn({ err, fileId: file.id }, 'refunded delivery file cleanup failed')
     }
@@ -244,31 +279,62 @@ export async function cleanupUnreferencedObjects(now = new Date()): Promise<numb
     }
     let staleKeys: string[]
     try {
-      staleKeys = (await storage.listFinalKeysOlderThan(cutoff)).filter(key => DELIVERY_FINAL_KEY.test(key))
+      staleKeys = (await storage.listFinalKeysOlderThan(cutoff)).filter(
+        (key) =>
+          DELIVERY_FINAL_KEY.test(key) ||
+          /^admin-exports\/[0-9a-f-]{36}\/[0-9a-f-]{36}\.csv$/.test(key),
+      )
     } catch (err) {
       logger.warn({ err, providerId }, 'unreferenced scan: list failed')
       continue
     }
     for (let i = 0; i < staleKeys.length; i += 100) {
       const chunk = staleKeys.slice(i, i + 100)
+      for (const key of chunk.filter((k) => k.startsWith('admin-exports/'))) {
+        // Keys are unique per execution token. An unexpired live lease or report retains them.
+        const live = await prisma.adminExportJob.findFirst({
+          where: {
+            objectKey: key,
+            providerConfigId: providerId,
+            OR: [
+              { status: 'succeeded', expiresAt: { gt: now } },
+              { status: 'running', leaseUntil: { gt: now } },
+            ],
+          },
+          select: { id: true },
+        })
+        if (!live) {
+          await storage.delete(key)
+          await prisma.storedObject.updateMany({
+            where: { objectKey: key, bucketRole: 'private', providerConfigId: providerId },
+            data: { status: 'deleted' },
+          })
+          cleaned++
+        }
+      }
+      const deliveryChunk = chunk.filter((k) => !k.startsWith('admin-exports/'))
       let referenced: Set<string>
       try {
         // Content-addressed keys may be shared: any non-deleted row blocks delete.
         const anyRows = await prisma.deliveryFile.findMany({
-          where: { key: { in: chunk }, status: { not: 'deleted' } },
+          where: {
+            key: { in: deliveryChunk },
+            status: { not: 'deleted' },
+            storageProviderId: providerId,
+          },
           select: { key: true },
         })
-        referenced = new Set(anyRows.map(row => row.key))
+        referenced = new Set(anyRows.map((row) => row.key))
       } catch (err) {
         logger.warn({ err, providerId }, 'unreferenced object scan query failed; keeping batch')
         continue
       }
-      for (const key of chunk) {
+      for (const key of deliveryChunk) {
         if (referenced.has(key)) continue
         try {
-          const deleted = await withDeliveryKeyLock(key, async tx => {
+          const deleted = await withDeliveryKeyLock(key, async (tx) => {
             const row = await tx.deliveryFile.findFirst({
-              where: { key, status: { not: 'deleted' } },
+              where: { key, status: { not: 'deleted' }, storageProviderId: providerId },
               select: { id: true },
             })
             if (row) return false
@@ -315,9 +381,9 @@ export async function runFileCleanupBatch() {
 export function startFileCleanupCron() {
   if (config.nodeEnv === 'test') return
   if (timer) return
-  runFileCleanupBatch().catch(err => logger.error({ err }, 'file cleanup initial run failed'))
+  runFileCleanupBatch().catch((err) => logger.error({ err }, 'file cleanup initial run failed'))
   timer = setInterval(() => {
-    runFileCleanupBatch().catch(err => logger.error({ err }, 'file cleanup tick failed'))
+    runFileCleanupBatch().catch((err) => logger.error({ err }, 'file cleanup tick failed'))
   }, CLEANUP_INTERVAL_MS)
   timer.unref?.()
   logger.info({ intervalMs: CLEANUP_INTERVAL_MS }, 'delivery file cleanup cron started')

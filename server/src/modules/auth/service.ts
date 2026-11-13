@@ -1,3 +1,5 @@
+import { accountStatus, isAccountBanned, legacyStatus } from '../accountGovernance/status.js'
+import { merchantContext } from '../merchantGovernance/lifecycle.js'
 import { PASSWORD_BCRYPT_ROUNDS } from './credentialPrimitives.js'
 import {
   buildAuthUser,
@@ -73,7 +75,7 @@ export async function loginUser(
     await lockUserRefreshSessionMutations(tx, candidate.id)
     const user = await tx.user.findUnique({
       where: { id: candidate.id },
-      include: { pointAccount: true },
+      include: { pointAccount: true, merchant: true },
     })
     if (!user) throw await credentialFailure()
 
@@ -81,7 +83,7 @@ export async function loginUser(
     if (!valid) throw await credentialFailure()
     await clearLoginFailures(email)
     // Only someone who proved the password learns that the account is banned.
-    if (user.status === '已封禁') throw badRequest('账号已被封禁')
+    if (await isAccountBanned(user.id, tx)) throw badRequest('账号已被封禁')
 
     // An administrator's password is only pre-authentication. Do not retain
     // it, rehash it, or create a refresh family until a factor succeeds.
@@ -109,6 +111,7 @@ export async function loginUser(
       })
     }
 
+    await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
     const session = await createStoredRefreshToken(user.id, ip, userAgent, tx, maxAgeMs)
     return { kind: 'authenticated' as const, user, session }
   })
@@ -122,7 +125,7 @@ export async function loginUser(
     accessToken,
     refreshToken: issued.session.refreshToken,
     refreshTokenMaxAgeMs: issued.session.maxAgeMs,
-    user: buildAuthUser(issued.user, issued.user.pointAccount?.balance ?? 0),
+    user: buildAuthUser({ ...issued.user, status: 'active' }, issued.user.pointAccount?.balance ?? 0),
   }
 }
 
@@ -201,7 +204,7 @@ export async function refreshAccessToken(
       return { kind: 'expired' as const }
     }
 
-    if (storedToken.user.status === '已封禁') return { kind: 'banned' as const }
+    if (await isAccountBanned(storedToken.user.id, tx)) return { kind: 'banned' as const }
     // Legacy/admin sessions created before MFA enrollment must never rotate
     // into a token that looks MFA-verified. Successful MFA issuance is the
     // only route that can create a usable admin refresh family.
@@ -309,7 +312,9 @@ export async function getUserProfile(userId: number) {
     id: user.id,
     email: user.email,
     role: user.role,
-    status: user.status,
+    status: legacyStatus(await accountStatus(userId)),
+    accountStatus: await accountStatus(userId),
+    ...await merchantContext(userId),
     nickname: resolveUserNickname(user),
     avatarUrl: user.avatarUrl ?? null,
     points: user.pointAccount?.balance ?? 0,

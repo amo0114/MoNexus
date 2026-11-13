@@ -66,7 +66,7 @@ export default function BackToTop({ threshold = 250, bottomOffset }: BackToTopPr
         bg-[var(--color-surface)] border-2 border-[var(--color-border)]
         shadow-xl hover:border-[var(--color-primary)] hover:shadow-2xl
         text-[var(--color-text)] hover:text-[var(--color-primary)]
-        active:scale-95 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
+        active:scale-95 transition duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
         ${
           visible
             ? 'opacity-100 translate-y-0 pointer-events-auto scale-100 visible'

@@ -30,6 +30,9 @@ import AdminProductTable from './productPanel/AdminProductTable'
 import ProductCapacityDialog from './productPanel/ProductCapacityDialog'
 import AdminOfferCapacityDialog from './productPanel/AdminOfferCapacityDialog'
 import AdminGuestReviewDialog from './productPanel/AdminGuestReviewDialog'
+import { useAdminCapabilities } from '../../stores/adminCapabilities'
+import { useTabActions } from '../../auth/adminAccess'
+import ProductTraceSheet, { type TraceProduct } from './governance/ProductTraceSheet'
 
 interface Props {
   active?: boolean
@@ -37,6 +40,11 @@ interface Props {
 
 export default function AdminProductPanel({ active = true }: Props) {
   const showToast = useAppStore((s) => s.showToast)
+  const caps = useAdminCapabilities()
+  const traceBatches = caps.allows('inventoryTraceability', 'inventory.manage')
+  const traceRevisions = caps.allows('inventoryTraceability', 'catalog.read')
+  const can = useTabActions('products')
+  const [traceProduct, setTraceProduct] = useState<TraceProduct | null>(null)
   const [products, setProducts] = useState<AdminProductListItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -336,6 +344,7 @@ export default function AdminProductPanel({ active = true }: Props) {
         description="管理平台自营与入驻商家商品、定价及交付配置"
         actions={
           <div className="flex gap-2 flex-wrap items-center">
+            {can('edit') && (<>
             <a
               href="/admin/products/new"
               className="btn-secondary btn-sm text-xs px-3 py-1.5 cursor-pointer no-underline"
@@ -351,6 +360,7 @@ export default function AdminProductPanel({ active = true }: Props) {
             >
               从 Xboard 导入套餐
             </button>
+            </>)}
           </div>
         }
       />
@@ -453,7 +463,7 @@ export default function AdminProductPanel({ active = true }: Props) {
           </button>
         </div>
       </form>
-      <AdminVideoReviewPanel />
+      {can('videos') && <AdminVideoReviewPanel canManage={can('manageVideos')} />}
       <AdminAssurancePanel productId={assuranceProductId} />
       <AdminProductTable
         products={products}
@@ -479,6 +489,11 @@ export default function AdminProductPanel({ active = true }: Props) {
         onOpenFakaSync={setSyncProduct}
         onOpenSourceDescription={setSourceDescriptionProduct}
         onOpenGuestReview={setGuestReviewProduct}
+        canEdit={can('edit')}
+        canInventory={can('inventory')}
+        onOpenTrace={traceBatches || traceRevisions
+          ? (p) => setTraceProduct({ id: p.id, name: p.name, offers: (p.offers ?? []).map((o) => ({ id: o.id, name: o.name })) })
+          : undefined}
         onMutationSettled={() => triggerSafeReload()}
         onResetFilters={handleReset}
       />
@@ -490,6 +505,18 @@ export default function AdminProductPanel({ active = true }: Props) {
         onPageChange={handlePageChange}
         testId="admin-products-pagination"
       />
+
+      {(traceBatches || traceRevisions) && (
+        <ProductTraceSheet
+          scope="admin"
+          product={traceProduct}
+          canReadBatches={traceBatches}
+          canVoid={traceBatches}
+          canReadRevisions={traceRevisions}
+          onOpenChange={(open) => { if (!open) setTraceProduct(null) }}
+          onInventoryChanged={() => triggerSafeReload()}
+        />
+      )}
 
       <AdminInventoryImportPreview
         open={inventoryTarget != null}

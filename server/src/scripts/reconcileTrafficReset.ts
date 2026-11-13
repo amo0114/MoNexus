@@ -1,3 +1,4 @@
+import { activeUserWhere } from '../modules/accountGovernance/status.js'
 import { parseArgs } from 'node:util'
 import { z } from 'zod'
 import { prisma } from '../lib/prisma.js'
@@ -10,7 +11,7 @@ try {
   const row = await prisma.xboardTrafficResetOperation.findUniqueOrThrow({ where: { id } })
   if (values.cancel && (!values.reason || values.reason.length < 8 || values.reason.length > 200)) throw new Error('cancellation requires an audit reason (8..200 characters)')
   const adminId = values.cancel ? z.coerce.number().int().positive().parse(values['admin-user-id']) : null
-  if (adminId !== null && !await prisma.user.findFirst({ where: { id: adminId, role: 'admin', status: '正常' } })) throw new Error('valid administrator required')
+  if (adminId !== null && !await prisma.user.findFirst({ where: { id: adminId, role: 'admin', ...activeUserWhere() } })) throw new Error('valid administrator required')
   if (values.apply) {
     if (values.cancel) {
       await prisma.$transaction(async tx => {

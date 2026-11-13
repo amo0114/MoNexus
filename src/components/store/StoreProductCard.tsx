@@ -40,6 +40,10 @@ export interface StoreProductCardProps {
 }
 
 export default function StoreProductCard({ product, onOpen, href, onNavigate, sellerLabel, disclosure, compact = false, imageLoading = 'lazy', imageFetchPriority = 'auto' }: StoreProductCardProps) {
+  const badges = badgeSpecsFromProjection(product.merchandising)
+  // The platform-owned badge already says who sells it; don't repeat it in the seller chip.
+  const showSellerChip = !compact && (Boolean(sellerLabel || product.merchant?.name) || !badges.some((b) => b.code === 'platform_owned'))
+  const hasRating = !compact && (product.ratingCount ?? 0) > 0
   const availability = readAvailabilityStatus(product)
   const isSoldOut = availability === 'unavailable'
   // One representative plan's x/y misleads for multi-plan/mixed products, so Faka cards
@@ -61,9 +65,9 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
       aria-label={disclosure ? `${disclosure.label}，${product.name}` : product.name}
       className={`relative overflow-hidden group cursor-pointer flex flex-col min-w-0 ${compact ? 'h-full' : 'h-[256px] md:h-[372px]'}
         rounded-xl bg-[var(--color-surface)] border border-[var(--color-border)]
-        shadow-sm hover:shadow-xl hover:border-[var(--color-primary)]/50
+        shadow-sm hover:shadow-xl hover:border-[color-mix(in_srgb,var(--color-primary)_50%,transparent)]
         shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.75)] dark:shadow-[inset_0_1px_1px_0_rgba(255,255,255,0.12)]
-        hover:-translate-y-1.5 transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
+        hover:-translate-y-1.5 transition duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]
         max-md:rounded-2xl max-md:shadow-sm max-md:hover:translate-y-0 max-md:active:scale-[0.98]
         ${isSoldOut ? 'opacity-60 grayscale' : ''}`}
     >
@@ -76,7 +80,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
         alt={product.name}
         frameClassName={`${compact ? 'h-28 md:h-36' : 'h-36 md:h-44'} overflow-hidden`}
         className="shrink-0 border-b border-[var(--color-border)]"
-        imageClassName="transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 group-hover:opacity-95"
+        imageClassName="transition duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-105 group-hover:opacity-95"
         fit="cover"
         imageProps={{
           loading: imageLoading,
@@ -85,7 +89,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           'data-testid': `store-product-image-${product.id}`,
           sizes: compact
             ? '(min-width: 1280px) 25vw, (min-width: 768px) 33vw, 50vw'
-            : '(min-width: 1024px) 33vw, 50vw',
+            : '(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, 50vw',
         }}
       >
         {disclosure && (
@@ -100,7 +104,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
         <BadgeMark
-          badges={badgeSpecsFromProjection(product.merchandising)}
+          badges={badges}
           className="absolute top-2 right-2 z-10 justify-end max-w-[calc(100%-1rem)]"
         />
 
@@ -115,7 +119,7 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           >
             {product.category?.label ?? product.type}
           </span>
-          {!compact && <span
+          {showSellerChip && <span
             className={`${sellerLabel ? 'flex' : 'hidden sm:flex'} text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-primary)] shadow-sm items-center gap-1.5 max-w-[48%] truncate`}
             style={{
               background: 'var(--color-glass-bg)',
@@ -160,14 +164,14 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           </p>
         )}
         {/* Compact cards are narrow on phones: long prices wrap instead of overlapping the status column. */}
-        <div className={`flex items-end justify-between mt-auto ${compact ? 'flex-wrap gap-x-2 gap-y-1' : 'gap-2 md:gap-3'}`}>
+        <div className={`flex flex-wrap items-end justify-between mt-auto ${compact ? 'gap-x-2 gap-y-1' : 'gap-x-2 gap-y-1 md:gap-x-3'}`}>
           <div className="flex flex-col min-w-0">
             {product.originalPrice && product.originalPrice > product.price && (
               <span className="product-text-readable text-xs text-[var(--color-text-muted)] line-through mb-0.5 tabular-nums">
                 {product.originalPrice}
               </span>
             )}
-            <div className={`flex items-baseline gap-1 text-[var(--color-cta)] font-bold text-lg md:text-xl tracking-tight ${compact ? 'flex-wrap' : ''}`}>
+            <div className={`flex items-baseline gap-1 text-[var(--color-points)] font-bold text-lg md:text-xl tracking-tight ${compact ? 'flex-wrap' : 'whitespace-nowrap'}`}>
               <PointCoin className="w-4 h-4 shrink-0 self-center" />
               <span className="tabular-nums font-semibold" style={{ fontFeatureSettings: '"tnum" 1' }}>
                 {product.price}
@@ -175,17 +179,20 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
               <span className="product-text-readable text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
             </div>
           </div>
-          <div className="flex flex-col items-end gap-0.5 text-[10px] md:text-xs text-[var(--color-text-muted)] shrink-0">
-            {compact ? null : product.ratingCount && product.ratingCount > 0 ? (
+          <div className="flex flex-col items-end gap-0.5 text-[10px] md:text-xs text-[var(--color-text-muted)] ml-auto whitespace-nowrap tabular-nums">
+            {hasRating && (
               <span className="flex items-center gap-1">
                 <Star className="w-3 h-3 star-filled" />
-                {(product.ratingAvg ?? 0).toFixed(1)}（{product.ratingCount}）
+                {(product.ratingAvg ?? 0).toFixed(1)}
+                <span className="opacity-70">({product.ratingCount})</span>
               </span>
-            ) : (
-              <span>暂无评分</span>
             )}
-            <span>已售 {product.sales}</span>
-            <span data-testid={`store-stock-${product.id}`}>{stockText}</span>
+            {/* Phones stack the two facts so the fixed-height card never wraps the price row. */}
+            <span className="flex flex-col items-end gap-0.5 md:flex-row md:items-center md:gap-0">
+              <span>已售 {product.sales}</span>
+              <span aria-hidden="true" className="hidden md:inline mx-1 opacity-50">·</span>
+              <span data-testid={`store-stock-${product.id}`}>{stockText}</span>
+            </span>
           </div>
         </div>
       </div>

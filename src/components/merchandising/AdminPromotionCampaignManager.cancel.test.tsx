@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import type { AdminPromotionCampaignDTO } from '../../types/merchandising'
 import {
   ALL_PAGE_1,
@@ -10,6 +10,10 @@ import {
   renderManager,
   scheduledCampaign,
 } from './campaignManagerTestUtils'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 
 // ============================================================================

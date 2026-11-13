@@ -119,12 +119,14 @@ async function confirmAdminOfferInventoryImport(
   const analysis = await analyzeInventoryForOffer(productId, offer, payload, tx)
   assertConfirmableInventoryAnalysis(analysis)
 
+  const batch = await tx.inventoryBatch.create({ data: { productId, offerId: offer.id, merchantId, actorUserId: adminUserId, importedCount: analysis.itemsToImport.length } })
   await tx.inventoryItem.createMany({
     data: analysis.itemsToImport.map(item =>
       typeof item === 'string'
-        ? { productId, offerId: offer.id, content: item }
+        ? { productId, offerId: offer.id, batchId: batch.id, content: item }
         : {
             productId,
+            batchId: batch.id,
             offerId: offer.id,
             content: item.content,
             structuredContent: structuredContentToJson(item.structuredContent),
@@ -139,7 +141,7 @@ async function confirmAdminOfferInventoryImport(
     actorUserId: adminUserId,
     action: 'import',
     delta: analysis.itemsToImport.length,
-    batchId: randomUUID(),
+    batchId: batch.id,
   })
 
   await tx.adminLog.create({

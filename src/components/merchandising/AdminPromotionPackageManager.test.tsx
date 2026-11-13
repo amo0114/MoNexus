@@ -28,7 +28,7 @@
 // response can be resolved after a newer one without queue mismatches.
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi, type Mock } from 'vitest'
+import { describe, expect, it, vi, type Mock, beforeEach } from 'vitest'
 import AdminPromotionPackageManager, {
   type AdminPromotionPackageAdapter,
 } from './AdminPromotionPackageManager'
@@ -38,6 +38,10 @@ import type {
   AdminPromotionPackageUpdatePayload,
   SponsoredPlacement,
 } from '../../types/merchandising'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 // Complete DTO fixtures covering every field (active + inactive, both
 // placements, empty description) so the rendered table is fully exercised.

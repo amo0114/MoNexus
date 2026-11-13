@@ -66,15 +66,15 @@ export default function LegalDocumentPage({ slug }: { slug: LegalDocumentSlug })
     <div className="min-h-screen overflow-x-clip bg-[var(--color-background)] fade-in" data-testid="legal-page">
       {/* overflow-x-clip（不产生滚动容器，兼容 sticky 顶栏）：装饰光斑在窄屏
           会超出视口右缘，裁剪掉而不是造成页面级横向滚动。 */}
-      <div className="pointer-events-none fixed left-[-10%] top-[-20%] h-[600px] w-[600px] rounded-full bg-[var(--color-primary)]/10 blur-[120px]" />
+      <div className="pointer-events-none fixed left-[-10%] top-[-20%] h-[600px] w-[600px] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] blur-[120px]" />
       <div className="pointer-events-none fixed inset-0 bg-grid-pattern opacity-40" />
 
       {/* 顶部栏：品牌 + 返回 */}
-      <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[var(--color-background)]/85 backdrop-blur-md">
+      <header className="sticky top-0 z-20 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-background)_85%,transparent)] backdrop-blur-md">
         <div className="relative z-10 mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 text-[var(--color-text)]">
             <Logo className="h-7 w-7 shrink-0" />
-            <span className="font-heading text-base font-bold tracking-[0.18em]">MONEXUS</span>
+            <span className="font-display text-base font-bold tracking-[0.18em]">MONEXUS</span>
             <span className="hidden text-xs tracking-[0.3em] text-[var(--color-text-muted)] sm:inline">法律文档中心</span>
           </Link>
           <Link
@@ -98,7 +98,7 @@ export default function LegalDocumentPage({ slug }: { slug: LegalDocumentSlug })
             aria-current={key === slug ? 'page' : undefined}
             className={`shrink-0 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors ${
               key === slug
-                ? 'border-[var(--color-primary)]/60 bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                ? 'border-[color-mix(in_srgb,var(--color-primary)_60%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)]'
                 : 'border-[var(--color-border)] text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
             }`}
           >
@@ -122,7 +122,7 @@ export default function LegalDocumentPage({ slug }: { slug: LegalDocumentSlug })
                   aria-current={key === slug ? 'page' : undefined}
                   className={`relative block rounded-md px-3 py-2.5 pl-4 text-sm transition-colors ${
                     key === slug
-                      ? 'bg-[var(--color-primary)]/10 font-semibold text-[var(--color-primary)]'
+                      ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-[var(--color-primary)]'
                       : 'text-[var(--color-text-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]'
                   }`}
                 >
@@ -238,7 +238,7 @@ export default function LegalDocumentPage({ slug }: { slug: LegalDocumentSlug })
                       {section.paragraphs.map((paragraph, paragraphIndex) => (
                         <p
                           key={paragraphIndex}
-                          className="text-justify text-[15px] leading-8 text-[var(--color-text)]/85 [text-indent:2em]"
+                          className="text-justify text-[15px] leading-8 text-[color-mix(in_srgb,var(--color-text)_85%,transparent)] [text-indent:2em]"
                         >
                           {paragraph}
                         </p>
@@ -253,7 +253,7 @@ export default function LegalDocumentPage({ slug }: { slug: LegalDocumentSlug })
                 <p className="text-xs text-[var(--color-text-muted)]">
                   本文档由 MoNexus 平台发布，版本化留存并可凭内容哈希校验完整性。
                 </p>
-                <p className="mt-2 break-all font-mono text-[10px] leading-relaxed text-[var(--color-text-muted)]/70 md:hidden">
+                <p className="mt-2 break-all font-mono text-[10px] leading-relaxed text-[color-mix(in_srgb,var(--color-text-muted)_70%,transparent)] md:hidden">
                   SHA-256 {readyDocument.contentHash}
                 </p>
               </footer>

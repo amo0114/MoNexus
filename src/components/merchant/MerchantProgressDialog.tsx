@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dia
 import { useAppStore } from '../../stores/appStore'
 import { getApiErrorCode, getApiErrorMessage } from '../../api/error'
 import { MerchantOrder } from '../../types/merchant'
+import { formatOrderRef } from '../../utils/governance'
 
 interface Props {
   isOpen: boolean
@@ -53,7 +54,7 @@ export default function MerchantProgressDialog({ isOpen, onClose, order, onSubmi
       <DialogContent data-testid="merchant-progress-dialog">
         <DialogTitle>进度更新</DialogTitle>
         <DialogDescription>
-          订单 #{order?.id ?? ''} · {order?.product?.name ?? ''}，进度说明将展示在买家的订单动态中。
+          订单 {order ? formatOrderRef(order.orderNo, order.id) : ''} · {order?.product?.name ?? ''}，进度说明将展示在买家的订单动态中。
         </DialogDescription>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           <div>

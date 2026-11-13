@@ -349,7 +349,7 @@ describe('runBookingRemindBatch', () => {
     const buyerMail = mailer.lastTo('bk-remind@test.local')
     expect(buyerMail).toBeDefined()
     expect(buyerMail!.subject).toContain('预约提醒')
-    expect(buyerMail!.subject).toContain(`#${order.id}`)
+    expect(buyerMail!.subject).toContain(order.orderNo)
     expect(buyerMail!.text).toContain('预约服务快照 - 标准档快照')
     expect(buyerMail!.text).toContain(`预约日期：${dayString(1, now)}`)
     expect(buyerMail!.text).toContain('请留意履约安排')

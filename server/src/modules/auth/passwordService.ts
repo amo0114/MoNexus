@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import bcrypt from 'bcryptjs'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
@@ -63,7 +64,7 @@ export async function requestPasswordReset(
   // Silently no-op for unknown emails so the public endpoint can return
   // the same 200 response regardless of existence (no enumeration).
   if (!user) return
-  if (user.status === '已封禁') return
+  if (await isAccountBanned(user.id)) return
 
   const rawToken = generateAuthToken()
   // A newly generated credential starts inactive. This lets SMTP fail (or the
@@ -236,7 +237,7 @@ export async function changePassword(userId: number, currentPassword: string, ne
     await lockUserRefreshSessionMutations(tx, userId)
     const user = await tx.user.findUnique({ where: { id: userId } })
     if (!user) throw notFound('用户不存在')
-    if (user.status === '已封禁') throw badRequest('账号已被封禁')
+    if (await isAccountBanned(user.id, tx)) throw badRequest('账号已被封禁')
 
     const valid = await bcrypt.compare(currentPassword, user.password)
     if (!valid) throw unauthenticated('当前密码错误')

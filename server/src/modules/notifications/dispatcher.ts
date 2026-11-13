@@ -32,6 +32,7 @@ export type NotificationRecipientRole = 'user' | 'merchant' | 'admin'
 
 export type OrderNotificationSnapshot = {
   id: number
+  orderNo?: string | null
   merchantId?: number | null
   deliveryMode: string
   productName: string
@@ -49,7 +50,7 @@ export type NotificationEvent = {
   occurrenceKey?: string
 }
 
-type NotificationWriter = Pick<Prisma.TransactionClient, 'notification' | '$queryRaw'>
+type NotificationWriter = Pick<Prisma.TransactionClient, 'notification' | '$queryRaw'> & Partial<Pick<Prisma.TransactionClient,'order'>>
 
 /** NTF-05: merchant new-order only for human manual attention after auto-task branches. */
 export function shouldNotifyMerchantNewOrder(input: {
@@ -103,6 +104,7 @@ export function buildDedupeKey(eventType: string, orderId: number): string {
 /** Project order row into a notification-safe snapshot (no delivery content). */
 export function orderNotificationSnapshot(order: {
   id: number
+  orderNo?: string | null
   merchantId?: number | null
   deliveryModeSnapshot?: string | null
   deliveryMode?: string | null
@@ -114,6 +116,7 @@ export function orderNotificationSnapshot(order: {
 }): OrderNotificationSnapshot {
   return {
     id: order.id,
+    orderNo: order.orderNo,
     merchantId: order.merchantId ?? null,
     deliveryMode: order.deliveryModeSnapshot ?? order.deliveryMode ?? 'manual_service',
     productName: order.productNameSnapshot ?? order.productName ?? '商品',
@@ -130,6 +133,7 @@ function expiresAtFromConfig(now = new Date()): Date {
 function toRenderContext(event: NotificationEvent): NotificationRenderContext {
   return {
     orderId: event.order.id,
+    orderNo: event.order.orderNo,
     productName: event.order.productName,
     offerName: event.order.offerName,
     deliveryMode: event.order.deliveryMode,
@@ -153,7 +157,9 @@ export class NotificationDispatcher {
       return
     }
 
-    const template = renderNotification(event.type, toRenderContext(event))
+    const context=toRenderContext(event)
+    if(!context.orderNo && tx.order)context.orderNo=(await tx.order.findUnique({where:{id:event.order.id},select:{orderNo:true}}))?.orderNo
+    const template = renderNotification(event.type, context)
     const dedupeKey = buildDedupeKey(event.type, event.order.id)
       + (event.occurrenceKey ? `:${event.occurrenceKey}` : '')
 
@@ -222,6 +228,7 @@ export class NotificationDispatcher {
       recipientUserId: event.recipientUserId,
       notificationId: created.id,
       orderId: event.order.id,
+    orderNo: event.order.orderNo,
       dedupeKey,
     }, 'Notification created')
   }

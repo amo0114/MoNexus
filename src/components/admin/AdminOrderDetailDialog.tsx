@@ -23,6 +23,7 @@ import { useAppStore } from '../../stores/appStore'
 import AdminPlatformFulfillmentActions from './AdminPlatformFulfillmentActions'
 import AdminFulfillmentReview from './AdminFulfillmentReview'
 import AdminOrderAfterSales from './AdminOrderAfterSales'
+import { useTabActions } from '../../auth/adminAccess'
 
 export interface AdminOrderDetailDialogProps {
   order: AdminOrderDetail | null
@@ -43,6 +44,7 @@ export default function AdminOrderDetailDialog({
   onOpenChange,
   onFulfillmentSuccess,
 }: AdminOrderDetailDialogProps) {
+  const can = useTabActions('orders')
   const showToast = useAppStore((s) => s.showToast)
   const [copied, setCopied] = useState(false)
 
@@ -72,7 +74,7 @@ export default function AdminOrderDetailDialog({
             <div className="flex items-center gap-2">
               <Package className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
               <DialogPrimitive.Title className="font-heading text-lg font-bold text-[var(--color-text)]">
-                订单详情 {order ? `ORD-${order.id}` : ''}
+                订单详情 {order ? order.orderNo || `ORD-${order.id}` : ''}
               </DialogPrimitive.Title>
               {order && <RegistryPill value={order.status} category="orderStatuses" />}
             </div>
@@ -317,11 +319,15 @@ export default function AdminOrderDetailDialog({
                 </div>
               )}
 
-              <AdminPlatformFulfillmentActions
-                order={order}
-                onSuccess={onFulfillmentSuccess}
-              />
-              <AdminFulfillmentReview key={order.id} order={order} onSuccess={onFulfillmentSuccess} />
+              {can('resolve') && (
+                <>
+                  <AdminPlatformFulfillmentActions
+                    order={order}
+                    onSuccess={onFulfillmentSuccess}
+                  />
+                  <AdminFulfillmentReview key={order.id} order={order} onSuccess={onFulfillmentSuccess} />
+                </>
+              )}
               {order.status === 'closed' && (
                 <AdminOrderAfterSales key={`after-sales-${order.id}`} orderId={order.id} onSuccess={onFulfillmentSuccess} />
               )}

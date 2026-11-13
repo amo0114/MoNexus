@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminPage from './AdminPage'
 import { useAppStore } from '../stores/appStore'
+import { signInLegacyAdmin } from '../test/adminAccess'
 
 const mocks = vi.hoisted(() => ({
   getOrders: vi.fn(),
@@ -81,6 +82,8 @@ describe('Phase 2D: Order Experience, Detail Modal & Date Boundary Governance', 
   }
 
   beforeEach(() => {
+
+    signInLegacyAdmin()
     vi.clearAllMocks()
     useAppStore.setState({
       toasts: [],

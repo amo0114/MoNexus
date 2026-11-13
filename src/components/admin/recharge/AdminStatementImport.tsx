@@ -3,6 +3,7 @@ import { importAdminStatement, previewAdminStatement, type AdminStatementPreview
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../ui/Dialog'
+import { useTabActions } from '../../../auth/adminAccess'
 
 const HEADER = 'provider_entry_key,provider_payment_id,status,amount_minor,currency,occurred_at'
 
@@ -12,6 +13,7 @@ const HEADER = 'provider_entry_key,provider_payment_id,status,amount_minor,curre
  * query, and the same file (SHA-256) maps to the same run.
  */
 export default function AdminStatementImport({ provider, onImported }: { provider: string; onImported?: () => void }) {
+  const allowed = useTabActions('recharge')('otherPaymentCommands')
   const showToast = useAppStore((s) => s.showToast)
   const [open, setOpen] = useState(false)
   const [accountKey, setAccountKey] = useState('')
@@ -58,6 +60,7 @@ export default function AdminStatementImport({ provider, onImported }: { provide
     }
   }
 
+  if (!allowed) return null
   return (
     <>
       <button type="button" className="btn-secondary btn-sm text-xs" onClick={() => setOpen(true)} data-testid="admin-statement-import-open">

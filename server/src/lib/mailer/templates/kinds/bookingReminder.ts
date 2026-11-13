@@ -11,6 +11,7 @@ import { resolveMailBrand, type MailBrandContext } from '../tokens.js'
 export interface BookingReminderVars {
   to: string
   orderId: number
+  orderNo?: string | null
   productLabel: string
   bookingDay: string
   role: 'buyer' | 'merchant'
@@ -19,7 +20,7 @@ export interface BookingReminderVars {
 
 export function renderBookingReminder(vars: BookingReminderVars): MailMessage {
   const brand = resolveMailBrand(vars.brand)
-  const subject = `【预约提醒】订单 #${vars.orderId} 预约日期为 ${vars.bookingDay}`
+  const subject = `【预约提醒】订单 ${vars.orderNo ?? '#' + vars.orderId} 预约日期为 ${vars.bookingDay}`
   const title = '预约提醒'
   const roleLine =
     vars.role === 'buyer'
@@ -29,7 +30,7 @@ export function renderBookingReminder(vars: BookingReminderVars): MailMessage {
   const text = joinText(
     roleLine,
     [
-      `订单号：#${vars.orderId}`,
+      `订单号：${vars.orderNo ?? '#' + vars.orderId}`,
       `商品：${vars.productLabel}`,
       `预约日期：${vars.bookingDay}`,
     ].join('\n'),
@@ -39,7 +40,7 @@ export function renderBookingReminder(vars: BookingReminderVars): MailMessage {
     headingHtml(title, 'center'),
     paragraphHtml(roleLine, 'left'),
     kvTableHtml([
-      { label: '订单号', value: `#${vars.orderId}` },
+      { label: '订单号', value: `${vars.orderNo ?? '#' + vars.orderId}` },
       { label: '商品', value: vars.productLabel },
       { label: '预约日期', value: vars.bookingDay },
     ]),

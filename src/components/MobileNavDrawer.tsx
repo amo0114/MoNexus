@@ -10,17 +10,18 @@ import { useAppStore } from '../stores/appStore'
 import ThemeToggle from './ThemeToggle'
 import { DialogOverlay } from './ui/Dialog'
 import UserAvatar from './ui/UserAvatar'
+import { hasMerchantCapability } from '../auth/merchantAccess'
 
 const ROW =
   'w-full flex items-center gap-3 px-3 min-h-[44px] rounded-lg text-sm font-medium transition-colors cursor-pointer text-left'
 
 const TONES = {
   primary:
-    'text-[var(--color-primary)] bg-[var(--color-primary)]/8 border border-[var(--color-primary)]/20 hover:bg-[var(--color-primary)]/12',
+    'text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]',
   muted:
-    'text-[var(--color-text-muted)] bg-[var(--color-text-muted)]/10 border border-[var(--color-border)]',
+    'text-[var(--color-text-muted)] bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] border border-[var(--color-border)]',
   danger:
-    'text-[var(--color-danger)] bg-[var(--color-danger)]/10 border border-[var(--color-danger)]/20',
+    'text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]',
 } as const
 
 /**
@@ -47,7 +48,7 @@ export default function MobileNavDrawer() {
       <DialogPrimitive.Trigger asChild>
         <button
           type="button"
-          className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text)] hover:bg-[var(--color-primary)]/10 transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
+          className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
           aria-label="打开导航菜单"
         >
           <Menu className="w-5 h-5" />
@@ -74,7 +75,7 @@ export default function MobileNavDrawer() {
           <div className="px-3 mt-4 shrink-0">
             <button
               onClick={() => go(user ? '/profile' : '/login')}
-              className="w-full flex items-center gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary)]/35 transition-colors cursor-pointer text-left"
+              className="w-full flex items-center gap-3 p-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[color-mix(in_srgb,var(--color-primary)_35%,transparent)] transition-colors cursor-pointer text-left"
             >
               <UserAvatar userId={user?.id} url={user?.avatarUrl} name={displayName} size={40} className="shadow-md" />
               <div className="min-w-0">
@@ -86,9 +87,9 @@ export default function MobileNavDrawer() {
             {user && (
             <button
               onClick={() => go('/profile')}
-              className={`${ROW} mt-2 text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
+              className={`${ROW} mt-2 text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] active:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]`}
             >
-              <span className="bg-[var(--color-cta)]/10 p-1.5 rounded-full">
+              <span className="bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] p-1.5 rounded-full">
                 <Coins className="w-4 h-4 text-[var(--color-cta)]" />
               </span>
               积分余额
@@ -102,7 +103,7 @@ export default function MobileNavDrawer() {
           {/* Primary nav */}
           <nav className="px-3 mt-3 flex flex-col gap-1 shrink-0">
             <button
-              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
+              className={`${ROW} text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] active:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]`}
               onClick={() => go('/')}
             >
               <Home className="w-4 h-4 text-[var(--color-text-muted)]" />
@@ -110,7 +111,7 @@ export default function MobileNavDrawer() {
             </button>
             {user && (
             <button
-              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
+              className={`${ROW} text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] active:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]`}
               onClick={() => go('/recharge')}
               data-testid="drawer-recharge"
             >
@@ -120,7 +121,7 @@ export default function MobileNavDrawer() {
             )}
             {user && (
             <button
-              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
+              className={`${ROW} text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] active:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]`}
               onClick={() => go('/leaderboard')}
             >
               <Trophy className="w-4 h-4 text-[var(--color-text-muted)]" />
@@ -129,7 +130,7 @@ export default function MobileNavDrawer() {
             )}
             {user && (
             <button
-              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12 relative`}
+              className={`${ROW} text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] active:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] relative`}
               onClick={() => go('/orders')}
               data-testid="drawer-orders"
             >
@@ -144,7 +145,7 @@ export default function MobileNavDrawer() {
             )}
             {user ? (
             <button
-              className={`${ROW} text-[var(--color-text)] hover:bg-[var(--color-primary)]/8 active:bg-[var(--color-primary)]/12`}
+              className={`${ROW} text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] active:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]`}
               onClick={() => go('/profile')}
             >
               <User className="w-4 h-4 text-[var(--color-text-muted)]" />
@@ -172,7 +173,7 @@ export default function MobileNavDrawer() {
 
           {/* Portal entries — mirrors the desktop navbar pills (role × merchant.status) */}
           {(user?.role === 'user' ||
-            (user?.role === 'merchant' && user.merchant?.status === 'active') ||
+            hasMerchantCapability(user, 'history.read') ||
             user?.role === 'admin') && (
             <>
               <div className="px-6 mt-5 mb-1 text-xs font-semibold text-[var(--color-text-muted)] shrink-0">
@@ -192,18 +193,18 @@ export default function MobileNavDrawer() {
                   </div>
                 )}
                 {user?.role === 'user' && user.merchant?.status === 'rejected' && (
-                  <button className={`${ROW} ${TONES.muted} hover:bg-[var(--color-text-muted)]/15`} onClick={() => go('/merchant/apply')}>
+                  <button className={`${ROW} ${TONES.muted} hover:bg-[color-mix(in_srgb,var(--color-text-muted)_15%,transparent)]`} onClick={() => go('/merchant/apply')}>
                     <XCircle className="w-4 h-4" />
                     申请被拒，重新申请
                   </button>
                 )}
-                {user?.role === 'user' && user.merchant?.status === 'suspended' && (
+                {user?.role === 'user' && user.merchant?.status === 'suspended' && !hasMerchantCapability(user, 'history.read') && (
                   <div className={`${ROW} cursor-default ${TONES.danger}`}>
                     <AlertTriangle className="w-4 h-4" />
                     账号已停用
                   </div>
                 )}
-                {user?.role === 'merchant' && user.merchant?.status === 'active' && (
+                {hasMerchantCapability(user, 'history.read') && (
                   <button className={`${ROW} ${TONES.primary}`} onClick={() => go('/merchant')}>
                     <Store className="w-4 h-4" />
                     商家后台

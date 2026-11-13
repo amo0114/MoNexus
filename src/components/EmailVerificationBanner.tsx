@@ -127,14 +127,14 @@ export default function EmailVerificationBanner() {
             type="button"
             onClick={handleSend}
             disabled={sending || cooldownSeconds > 0}
-            className="min-h-[44px] px-3.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] text-white text-xs font-semibold transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
+            className="min-h-[44px] px-3.5 whitespace-nowrap rounded-lg bg-[var(--color-primary)] text-[var(--color-on-primary)] text-xs font-semibold transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] disabled:opacity-50 cursor-pointer inline-flex items-center justify-center"
           >
             {sending ? '发送中…' : cooldownSeconds > 0 ? `${cooldownSeconds} 秒后可重发` : '发送验证邮件'}
           </button>
           <button
             type="button"
             onClick={handleDismiss}
-            className="icon-btn min-h-[44px] min-w-[44px] rounded-lg transition-colors hover:bg-[var(--color-border)]/50 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] inline-flex items-center justify-center text-[var(--color-text-muted)] cursor-pointer"
+            className="icon-btn min-h-[44px] min-w-[44px] rounded-lg transition-colors hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] inline-flex items-center justify-center text-[var(--color-text-muted)] cursor-pointer"
             aria-label="关闭邮箱验证提示"
           >
             <X className="h-4 w-4" />

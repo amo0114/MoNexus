@@ -10,10 +10,13 @@ import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { EVENT_STATUS_LABEL, PAYMENT_EVENT_STATUSES, PAYMENT_PROVIDERS, providerLabel } from '../../../pages/recharge/status'
 import { PAYMENT_EVENT_SOURCE_LABEL } from '../../../utils/adminRechargeDisplay'
+import { useTabActions } from '../../../auth/adminAccess'
 
 const PAGE_SIZE = 50
 
 export default function AdminPaymentEvents() {
+  const can = useTabActions('recharge')
+  const canCommand = can('otherPaymentCommands')
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminPaymentEvent[]>([])
   const [total, setTotal] = useState(0)
@@ -162,7 +165,7 @@ export default function AdminPaymentEvents() {
                     >
                       详情
                     </button>
-                    {(item.status === 'failed' || item.status === 'received') && (
+                    {canCommand && (item.status === 'failed' || item.status === 'received') && (
                       <button
                         type="button"
                         className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"
@@ -251,7 +254,7 @@ export default function AdminPaymentEvents() {
                 {detailTarget.lastErrorCode && (
                   <div>
                     <div className="text-[var(--color-danger)] font-medium mb-1">错误码 (Last Error Code)</div>
-                    <div className="p-2 bg-[var(--color-danger)]/10 text-[var(--color-danger)] rounded border border-[var(--color-danger)]/20 font-mono text-[11px] select-all">
+                    <div className="p-2 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] font-mono text-[11px] select-all">
                       {detailTarget.lastErrorCode}
                     </div>
                   </div>

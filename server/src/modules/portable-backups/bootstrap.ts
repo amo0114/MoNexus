@@ -27,7 +27,7 @@ export async function createRestoreBootstrapAdmin(token: string, email: string, 
           email: email.trim().toLowerCase(),
           password: passwordHash,
           role: 'admin',
-          status: '正常',
+          status: 'active',
           emailVerified: new Date(),
         },
       })

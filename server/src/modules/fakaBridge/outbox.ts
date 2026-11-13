@@ -1,3 +1,4 @@
+import { isAccountBanned } from '../accountGovernance/status.js'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
@@ -39,7 +40,7 @@ export async function createFakaBridgeTaskForOrder(tx: Tx, input: CreateFakaBrid
       tx.xboardInstance.findUnique({ where: { id: settings.instanceId } }),
     ])
     const match = /^plan-([1-9][0-9]{0,9})-(?:reset_traffic|reset_price)$/.exec(sku)
-    if (!link || !order || order.user.status !== '正常' || link.userId !== order.userId || link.status !== 'active'
+    if (!link || !order || await isAccountBanned(order.userId, tx) || link.userId !== order.userId || link.status !== 'active'
       || link.instanceId !== settings.instanceId || instance?.origin !== settings.origin || period !== 'reset_traffic'
       || !match || BigInt(match[1]) > 2147483647n) throw new Error('Invalid stable paid reset target')
     target = { protocolVersion: 2, accountLinkIdSnapshot: link.id, instanceIdSnapshot: settings.instanceId,

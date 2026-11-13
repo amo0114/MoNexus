@@ -20,6 +20,8 @@ const RECOVERY_POINT_LOGS_MIGRATION = '20261024120000_payment_recovery_point_log
 const RECOVERY_CREDIT_INDEX_MIGRATION = '20261109220000_recovery_credit_idx'
 // Backfills growth eligibility from RechargeCredit and extends ReconciliationRun.
 const WALLET_FINANCE_MIGRATION = '20261110120000_wallet_finance_after_sales'
+// Governance depends on the payment and finance tables omitted by the historical replay.
+const GOVERNANCE_MIGRATION = '20261112120000_backend_governance'
 const NEW_MIGRATIONS = [
   FOUNDATION_MIGRATION,
   ADMIN_SANDBOX_MIGRATION,
@@ -29,6 +31,7 @@ const NEW_MIGRATIONS = [
   RECOVERY_POINT_LOGS_MIGRATION,
   RECOVERY_CREDIT_INDEX_MIGRATION,
   WALLET_FINANCE_MIGRATION,
+  GOVERNANCE_MIGRATION,
 ] as const
 const SERVER_ROOT = path.resolve(__dirname, '../..')
 const created: string[] = []
@@ -101,6 +104,7 @@ describe('recharge foundation migration replay', () => {
     expect(result.stdout + result.stderr).toMatch(new RegExp(QUOTED_AMOUNT_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
     expect(result.stdout + result.stderr).toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
+    expect(result.stdout + result.stderr).toMatch(new RegExp(GOVERNANCE_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(EMPTY_DB) })
     await client.connect()
@@ -137,6 +141,7 @@ describe('recharge foundation migration replay', () => {
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
     expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(WALLET_FINANCE_MIGRATION))
+    expect(historical.stdout + historical.stderr).not.toMatch(new RegExp(GOVERNANCE_MIGRATION))
 
     const clientBefore = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await clientBefore.connect()
@@ -157,6 +162,7 @@ describe('recharge foundation migration replay', () => {
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(RECOVERY_POINT_LOGS_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(RECOVERY_CREDIT_INDEX_MIGRATION))
     expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(WALLET_FINANCE_MIGRATION))
+    expect(upgraded.stdout + upgraded.stderr).toMatch(new RegExp(GOVERNANCE_MIGRATION))
 
     const client = new Client({ connectionString: dbUrl(UPGRADE_DB) })
     await client.connect()

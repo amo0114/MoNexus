@@ -97,7 +97,7 @@ export default function RevokeEditorialDialog({
     >
       <DialogContent className="max-w-md">
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full bg-[var(--color-danger)]/10 text-[var(--color-danger)] flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-full bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] flex items-center justify-center shrink-0">
             <ShieldAlert className="w-5 h-5" />
           </div>
           <div className="min-w-0">
@@ -132,7 +132,7 @@ export default function RevokeEditorialDialog({
           {fieldError && (
             <div
               role="alert"
-              className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
+              className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
             >
               {fieldError}
             </div>
@@ -140,7 +140,7 @@ export default function RevokeEditorialDialog({
           {submitError && (
             <div
               role="alert"
-              className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20"
+              className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
             >
               {submitError}
             </div>

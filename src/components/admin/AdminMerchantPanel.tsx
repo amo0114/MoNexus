@@ -17,6 +17,9 @@ import { formatCommissionRate } from '../../utils/adminRechargeDisplay'
 import CommissionDialog from './CommissionDialog'
 import RejectMerchantDialog from './RejectMerchantDialog'
 import AdminPanelHeader from './AdminPanelHeader'
+import { useAdminCapabilities } from '../../stores/adminCapabilities'
+import { useTabActions } from '../../auth/adminAccess'
+import MerchantReviewSheet from './governance/MerchantReviewSheet'
 
 interface Props {
   active?: boolean
@@ -24,12 +27,12 @@ interface Props {
 
 function MerchantStatusPill({ status }: { status: string }) {
   const styles: Record<string, { bg: string; text: string; border: string; label: string }> = {
-    active:    { bg: 'bg-[var(--color-cta)]/10',   text: 'text-[var(--color-cta)]',   border: 'border-[var(--color-cta)]/25',   label: '营业中' },
+    active:    { bg: 'bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)]',   text: 'text-[var(--color-cta)]',   border: 'border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]',   label: '营业中' },
     pending:   { bg: 'bg-orange-500/10',           text: 'text-orange-500',           border: 'border-orange-500/25',           label: '待审核' },
     suspended: { bg: 'bg-red-500/10',              text: 'text-red-500',              border: 'border-red-500/25',              label: '已停用' },
     rejected:  { bg: 'bg-red-500/10',              text: 'text-red-500',              border: 'border-red-500/25',              label: '已拒绝' },
   }
-  const s = styles[status] || { bg: 'bg-[var(--color-text-muted)]/10', text: 'text-[var(--color-text-muted)]', border: 'border-[var(--color-text-muted)]/25', label: status }
+  const s = styles[status] || { bg: 'bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)]', text: 'text-[var(--color-text-muted)]', border: 'border-[color-mix(in_srgb,var(--color-text-muted)_25%,transparent)]', label: status }
   return (
     <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${s.bg} ${s.text} ${s.border}`}>
       {s.label}
@@ -64,6 +67,11 @@ function ActionLink({
 
 export default function AdminMerchantPanel({ active = true }: Props) {
   const showToast = useAppStore((s) => s.showToast)
+  const caps = useAdminCapabilities()
+  // governance-v1: decisions carry versions + reasons and go through the review sheet.
+  const lifecycle = caps.allows('merchantLifecycle', 'merchants.read')
+  const canTab = useTabActions('merchants')
+  const [reviewTarget, setReviewTarget] = useState<Merchant | null>(null)
   const [merchants, setMerchants] = useState<Merchant[]>([])
   const [merchantPage, setMerchantPage] = useState(1)
   const [merchantTotal, setMerchantTotal] = useState(0)
@@ -259,13 +267,26 @@ export default function AdminMerchantPanel({ active = true }: Props) {
                     )}
                   </td>
                   <td className="text-right space-x-3 whitespace-nowrap" data-label="操作">
-                    {m.status === 'pending' && (
+                    {lifecycle && (
+                      <button
+                        type="button"
+                        className="btn-tonal"
+                        onClick={() => setReviewTarget(m)}
+                        data-testid={`admin-merchant-review-${m.id}`}
+                      >
+                        {m.status === 'pending' ? '审核' : '审核记录'}
+                      </button>
+                    )}
+                    {lifecycle && m.status === 'active' && canTab('commission') && (
+                      <ActionLink tone="primary" onClick={() => setCommissionTarget(m)}>改抽成</ActionLink>
+                    )}
+                    {!lifecycle && m.status === 'pending' && (
                       <>
                         <ActionLink tone="cta" onClick={() => handleApproveMerchant(m.id)}>通过</ActionLink>
                         <ActionLink tone="danger" onClick={() => setRejectTarget(m)}>拒绝</ActionLink>
                       </>
                     )}
-                    {m.status === 'active' && (
+                    {!lifecycle && m.status === 'active' && (
                       <>
                         <ActionLink tone="primary" onClick={() => setCommissionTarget(m)}>改抽成</ActionLink>
                         <ActionLink tone="danger" onClick={() => handleSuspendMerchant(m.id)}>停用</ActionLink>
@@ -303,6 +324,16 @@ export default function AdminMerchantPanel({ active = true }: Props) {
           void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)
         }}
       />
+
+      {lifecycle && (
+        <MerchantReviewSheet
+          merchantId={reviewTarget?.id ?? null}
+          merchantName={reviewTarget?.name}
+          can={(d) => canTab(d === 'approve' || d === 'reject' ? 'review' : 'suspendRestore')}
+          onOpenChange={(open) => { if (!open) setReviewTarget(null) }}
+          onDecided={() => void fetchMerchants(merchantPage, appliedMerchantFiltersRef.current)}
+        />
+      )}
 
       {/* Reject Reason Dialog */}
       <RejectMerchantDialog

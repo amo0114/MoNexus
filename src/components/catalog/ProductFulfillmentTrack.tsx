@@ -61,7 +61,7 @@ export default function ProductFulfillmentTrack({
           return (
             <div
               key={step.num}
-              className="relative flex flex-col justify-between p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary-border-subtle)] transition-all duration-200"
+              className="relative flex flex-col justify-between p-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary-border-subtle)] transition duration-200"
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-mono font-bold text-[var(--color-primary)] px-1.5 py-0.5 rounded bg-[var(--color-primary-tint)]">

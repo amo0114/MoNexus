@@ -15,19 +15,19 @@ const presentationMeta = {
   notice: {
     icon: Megaphone,
     label: '平台通知',
-    shell: 'bg-[var(--color-primary)]/8 border-[var(--color-primary)]/25',
+    shell: 'bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)]',
     accent: 'text-[var(--color-primary)]',
   },
   important: {
     icon: AlertCircle,
     label: '重要公告',
-    shell: 'bg-[var(--color-cta)]/8 border-[var(--color-cta)]/25',
+    shell: 'bg-[color-mix(in_srgb,var(--color-cta)_8%,transparent)] border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)]',
     accent: 'text-[var(--color-cta)]',
   },
   acknowledgement_required: {
     icon: ShieldAlert,
     label: '需确认公告',
-    shell: 'bg-[var(--color-danger)]/8 border-[var(--color-danger)]/25',
+    shell: 'bg-[color-mix(in_srgb,var(--color-danger)_8%,transparent)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]',
     accent: 'text-[var(--color-danger)]',
   },
 } as const

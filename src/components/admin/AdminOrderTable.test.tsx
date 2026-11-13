@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminOrderTable from './AdminOrderTable'
 import type { AdminOrderDetail, AdminOrderItem } from '../../api/admin'
 import { useAppStore } from '../../stores/appStore'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 const apiMocks = vi.hoisted(() => ({
   getAdminOrders: vi.fn(),

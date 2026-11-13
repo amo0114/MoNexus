@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import PasswordInput from '../components/auth/PasswordInput'
 import { Gift, Wrench } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
@@ -50,8 +51,8 @@ function LoginShell({ children }: { children: ReactNode }) {
       data-testid="login-shell"
     >
       <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[var(--color-primary)]/10 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[var(--color-primary)]/8 blur-[100px]" />
+        <div className="absolute left-[-10%] top-[-20%] h-[min(600px,90vw)] w-[min(600px,90vw)] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] blur-[120px]" />
+        <div className="absolute bottom-[-10%] right-[-5%] h-[min(500px,80vw)] w-[min(500px,80vw)] rounded-full bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] blur-[100px]" />
         <div className="absolute inset-0 bg-grid-pattern opacity-40" />
       </div>
 
@@ -60,7 +61,7 @@ function LoginShell({ children }: { children: ReactNode }) {
           <div className="mb-3 flex justify-center">
             <Logo className="h-16 w-16 shrink-0" />
           </div>
-          <h1 className="font-heading text-4xl font-bold tracking-[0.18em] text-[var(--color-text)]">MONEXUS</h1>
+          <h1 className="font-display text-4xl font-bold tracking-[0.18em] text-[var(--color-text)]">MONEXUS</h1>
           <div className="mx-auto mt-2 h-0.5 w-12 bg-[var(--color-primary)]" />
           <p className="mt-3 text-xs uppercase tracking-[0.35em] text-[var(--color-text-muted)]">Digital · Marketplace</p>
         </div>
@@ -523,7 +524,7 @@ export default function LoginPage() {
     <LoginShell>
       <h2 className="mb-1 font-heading text-2xl font-semibold text-[var(--color-text)]">{isRegister ? '创建账号' : '登录'}</h2>
       <p className="mb-8 text-sm text-[var(--color-text-muted)]">
-        {isRegister ? '注册后即可浏览与兑换数字商品' : '使用邮箱登录您的账号'}
+        {isRegister ? '注册后即可浏览与兑换数字商品' : '使用邮箱登录你的账号'}
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -531,6 +532,7 @@ export default function LoginPage() {
           type="email"
           placeholder="邮箱地址"
           aria-label="邮箱地址"
+          autoComplete={isRegister ? 'email' : 'username'}
           value={email}
           onChange={(event) => {
             setEmail(event.target.value)
@@ -541,8 +543,8 @@ export default function LoginPage() {
           disabled={loading}
         />
         <div className="space-y-1">
-          <input
-            type="password"
+          <PasswordInput
+            autoComplete={isRegister ? 'new-password' : 'current-password'}
             placeholder={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
             aria-label={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
             aria-describedby={isRegister ? 'register-password-hint' : undefined}
@@ -554,7 +556,6 @@ export default function LoginPage() {
             required
             // Login keeps the legacy minimum so existing accounts can still sign in.
             minLength={isRegister ? PASSWORD_MIN_LENGTH : 6}
-            className="input"
             disabled={loading}
           />
           {isRegister && (
@@ -724,21 +725,21 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => { setEmail('test@moyuan.net'); setPassword('user123') }}
-              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-text)]"
+              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:text-[var(--color-text)]"
             >
               普通用户
             </button>
             <button
               type="button"
               onClick={() => { setEmail('merchant@moyuan.net'); setPassword('merchant123') }}
-              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-primary)]/40 hover:text-[var(--color-primary)]"
+              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] hover:text-[var(--color-primary)]"
             >
               商家账号
             </button>
             <button
               type="button"
               onClick={() => { setEmail('admin@moyuan.net'); setPassword('admin123') }}
-              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[var(--color-danger)]/50 hover:text-[var(--color-danger)]"
+              className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:border-[color-mix(in_srgb,var(--color-danger)_50%,transparent)] hover:text-[var(--color-danger)]"
             >
               管理员
             </button>
@@ -746,7 +747,7 @@ export default function LoginPage() {
         </div>
       )}
 
-      <div className="mt-6 flex items-start gap-2 rounded-lg border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/10 px-3 py-2.5 text-left text-[var(--color-cta)]">
+      <div className="mt-6 flex items-start gap-2 rounded-lg border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] px-3 py-2.5 text-left text-[var(--color-cta)]">
         <Gift className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
         <p className="min-w-0 text-xs font-medium leading-snug sm:text-sm">
           {isRegister

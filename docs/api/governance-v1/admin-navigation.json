@@ -1,0 +1,314 @@
+{
+  "contractVersion": "governance-v1",
+  "revision": "1.0.3",
+  "semantics": "entryAllOf 和 actions 各数组均为全部满足；actions 只描述该动作的附加检查，不授予隐含权限。旧版后台首次加载与新功能的 capability/feature 降级分开处理；capabilities 暂未返回时不得按 super 推断。服务端始终重新授权。",
+  "tabs": [
+    {
+      "tab": "dashboard",
+      "label": "数据仪表盘",
+      "entryAllOf": [
+        "catalog.read"
+      ],
+      "actions": {},
+      "notes": "stats/reports 包含聚合统计；不得把该权限当作支付或用户明细权限。"
+    },
+    {
+      "tab": "users",
+      "label": "用户管理",
+      "entryAllOf": [
+        "users.read"
+      ],
+      "actions": {
+        "ban": [
+          "users.ban"
+        ],
+        "wallet": [
+          "points.read"
+        ],
+        "adjustPoints": [
+          "points.adjust"
+        ],
+        "orders": [
+          "orders.read"
+        ],
+        "audit": [
+          "audit.read"
+        ],
+        "auditDetails": [
+          "audit.details.read"
+        ],
+        "authorizations": [
+          "admin.permissions.manage"
+        ]
+      },
+      "notes": "详情按 sections 懒加载；授权编辑还要求服务端当前 tier=super。"
+    },
+    {
+      "tab": "products",
+      "label": "商品与库存",
+      "entryAllOf": [
+        "catalog.read"
+      ],
+      "actions": {
+        "edit": [
+          "catalog.write"
+        ],
+        "inventory": [
+          "inventory.manage"
+        ],
+        "ai": [
+          "ai.manage"
+        ],
+        "videos": [
+          "videos.read"
+        ],
+        "manageVideos": [
+          "videos.manage"
+        ],
+        "uploadImage": [
+          "files.manage"
+        ]
+      },
+      "notes": "写权限不隐含读取权限；库存和视频分区独立检查。"
+    },
+    {
+      "tab": "orders",
+      "label": "订单记录",
+      "entryAllOf": [
+        "orders.read"
+      ],
+      "actions": {
+        "detail": [
+          "orders.delivery.read"
+        ],
+        "resolve": [
+          "orders.resolve"
+        ],
+        "executeAfterSales": [
+          "orders.after_sales.execute"
+        ],
+        "uploadDelivery": [
+          "files.manage"
+        ]
+      },
+      "notes": "原订单详情包含交付秘密，只有 orders.read 时不得自动请求详情。"
+    },
+    {
+      "tab": "logs",
+      "label": "积分流水",
+      "entryAllOf": [
+        "points.read"
+      ],
+      "actions": {
+        "adjust": [
+          "points.adjust"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "audit",
+      "label": "操作审计",
+      "entryAllOf": [
+        "audit.read"
+      ],
+      "actions": {
+        "detail": [
+          "audit.details.read"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "files",
+      "label": "文件治理",
+      "entryAllOf": [
+        "orders.delivery.read"
+      ],
+      "actions": {
+        "revoke": [
+          "files.manage"
+        ]
+      },
+      "notes": "GET /admin/delivery-files 及 grants 要求 orders.delivery.read；files.manage 不能代替读取权限。"
+    },
+    {
+      "tab": "merchants",
+      "label": "商家管理",
+      "entryAllOf": [
+        "merchants.read"
+      ],
+      "actions": {
+        "review": [
+          "merchants.review"
+        ],
+        "suspendRestore": [
+          "merchants.suspend"
+        ],
+        "commission": [
+          "settings.manage"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "settlements",
+      "label": "结算管理",
+      "entryAllOf": [
+        "settlements.read"
+      ],
+      "actions": {
+        "execute": [
+          "settlements.execute"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "announcements",
+      "label": "公告管理",
+      "entryAllOf": [
+        "announcements.read"
+      ],
+      "actions": {
+        "write": [
+          "announcements.write"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "config",
+      "label": "系统配置",
+      "entryAllOf": [
+        "settings.manage"
+      ],
+      "actions": {
+        "ai": [
+          "ai.manage"
+        ]
+      },
+      "notes": "现有父面板挂载即 GET /admin/config，故入口仍要求 settings.manage；AI 子面板另要 ai.manage。若要支持仅 ai.manage，前端须先拆开父级配置加载。"
+    },
+    {
+      "tab": "backup",
+      "label": "数据备份与恢复",
+      "entryAllOf": [
+        "backups.manage"
+      ],
+      "actions": {},
+      "notes": ""
+    },
+    {
+      "tab": "faka",
+      "label": "自动开通任务",
+      "entryAllOf": [
+        "orders.read"
+      ],
+      "actions": {
+        "retryRevoke": [
+          "orders.resolve"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "abuse",
+      "label": "注册与激励风控",
+      "entryAllOf": [
+        "settings.manage"
+      ],
+      "actions": {},
+      "notes": ""
+    },
+    {
+      "tab": "storage",
+      "label": "对象存储",
+      "entryAllOf": [
+        "settings.manage"
+      ],
+      "actions": {},
+      "notes": ""
+    },
+    {
+      "tab": "merchandising",
+      "label": "营销与陈列",
+      "entryAllOf": [
+        "marketing.read"
+      ],
+      "actions": {
+        "write": [
+          "marketing.write"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "catalogGovernance",
+      "label": "目录治理",
+      "entryAllOf": [
+        "catalog.read"
+      ],
+      "actions": {
+        "write": [
+          "catalog.write"
+        ]
+      },
+      "notes": ""
+    },
+    {
+      "tab": "recharge",
+      "label": "充值支付",
+      "entryAllOf": [
+        "payments.read"
+      ],
+      "actions": {
+        "reviewRefund": [
+          "payments.refunds.review"
+        ],
+        "resolveDisputeRecovery": [
+          "payments.disputes.resolve"
+        ],
+        "otherPaymentCommands": [
+          "settings.manage"
+        ]
+      },
+      "notes": "其他非读支付操作保留 settings.manage；按具体端点检查，不把 payments.read 当作所有操作权限。"
+    },
+    {
+      "tab": "walletIntegrity",
+      "label": "资金巡检",
+      "entryAllOf": [
+        "wallet.integrity.read"
+      ],
+      "actions": {
+        "recheck": [
+          "wallet.integrity.read"
+        ]
+      },
+      "notes": "另检查 features.walletIntegrity。"
+    },
+    {
+      "tab": "exports",
+      "label": "导出任务",
+      "entryAllOf": [
+        "exports.create"
+      ],
+      "actions": {
+        "users": [
+          "exports.create",
+          "users.read"
+        ],
+        "orders": [
+          "exports.create",
+          "orders.read"
+        ],
+        "point_logs": [
+          "exports.create",
+          "points.read"
+        ]
+      },
+      "notes": "另检查 features.exports；任务列表/下载仍按归属和当前种类读取权限验证。"
+    }
+  ]
+}

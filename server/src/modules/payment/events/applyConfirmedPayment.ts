@@ -44,7 +44,7 @@ export async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
   mismatchType: ReconciliationMismatchType
   orderId?: string | null
   attemptId?: string | null
-  eventId: string
+  eventId?: string | null
   provider: string
   providerAccountKey: string
   providerEntryKey: string

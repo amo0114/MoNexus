@@ -12,7 +12,7 @@ export default function RecoveryCodeConfirmation({ recoveryCodes, loading, onCon
 
   return (
     <section className="text-left" data-testid="mfa-recovery-confirmation">
-      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-cta)]/10 text-[var(--color-cta)]">
+      <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)]">
         <KeyRound className="h-6 w-6" />
       </div>
       <h2 className="font-heading text-center text-2xl font-semibold text-[var(--color-text)]">保存恢复码</h2>

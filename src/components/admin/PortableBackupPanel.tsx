@@ -153,7 +153,7 @@ export default function PortableBackupPanel() {
           </button>
         </form>
 
-        <div className={`text-sm rounded-md px-3 py-2 ${job?.state === 'failed' ? 'bg-[var(--color-danger)]/10 text-[var(--color-danger)]' : 'bg-[var(--color-primary)]/8 text-[var(--color-text-muted)]'}`}>
+        <div className={`text-sm rounded-md px-3 py-2 ${job?.state === 'failed' ? 'bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)]' : 'bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-text-muted)]'}`}>
           {taskDescription}
         </div>
         {job && (
@@ -175,7 +175,7 @@ export default function PortableBackupPanel() {
         )}
       </section>
 
-      <section className="rounded-lg border border-[var(--color-danger)]/35 bg-[var(--color-danger)]/5 p-5 space-y-4">
+      <section className="rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_35%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_5%,transparent)] p-5 space-y-4">
         <div className="flex gap-3 items-start">
           <AlertTriangle className="w-5 h-5 text-[var(--color-danger)] mt-0.5 shrink-0" />
           <div>

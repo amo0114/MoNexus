@@ -113,6 +113,20 @@ describe('cleanupOrphanFiles', () => {
   })
 })
 
+it('rechecks stale orphan candidates after a file has been bound',async()=>{
+  const merchant=await makeMerchant('gc-binding-race@test.local')
+  const file=await seedFile(merchant.id,'binding-race',new Date(Date.now()-25*HOUR))
+  const product=await prisma.product.create({data:{name:'并发挂接商品',type:'充值卡密',categoryId:await getActiveCategoryIdByLabel('充值卡密'),price:100,merchantId:merchant.id}})
+  await prisma.offer.create({data:{productId:product.id,name:'文件规格',price:100,deliveryMode:'instant_fixed',stockMode:'unlimited',fixedContentType:'file',fixedFileId:file.id}})
+  // Reproduce a candidate selected before the binding transaction committed.
+  const discovery=vi.spyOn(prisma.deliveryFile,'findMany').mockResolvedValueOnce([file])
+  try {
+    expect(await cleanupOrphanFiles()).toBe(0)
+    expect((await prisma.deliveryFile.findUniqueOrThrow({where:{id:file.id}})).status).toBe('active')
+    expect((await getDeliveryStorage() as DeliveryMemoryStorage).getBlob(file.key)).not.toBeNull()
+  } finally {discovery.mockRestore()}
+})
+
 describe('cleanupStaleTmpObjects', () => {
   it('removes leftover tmp/ objects past the grace period', async () => {
     const storage = (await getDeliveryStorage()) as DeliveryMemoryStorage

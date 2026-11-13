@@ -1,0 +1,22 @@
+{
+  "contractVersion": "governance-v1",
+  "synthetic": true,
+  "method": "GET",
+  "path": "/api/admin/audit/12",
+  "status": 200,
+  "schema": "GVAuditDetail",
+  "response": {
+    "id": 12,
+    "adminId": 1,
+    "action": "历史支付操作",
+    "actionCode": null,
+    "targetType": "PaymentEvent",
+    "targetId": null,
+    "createdAt": "2026-11-12T08:00:00.000Z",
+    "detailSchemaVersion": null,
+    "detailSafe": null,
+    "detailAvailability": "legacy_detail_unavailable",
+    "requestId": null,
+    "operationState": "unknown"
+  }
+}

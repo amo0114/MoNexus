@@ -11,13 +11,6 @@ import {
   setCached,
 } from '../lib/userStatusCache.js'
 
-function statusLookupCalls(spy: { mock: { calls: unknown[][] } }) {
-  return spy.mock.calls.filter(([args]) => {
-    const query = args as { select?: Record<string, unknown>; where?: Record<string, unknown> }
-    return query.where?.id && query.select?.status === true && Object.keys(query.select).length === 1
-  })
-}
-
 describe('User.status cache', () => {
   beforeEach(() => {
     _resetForTesting()
@@ -30,36 +23,33 @@ describe('User.status cache', () => {
     _clearAll()
   })
 
-  it('should reuse cached active status on repeated protected requests', async () => {
+  it('does not authorize a warm cached user after a structured ban written by another instance', async () => {
+    _setTtlSecForTesting(60)
     const { user, password } = await createTestUser('status-cache-hit@test.local', 'pass123')
     const { accessToken } = await loginAs(user.email, password)
-    const findUnique = vi.spyOn(prisma.user, 'findUnique')
-
-    await api.get('/api/auth/me').set(authHeader(accessToken)).expect(200)
-    expect(statusLookupCalls(findUnique)).toHaveLength(1)
-
-    await api.get('/api/auth/me').set(authHeader(accessToken)).expect(200)
-    expect(statusLookupCalls(findUnique)).toHaveLength(1)
+    setCached(user.id, '正常')
+    // Simulate another replica: no local invalidation and no status projection update.
+    await prisma.accountBan.create({
+      data: {
+        userId: user.id,
+        reasonCode: 'external_instance_ban',
+        startsAt: new Date(),
+      },
+    })
+    expect(getCached(user.id)).toBe('正常')
+    const result = await api.get('/api/auth/me').set(authHeader(accessToken)).expect(403)
+    expect(result.body.error.message).toBe('账号已被封禁')
   })
 
-  it('should miss the cache after TTL expiry', async () => {
+  it('expires legacy cache entries without extending their deadline on a read', () => {
     let now = 1_000
     _setNowForTesting(() => now)
     _setTtlSecForTesting(60)
-    const { user, password } = await createTestUser('status-cache-ttl@test.local', 'pass123')
-    const { accessToken } = await loginAs(user.email, password)
-    const findUnique = vi.spyOn(prisma.user, 'findUnique')
-
-    await api.get('/api/auth/me').set(authHeader(accessToken)).expect(200)
-    expect(statusLookupCalls(findUnique)).toHaveLength(1)
-
+    setCached(1, '正常')
     now += 30_000
-    await api.get('/api/auth/me').set(authHeader(accessToken)).expect(200)
-    expect(statusLookupCalls(findUnique)).toHaveLength(1)
-
+    expect(getCached(1)).toBe('正常')
     now += 31_000
-    await api.get('/api/auth/me').set(authHeader(accessToken)).expect(200)
-    expect(statusLookupCalls(findUnique)).toHaveLength(2)
+    expect(getCached(1)).toBeUndefined()
   })
 
   it('should invalidate cached active status immediately after ban', async () => {
@@ -80,17 +70,10 @@ describe('User.status cache', () => {
     expect(res.body.error.message).toBe('账号已被封禁')
   })
 
-  it('should disable cache reads and writes when TTL is zero', async () => {
+  it('disables legacy cache reads and writes when TTL is zero', () => {
     _setTtlSecForTesting(0)
-    const { user, password } = await createTestUser('status-cache-disabled@test.local', 'pass123')
-    const { accessToken } = await loginAs(user.email, password)
-    const findUnique = vi.spyOn(prisma.user, 'findUnique')
-
-    await api.get('/api/auth/me').set(authHeader(accessToken)).expect(200)
-    await api.get('/api/auth/me').set(authHeader(accessToken)).expect(200)
-
-    expect(statusLookupCalls(findUnique)).toHaveLength(2)
-    expect(getCached(user.id)).toBeUndefined()
+    setCached(1, '正常')
+    expect(getCached(1)).toBeUndefined()
   })
 
   it('should evict the least recently used status when the cache reaches its cap', () => {

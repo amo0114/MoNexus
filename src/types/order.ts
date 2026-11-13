@@ -13,6 +13,8 @@ export interface OrderStatusEvent {
 
 export interface UserOrderListItem {
   id: number
+  /** Business order number (governance-v1); null/absent during migration → show #id. */
+  orderNo?: string | null
   price: number
   status: string
   deliveryMode: string

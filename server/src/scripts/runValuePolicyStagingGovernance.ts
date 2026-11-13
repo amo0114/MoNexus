@@ -54,7 +54,7 @@ async function provisionActor(actor: StagingGovernanceInput['maker']) {
           data: {
             password: passwordHash,
             role: 'admin',
-            status: '正常',
+            status: 'active',
             emailVerified: existing.emailVerified ?? now,
             mfaEnabled: true,
             mfaSecretEncrypted,
@@ -67,7 +67,7 @@ async function provisionActor(actor: StagingGovernanceInput['maker']) {
             email: actor.email,
             password: passwordHash,
             role: 'admin',
-            status: '正常',
+            status: 'active',
             emailVerified: now,
             mfaEnabled: true,
             mfaSecretEncrypted,

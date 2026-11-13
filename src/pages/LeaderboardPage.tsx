@@ -158,7 +158,7 @@ export default function LeaderboardPage() {
       : `${gap.label}还差 ${fmtPoints(gap.points)} 分`
 
   return (
-    <div className="max-w-3xl lg:max-w-6xl mx-auto pt-2">
+    <div className="fade-in max-w-3xl lg:max-w-none mx-auto">
       <header>
         <div className="flex items-center gap-3 flex-wrap">
           <span className="w-10 h-10 shrink-0 inline-flex items-center justify-center rounded-full bg-[var(--color-primary-tint)] text-[var(--color-primary)]">

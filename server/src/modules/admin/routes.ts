@@ -1,3 +1,4 @@
+import { governanceAdminRoutes } from './governanceRoutes.js'
 import { createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema } from '../announcements/adminSchema.js'
 import * as announcementController from '../announcements/adminController.js'
 import { Router } from 'express'
@@ -63,6 +64,7 @@ import { trafficQuerySchema } from '../traffic/schema.js'
 const router = Router()
 
 router.use(authenticate, requireActiveUser, requireAdmin, requireAdminMfa)
+router.use(governanceAdminRoutes)
 
 // T-CAT-BE-004（D-CAT-12/13）：新 Offer-first 路径的 URL 参数。
 const adminOfferParamSchema = z.object({

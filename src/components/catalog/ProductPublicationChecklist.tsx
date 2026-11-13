@@ -59,7 +59,7 @@ export default function ProductPublicationChecklist({
 
       {ready ? (
         <div
-          className="flex items-center gap-2 rounded-lg border border-[var(--color-cta)]/25 bg-[var(--color-cta)]/8 px-3 py-2 text-sm text-[var(--color-text)]"
+          className="flex items-center gap-2 rounded-lg border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-cta)_8%,transparent)] px-3 py-2 text-sm text-[var(--color-text)]"
           data-testid="publication-ready"
         >
           <CheckCircle2 className="w-4 h-4 text-[var(--color-cta)]" />

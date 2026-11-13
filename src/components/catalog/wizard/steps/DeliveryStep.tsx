@@ -65,7 +65,7 @@ export default function DeliveryStep({
             <label key={mode.value}
               className={`flex items-center gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
                 deliveryMode === mode.value
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
+                  ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
                   : 'border-[var(--color-border)]'
               }`}>
               <input type="radio" name="wizardDeliveryMode" value={mode.value}
@@ -79,7 +79,7 @@ export default function DeliveryStep({
       </div>
 
       {deliveryMode === 'instant_inventory' && (
-        <div className="rounded-lg border border-[var(--color-primary)]/20 bg-[var(--color-primary)]/8 px-4 py-3 text-xs text-[var(--color-text-muted)]">
+        <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] px-4 py-3 text-xs text-[var(--color-text-muted)]">
           即时库存商品按「一个交付单元对应一位买家」管理。保存草稿后请在「可售量」步骤为每个规格导入账号、卡密、邀请码等独立交付内容。
         </div>
       )}

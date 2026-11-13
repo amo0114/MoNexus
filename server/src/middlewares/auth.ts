@@ -1,3 +1,5 @@
+import { isAccountBanned } from '../modules/accountGovernance/status.js'
+import { authorizeAdminRoute } from '../modules/adminAuthorization/routesPolicy.js'
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import { config } from '../config/index.js'
@@ -10,7 +12,6 @@ import {
 } from '../lib/httpError.js'
 import { prisma } from '../lib/prisma.js'
 import { getSystemConfigValue } from '../lib/systemConfig.js'
-import { getCached, setCached } from '../lib/userStatusCache.js'
 import { recordActiveDay } from '../lib/activeDay.js'
 
 export interface AuthPayload {
@@ -105,7 +106,12 @@ export async function getAdminMfaSessionState(payload: AuthPayload): Promise<Adm
   if (payload.role !== 'admin') return 'forbidden'
   if (typeof payload.sid !== 'string' || payload.sid.length === 0) return 'session_revoked'
   const mfaVersion = payload.mfaVersion
-  if (payload.mfaVerified !== true || typeof mfaVersion !== 'number' || !Number.isSafeInteger(mfaVersion) || mfaVersion < 0) {
+  if (
+    payload.mfaVerified !== true ||
+    typeof mfaVersion !== 'number' ||
+    !Number.isSafeInteger(mfaVersion) ||
+    mfaVersion < 0
+  ) {
     return 'mfa_required'
   }
 
@@ -114,7 +120,7 @@ export async function getAdminMfaSessionState(payload: AuthPayload): Promise<Adm
     select: { role: true, status: true, mfaEnabled: true, mfaVersion: true },
   })
   if (!user) return 'session_revoked'
-  if (user.status === '已封禁') return 'forbidden'
+  if (await isAccountBanned(payload.userId)) return 'forbidden'
   if (user.role !== 'admin') return 'forbidden'
   if (!user.mfaEnabled || user.mfaVersion !== mfaVersion) return 'mfa_required'
 
@@ -139,6 +145,7 @@ export async function requireAdminMfa(req: Request, _res: Response, next: NextFu
   try {
     const state = await getAdminMfaSessionState(req.user)
     if (state === 'allowed') {
+      await authorizeAdminRoute(req)
       next()
       return
     }
@@ -176,31 +183,36 @@ export async function requireActiveUser(req: Request, _res: Response, next: Next
   }
 
   try {
-    const userId = req.user.userId
-    // Admin routes are low volume and privilege-sensitive; always read
-    // their current status before authorization.
-    const shouldUseCache = req.user.role !== 'admin'
-    let status = shouldUseCache ? getCached(userId) : undefined
-
-    if (!status) {
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { status: true },
+    // The legacy process-local status cache cannot observe bans or session
+    // revocation on another replica. Authorization always reads current facts.
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { id: true },
+    })
+    if (!user) {
+      next(unauthenticated('未登录'))
+      return
+    }
+    if (await isAccountBanned(user.id)) {
+      next(forbidden('账号已被封禁'))
+      return
+    }
+    if (req.user.sid) {
+      const live = await prisma.refreshToken.findFirst({
+        where: {
+          userId: user.id,
+          sessionId: req.user.sid,
+          revoked: false,
+          expiresAt: { gt: new Date() },
+        },
+        select: { id: true },
       })
-
-      if (!user) {
-        next(unauthenticated('未登录'))
+      if (!live) {
+        next(sessionRevoked())
         return
       }
-
-      status = user.status
-      if (shouldUseCache) {
-        setCached(userId, status)
-      }
-    }
-
-    if (status === '已封禁') {
-      next(forbidden('账号已被封禁'))
+    } else if (await prisma.accountBan.count({ where: { userId: user.id } })) {
+      next(sessionRevoked())
       return
     }
 
@@ -239,7 +251,7 @@ export async function requireVerifiedEmail(req: Request, _res: Response, next: N
     }
 
     // Keep the established active-user/ban semantics ahead of the value gate.
-    if (user.status === '已封禁') {
+    if (await isAccountBanned(req.user.userId)) {
       next(forbidden('账号已被封禁'))
       return
     }

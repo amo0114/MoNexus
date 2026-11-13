@@ -54,7 +54,7 @@ export default function PortableRestoreSetupPage() {
 
         {available === null && <p className="text-sm text-[var(--color-text-muted)] text-center">正在检查恢复引导状态…</p>}
         {available === false && (
-          <div className="rounded-lg border border-[var(--color-danger)]/30 bg-[var(--color-danger)]/10 text-[var(--color-danger)] text-sm p-3">
+          <div className="rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_30%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] text-sm p-3">
             恢复引导不可用：实例已有用户，或未在环境变量中配置恢复引导令牌。
           </div>
         )}

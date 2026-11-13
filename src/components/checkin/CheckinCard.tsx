@@ -34,7 +34,7 @@ function CheckinButton({ state }: { state: CheckinState }) {
       onClick={() => void state.checkin()}
       disabled={!state.status || done || state.busy === 'checkin'}
       data-testid="checkin-button"
-      className={`max-md:min-h-10 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm transition-all ${
+      className={`max-md:min-h-10 inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl font-semibold text-sm transition ${
         done
           ? 'bg-[var(--color-background)] text-[var(--color-text-muted)] border border-[var(--color-border)] cursor-not-allowed'
           : 'bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)] active:scale-95 cursor-pointer disabled:opacity-60'
@@ -131,7 +131,7 @@ function dayStateResolver(status: CheckinStatus) {
 const DAY_TONE: Record<DayState, string> = {
   checked: 'bg-[var(--color-primary-tint-strong)] text-[var(--color-primary)] font-semibold',
   makeup: 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] font-semibold',
-  eligible: 'border border-dashed border-[var(--color-primary-border-subtle)] text-[var(--color-text)] hover:bg-[var(--color-primary-tint)] active:scale-95 cursor-pointer transition-all',
+  eligible: 'border border-dashed border-[var(--color-primary-border-subtle)] text-[var(--color-text)] hover:bg-[var(--color-primary-tint)] active:scale-95 cursor-pointer transition',
   today: 'text-[var(--color-text)] font-semibold',
   missed: 'text-[var(--color-text-muted)]',
   future: 'text-[var(--color-text-muted)] opacity-50',

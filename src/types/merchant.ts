@@ -170,6 +170,11 @@ export interface AuthUser {
     status: MerchantStatus
     commissionRate: string
   }
+  /** governance-v1 increment; absent on older backends. */
+  accountStatus?: import('./governance').AccountStatus
+  merchantStatus?: import('./governance').GVMerchantContext['merchantStatus']
+  merchantLifecycleVersion?: import('./governance').GVMerchantContext['merchantLifecycleVersion']
+  merchantCapabilities?: import('./governance').GVMerchantContext['merchantCapabilities']
 }
 
 export interface MerchantProduct {
@@ -220,6 +225,8 @@ export interface PurchaseFormField {
 
 export interface MerchantOrder {
   id: number
+  /** governance-v1 business order number; absent on older backends. */
+  orderNo?: string | null
   userId: number
   productId: number
   merchantId: number

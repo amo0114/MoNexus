@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminAiSettingsPanel from './AdminAiSettingsPanel'
 import * as api from '../../api/adminAi'
@@ -160,5 +161,18 @@ describe('merchant operations agent settings', () => {
     expect(await screen.findByTestId('admin-ai-agent-dependency')).toHaveTextContent('当前未开启')
     expect(screen.getByTestId('admin-ai-agent-dependency')).toHaveTextContent('重启后端')
     expect(screen.getByLabelText('商家经营助手')).toBeDisabled()
+  })
+  it('keeps user input when a stale StrictMode load resolves after the form became editable', async () => {
+    const pending: Array<(v: api.AdminAiSettings) => void> = []
+    vi.mocked(api.getAdminAiSettings).mockImplementation(() => new Promise(resolve => { pending.push(resolve) }))
+    render(<StrictMode><AdminAiSettingsPanel /></StrictMode>)
+    await waitFor(() => expect(pending).toHaveLength(2))
+
+    await act(async () => { pending[1](initial) })
+    const input = await screen.findByLabelText('API 地址（Base URL）')
+    fireEvent.change(input, { target: { value: 'https://gateway.example.invalid/v1' } })
+    await act(async () => { pending[0]({ ...initial, baseUrl: 'https://stale.example.invalid/v1' }) })
+
+    expect(screen.getByLabelText('API 地址（Base URL）')).toHaveValue('https://gateway.example.invalid/v1')
   })
 })

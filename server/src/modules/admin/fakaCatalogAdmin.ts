@@ -1,3 +1,4 @@
+import { setCommercialActor } from '../catalog/offerRevisions.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { lockProductRow } from '../catalog/productLock.js'
@@ -438,6 +439,7 @@ export async function importAdminFakaPlan(
 
   try {
     const product = await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/fakaCatalogAdmin')
       // Confirm transaction repeats all mutable DB checks; no remote I/O occurs here.
       const transactional = await analyzeAdminFakaImport(source, input, tx)
       if (!transactional.canConfirm || !transactional.cover) {
@@ -662,6 +664,7 @@ export async function addAdminFakaOffers(
   }
 
   await prisma.$transaction(async tx => {
+    await setCommercialActor(tx, { adminUserId }, 'admin/fakaCatalogAdmin')
     // SPEC-CATALOG-VIS-001 §4.5（P1.5-A 复审）：给**已存在**商品追加套餐
     // 属于展示类写入（新增 active 套餐），必须持有商品行锁并让旧批准失效。
     await lockProductRow(tx, productId)

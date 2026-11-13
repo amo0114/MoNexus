@@ -21,6 +21,8 @@ const RichTextEditor = lazy(() => import('../../../components/catalog/RichTextEd
 
 interface Props {
   video?: ProductVideoUploaderProps
+  /** The editor lacks upload permission (admin files.manage). */
+  imageUploadDisabled?: boolean
   images: string[]
   imageKeys: Record<string, string>
   onImagesChange: Dispatch<SetStateAction<string[]>>
@@ -83,6 +85,7 @@ export default function ProductInformationSection({
   templateLocked,
   fieldMode,
   onInsertDescriptionImage,
+  imageUploadDisabled = false,
 }: Props) {
   return (
     <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-5" data-testid="product-edit-info">
@@ -93,7 +96,7 @@ export default function ProductInformationSection({
         imageKeys={imageKeys}
         onChange={onImagesChange}
         onImageKeysChange={onImageKeysChange}
-        disabled={disabled}
+        disabled={disabled || imageUploadDisabled}
       />
       {unresolvedImages && (
         <p className="text-xs text-[var(--color-text-muted)]" data-testid="product-edit-images-unresolved">
@@ -192,7 +195,7 @@ export default function ProductInformationSection({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
             visibility === PRODUCT_VISIBILITY.PUBLIC
-              ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
+              ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
               : 'border-[var(--color-border)]'
           }`}>
             <input
@@ -209,7 +212,7 @@ export default function ProductInformationSection({
           </label>
           <label className={`flex items-start gap-2 p-3 rounded-lg border cursor-pointer text-sm ${
             visibility === PRODUCT_VISIBILITY.MEMBERS_ONLY
-              ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/8'
+              ? 'border-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)]'
               : 'border-[var(--color-border)]'
           }`}>
             <input

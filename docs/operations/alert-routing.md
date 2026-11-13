@@ -15,6 +15,8 @@ Review date: 2026-08-18. Scope: alert routing from Sentry and ValuePolicy alert 
 | `payment-p0` | `docs/operations/payment-alerts.md` | P0 urgent | Manual incident-owner escalation (receivers not deployed by this PR) | Backend on-call | Backend on-call | Not deployed |
 | `payment-p1` | `docs/operations/payment-alerts.md` | P1 urgent | Manual incident-owner escalation (receivers not deployed by this PR) | Backend on-call | Backend on-call | Not deployed |
 
+Governance rules added on 2026-11-12 use `governance-p1` for overdue refund reviews, failed/delayed exports and wallet source differences/stale scans. Backend on-call owns the first response. Receiver delivery is not activated by this PR; configure and rehearse it alongside `orders-p1` and `ai-p1`. Until then, inspect the governance queues and metrics manually. See [governance deployment runbook](backend-governance-v1.md).
+
 Orders/AI rules added on 2026-11-09 use `orders-p1` and `ai-p1` (see [background alert runbook](background-alerts.md)). These labels still need receiver routing and an operator delivery drill; repository changes do not activate an external receiver. Until confirmed, inspect the admin fulfillment review queue, Faka revocation queue and redacted AI logs manually.
 
 ## Severity Policy

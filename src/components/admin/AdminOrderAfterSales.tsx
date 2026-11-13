@@ -9,6 +9,7 @@ import {
 } from '../../api/admin'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
+import { useTabActions } from '../../auth/adminAccess'
 
 const ORIGIN_LABELS: Record<string, string> = {
   recharge: '充值积分',
@@ -29,6 +30,7 @@ function Composition({ value }: { value: AfterSalesSourceComposition | null }) {
  * merchant shortfall tracked separately. No partial amounts in this batch.
  */
 export default function AdminOrderAfterSales({ orderId, onSuccess }: { orderId: number; onSuccess?: () => void }) {
+  const can = useTabActions('orders')
   const showToast = useAppStore((s) => s.showToast)
   const [cases, setCases] = useState<AdminAfterSalesCase[]>([])
   const [reason, setReason] = useState('')
@@ -94,16 +96,16 @@ export default function AdminOrderAfterSales({ orderId, onSuccess }: { orderId: 
           <label className="block">处理备注
             <input className="input mt-1" value={note} maxLength={500} disabled={busy} onChange={(e) => setNote(e.target.value)} />
           </label>
-          {open.allowedActions.includes('execute') && (
+          {open.allowedActions.includes('execute') && can('executeAfterSales') && (
             <label className="flex gap-2"><input type="checkbox" checked={confirmed} disabled={busy}
               onChange={(e) => setConfirmed(e.target.checked)} />我已核实售后依据，确认按原来源全额退款</label>
           )}
           <div className="flex gap-2">
-            {open.allowedActions.includes('reject') && (
+            {open.allowedActions.includes('reject') && can('resolve') && (
               <button type="button" className="btn-secondary btn-sm text-xs" disabled={busy || !note.trim()}
                 onClick={() => void run(() => rejectAdminAfterSales(open.id, note.trim()), '已驳回售后')}>驳回</button>
             )}
-            {open.allowedActions.includes('execute') && (
+            {open.allowedActions.includes('execute') && can('executeAfterSales') && (
               <button type="button" className="btn-primary btn-sm text-xs" disabled={busy || !confirmed}
                 onClick={() => void run(() => executeAdminAfterSales(open.id, note.trim() || undefined), '售后退款已执行')}>执行全额退款</button>
             )}

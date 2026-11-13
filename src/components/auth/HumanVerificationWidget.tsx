@@ -248,7 +248,7 @@ const AltchaHumanVerification = forwardRef<HumanVerificationHandle, HumanVerific
           </p>
         )}
         {phase === 'unavailable' && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-danger)]/25 bg-[var(--color-danger)]/10 px-3 py-2 text-left">
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 text-left">
             <p className="text-xs text-[var(--color-text-muted)]">安全验证超时或暂不可用，请重试。</p>
             <button
               type="button"

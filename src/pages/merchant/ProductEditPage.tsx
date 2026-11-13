@@ -49,6 +49,7 @@ import { useAgentSessionKey } from '../../components/merchant/agent/useMerchantA
 import { useMerchantAgentStore } from '../../stores/merchantAgent'
 import { parseEditorFocus, parsePositiveId } from '../../components/merchant/workbench/navigation'
 import { createLatestRequestGuard } from '../../utils/latestRequest'
+import { useTabActions } from '../../auth/adminAccess'
 
 const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
@@ -62,6 +63,8 @@ interface Props {
 }
 
 export default function ProductEditPage({ actor, adapter = catalogApi }: Props) {
+  const adminCan = useTabActions('products')
+  const adminLacks = (action: 'manageVideos' | 'uploadImage') => actor === 'admin' && !adminCan(action)
   const { id: idParam } = useParams()
   const productId = Number(idParam)
   const validId = Number.isInteger(productId) && productId > 0
@@ -450,7 +453,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
   if (loading) {
     return (
-      <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
+      <div className="pb-16 fade-in" data-testid="product-edit-page">
         <div className="flex items-center gap-2 text-sm text-[var(--color-text-muted)] py-16 justify-center">
           <Loader2 className="w-4 h-4 animate-spin" /> 正在加载编辑器…
         </div>
@@ -460,7 +463,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
   if (notFound) {
     return (
-      <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
+      <div className="pb-16 fade-in" data-testid="product-edit-page">
         <EmptyState
           icon={Package}
           title="商品不存在"
@@ -477,7 +480,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
 
   if (loadError) {
     return (
-      <div className="max-w-[1120px] mx-auto pb-16 fade-in" data-testid="product-edit-page">
+      <div className="pb-16 fade-in" data-testid="product-edit-page">
         <EmptyState
           icon={Package}
           title="加载失败"
@@ -495,7 +498,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
   const busy = saving || videoBusy || bindingOfferId != null || !canEdit
 
   return (
-    <div className="max-w-[1180px] mx-auto px-4 pb-24 sm:pb-16 fade-in" data-testid="product-edit-page">
+    <div className="pb-24 sm:pb-16 fade-in" data-testid="product-edit-page">
       <button
         type="button"
         onClick={handleBack}
@@ -576,7 +579,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8 lg:items-start">
         <div className={`space-y-6 ${activeViewTab === 'preview' ? 'hidden lg:block' : 'block'}`}>
           <ProductInformationSection
-            video={{ value: form.promoVideo, onChange: promoVideo => setForm(prev => ({ ...prev, promoVideo })), onBusyChange: setVideoBusy, actor, merchantId: videoMerchantId, disabled: saving || !canEdit }}
+            video={adminLacks('manageVideos') ? undefined : { value: form.promoVideo, onChange: promoVideo => setForm(prev => ({ ...prev, promoVideo })), onBusyChange: setVideoBusy, actor, merchantId: videoMerchantId, disabled: saving || !canEdit }}
             images={form.images.map(image => image.url)}
             imageKeys={imageKeys}
             onImagesChange={(next) => {
@@ -588,6 +591,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             onImageKeysChange={setImageKeys}
             unresolvedImages={unresolvedImages}
             disabled={busy}
+            imageUploadDisabled={adminLacks('uploadImage')}
             name={form.name}
             onNameChange={(name) => setForm(prev => ({ ...prev, name }))}
             description={form.description}
@@ -680,7 +684,11 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             data-testid="product-edit-description-image-input"
           />
 
-          <div className="flex justify-end scroll-mb-24">
+          {/* The form is long; keep the save action and its state in reach. */}
+          <div className="sticky bottom-3 max-md:bottom-[calc(var(--tabbar-h)+var(--safe-bottom)+0.5rem)] z-20 flex items-center justify-end gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-glass-bg)] px-4 py-3 shadow-lg backdrop-blur-md scroll-mb-24">
+            <span className="mr-auto text-xs text-[var(--color-text-muted)]" aria-live="polite">
+              {saving ? '正在保存…' : dirty ? '有未保存的修改' : '所有修改已保存'}
+            </span>
             <button
               type="button"
               className="btn-primary px-6 py-2.5 disabled:opacity-40 scroll-mb-24"
@@ -734,7 +742,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
           />
         )}
 
-        <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-20 space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
+        <aside className={`mt-6 lg:mt-0 lg:sticky lg:top-[calc(var(--navbar-current-h)+1rem)] space-y-6 ${activeViewTab === 'form' ? 'hidden lg:block' : 'block'}`}>
           <LivePreviewSandbox product={previewData} />
           <ProductPublicationChecklist issues={checklistIssues} ready={checklistIssues.length === 0} />
         </aside>

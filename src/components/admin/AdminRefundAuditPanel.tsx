@@ -14,6 +14,8 @@ import { TableSkeleton } from '../ui/Skeleton'
 import { formatCurrencyAmount, formatPoints } from '../../pages/recharge/money'
 import { providerLabel } from '../../pages/recharge/status'
 import { getAdminRechargeStatusConfig } from '../../utils/adminRechargeDisplay'
+import { useAdminCapabilities } from '../../stores/adminCapabilities'
+import RefundReviewSheet from './governance/RefundReviewSheet'
 
 const PAGE_SIZE = 20
 
@@ -178,6 +180,9 @@ export interface AdminRefundAuditPanelProps {
 
 export default function AdminRefundAuditPanel({ active = true }: AdminRefundAuditPanelProps) {
   const showToast = useAppStore((s) => s.showToast)
+  const caps = useAdminCapabilities()
+  const reviewEnabled = caps.allows('refundReview', 'payments.read')
+  const [reviewId, setReviewId] = useState<string | null>(null)
   const [items, setItems] = useState<AdminRechargeRefundItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -433,6 +438,7 @@ export default function AdminRefundAuditPanel({ active = true }: AdminRefundAudi
                 <th>冲正状态</th>
                 <th>失败原因 / 备注</th>
                 <th>申请时间 / 申请人</th>
+                {reviewEnabled && <th className="text-right">操作</th>}
               </tr>
             </thead>
             <tbody>
@@ -512,6 +518,18 @@ export default function AdminRefundAuditPanel({ active = true }: AdminRefundAudi
                       申请人: #{item.requesterUserId ?? item.createdByUserId}
                     </div>
                   </td>
+                  {reviewEnabled && (
+                    <td className="text-right" data-label="操作">
+                      <button
+                        type="button"
+                        className="btn-tonal"
+                        data-testid={`admin-refund-review-${item.refundId}`}
+                        onClick={() => setReviewId(item.refundId)}
+                      >
+                        {item.refundStatus === 'manual_review' ? '审核' : '详情'}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -527,6 +545,15 @@ export default function AdminRefundAuditPanel({ active = true }: AdminRefundAudi
           pageSize={PAGE_SIZE}
           onPageChange={(nextPage) => fetchRefunds({ page: nextPage })}
           testId="admin-pagination"
+        />
+      )}
+
+      {reviewEnabled && (
+        <RefundReviewSheet
+          refundId={reviewId}
+          canReview={caps.can('payments.refunds.review')}
+          onOpenChange={(open) => { if (!open) setReviewId(null) }}
+          onDecided={() => void fetchRefunds()}
         />
       )}
     </div>

@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../api/error'
 import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
 import { useAppStore } from '../stores/appStore'
 import { showCompletionActivity } from '../lib/completionFeedback'
+import MerchantApplicationStatus from '../components/merchant/MerchantApplicationStatus'
 
 export default function MerchantApplyPage() {
   const authEpoch = useAuthStore((s) => s.authEpoch)
@@ -77,8 +78,8 @@ function MerchantApplyContent() {
 
   if (isActive) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="max-w-xl mx-auto mt-10 text-center">
-        <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">您已经是商家了</h2>
+      <div ref={statusRef} tabIndex={-1} className="max-w-3xl mx-auto text-center">
+        <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">你已经是商家了</h2>
         <button
           onClick={() => navigate('/merchant')}
           className="btn-primary"
@@ -89,11 +90,16 @@ function MerchantApplyContent() {
     )
   }
 
+  // governance-v1 backends send merchantCapabilities; they own pending/rejected/suspended flows.
+  if (user?.merchant && !isActive && Array.isArray(user.merchantCapabilities)) {
+    return <MerchantApplicationStatus onChanged={refreshStatus} />
+  }
+
   if (isPending) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="card max-w-xl mx-auto mt-10 text-center">
+      <div ref={statusRef} tabIndex={-1} className="card max-w-3xl mx-auto text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">商家申请审核中</h2>
-        <p className="text-[var(--color-text-muted)]">您的入驻申请已提交，请耐心等待平台审核。</p>
+        <p className="text-[var(--color-text-muted)]">你的入驻申请已提交，请耐心等待平台审核。</p>
         {statusRefresh}
       </div>
     )
@@ -101,9 +107,9 @@ function MerchantApplyContent() {
 
   if (isSuspended) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="card max-w-xl mx-auto mt-10 text-center">
+      <div ref={statusRef} tabIndex={-1} className="card max-w-3xl mx-auto text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">账号已停用</h2>
-        <p className="text-[var(--color-text-muted)]">您的商家账号已被停用，请联系平台管理员。</p>
+        <p className="text-[var(--color-text-muted)]">你的商家账号已被停用，请联系平台管理员。</p>
         {statusRefresh}
       </div>
     )
@@ -112,7 +118,7 @@ function MerchantApplyContent() {
   // The register API rejects every existing application, including rejected ones.
   if (isRejected) {
     return (
-      <div ref={statusRef} tabIndex={-1} className="card max-w-xl mx-auto mt-10 text-center">
+      <div ref={statusRef} tabIndex={-1} className="card max-w-3xl mx-auto text-center">
         <h2 className="font-heading text-2xl font-bold mb-4 text-[var(--color-text)]">商家申请未通过</h2>
         <p className="text-[var(--color-text-muted)]">如需进一步处理，请联系平台管理员。</p>
         {statusRefresh}
@@ -169,12 +175,12 @@ function MerchantApplyContent() {
   }
 
   return (
-    <div ref={statusRef} tabIndex={-1} className="max-w-xl mx-auto mt-10">
+    <div ref={statusRef} tabIndex={-1} className="max-w-3xl mx-auto">
       <h2 className="font-heading text-2xl font-bold mb-6 text-[var(--color-text)]">商家入驻申请</h2>
       {(viewStatus || refreshError || error) && statusRefresh}
       <form onSubmit={handleSubmit} className="card flex flex-col gap-5">
         {error && (
-          <div role="alert" className="text-[var(--color-danger)] text-sm p-3 bg-[var(--color-danger)]/10 rounded-lg border border-[var(--color-danger)]/20">
+          <div role="alert" className="text-[var(--color-danger)] text-sm p-3 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] rounded-lg border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]">
             {error}
           </div>
         )}
@@ -202,7 +208,7 @@ function MerchantApplyContent() {
             className="input min-h-[100px] resize-y"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="介绍一下您的商店"
+            placeholder="介绍一下你的商店"
             aria-describedby="merchant-apply-description-hint"
           />
           <p id="merchant-apply-description-hint" className="mt-1 text-xs text-[var(--color-text-muted)]">将展示在公开店铺页，最多展示前 500 字</p>
@@ -216,7 +222,7 @@ function MerchantApplyContent() {
             className="input"
             value={contactEmail}
             onChange={(e) => setContactEmail(e.target.value)}
-            placeholder="方便平台联系您的邮箱"
+            placeholder="方便平台联系你的邮箱"
           />
         </div>
 
@@ -228,7 +234,7 @@ function MerchantApplyContent() {
             className="input"
             value={contactPhone}
             onChange={(e) => setContactPhone(e.target.value)}
-            placeholder="方便平台联系您的电话"
+            placeholder="方便平台联系你的电话"
           />
         </div>
 

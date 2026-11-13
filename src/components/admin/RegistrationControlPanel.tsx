@@ -245,7 +245,7 @@ export default function RegistrationControlPanel({
                     </div>
                   </details>
                   {error && (
-                    <div className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-2 py-1 rounded border border-[var(--color-danger)]/20 mt-1 max-w-sm">
+                    <div className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-2 py-1 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] mt-1 max-w-sm">
                       {error}
                     </div>
                   )}
@@ -294,7 +294,7 @@ export default function RegistrationControlPanel({
                       disabled={isSaving || savingKey !== null}
                       onClick={() => void onSave(key, rawVal)}
                       data-testid={`admin-config-save-${key}`}
-                      className="text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-primary)]/25 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                      className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                     >
                       {isSaving ? '保存中...' : '保存'}
                     </button>

@@ -11,6 +11,9 @@ import ScrollToTop from './components/ScrollToTop'
 import StorePage from './pages/StorePage'
 import LoginPage from './pages/LoginPage'
 import RoleGuard from './components/RoleGuard'
+import AdminAccessGate from './components/admin/AdminAccessGate'
+import RouteFallback from './components/ui/RouteFallback'
+import MerchantShell from './components/merchant/MerchantShell'
 
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
@@ -72,7 +75,11 @@ function SessionLayout({
   }, [isLoggedIn, authEpoch, userId, setUser, logout])
 
   if (requireAuth && !isLoggedIn) return <Navigate to="/login" />
-  return <Layout>{children}</Layout>
+  return (
+    <Layout>
+      <Suspense fallback={<RouteFallback />}>{children}</Suspense>
+    </Layout>
+  )
 }
 
 export default function App() {
@@ -92,7 +99,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Suspense fallback={<div role="status" className="p-8 text-center text-[var(--color-text-muted)]">正在加载页面…</div>}>
+      <Suspense fallback={<div role="status" aria-label="正在加载页面" className="min-h-screen" />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -152,7 +159,9 @@ export default function App() {
                       path="/admin/products/new"
                       element={
                         <RoleGuard allowedRoles={['admin']}>
-                          <ProductCreatePage />
+                          <AdminAccessGate tab="products" action="edit">
+                            <ProductCreatePage />
+                          </AdminAccessGate>
                         </RoleGuard>
                       }
                     />
@@ -160,7 +169,9 @@ export default function App() {
                       path="/admin/products/:id/edit"
                       element={
                         <RoleGuard allowedRoles={['admin']}>
-                          <ProductEditPage actor="admin" />
+                          <AdminAccessGate tab="products" action="edit">
+                            <ProductEditPage actor="admin" />
+                          </AdminAccessGate>
                         </RoleGuard>
                       }
                     />
@@ -168,7 +179,7 @@ export default function App() {
                     <Route
                       path="/merchant/products/new"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="catalog.write">
                           <ProductCreateWizard />
                         </RoleGuard>
                       }
@@ -176,7 +187,7 @@ export default function App() {
                     <Route
                       path="/merchant/products/:id/edit"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="catalog.write">
                           <ProductEditPage actor="merchant" />
                         </RoleGuard>
                       }
@@ -184,31 +195,37 @@ export default function App() {
                     <Route
                       path="/merchant/dashboard"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <Dashboard />
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="history.read">
+                          <MerchantShell active="operations">
+                            <Dashboard />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
                     <Route
                       path="/merchant/workbench"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <WorkbenchPage />
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="history.read">
+                          <MerchantShell active="dashboard">
+                            <WorkbenchPage />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
                     <Route
                       path="/merchant/promotions"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
-                          <MerchantPromotionPage />
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="marketing.write">
+                          <MerchantShell active="promotions">
+                            <MerchantPromotionPage />
+                          </MerchantShell>
                         </RoleGuard>
                       }
                     />
                     <Route
                       path="/merchant/*"
                       element={
-                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant>
+                        <RoleGuard allowedRoles={['merchant']} requireActiveMerchant merchantCapability="history.read">
                           <MerchantDashboardPage />
                         </RoleGuard>
                       }

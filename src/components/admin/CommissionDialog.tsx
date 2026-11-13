@@ -93,14 +93,14 @@ export default function CommissionDialog({ merchant, onClose, onSuccess }: Props
           </div>
           {rate !== null && (
             <div
-              className="text-xs text-[var(--color-text)] bg-[var(--color-info)]/8 border border-[var(--color-info)]/20 rounded px-3 py-2"
+              className="text-xs text-[var(--color-text)] bg-[color-mix(in_srgb,var(--color-info)_8%,transparent)] border border-[color-mix(in_srgb,var(--color-info)_20%,transparent)] rounded px-3 py-2"
               data-testid="commission-confirm-text"
             >
               确认后，平台将按订单金额的 <span className="font-bold">{Number(percent)}%</span> 抽成。
             </div>
           )}
           {error && (
-            <div className="text-xs text-[var(--color-danger)] bg-[var(--color-danger)]/10 px-3 py-2 rounded border border-[var(--color-danger)]/20">
+            <div className="text-xs text-[var(--color-danger)] bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] px-3 py-2 rounded border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]">
               {error}
             </div>
           )}

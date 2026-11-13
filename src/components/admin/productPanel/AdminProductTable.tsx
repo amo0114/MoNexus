@@ -55,6 +55,12 @@ export interface AdminProductTableProps {
   onOpenFakaSync: (product: AdminProductListItem) => void
   onOpenSourceDescription: (product: AdminProductListItem) => void
   onOpenGuestReview: (product: AdminProductListItem) => void
+  /** governance-v1 batch & revision history; omitted when not permitted. */
+  onOpenTrace?: (product: AdminProductListItem) => void
+  /** catalog.write-backed actions (publish, edit, archive, offers…); defaults to allowed. */
+  canEdit?: boolean
+  /** inventory.manage-backed actions (import, capacity); defaults to allowed. */
+  canInventory?: boolean
   /** 行内状态变更（恢复）成功后，请求父层按当前生效筛选安全刷新 */
   onMutationSettled: () => void
   /** 空态「清空筛选条件」：等价原 handleReset */
@@ -77,6 +83,9 @@ export default function AdminProductTable({
   onOpenFakaSync,
   onOpenSourceDescription,
   onOpenGuestReview,
+  onOpenTrace,
+  canEdit = true,
+  canInventory = true,
   onMutationSettled,
   onResetFilters,
 }: AdminProductTableProps) {
@@ -184,31 +193,31 @@ export default function AdminProductTable({
                   </td>
                   <td className="text-right" data-label="操作">
                     <div className="flex flex-wrap gap-2 justify-end">
-                      {isPlatformOwned && !p.archivedAt && p.status === 'draft' && (
+                      {canEdit && isPlatformOwned && !p.archivedAt && p.status === 'draft' && (
                         <button
                           type="button"
                           data-testid={`admin-product-publish-${p.id}`}
                           disabled={releaseGate.blocked}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                           onClick={() => onOpenPublication(p, 'product-list')}
                         >
                           <Upload className="w-3.5 h-3.5" />
                           发布
                         </button>
                       )}
-                      {isPlatformOwned && !p.archivedAt && p.status === 'inactive' && (
+                      {canEdit && isPlatformOwned && !p.archivedAt && p.status === 'inactive' && (
                         <button
                           type="button"
                           data-testid={`admin-product-relist-${p.id}`}
                           disabled={releaseGate.blocked}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
                           onClick={() => onOpenPublication(p, 'product-list')}
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           重新上架
                         </button>
                       )}
-                      {isPlatformOwned && !p.archivedAt && p.status === 'active' && (
+                      {canEdit && isPlatformOwned && !p.archivedAt && p.status === 'active' && (
                         <button
                           type="button"
                           data-testid={`admin-product-unpublish-${p.id}`}
@@ -222,11 +231,11 @@ export default function AdminProductTable({
                           {releaseGate.pendingIds.has(p.id) ? '下架中…' : '下架'}
                         </button>
                       )}
-                      {p.guestReview?.state === 'pending' && !p.archivedAt && (
+                      {canEdit && p.guestReview?.state === 'pending' && !p.archivedAt && (
                         <button
                           type="button"
                           data-testid={`admin-guest-review-open-${p.id}`}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer"
                           onClick={() => onOpenGuestReview(p)}
                         >
                           审核公开
@@ -240,7 +249,7 @@ export default function AdminProductTable({
                           由商家管理
                         </span>
                       )}
-                      {canImport ? (
+                      {canImport && canInventory ? (
                         <button
                           onClick={() => {
                             onOpenInventoryImport({
@@ -255,12 +264,12 @@ export default function AdminProductTable({
                             })
                           }}
                           data-testid={`admin-import-inventory-${p.id}`}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer"
                         >
                           导入交付库存
                         </button>
                       ) : null}
-                      {canAdjustCapacity ? (
+                      {canAdjustCapacity && canInventory ? (
                         <button
                           type="button"
                           onClick={() => onOpenCapacity(p)}
@@ -269,12 +278,12 @@ export default function AdminProductTable({
                         >
                           调整名额
                         </button>
-                      ) : !canImport && !isFaka ? (
+                      ) : canInventory && !canImport && !isFaka ? (
                         <span className="text-xs text-[var(--color-text-muted)]">
                           {p.merchantId ? '由商家调整名额' : '名额由商品配置管理'}
                         </span>
                       ) : null}
-                      {isPlatformOwned && (
+                      {canEdit && isPlatformOwned && (
                         <a
                           href={`/admin/products/${p.id}/edit`}
                           data-testid={`admin-edit-product-${p.id}`}
@@ -284,11 +293,11 @@ export default function AdminProductTable({
                           编辑
                         </a>
                       )}
-                      {p.archivedAt ? (
+                      {!canEdit ? null : p.archivedAt ? (
                         <button
                           type="button"
                           data-testid={`admin-restore-product-${p.id}`}
-                          className="text-[var(--color-cta)] hover:bg-[var(--color-cta)]/10 font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[var(--color-cta)]/25 cursor-pointer"
+                          className="text-[var(--color-cta)] hover:bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-cta)_25%,transparent)] cursor-pointer"
                           onClick={async () => {
                             try {
                               await restoreAdminProduct(p.id)
@@ -314,13 +323,13 @@ export default function AdminProductTable({
                       )}
                       {(() => {
                         const menuItems: AdminActionMenuItem[] = []
-                        menuItems.push({
+                        if (canEdit) menuItems.push({
                           id: `assurance-${p.id}`,
                           label: '保障管理',
                           onClick: () => onOpenAssurance(p.id),
                           testId: `admin-assurance-${p.id}`,
                         })
-                        if (isPlatformOwned) {
+                        if (canEdit && isPlatformOwned) {
                           menuItems.push({
                             id: `offers-${p.id}`,
                             label: '规格管理',
@@ -328,13 +337,15 @@ export default function AdminProductTable({
                             testId: `admin-manage-offers-${p.id}`,
                           })
                         }
-                        if (isFaka) {
+                        if (isFaka && canInventory) {
                           menuItems.push({
                             id: `capacity-${p.id}`,
                             label: '调整 Xboard 名额',
                             onClick: () => onOpenFakaCapacity(p),
                             testId: `admin-faka-capacity-${p.id}`,
                           })
+                        }
+                        if (isFaka && canEdit) {
                           menuItems.push({
                             id: `sync-${p.id}`,
                             label: '同步 Xboard',
@@ -342,7 +353,7 @@ export default function AdminProductTable({
                             testId: `admin-faka-sync-${p.id}`,
                           })
                         }
-                        if (p.guestReview) {
+                        if (canEdit && p.guestReview) {
                           menuItems.push({
                             id: `guest-review-${p.id}`,
                             label: '游客公开审核',
@@ -350,7 +361,15 @@ export default function AdminProductTable({
                             testId: `admin-guest-review-menu-${p.id}`,
                           })
                         }
-                        if (shouldShowSourceDescriptionAction(p)) {
+                        if (onOpenTrace) {
+                          menuItems.push({
+                            id: `trace-${p.id}`,
+                            label: '库存与修订追溯',
+                            onClick: () => onOpenTrace(p),
+                            testId: `admin-product-trace-${p.id}`,
+                          })
+                        }
+                        if (canEdit && shouldShowSourceDescriptionAction(p)) {
                           menuItems.push({
                             id: `source-description-${p.id}`,
                             label: '检查上游介绍',
@@ -358,7 +377,7 @@ export default function AdminProductTable({
                             testId: `admin-source-description-${p.id}`,
                           })
                         }
-                        return (
+                        return menuItems.length === 0 ? null : (
                           <AdminActionMenu
                             items={menuItems}
                             triggerLabel={`商品「${p.name}」更多操作`}
