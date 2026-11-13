@@ -384,7 +384,7 @@ test('merchant promotion completions preserve confirmation and actual charge res
     const notice = page.getByTestId('action-island-notice')
     await expect(notice.locator('strong')).toHaveText('推广已生效')
     await expect(notice).toContainText(`已扣 ${price} 积分`)
-    await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))) })
+    await page.evaluate(async () => { await Promise.all(document.getAnimations().filter(a => a.timeline instanceof DocumentTimeline && a.effect?.getTiming().iterations !== Infinity).map(a => a.finished.catch(() => {}))) })
     await page.screenshot({ path: testInfo.outputPath('promotion-charged.png'), animations: 'disabled' })
     await notice.getByRole('button', { name: '查看推广列表' }).click()
   }

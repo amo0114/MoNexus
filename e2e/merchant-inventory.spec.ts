@@ -92,8 +92,9 @@ test('merchant filters products, imports then voids inventory with log entry', a
     : page.getByTitle(/已作废 1 个交付单元；当前规格剩余 .*商品汇总/)).toBeVisible({ timeout: 10_000 })
   await expect(availability).toContainText(`商品交付库存汇总：${stockBefore}`, { timeout: 10_000 })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  // Scroll-driven animations (scroll-fade-x) never finish; only wait on time-based ones.
   await page.evaluate(async () => {
-    await Promise.all(document.getAnimations().filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))
+    await Promise.all(document.getAnimations().filter(animation => animation.timeline instanceof DocumentTimeline && animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))
   })
   await page.screenshot({ path: testInfo.outputPath('void-completion.png'), animations: 'disabled' })
 
