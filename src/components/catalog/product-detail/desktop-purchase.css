@@ -451,4 +451,13 @@
     background: color-mix(in srgb, var(--color-danger) 10%, transparent);
   }
 
+  /* Short laptop screens (e.g. 1280x800): tighten vertical rhythm so the
+     rating and offer list start above the bottom fade. */
+  @media (max-height: 860px) {
+    .pd-purchase-scroll { padding-top: 16px; }
+    .pd-purchase h1 { margin: 8px 0 6px; }
+    .pd-price-summary { margin-top: 12px; padding-block: 12px; }
+    .pd-price-summary strong { font-size: 28px; }
+    .pd-rating { margin: 10px 0 14px; }
+  }
 }
