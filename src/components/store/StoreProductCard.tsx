@@ -165,8 +165,10 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
         {!compact && descriptionLines > 0 && (
           // The card height is fixed: each extra row above takes one description line,
           // otherwise the shrinking box cuts the clamped text through the middle of a line.
+          // Keep line-clamp's -webkit-box display (md:block would disable the clamp) and
+          // no flex-grow: a stretched box would expose the top of the third line.
           <p
-            className={`product-text-readable hidden md:block text-[var(--color-text-muted)] text-xs flex-grow mb-4 leading-relaxed ${descriptionLines === 2 ? 'line-clamp-2' : 'line-clamp-1'}`}
+            className={`product-text-readable max-md:hidden text-[var(--color-text-muted)] text-xs mb-4 leading-relaxed ${descriptionLines === 2 ? 'line-clamp-2' : 'line-clamp-1'}`}
             data-testid={`store-product-description-${product.id}`}
           >
             {product.description}
