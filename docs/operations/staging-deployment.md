@@ -34,7 +34,7 @@ https://staging.monexus.oai-o.com
 Use a current Ubuntu VPS with at least 2 vCPU, 4 GB RAM, 40 GB SSD, and inbound
 TCP 80/443. The staging host must be a different server from the production
 site. The host does not need Node: the staging launcher performs its preflight
-inside Docker's Node 22 image when Node is absent.
+inside Docker's Node 22 image when host Node is absent or older than 22.
 
 Create a DNS-only A record before Caddy obtains a certificate:
 
@@ -177,6 +177,15 @@ the Prisma migration, `GrowthReward`, `AbuseEvent`, or ledger data. Use
 operational switches.
 
 ### 5.1 Notification realtime rehearsal
+
+For a legacy staging environment, `prepare_runtime=true` on a protected deploy
+adds missing runtime encryption roots directly on the staging host. It pins a
+missing verification provider to the existing Turnstile configuration and a
+missing topology to Caddy only when `TRUST_PROXY=2` already matches. Explicit
+provider/topology choices and existing roots remain unchanged. Preparation
+requires the dedicated origin and env path, validates a private candidate,
+retains a mode-0600 pre-change env backup, and never prints key values. Back up
+the new roots independently before activating database credentials.
 
 The realtime rehearsal has a stricter proxy prerequisite. The workflow's first
 host-changing step (before application release or fixture setup) installs the

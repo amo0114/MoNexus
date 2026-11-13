@@ -25,6 +25,7 @@ done
 
 node "${ROOT_DIR}/server/scripts/notification-realtime-staging-fixture.mjs" --self-test
 node "${ROOT_DIR}/scripts/notification-realtime-staging-collector.mjs" --self-test
+node --test "${ROOT_DIR}/scripts/staging-runtime-tools.test.mjs"
 
 workflow="${ROOT_DIR}/.github/workflows/compose-production-deploy.yml"
 [[ -f "$workflow" ]] || fail 'Compose production workflow is missing.'

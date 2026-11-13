@@ -14,7 +14,7 @@ project_name="${COMPOSE_PROJECT_NAME:-monexus-staging}"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/staging-compose.sh {config|build|build-backend|up-backend|build-frontend|up-frontend|up|restart|smoke|value-policy-governance|set-value-policy-mode|ps|logs|down}
+Usage: scripts/staging-compose.sh {config|prepare-runtime|build|build-backend|up-backend|build-frontend|up-frontend|up|restart|smoke|value-policy-governance|set-value-policy-mode|ps|logs|down}
 
 Environment:
   ENV_FILE             Private staging env file (default: .env.staging.local)
@@ -69,14 +69,15 @@ compose=(
 
 preflight_file() {
   local candidate_env_file="$1"
-  if command -v node >/dev/null 2>&1; then
+  if command -v node >/dev/null 2>&1 && \
+    node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 22 ? 0 : 1)' >/dev/null 2>&1; then
     bash "$ROOT_DIR/scripts/check-prod-env.sh" \
       --mode staging \
       --env-file "$candidate_env_file"
     return
   fi
 
-  # The dedicated staging host needs Docker but not a host-wide Node install.
+  # The dedicated staging host needs Docker but not a current host-wide Node install.
   # Run the validator in the pinned major-version Node image with no container
   # network. Docker may pull this public base image once when it is absent.
   docker run --rm --network none \
@@ -94,6 +95,25 @@ preflight() {
 }
 
 case "$action" in
+  prepare-runtime)
+    # An explicit, protected staging-only operation. Never rotate existing keys
+    # or change an explicitly selected verification provider/proxy topology.
+    [[ "$env_file" == /etc/monexus/staging.env ]] || { echo '[ERROR] Runtime preparation requires the dedicated staging env file.' >&2; exit 2; }
+    [[ "${2:-}" == PREPARE_STAGING_RUNTIME ]] || { echo '[ERROR] Missing staging preparation confirmation.' >&2; exit 2; }
+    candidate="$(mktemp /etc/monexus/.staging.env.runtime.candidate.XXXXXX)"
+    trap 'rm -f -- "$candidate"' EXIT
+    docker run --rm --network none --user "$(id -u):$(id -g)" \
+      -v "$ROOT_DIR:$ROOT_DIR:ro" -v /etc/monexus:/etc/monexus \
+      -w "$ROOT_DIR" node:22-bookworm-slim \
+      node scripts/prepare-staging-runtime.mjs "$env_file" "$candidate"
+    preflight_file "$candidate"
+    backup="$(mktemp /etc/monexus/.staging.env.runtime.backup.XXXXXX)"
+    cp -p -- "$env_file" "$backup"
+    chmod 0600 "$backup" "$candidate"
+    mv -f -- "$candidate" "$env_file"
+    trap - EXIT
+    echo '[PASS] Staging runtime prerequisites prepared; private pre-change env backup retained on host.'
+    ;;
   config)
     preflight
     # Do not render interpolated values: `docker compose config` would print
