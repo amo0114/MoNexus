@@ -71,8 +71,8 @@
     font-size: 11px;
   }
   .pd-badges > span {
-    background: #edf1f6;
-    color: #526078;
+    background: color-mix(in srgb, var(--pd-muted) 12%, transparent);
+    color: var(--pd-muted);
     padding: 3px 8px;
     border-radius: 4px;
     line-height: 17px;
@@ -83,7 +83,7 @@
     font-weight: 600;
   }
   .pd-badges > .pd-badge-blue {
-    background: #edf2ff;
+    background: var(--color-primary-tint);
     color: var(--pd-blue);
   }
   .pd-description {
@@ -149,7 +149,7 @@
   .pd-rating > i {
     width: 1px;
     height: 13px;
-    background: #d5dce6;
+    background: var(--pd-border);
     margin: 0 7px;
   }
   .pd-rating button:hover {
@@ -246,7 +246,8 @@
     color: var(--pd-ink);
     max-width: 100%;
     overflow-wrap: anywhere;
-    padding-right: 10px;
+    /* Leave room for the absolutely positioned selection check. */
+    padding-right: 26px;
   }
   .pd-offer b {
     font-size: 16px;
@@ -376,7 +377,7 @@
     display: flex;
     align-items: center;
     height: 32px;
-    border: 1px solid #e1e7f0;
+    border: 1px solid var(--pd-border);
     border-radius: 6px;
     overflow: hidden;
   }
@@ -388,7 +389,7 @@
     background: var(--pd-soft);
   }
   .pd-stepper button:hover {
-    background: #edf2ff;
+    background: var(--color-primary-tint);
   }
   .pd-stepper output {
     min-width: 44px;
@@ -446,8 +447,8 @@
     border-color: var(--color-cta-hover);
   }
   .pd-actions .pd-favorited {
-    color: #ed4f78;
-    background: #fff4f7;
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
   }
 
 }
