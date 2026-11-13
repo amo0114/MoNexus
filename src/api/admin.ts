@@ -33,6 +33,8 @@ export interface AdminUserListQuery {
 
 export interface AdminOrderItem {
   id: number
+  /** Business order number (governance-v1); null/absent during migration → show #id. */
+  orderNo?: string | null
   status: string
   price: number
   createdAt: string

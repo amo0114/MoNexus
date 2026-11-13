@@ -5,6 +5,7 @@ import { useAppStore } from '../../stores/appStore'
 import { getMerchantOrderDetail, uploadDeliveryFile } from '../../api/merchant'
 import { formatFileSize } from '../../utils/formatFileSize'
 import { MerchantOrder } from '../../types/merchant'
+import { formatOrderRef } from '../../utils/governance'
 
 interface Props {
   isOpen: boolean
@@ -84,7 +85,7 @@ export default function MerchantDeliverDialog({ isOpen, onClose, order, onSubmit
       <DialogContent data-testid="merchant-deliver-dialog">
         <DialogTitle>订单发货</DialogTitle>
         <DialogDescription>
-          订单 #{order?.id ?? ''} · {order?.product?.name ?? ''}，发货内容将直接交付给买家。
+          订单 {order ? formatOrderRef(order.orderNo, order.id) : ''} · {order?.product?.name ?? ''}，发货内容将直接交付给买家。
         </DialogDescription>
         <form onSubmit={handleSubmit} className="mt-4 space-y-4" data-testid="merchant-deliver-form">
           {answers && Object.keys(answers).length > 0 && (

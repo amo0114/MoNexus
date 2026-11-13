@@ -10,6 +10,7 @@ import { useAppStore } from '../stores/appStore'
 import ThemeToggle from './ThemeToggle'
 import { DialogOverlay } from './ui/Dialog'
 import UserAvatar from './ui/UserAvatar'
+import { hasMerchantCapability } from '../auth/merchantAccess'
 
 const ROW =
   'w-full flex items-center gap-3 px-3 min-h-[44px] rounded-lg text-sm font-medium transition-colors cursor-pointer text-left'
@@ -172,7 +173,7 @@ export default function MobileNavDrawer() {
 
           {/* Portal entries — mirrors the desktop navbar pills (role × merchant.status) */}
           {(user?.role === 'user' ||
-            (user?.role === 'merchant' && user.merchant?.status === 'active') ||
+            hasMerchantCapability(user, 'history.read') ||
             user?.role === 'admin') && (
             <>
               <div className="px-6 mt-5 mb-1 text-xs font-semibold text-[var(--color-text-muted)] shrink-0">
@@ -197,13 +198,13 @@ export default function MobileNavDrawer() {
                     申请被拒，重新申请
                   </button>
                 )}
-                {user?.role === 'user' && user.merchant?.status === 'suspended' && (
+                {user?.role === 'user' && user.merchant?.status === 'suspended' && !hasMerchantCapability(user, 'history.read') && (
                   <div className={`${ROW} cursor-default ${TONES.danger}`}>
                     <AlertTriangle className="w-4 h-4" />
                     账号已停用
                   </div>
                 )}
-                {user?.role === 'merchant' && user.merchant?.status === 'active' && (
+                {hasMerchantCapability(user, 'history.read') && (
                   <button className={`${ROW} ${TONES.primary}`} onClick={() => go('/merchant')}>
                     <Store className="w-4 h-4" />
                     商家后台

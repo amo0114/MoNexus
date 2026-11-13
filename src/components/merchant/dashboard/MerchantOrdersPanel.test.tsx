@@ -101,7 +101,7 @@ describe('MerchantOrdersPanel', () => {
       orders: [makeOrder({ id: 1001, holdingPoints: 10, offerNameSnapshot: '规格甲', bookingDate: '2024-06-01' })],
     })
 
-    expect(screen.getByText('1001')).toBeInTheDocument()
+    expect(screen.getByText('#1001')).toBeInTheDocument()
     expect(screen.getByText('商品A')).toBeInTheDocument()
     expect(screen.getByText('规格：规格甲')).toBeInTheDocument()
     expect(screen.getByTestId('merchant-order-booking-1001')).toBeInTheDocument()

@@ -4,6 +4,7 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import AdminMailPanel from './AdminMailPanel'
 import AdminAiSettingsPanel from './AdminAiSettingsPanel'
+import { useTabActions } from '../../auth/adminAccess'
 import AdminSystemInfoPanel from './AdminSystemInfoPanel'
 import MemberTierConfigPanel from './MemberTierConfigPanel'
 import RegistrationControlPanel from './RegistrationControlPanel'
@@ -16,6 +17,7 @@ import {
 } from './adminConfigMeta'
 
 export default function AdminConfigPanel() {
+  const can = useTabActions('config')
   const showToast = useAppStore((s) => s.showToast)
   const [configs, setConfigs] = useState<AdminSystemConfig[]>([])
   const [drafts, setDrafts] = useState<Record<string, string>>({})
@@ -228,7 +230,7 @@ export default function AdminConfigPanel() {
         aria-label="系统配置分组"
         className="flex flex-wrap items-center gap-1.5 p-1 bg-[var(--color-background)] rounded-xl border border-[var(--color-border)]"
       >
-        {CONFIG_GROUPS.map((group) => {
+        {CONFIG_GROUPS.filter((group) => group.id !== 'ai' || can('ai')).map((group) => {
           const isActive = activeGroup === group.id
           return (
             <button
@@ -269,7 +271,7 @@ export default function AdminConfigPanel() {
 
         {/* 组内主体 */}
         <div className="p-4 sm:p-6">
-          {activeGroup === 'ai' && <AdminAiSettingsPanel />}
+          {activeGroup === 'ai' && can('ai') && <AdminAiSettingsPanel />}
           {activeGroup === 'system' ? (
             <AdminSystemInfoPanel />
           ) : activeGroup === 'registration' ? (

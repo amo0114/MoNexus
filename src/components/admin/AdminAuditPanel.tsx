@@ -15,6 +15,10 @@ import {
   adminAuditTargetLabel,
   auditToneBadgeClass,
 } from '../../utils/adminAuditDisplay'
+import { useAdminCapabilities } from '../../stores/adminCapabilities'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
+import { AuditDetailInline } from './governance/AuditDetail'
+import { formatDateTime } from '../../utils/governance'
 
 interface AuditFetchFilters {
   adminId?: string
@@ -35,6 +39,9 @@ export interface AdminAuditPanelProps {
 
 export default function AdminAuditPanel({ active = true }: AdminAuditPanelProps) {
   const showToast = useAppStore((s) => s.showToast)
+  const caps = useAdminCapabilities()
+  const canDetail = caps.governed && caps.can('audit.details.read')
+  const [detailLog, setDetailLog] = useState<AdminAuditItem | null>(null)
   const [auditLogs, setAuditLogs] = useState<AdminAuditItem[]>([])
   const [auditTotal, setAuditTotal] = useState(0)
   const [auditPage, setAuditPage] = useState(1)
@@ -341,6 +348,7 @@ export default function AdminAuditPanel({ active = true }: AdminAuditPanelProps)
                   <th>操作员</th>
                   <th>操作</th>
                   <th>目标</th>
+                  {canDetail && <th className="text-right">详情</th>}
                 </tr>
               </thead>
               <tbody>
@@ -381,12 +389,19 @@ export default function AdminAuditPanel({ active = true }: AdminAuditPanelProps)
                           </span>
                         ) : null}
                       </td>
+                      {canDetail && (
+                        <td className="text-right" data-label="详情">
+                          <button type="button" className="btn-tonal" onClick={() => setDetailLog(l)} data-testid="admin-audit-detail-button">
+                            查看
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   )
                 })}
                 {!loading && auditLogs.length === 0 && (
                   <tr>
-                    <td colSpan={4}>
+                    <td colSpan={canDetail ? 5 : 4}>
                       <EmptyState
                         compact
                         icon={ClipboardList}
@@ -407,6 +422,19 @@ export default function AdminAuditPanel({ active = true }: AdminAuditPanelProps)
             testId="admin-audit-pagination"
           />
         </div>
+      )}
+
+      {canDetail && (
+        <Dialog open={detailLog !== null} onOpenChange={(o) => { if (!o) setDetailLog(null) }}>
+          <DialogContent className="max-w-md" data-testid="admin-audit-detail-dialog">
+            <DialogTitle>审计详情 #{detailLog?.id}</DialogTitle>
+            <DialogDescription>
+              U{detailLog?.adminId} · {detailLog ? formatDateTime(detailLog.createdAt) : ''}。
+              只展示脱敏后的白名单字段。
+            </DialogDescription>
+            {detailLog && <AuditDetailInline id={detailLog.id} />}
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )

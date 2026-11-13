@@ -4,6 +4,7 @@ import type { UserOrderListItem } from '../../types/order'
 import RegistryPill from '../ui/RegistryPill'
 import SafeImage from '../ui/SafeImage'
 import { formatBookingDay } from '../../utils/formatLocalDate'
+import { formatOrderRef } from '../../utils/governance'
 
 function formatOrderTime(iso: string) {
   const d = new Date(iso)
@@ -54,7 +55,7 @@ export default function BuyerOrderCard({
             </span>
           )}
           <span className="text-[var(--color-text-muted)] font-mono">
-            #{order.id}
+            {formatOrderRef(order.orderNo, order.id)}
           </span>
           <span className="text-[var(--color-text-muted)]">
             · {formatOrderTime(order.createdAt)}

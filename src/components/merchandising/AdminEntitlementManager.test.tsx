@@ -15,7 +15,7 @@
 // flows are covered by separate tests, not here).
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import AdminEntitlementManager, {
   type AdminEntitlementAdapter,
 } from './AdminEntitlementManager'
@@ -24,6 +24,10 @@ import type {
   AdminMerchantEntitlementGrantPayload,
   AdminMerchantEntitlementPage,
 } from '../../types/merchandising'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 // Complete DTO fixtures covering every field. sourceRef / actor ids are
 // admin-only audit fields that the component must never render.

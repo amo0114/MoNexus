@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminPage from './AdminPage'
 import { useAppStore } from '../stores/appStore'
+import { signInLegacyAdmin } from '../test/adminAccess'
 
 const mocks = vi.hoisted(() => ({
   getProducts: vi.fn(),
@@ -136,6 +137,7 @@ async function openProducts() {
 
 describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   beforeEach(() => {
+    signInLegacyAdmin()
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [], islandNotice: null })
     mocks.getProducts.mockResolvedValue(toPaged(products))

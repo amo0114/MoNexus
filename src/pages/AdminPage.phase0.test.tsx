@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import AdminPage from './AdminPage'
 import { useAppStore } from '../stores/appStore'
+import { signInLegacyAdmin } from '../test/adminAccess'
 
 const mocks = vi.hoisted(() => ({
   batchSettle: vi.fn(),
@@ -150,6 +151,7 @@ vi.mock('../api/adminAudit', () => ({
 
 describe('AdminPage Phase 0 verification', () => {
   beforeEach(() => {
+    signInLegacyAdmin()
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [] })
     mocks.getSettlements.mockResolvedValue({

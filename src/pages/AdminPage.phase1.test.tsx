@@ -4,6 +4,7 @@ import AdminPage from './AdminPage'
 import { useAppStore } from '../stores/appStore'
 import { getAdminMerchants, getAdminSettlements, batchSettle } from '../api/adminMerchant'
 import api from '../api/client'
+import { signInLegacyAdmin } from '../test/adminAccess'
 
 const mocks = vi.hoisted(() => ({
   getMerchants: vi.fn(),
@@ -62,6 +63,7 @@ vi.mock('../api/client', () => ({
 
 describe('Phase 1: Admin Merchants & Settlements Contract and UX Governance', () => {
   beforeEach(() => {
+    signInLegacyAdmin()
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [] })
   })

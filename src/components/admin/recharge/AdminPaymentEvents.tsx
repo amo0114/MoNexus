@@ -10,10 +10,13 @@ import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { EVENT_STATUS_LABEL, PAYMENT_EVENT_STATUSES, PAYMENT_PROVIDERS, providerLabel } from '../../../pages/recharge/status'
 import { PAYMENT_EVENT_SOURCE_LABEL } from '../../../utils/adminRechargeDisplay'
+import { useTabActions } from '../../../auth/adminAccess'
 
 const PAGE_SIZE = 50
 
 export default function AdminPaymentEvents() {
+  const can = useTabActions('recharge')
+  const canCommand = can('otherPaymentCommands')
   const showToast = useAppStore((s) => s.showToast)
   const [items, setItems] = useState<AdminPaymentEvent[]>([])
   const [total, setTotal] = useState(0)
@@ -162,7 +165,7 @@ export default function AdminPaymentEvents() {
                     >
                       详情
                     </button>
-                    {(item.status === 'failed' || item.status === 'received') && (
+                    {canCommand && (item.status === 'failed' || item.status === 'received') && (
                       <button
                         type="button"
                         className="text-xs font-bold text-[var(--color-primary)] hover:underline cursor-pointer"

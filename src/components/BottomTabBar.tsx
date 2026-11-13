@@ -4,6 +4,7 @@ import { BarChart3, Coins, Home, ShieldCheck, Store, Trophy, User } from 'lucide
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import { FluidSegmentedControl, type FluidSegmentOption } from './ui/FluidSegmentedControl'
+import { hasMerchantCapability } from '../auth/merchantAccess'
 
 interface TabItem {
   key: string
@@ -68,7 +69,7 @@ export default function BottomTabBar() {
   // Product detail yields tab bar
   if (pathname.startsWith('/product')) return null
 
-  const isMerchant = user?.role === 'merchant' && user.merchant?.status === 'active'
+  const isMerchant = hasMerchantCapability(user, 'history.read')
   const isAdmin = user?.role === 'admin'
   const inMerchantDashboard = pathname.startsWith('/merchant/dashboard')
 

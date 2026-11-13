@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AdminProductPanel from './AdminProductPanel'
 import * as adminApi from '../../api/admin'
 import { useAppStore } from '../../stores/appStore'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 vi.mock('../../api/admin', async () => {
   const actual = await vi.importActual<typeof import('../../api/admin')>('../../api/admin')

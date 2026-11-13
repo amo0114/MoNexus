@@ -49,6 +49,7 @@ import { useAgentSessionKey } from '../../components/merchant/agent/useMerchantA
 import { useMerchantAgentStore } from '../../stores/merchantAgent'
 import { parseEditorFocus, parsePositiveId } from '../../components/merchant/workbench/navigation'
 import { createLatestRequestGuard } from '../../utils/latestRequest'
+import { useTabActions } from '../../auth/adminAccess'
 
 const STATUS_LABEL: Record<string, string> = {
   [PRODUCT_STATUS.DRAFT]: '草稿',
@@ -62,6 +63,8 @@ interface Props {
 }
 
 export default function ProductEditPage({ actor, adapter = catalogApi }: Props) {
+  const adminCan = useTabActions('products')
+  const adminLacks = (action: 'manageVideos' | 'uploadImage') => actor === 'admin' && !adminCan(action)
   const { id: idParam } = useParams()
   const productId = Number(idParam)
   const validId = Number.isInteger(productId) && productId > 0
@@ -576,7 +579,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
       <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:gap-8 lg:items-start">
         <div className={`space-y-6 ${activeViewTab === 'preview' ? 'hidden lg:block' : 'block'}`}>
           <ProductInformationSection
-            video={{ value: form.promoVideo, onChange: promoVideo => setForm(prev => ({ ...prev, promoVideo })), onBusyChange: setVideoBusy, actor, merchantId: videoMerchantId, disabled: saving || !canEdit }}
+            video={adminLacks('manageVideos') ? undefined : { value: form.promoVideo, onChange: promoVideo => setForm(prev => ({ ...prev, promoVideo })), onBusyChange: setVideoBusy, actor, merchantId: videoMerchantId, disabled: saving || !canEdit }}
             images={form.images.map(image => image.url)}
             imageKeys={imageKeys}
             onImagesChange={(next) => {
@@ -588,6 +591,7 @@ export default function ProductEditPage({ actor, adapter = catalogApi }: Props) 
             onImageKeysChange={setImageKeys}
             unresolvedImages={unresolvedImages}
             disabled={busy}
+            imageUploadDisabled={adminLacks('uploadImage')}
             name={form.name}
             onNameChange={(name) => setForm(prev => ({ ...prev, name }))}
             description={form.description}

@@ -34,6 +34,8 @@ export interface MerchantProductsPanelProps {
   onAdjustCapacity: (product: MerchantProduct) => void
   onViewInventoryLog: (product: MerchantProduct) => void
   onManageOffers: (product: MerchantProduct) => void
+  /** governance-v1 batch & revision history; omitted on older backends. */
+  onOpenTrace?: (product: MerchantProduct) => void
 }
 
 function isInstantInventoryProduct(product: MerchantProduct) {
@@ -118,6 +120,7 @@ export default function MerchantProductsPanel({
   onManageInventory,
   onAdjustCapacity,
   onViewInventoryLog,
+  onOpenTrace,
   onManageOffers,
 }: MerchantProductsPanelProps) {
   return (
@@ -313,6 +316,11 @@ export default function MerchantProductsPanel({
                       <LinkAction onClick={() => onManageOffers(p)}>
                         规格管理
                       </LinkAction>
+                      {onOpenTrace && (
+                        <LinkAction onClick={() => onOpenTrace(p)}>
+                          批次与修订
+                        </LinkAction>
+                      )}
                       <LinkAction
                         onClick={() => onToggleProductStatus(p)}
                         disabled={publishingProductIds.has(p.id)}

@@ -10,6 +10,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import AdminPage from './AdminPage'
+import { signInLegacyAdmin } from '../test/adminAccess'
 
 // ---------------------------------------------------------------------------
 // Stable marker for the isolated merchandising page (host never touches its
@@ -66,6 +67,7 @@ describe('AdminPage — merchandising host wiring (T-CMI-001)', () => {
   // Test isolation: both host-wiring tests snapshot the apiGet URL sequence, so
   // clear the mock's call history before each test to avoid cross-pollution.
   beforeEach(() => {
+    signInLegacyAdmin()
     apiGet.mockClear()
   })
   it('renders the merchandising nav and mounts the isolated page without extra host API requests', async () => {

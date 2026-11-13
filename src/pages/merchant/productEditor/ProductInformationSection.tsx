@@ -21,6 +21,8 @@ const RichTextEditor = lazy(() => import('../../../components/catalog/RichTextEd
 
 interface Props {
   video?: ProductVideoUploaderProps
+  /** The editor lacks upload permission (admin files.manage). */
+  imageUploadDisabled?: boolean
   images: string[]
   imageKeys: Record<string, string>
   onImagesChange: Dispatch<SetStateAction<string[]>>
@@ -83,6 +85,7 @@ export default function ProductInformationSection({
   templateLocked,
   fieldMode,
   onInsertDescriptionImage,
+  imageUploadDisabled = false,
 }: Props) {
   return (
     <section className="bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)] p-5 sm:p-8 space-y-5" data-testid="product-edit-info">
@@ -93,7 +96,7 @@ export default function ProductInformationSection({
         imageKeys={imageKeys}
         onChange={onImagesChange}
         onImageKeysChange={onImageKeysChange}
-        disabled={disabled}
+        disabled={disabled || imageUploadDisabled}
       />
       {unresolvedImages && (
         <p className="text-xs text-[var(--color-text-muted)]" data-testid="product-edit-images-unresolved">

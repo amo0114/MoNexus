@@ -4,6 +4,10 @@ import AdminConfigPanel from './AdminConfigPanel'
 import * as adminConfigApi from '../../api/adminConfig'
 import * as adminBuildInfoApi from '../../api/adminBuildInfo'
 import { bpsToPercentString, percentStringToBps } from './adminConfigMeta'
+import { signInLegacyAdmin } from '../../test/adminAccess'
+
+// Panels render standalone here; in the app AdminPage mounts them only after access settles.
+beforeEach(() => signInLegacyAdmin())
 
 // Mock adminConfig API
 vi.mock('../../api/adminConfig', () => ({

@@ -3,6 +3,7 @@ import { closeAdminPaymentRecoveryCase } from '../../../api/adminRecharge'
 import { getApiErrorMessage } from '../../../api/error'
 import { useAppStore } from '../../../stores/appStore'
 import ConfirmDialog from '../../ui/ConfirmDialog'
+import { useTabActions } from '../../../auth/adminAccess'
 
 type CloseStatus = 'recovered' | 'written_off' | 'restored'
 
@@ -14,6 +15,7 @@ const OUTCOMES: Record<CloseStatus, { label: string; effect: string }> = {
 }
 
 export default function AdminPaymentRecoveryClose({ caseId, status, onClosed }: { caseId: string; status: string; onClosed?: () => void }) {
+  const allowed = useTabActions('recharge')('resolveDisputeRecovery')
   const showToast = useAppStore((s) => s.showToast)
   const [target, setTarget] = useState<CloseStatus | null>(null)
   const [reason, setReason] = useState('')
@@ -36,6 +38,7 @@ export default function AdminPaymentRecoveryClose({ caseId, status, onClosed }: 
     }
   }
 
+  if (!allowed) return null
   return (
     <div className="space-y-2 pt-2 border-t border-[var(--color-border)]" data-testid="admin-recovery-close">
       <label className="block text-[11px]">结案依据（必填）

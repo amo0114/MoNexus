@@ -35,6 +35,7 @@ import {
   type LegalDocumentSlug,
 } from '../api/legal'
 import type { PublicAnnouncement } from '../types/admin'
+import { hasMerchantCapability } from '../auth/merchantAccess'
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -467,7 +468,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <span className="hidden lg:inline font-bold text-xs">申请被拒，重试</span>
                   </button>
                 )}
-                {user?.role === 'user' && user.merchant?.status === 'suspended' && (
+                {user?.role === 'user' && user.merchant?.status === 'suspended' && !hasMerchantCapability(user, 'history.read') && (
                   <div
                     className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] rounded-full border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
                     title="商家账号已被停用，请联系平台"
@@ -476,7 +477,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                     <span className="hidden lg:inline font-bold text-xs">账号已停用</span>
                   </div>
                 )}
-                {user?.role === 'merchant' && user.merchant?.status === 'active' && (
+                {hasMerchantCapability(user, 'history.read') && (
                   <button
                     type="button"
                     className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"

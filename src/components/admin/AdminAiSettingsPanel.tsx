@@ -49,15 +49,27 @@ export default function AdminAiSettingsPanel() {
     setTestResult(null)
   }
 
+  // Only the newest load may write the form: a StrictMode remount or a reload
+  // fires a second GET, and the older response must not overwrite user input.
+  const loadSeq = useRef(0)
   async function load() {
+    const seq = ++loadSeq.current
     setLoading(true)
     setLoadError(false)
-    try { acceptSettings(await getAdminAiSettings()) }
-    catch { setLoadError(true) }
-    finally { setLoading(false) }
+    try {
+      const value = await getAdminAiSettings()
+      if (seq === loadSeq.current) acceptSettings(value)
+    } catch {
+      if (seq === loadSeq.current) setLoadError(true)
+    } finally {
+      if (seq === loadSeq.current) setLoading(false)
+    }
   }
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    void load()
+    return () => { loadSeq.current++ }
+  }, [])
 
   async function save(event: FormEvent) {
     event.preventDefault()

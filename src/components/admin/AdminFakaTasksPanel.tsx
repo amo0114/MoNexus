@@ -12,6 +12,7 @@ import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import AdminPagination from './AdminPagination'
+import { useTabActions } from '../../auth/adminAccess'
 
 const FAKA_TASK_STATUS_LABEL: Record<string, string> = {
   pending: '待执行',
@@ -29,6 +30,7 @@ const FAKA_REVOKE_STATUS_LABEL: Record<string, string> = {
 }
 
 export default function AdminFakaTasksPanel() {
+  const can = useTabActions('faka')
   const showToast = useAppStore(s => s.showToast)
   const [loading, setLoading] = useState(true)
   const [items, setItems] = useState<AdminFakaTask[]>([])
@@ -232,7 +234,7 @@ export default function AdminFakaTasksPanel() {
                   </td>
                   <td data-label="操作">
                     <div className="flex flex-wrap gap-1">
-                      {(t.allowedActions ? t.allowedActions.includes('retry') : t.status === 'failed' || t.status === 'cancelled') && (
+                      {can('retryRevoke') && (t.allowedActions ? t.allowedActions.includes('retry') : t.status === 'failed' || t.status === 'cancelled') && (
                         <button
                           type="button"
                           className="btn-secondary btn-sm text-xs px-2.5 py-1"
@@ -242,7 +244,7 @@ export default function AdminFakaTasksPanel() {
                           重试开通
                         </button>
                       )}
-                      {(t.allowedActions ? t.allowedActions.includes('revoke') : t.status === 'succeeded' && t.revokeStatus !== 'succeeded') && (
+                      {can('retryRevoke') && (t.allowedActions ? t.allowedActions.includes('revoke') : t.status === 'succeeded' && t.revokeStatus !== 'succeeded') && (
                         <button
                           type="button"
                           className="btn-secondary btn-sm text-xs px-2.5 py-1 text-red-500"

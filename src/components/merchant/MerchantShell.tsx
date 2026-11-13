@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BarChart3, DollarSign, FilePlus2, Megaphone, Package, Settings, ShoppingBag, Store } from 'lucide-react'
+import MerchantReadOnlyBanner from './MerchantReadOnlyBanner'
 
 export type MerchantTabKey =
   | 'dashboard' | 'products' | 'orders' | 'settlements' | 'profile' | 'operations' | 'promotions' | 'categoryApplications'
@@ -64,7 +65,10 @@ export default function MerchantShell({ active, children }: { active: MerchantTa
         activeKey={active}
         onSelect={(tab) => navigate(tab.path ?? '/merchant', tab.path ? undefined : { state: { [MERCHANT_TAB_STATE]: tab.key } })}
       />
-      <div className="flex-1 min-w-0">{children}</div>
+      <div className="flex-1 min-w-0">
+        <MerchantReadOnlyBanner />
+        {children}
+      </div>
     </div>
   )
 }

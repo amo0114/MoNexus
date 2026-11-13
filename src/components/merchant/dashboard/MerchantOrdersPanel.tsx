@@ -9,6 +9,7 @@ import EmptyState from '../../ui/EmptyState'
 import RegistryPill from '../../ui/RegistryPill'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { PaginationControls, Th } from './MerchantPanelPrimitives'
+import { formatOrderRef } from '../../../utils/governance'
 
 export type MerchantOrderAction =
   | 'start_fulfillment'
@@ -135,7 +136,7 @@ export default function MerchantOrdersPanel({
               orders.map((o) => (
                 <tr key={o.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
                   <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="订单号">
-                    <div>{o.id}</div>
+                    <div>{formatOrderRef(o.orderNo, o.id)}</div>
                     {typeof o.holdingPoints === 'number' && o.holdingPoints > 0 && (
                       <div className="text-xs text-[var(--color-text-muted)] mt-0.5">冻结 {o.holdingPoints}</div>
                     )}
