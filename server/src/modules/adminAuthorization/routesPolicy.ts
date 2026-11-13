@@ -69,7 +69,7 @@ export function permissionForAdminRoute(
   if (/^wallet-integrity(\/|$)/.test(p)) return 'wallet.integrity.read'
   if (/^portable-backups(\/|$)/.test(p)) return 'backups.manage'
   if (/^ai(\/|-|$)/.test(p)) return 'ai.manage'
-  if (/^(config|system|storage|mail|value-policies|abuse)(\/|$)/.test(p)) return 'settings.manage'
+  if (/^(config|system|storage|mail|integrations|value-policies|abuse)(\/|$)/.test(p)) return 'settings.manage'
   if (p === 'stats' || /^reports\//.test(p)) return 'catalog.read'
   return null
 }

@@ -139,21 +139,23 @@ describe('CHK-CFG-001 — realtime config defaults and range validation (spec 8.
   })
 })
 
-describe('CHK-CFG-002 — realtime=true requires notification=true (spec 8.1 / AC-RT-014)', () => {
-  it('refuses NOTIFICATION_REALTIME_ENABLED=true with NOTIFICATION_ENABLED=false', () => {
+describe('realtime listener readiness is independent from notification bootstrap', () => {
+  it('ignores the unused legacy email flag when notification bootstrap is off', () => {
+    const result = loadConfigWith({ NOTIFICATION_ENABLED: 'false', NOTIFICATION_EMAIL_ENABLED: 'true' })
+    expect(result.status).toBe(0)
+  })
+
+  it('prepares realtime while notifications may be enabled later in the admin panel', () => {
     const result = loadConfigWith({
       NOTIFICATION_REALTIME_ENABLED: 'true',
       NOTIFICATION_ENABLED: 'false',
     })
-    expect(result.status).toBe(1)
-    const output = result.stderr + result.stdout
-    expect(output).toContain('NOTIFICATION_REALTIME_ENABLED')
-    expect(output).toContain('NOTIFICATION_ENABLED')
+    expect(result.status).toBe(0)
   })
 
-  it('refuses NOTIFICATION_REALTIME_ENABLED=true when notification is unset (default false)', () => {
+  it('boots the realtime listener when notification bootstrap is unset', () => {
     const result = loadConfigWith({ NOTIFICATION_REALTIME_ENABLED: 'true' })
-    expect(result.status).toBe(1)
+    expect(result.status).toBe(0)
   })
 
   it('boots with NOTIFICATION_REALTIME_ENABLED=true and NOTIFICATION_ENABLED=true', () => {

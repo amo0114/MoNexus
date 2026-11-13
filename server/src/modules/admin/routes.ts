@@ -1,7 +1,11 @@
+import { paymentSettingsRoutes } from './paymentSettings.js'
+import { fakaSettings } from './fakaSettings.js'
 import { governanceAdminRoutes } from './governanceRoutes.js'
 import { createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema } from '../announcements/adminSchema.js'
 import * as announcementController from '../announcements/adminController.js'
 import { Router } from 'express'
+import { mailSettingsRoutes } from './mailSettings.js'
+import { integrationSettingsRoutes } from './integrationSettings.js'
 import { authenticate, requireActiveUser, requireAdmin, requireAdminMfa } from '../../middlewares/auth.js'
 import { validate, idParamSchema } from '../../middlewares/validate.js'
 import {
@@ -112,6 +116,10 @@ router.post(
 // authenticate→requireActiveUser→requireAdmin→requireAdminMfa 之后即天然受
 // MFA 保护；限流器在 body 校验之前，保证畸形请求同样消耗额度（C5）。
 router.get('/mail/status', controller.mailStatus)
+router.use(mailSettingsRoutes)
+router.use(integrationSettingsRoutes)
+router.use(paymentSettingsRoutes)
+router.use('/integrations/faka-bridge/config', fakaSettings.router)
 router.post('/mail/test', adminMailTestLimiter, validate(mailDeliveryTestSchema), controller.mailTest)
 // SPEC-STORAGE-001：对象存储控制台（MFA 已由本 router 统一要求）
 router.get('/storage/status', storageController.storageStatus)

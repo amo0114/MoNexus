@@ -1,3 +1,5 @@
+import { pinFakaSnapshot } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig, fakaClientId } from '../../lib/runtimeSettings/fakaBridge.js'
 import { isAccountBanned } from '../accountGovernance/status.js'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
@@ -25,10 +27,11 @@ export interface CreateFakaBridgeTaskInput {
  * Must be created in the same DB transaction as the Order.
  */
 export async function createFakaBridgeTaskForOrder(tx: Tx, input: CreateFakaBridgeTaskInput) {
+  const configRevisionId = await pinFakaSnapshot(tx)
   const email = input.email.toLowerCase().trim()
   const sku = input.sku.trim().toLowerCase()
   const period = (input.period ?? periodFromFakaSku(sku, 'monthly')).trim().toLowerCase()
-  const maxAttempts = input.maxAttempts ?? config.fakaBridge.maxAttempts
+  const maxAttempts = input.maxAttempts ?? fakaBridgeConfig().maxAttempts
 
   let target = {}
   let emailSnapshot = email
@@ -45,12 +48,13 @@ export async function createFakaBridgeTaskForOrder(tx: Tx, input: CreateFakaBrid
       || !match || BigInt(match[1]) > 2147483647n) throw new Error('Invalid stable paid reset target')
     target = { protocolVersion: 2, accountLinkIdSnapshot: link.id, instanceIdSnapshot: settings.instanceId,
       originSnapshot: settings.origin, xboardUserIdSnapshot: link.xboardUserId, expectedPlanIdSnapshot: match[1],
-      clientIdSnapshot: config.trafficReset.clientId }
+      clientIdSnapshot: fakaClientId() }
     emailSnapshot = link.currentEmail
   }
 
   return tx.fakaBridgeTask.create({
     data: {
+      configRevisionId,
       orderId: input.orderId,
       requestOrderNo: buildFakaExternalOrderNo(input.orderId),
       emailSnapshot,

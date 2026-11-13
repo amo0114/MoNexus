@@ -1,3 +1,6 @@
+import { paymentWebhookCandidates, paymentRevision } from '../providers/runtime.js'
+import type { RuntimePaymentName } from '../providers/runtimeConfig.js'
+import type { NormalizedProviderEvent } from '../providers/types.js'
 import { Router, raw, type Request, type Response, type NextFunction } from 'express'
 import { prisma } from '../../../lib/prisma.js'
 import { logger } from '../../../lib/logger.js'
@@ -63,17 +66,24 @@ function ackFailure(res: Response, provider: PaymentProviderName, status: number
 function handleProviderWebhook(providerName: PaymentProviderName) {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const provider = getRegisteredProvider(providerName)
-      if (!provider) {
+      const accountKey = typeof req.params.accountKey === 'string' ? req.params.accountKey : null
+      const provider = accountKey ? null : getRegisteredProvider(providerName)
+      if (!provider && !accountKey) {
         ackFailure(res, providerName, 503, 'PAYMENT_PROVIDER_UNAVAILABLE', `${providerName} adapter is not mounted`)
         return
       }
       const body = rawBody(req)
-      const event = await provider.verifyAndNormalizeWebhook({
-        headers: headerMap(req),
-        rawBody: body,
-      })
-      if (!event.signatureVerified) {
+      let event: NormalizedProviderEvent | null = null
+      let verificationRevisionId: string | null = null
+      if (accountKey && providerName !== 'simulator') {
+        for (const candidate of await paymentWebhookCandidates(providerName as RuntimePaymentName, accountKey)) {
+          const checked = await candidate.provider.verifyAndNormalizeWebhook({ headers: headerMap(req), rawBody: body, providerAccountKey: accountKey })
+          if (checked.signatureVerified && checked.providerAccountKey === accountKey) {
+            event = checked; verificationRevisionId = candidate.revisionId; break
+          }
+        }
+      } else if (provider) event = await provider.verifyAndNormalizeWebhook({ headers: headerMap(req), rawBody: body })
+      if (!event?.signatureVerified) {
         recordWebhookSignatureFailure(providerName)
         logger.warn({ event: 'payment.webhook_signature_failure', provider: providerName }, 'webhook signature failed')
         ackFailure(res, providerName, 400, 'WEBHOOK_SIGNATURE_INVALID', 'signature verification failed')
@@ -93,6 +103,12 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
         })
         : null
 
+      // Signature rotation may use a different revision, but never a different physical merchant.
+      if (attempt?.providerCredentialRevisionId) {
+        const pinned = await paymentRevision(providerName, attempt.providerCredentialRevisionId)
+        if (pinned.providerAccountKey !== event.providerAccountKey) throw new HttpError(400, 'BAD_REQUEST', 'payment account mismatch')
+      }
+
       if (event.eventType.startsWith('dispute.')) {
         const payload = {
           status: event.eventType.slice('dispute.'.length),
@@ -103,6 +119,7 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
           immutableStateVersion: payment?.immutableStateVersion ?? `${event.providerDisputeId ?? 'unknown'}:${event.eventType}`,
         }
         const recorded = await recordPaymentObservation({
+          providerCredentialRevisionId: verificationRevisionId,
           provider: providerName,
           providerAccountKey: event.providerAccountKey,
           source: 'webhook',
@@ -150,6 +167,7 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
           }
         : { eventType: event.eventType, providerEventId: event.providerEventId ?? null }
       const recorded = await recordPaymentObservation({
+        providerCredentialRevisionId: verificationRevisionId,
         provider: providerName,
         providerAccountKey: event.providerAccountKey,
         source: 'webhook',
@@ -217,6 +235,7 @@ export function createPaymentWebhookRouter(options: { isProductionDeploy: boolea
     // sandbox confirms through the admin API, so the webhook stays unmounted.
     if (route.provider === 'simulator' && !shouldRegisterSimulatorControlRoutes(options.isProductionDeploy)) continue
     router.post(route.path, parser, handleProviderWebhook(route.provider))
+    if (route.provider !== 'simulator') router.post(`${route.path}/accounts/:accountKey`, parser, handleProviderWebhook(route.provider))
   }
   return router
 }

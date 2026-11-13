@@ -969,9 +969,19 @@
       "SystemConfigKey": {
         "type": "string",
         "enum": [
+          "notificationEnabled",
+          "notificationExpiryDays",
           "registerReward",
           "checkinReward",
           "inviteReward",
+          "checkinStreakReward3",
+          "checkinStreakReward7",
+          "checkinStreakReward14",
+          "checkinStreakReward30",
+          "checkinMonthlyReward",
+          "checkinMakeupPrice",
+          "checkinMakeupMonthlyLimit",
+          "checkinRewardClaimDays",
           "refreshTokenMaxAgeDays",
           "defaultPageSize",
           "maxPageSize",
@@ -993,9 +1003,30 @@
           "acceptTimeoutHours",
           "subscriptionRemindDays",
           "autoProvisionMaxAttempts",
-          "registrationEnabled"
+          "registrationEnabled",
+          "emailVerificationRequiredForValue",
+          "growthRewardHoldDays",
+          "referralInviterMinAgeDays",
+          "referralDailyQualifiedLimit",
+          "referralLifetimeQualifiedLimit",
+          "registrationInviteOnly",
+          "inviteMinTierRank",
+          "inviteQuotaUserMonthly",
+          "inviteQuotaMerchantMonthly",
+          "inviteCodeTtlDays",
+          "hotWindowDays",
+          "hotMinSales",
+          "hotTopPercent",
+          "hotRecomputeMinutes",
+          "hotRunTimeoutMinutes",
+          "partnerSpendWindowDays",
+          "partnerMinPromotionPoints",
+          "partnerEntitlementDays",
+          "aiProductCopilotDailyQuotaAdmin",
+          "aiProductCopilotDailyQuotaMerchant",
+          "aiMerchantAgentDailyQuotaMerchant"
         ],
-        "description": "已知系统配置项，取值必须来自 `server/src/lib/systemConfig.ts` 的 `systemConfigKeys`。除 `registrationEnabled` 外均为非负整数业务参数（部分带上下界，见 PUT 描述）；`registrationEnabled` 是布尔语义开关，值域恰为 0（关闭注册）/ 1（开启注册）。"
+        "description": "系统配置项。布尔键只接受 0/1，其他键遵循各自上下界。notificationEnabled 与 notificationExpiryDays 在首次保存后覆盖对应环境引导值。"
       },
       "SystemConfigEntry": {
         "type": "object",
@@ -2959,9 +2990,10 @@
           "configuredVia": {
             "type": "string",
             "enum": [
-              "environment"
+              "environment",
+              "database"
             ],
-            "description": "固定值：SMTP 只在部署环境配置，后台不提供编辑入口"
+            "description": "首次接管前来自环境；后台激活后来自数据库。状态摘要仍不返回主机或凭据。"
           }
         }
       },
@@ -8322,6 +8354,816 @@
           }
         },
         "additionalProperties": false
+      },
+      "MailSmtpPublicConfig": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "host",
+          "port",
+          "secure",
+          "from",
+          "fromName"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "secure": {
+            "type": "boolean",
+            "description": "true 使用直接 TLS；false 使用 STARTTLS，账号密码认证时强制 TLS，不允许明文认证。"
+          },
+          "from": {
+            "type": "string",
+            "format": "email"
+          },
+          "fromName": {
+            "type": "string",
+            "maxLength": 100
+          }
+        }
+      },
+      "MailSmtpCredentials": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "user",
+          "pass"
+        ],
+        "properties": {
+          "user": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320,
+            "writeOnly": true
+          },
+          "pass": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096,
+            "writeOnly": true
+          }
+        }
+      },
+      "MailConfigVersion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483646
+          }
+        }
+      },
+      "MailRuntimeSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "activeVersion",
+          "source",
+          "encryptionReady",
+          "draft",
+          "bootstrap",
+          "draftAuthConfigured",
+          "tested",
+          "rollbackAvailable",
+          "updatedAt"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer"
+          },
+          "activeVersion": {
+            "type": "integer"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "environment",
+              "database"
+            ]
+          },
+          "encryptionReady": {
+            "type": "boolean"
+          },
+          "draft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MailSmtpPublicConfig"
+              }
+            ],
+            "nullable": true
+          },
+          "bootstrap": {
+            "description": "环境引导参数；没有显式发件地址时 from 可为空。不会返回账号或密码。",
+            "type": "object",
+            "nullable": true
+          },
+          "draftAuthConfigured": {
+            "type": "boolean"
+          },
+          "tested": {
+            "type": "boolean"
+          },
+          "rollbackAvailable": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "SaveMailDraftRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "host",
+          "port",
+          "secure",
+          "from",
+          "fromName",
+          "expectedVersion"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "secure": {
+            "type": "boolean",
+            "description": "true 使用直接 TLS；false 使用 STARTTLS，账号密码认证时强制 TLS，不允许明文认证。"
+          },
+          "from": {
+            "type": "string",
+            "format": "email"
+          },
+          "fromName": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483646
+          },
+          "credentials": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MailSmtpCredentials"
+              }
+            ],
+            "nullable": true,
+            "description": "省略保留；null 清除认证；对象替换。更换主机或端口时须明确替换或清除。"
+          }
+        }
+      },
+      "TestMailDraftRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expectedVersion",
+          "email"
+        ],
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483646
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "maxLength": 255
+          }
+        }
+      },
+      "ShortlinkPublicSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "apiBaseUrl",
+          "publicOrigin",
+          "groupId"
+        ],
+        "properties": {
+          "apiBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "HTTPS origin，无路径/账号/参数"
+          },
+          "publicOrigin": {
+            "type": "string",
+            "format": "uri"
+          },
+          "groupId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        }
+      },
+      "FakaRuntimePublicSettings": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url",
+          "statusUrl",
+          "revokeUrl",
+          "panelUrl",
+          "timeoutMs",
+          "maxAttempts",
+          "instanceId",
+          "clientId"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "statusUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "revokeUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "panelUrl": {
+            "type": "string",
+            "format": "uri"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 60000
+          },
+          "maxAttempts": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "instanceId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "clientId": {
+            "type": "string",
+            "maxLength": 64
+          }
+        }
+      },
+      "RuntimePaymentPublicSettings": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "stripe"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "test",
+                  "live"
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "mode",
+              "accountId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "merchantId": {
+                "type": "string"
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "payeeEmail": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "paypal"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "sandbox",
+                  "live"
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "mode",
+              "merchantId",
+              "clientId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mchid": {
+                "type": "string"
+              },
+              "appid": {
+                "type": "string"
+              },
+              "merchantSerialNo": {
+                "type": "string"
+              },
+              "platformSerialNo": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "wechat_pay"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "live"
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "mode",
+              "mchid",
+              "appid",
+              "merchantSerialNo",
+              "platformSerialNo"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "appId": {
+                "type": "string"
+              },
+              "sellerId": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "alipay"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "sandbox",
+                  "live"
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "mode",
+              "appId",
+              "sellerId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "merchantId": {
+                "type": "string"
+              },
+              "baseUrl": {
+                "type": "string"
+              },
+              "maxAmountMinor": {
+                "type": "string"
+              },
+              "requestTimeoutMs": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 30000
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "vmqfox"
+                ]
+              },
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "live"
+                ]
+              }
+            },
+            "required": [
+              "provider",
+              "mode",
+              "merchantId",
+              "baseUrl",
+              "maxAmountMinor",
+              "requestTimeoutMs"
+            ]
+          }
+        ],
+        "discriminator": {
+          "propertyName": "provider"
+        }
+      },
+      "RuntimePaymentCredentials": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "stripe"
+                ]
+              },
+              "secretKey": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "webhookSecret": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "provider",
+              "secretKey",
+              "webhookSecret"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "paypal"
+                ]
+              },
+              "clientSecret": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "webhookId": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "provider",
+              "clientSecret",
+              "webhookId"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "wechat_pay"
+                ]
+              },
+              "merchantPrivateKeyPem": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "apiV3Key": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "platformPublicKeyPem": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "provider",
+              "merchantPrivateKeyPem",
+              "apiV3Key",
+              "platformPublicKeyPem"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "alipay"
+                ]
+              },
+              "privateKey": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "alipayPublicKey": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "appCert": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "alipayCert": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              },
+              "rootCert": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "provider",
+              "privateKey"
+            ]
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "vmqfox"
+                ]
+              },
+              "merchantKey": {
+                "type": "string",
+                "writeOnly": true,
+                "maxLength": 65536
+              }
+            },
+            "required": [
+              "provider",
+              "merchantKey"
+            ]
+          }
+        ],
+        "discriminator": {
+          "propertyName": "provider"
+        },
+        "description": "只提交不回传。支付宝提供验签公钥或完整证书组。"
+      },
+      "ShortlinkRuntimeSettings": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483646
+          },
+          "activeRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "environment",
+              "database"
+            ]
+          },
+          "draft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ShortlinkPublicSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "bootstrap": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ShortlinkPublicSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "encryptionReady": {
+            "type": "boolean"
+          },
+          "credentialsConfigured": {
+            "type": "boolean"
+          },
+          "tested": {
+            "type": "boolean"
+          },
+          "rollbackAvailable": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "description": "不包含明文凭据或密文。enabled 只控制新请求；历史处理保留。"
+      },
+      "FakaRuntimeSettings": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483646
+          },
+          "activeRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "environment",
+              "database"
+            ]
+          },
+          "draft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FakaRuntimePublicSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "bootstrap": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FakaRuntimePublicSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "encryptionReady": {
+            "type": "boolean"
+          },
+          "credentialsConfigured": {
+            "type": "boolean"
+          },
+          "tested": {
+            "type": "boolean"
+          },
+          "rollbackAvailable": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "testKind": {
+            "type": "string",
+            "enum": [
+              "read_only",
+              "local_validation"
+            ]
+          }
+        },
+        "description": "不包含明文凭据或密文。enabled 只控制新请求；历史处理保留。"
+      },
+      "PaymentRuntimeSettings": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483646
+          },
+          "activeRevisionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "environment",
+              "database"
+            ]
+          },
+          "draft": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimePaymentPublicSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "bootstrap": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RuntimePaymentPublicSettings"
+              }
+            ],
+            "nullable": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "encryptionReady": {
+            "type": "boolean"
+          },
+          "credentialsConfigured": {
+            "type": "boolean"
+          },
+          "tested": {
+            "type": "boolean"
+          },
+          "rollbackAvailable": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "testKind": {
+            "type": "string",
+            "enum": [
+              "read_only",
+              "local_validation"
+            ]
+          },
+          "draftWebhookUrl": {
+            "type": "string",
+            "format": "uri",
+            "nullable": true
+          },
+          "draftAccountKey": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "description": "不包含明文凭据或密文。enabled 只控制新请求；历史处理保留。"
       }
     },
     "responses": {
@@ -10100,7 +10942,7 @@
           "Admin Config"
         ],
         "summary": "更新单个系统配置项",
-        "description": "key 必须是已知配置项之一；value 为非负整数。事务内 upsert `SystemConfig` 行并写 `AdminLog`。新值在下一次读取（`getSystemConfigValue`）时立即生效。\n\nM3 备注：`refreshTokenMaxAgeDays` 现已真正生效——下一次签发 refresh token（登录 / refresh / 注册 / 邮箱验证后自动登录等路径）时会读取最新值，落到 DB `expiresAt` 和 Set-Cookie `Max-Age`。但**已签发**仍在有效期内的 token 保留原始过期时间，不会被回溯缩短；如需即刻强制下线，请使用 ban / unban，或让用户改密（这两条路径都会显式撤销该用户的全部 refresh token）。\n\nSPEC-OPS-REGMAIL-001：`registrationEnabled` 为公开注册总开关（1 = 开启，0 = 关闭），写入 0 之后进入 `registerUser()` 的注册请求一律 403 `REGISTRATION_DISABLED`；缺记录时默认 1，升级站点行为不变。校验为 key-aware，向该 key 写 2 / -1 / 小数 / 字符串均 400。",
+        "description": "key 必须是已知配置项之一；value 为非负整数。事务内 upsert `SystemConfig` 行并写 `AdminLog`。新值在下一次读取（`getSystemConfigValue`）时立即生效。\n\nM3 备注：`refreshTokenMaxAgeDays` 现已真正生效——下一次签发 refresh token（登录 / refresh / 注册 / 邮箱验证后自动登录等路径）时会读取最新值，落到 DB `expiresAt` 和 Set-Cookie `Max-Age`。但**已签发**仍在有效期内的 token 保留原始过期时间，不会被回溯缩短；如需即刻强制下线，请使用 ban / unban，或让用户改密（这两条路径都会显式撤销该用户的全部 refresh token）。\n\nSPEC-OPS-REGMAIL-001：`registrationEnabled` 为公开注册总开关（1 = 开启，0 = 关闭），写入 0 之后进入 `registerUser()` 的注册请求一律 403 `REGISTRATION_DISABLED`；缺记录时默认 1，升级站点行为不变。校验为 key-aware，向该 key 写 2 / -1 / 小数 / 字符串均 400。\n\nnotificationEnabled 仅接受0/1，保存后影响后续REST请求、通知写入及新SSE连接。notificationExpiryDays 范围1..365，仅影响新通知。",
         "security": [
           {
             "bearerAuth": []
@@ -12534,7 +13376,7 @@
           "Admin Mail"
         ],
         "summary": "邮件投递状态（非敏感）",
-        "description": "返回当前进程实际生效 mailer 的安全状态摘要。需要管理员且已完成 MFA。\n\nSMTP 连接参数只在部署环境（`.env` / Secret Store / `docker-compose.prod.yml`）配置，修改后需重启或重新部署后端；本接口不提供任何写入能力，也不做网络探测。",
+        "description": "返回当前生效业务 mailer 的五字段安全状态，不做网络探测。需要管理员 MFA 和 settings.manage。后台配置解密失败时返回 503，不回退旧环境凭据。",
         "security": [
           {
             "bearerAuth": []
@@ -19550,6 +20392,1801 @@
             }
           }
         }
+      }
+    },
+    "/api/admin/mail/config": {
+      "get": {
+        "tags": [
+          "Admin Mail"
+        ],
+        "summary": "读取业务邮件安全配置与草稿",
+        "description": "需要管理员 MFA 和 settings.manage。写操作采用 expectedVersion 并发保护；审计不记录凭据。草稿测试与生效邮件测试共用限流。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailRuntimeSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Mail"
+        ],
+        "summary": "保存业务 SMTP 草稿，不改变生效配置",
+        "description": "需要管理员 MFA 和 settings.manage。写操作采用 expectedVersion 并发保护；审计不记录凭据。草稿测试与生效邮件测试共用限流。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailRuntimeSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveMailDraftRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/mail/config/test": {
+      "post": {
+        "tags": [
+          "Admin Mail"
+        ],
+        "summary": "测试当前保存的 SMTP 草稿",
+        "description": "需要管理员 MFA 和 settings.manage。写操作采用 expectedVersion 并发保护；审计不记录凭据。草稿测试与生效邮件测试共用限流。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailRuntimeSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "502": {
+            "description": "SMTP 测试发送失败，仅返回固定错误分类"
+          },
+          "429": {
+            "description": "测试发送过于频繁"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestMailDraftRequest"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/mail/config/activate": {
+      "post": {
+        "tags": [
+          "Admin Mail"
+        ],
+        "summary": "激活已测试且版本一致的 SMTP 草稿",
+        "description": "需要管理员 MFA 和 settings.manage。写操作采用 expectedVersion 并发保护；审计不记录凭据。草稿测试与生效邮件测试共用限流。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailRuntimeSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailConfigVersion"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/mail/config/rollback": {
+      "post": {
+        "tags": [
+          "Admin Mail"
+        ],
+        "summary": "回滚上一版业务 SMTP 配置",
+        "description": "需要管理员 MFA 和 settings.manage。写操作采用 expectedVersion 并发保护；审计不记录凭据。草稿测试与生效邮件测试共用限流。",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailRuntimeSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailConfigVersion"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/shortlink/config": {
+      "get": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "读取商品分享短链安全配置",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlinkRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "保存商品分享短链草稿",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlinkRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion",
+                  "apiBaseUrl",
+                  "publicOrigin",
+                  "groupId"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "credentials": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "username",
+                      "password"
+                    ],
+                    "properties": {
+                      "username": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "maxLength": 65536
+                      },
+                      "password": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "maxLength": 65536
+                      }
+                    }
+                  },
+                  "apiBaseUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "HTTPS origin，无路径/账号/参数"
+                  },
+                  "publicOrigin": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "groupId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/shortlink/config/test": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。 按管理员进程内限流 5 次/10 分钟；短链仅登录，履约只读 catalog/capability；支付 Stripe 只读核对商户，其余仅本地校验，不创建交易或退款。",
+        "summary": "校验/只读探测商品分享短链",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlinkRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/shortlink/config/activate": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "激活商品分享短链",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlinkRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/shortlink/config/rollback": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "回滚商品分享短链",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlinkRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/shortlink/config/enabled": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "启停新请求商品分享短链",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlinkRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion",
+                  "enabled"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/shortlink/config/rewrap": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。 同时部署 current/previous 根密钥后调用；覆盖草稿和全部历史账号/回滚/引导版本。任何失败整体回滚，成功使草稿测试失效。",
+        "summary": "重包所有保留版本凭据商品分享短链",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortlinkRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/faka-bridge/config": {
+      "get": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "读取FakaBridge / Xboard 履约安全配置",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "保存FakaBridge / Xboard 履约草稿",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion",
+                  "settings"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "credentials": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "secret"
+                    ],
+                    "properties": {
+                      "secret": {
+                        "type": "string",
+                        "writeOnly": true,
+                        "maxLength": 65536
+                      }
+                    }
+                  },
+                  "settings": {
+                    "$ref": "#/components/schemas/FakaRuntimePublicSettings"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/faka-bridge/config/test": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。 按管理员进程内限流 5 次/10 分钟；短链仅登录，履约只读 catalog/capability；支付 Stripe 只读核对商户，其余仅本地校验，不创建交易或退款。",
+        "summary": "校验/只读探测FakaBridge / Xboard 履约",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/faka-bridge/config/activate": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "激活FakaBridge / Xboard 履约",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "legacyConfirmed": {
+                    "type": "boolean",
+                    "description": "履约首次切换存在历史任务时，确认当前环境确为其原目标。支付不使用该字段。"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/faka-bridge/config/rollback": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "回滚FakaBridge / Xboard 履约",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/faka-bridge/config/enabled": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "summary": "启停新请求FakaBridge / Xboard 履约",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion",
+                  "enabled"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/faka-bridge/config/rewrap": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。 同时部署 current/previous 根密钥后调用；覆盖草稿和全部历史账号/回滚/引导版本。任何失败整体回滚，成功使草稿测试失效。",
+        "summary": "重包所有保留版本凭据FakaBridge / Xboard 履约",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/payments/{provider}/config": {
+      "get": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "wechat_pay",
+                "alipay",
+                "vmqfox"
+              ]
+            }
+          }
+        ],
+        "summary": "读取支付商户账号安全配置",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "wechat_pay",
+                "alipay",
+                "vmqfox"
+              ]
+            }
+          }
+        ],
+        "summary": "保存支付商户账号草稿",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion",
+                  "settings"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "credentials": {
+                    "$ref": "#/components/schemas/RuntimePaymentCredentials"
+                  },
+                  "settings": {
+                    "$ref": "#/components/schemas/RuntimePaymentPublicSettings"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/payments/{provider}/config/test": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。 按管理员进程内限流 5 次/10 分钟；短链仅登录，履约只读 catalog/capability；支付 Stripe 只读核对商户，其余仅本地校验，不创建交易或退款。",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "wechat_pay",
+                "alipay",
+                "vmqfox"
+              ]
+            }
+          }
+        ],
+        "summary": "校验/只读探测支付商户账号",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/payments/{provider}/config/activate": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "wechat_pay",
+                "alipay",
+                "vmqfox"
+              ]
+            }
+          }
+        ],
+        "summary": "激活支付商户账号",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "legacyConfirmed": {
+                    "type": "boolean",
+                    "description": "履约首次切换存在历史任务时，确认当前环境确为其原目标。支付不使用该字段。"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/payments/{provider}/config/rollback": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "wechat_pay",
+                "alipay",
+                "vmqfox"
+              ]
+            }
+          }
+        ],
+        "summary": "回滚支付商户账号",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/payments/{provider}/config/enabled": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "wechat_pay",
+                "alipay",
+                "vmqfox"
+              ]
+            }
+          }
+        ],
+        "summary": "启停新请求支付商户账号",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion",
+                  "enabled"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/payments/{provider}/config/rewrap": {
+      "post": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "description": "需要管理员 MFA 与 settings.manage；expectedVersion 并发保护，审计不记录凭据。 同时部署 current/previous 根密钥后调用；覆盖草稿和全部历史账号/回滚/引导版本。任何失败整体回滚，成功使草稿测试失效。",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "wechat_pay",
+                "alipay",
+                "vmqfox"
+              ]
+            }
+          }
+        ],
+        "summary": "重包所有保留版本凭据支付商户账号",
+        "responses": {
+          "200": {
+            "description": "当前安全配置状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaymentRuntimeSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "expectedVersion"
+                ],
+                "properties": {
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payment/webhooks/stripe/accounts/{accountKey}": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "保留历史凭据版本的账号专用 stripe 回调",
+        "security": [],
+        "description": "accountKey 只筛选候选凭据，仍需渠道验签和交易/商户核对。最多保留 8 个候选版本；停收新订单后仍处理历史回调。去重沿用稳定账号，不包含凭据版本。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        },
+        "parameters": [
+          {
+            "name": "accountKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/payment/webhooks/paypal/accounts/{accountKey}": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "保留历史凭据版本的账号专用 paypal 回调",
+        "security": [],
+        "description": "accountKey 只筛选候选凭据，仍需渠道验签和交易/商户核对。最多保留 8 个候选版本；停收新订单后仍处理历史回调。去重沿用稳定账号，不包含凭据版本。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        },
+        "parameters": [
+          {
+            "name": "accountKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/payment/webhooks/wechat-pay/accounts/{accountKey}": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "保留历史凭据版本的账号专用 wechat-pay 回调",
+        "security": [],
+        "description": "accountKey 只筛选候选凭据，仍需渠道验签和交易/商户核对。最多保留 8 个候选版本；停收新订单后仍处理历史回调。去重沿用稳定账号，不包含凭据版本。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        },
+        "parameters": [
+          {
+            "name": "accountKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/payment/webhooks/alipay/accounts/{accountKey}": {
+      "post": {
+        "tags": [
+          "Payment Webhooks"
+        ],
+        "summary": "保留历史凭据版本的账号专用 alipay 回调",
+        "security": [],
+        "description": "accountKey 只筛选候选凭据，仍需渠道验签和交易/商户核对。最多保留 8 个候选版本；停收新订单后仍处理历史回调。去重沿用稳定账号，不包含凭据版本。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "渠道要求的成功 ACK"
+          },
+          "400": {
+            "description": "验签失败"
+          },
+          "503": {
+            "description": "adapter 未注册"
+          }
+        },
+        "parameters": [
+          {
+            "name": "accountKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/payment/webhooks/vmqfox/accounts/{accountKey}": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Provider-specific success ACK"
+          },
+          "400": {
+            "description": "Signature verification failed"
+          },
+          "503": {
+            "description": "Credentials unavailable"
+          }
+        },
+        "summary": "保留历史凭据版本的账号专用 vmqfox 回调",
+        "description": "accountKey 只筛选候选凭据，仍需渠道验签和交易/商户核对。最多保留 8 个候选版本；停收新订单后仍处理历史回调。去重沿用稳定账号，不包含凭据版本。",
+        "security": [],
+        "parameters": [
+          {
+            "name": "accountKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     }
   }

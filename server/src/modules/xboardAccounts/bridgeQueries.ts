@@ -1,3 +1,5 @@
+import { fakaCacheIdentity } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig } from '../../lib/runtimeSettings/fakaBridge.js'
 import { createHash } from 'node:crypto'
 import * as bridge from '../../lib/fakaBridge/accountV2.js'
 import { config } from '../../config/index.js'
@@ -9,7 +11,7 @@ const pending = new Map<string, Promise<Snapshot>>()
 type Snapshot = { body: bridge.FakaV2Subscription | null; stale: boolean; unavailable: boolean }
 class TransientCapabilitiesError extends Error {}
 function scope(instanceId: string) {
-  return createHash('sha256').update(JSON.stringify([instanceId, config.fakaBridge.url, config.fakaBridge.secret])).digest('hex')
+  return createHash('sha256').update(JSON.stringify([instanceId, fakaCacheIdentity()])).digest('hex')
 }
 
 export async function requireReadCapabilities(instanceId: string) {

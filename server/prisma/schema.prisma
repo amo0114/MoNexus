@@ -1216,6 +1216,8 @@ model TrafficResetConfirmationRequest {
 }
 
 model XboardTrafficResetOperation {
+  configRevisionId String? @db.Uuid
+  configRevision IntegrationConfigRevision? @relation(fields: [configRevisionId], references: [id], onDelete: Restrict)
   id String @id @default(uuid()) @db.Uuid
   userId Int
   intentId String @unique @db.Uuid
@@ -1290,6 +1292,8 @@ model FulfillmentJob {
 }
 
 model FakaBridgeTask {
+  configRevisionId String? @db.Uuid
+  configRevision IntegrationConfigRevision? @relation(fields: [configRevisionId], references: [id], onDelete: Restrict)
   id              Int       @id @default(autoincrement())
   orderId         Int       @unique
   // pending | succeeded | failed | cancelled | needs_reconcile
@@ -1739,6 +1743,24 @@ model SystemConfig {
   updatedByUser User? @relation("SystemConfigUpdatedBy", fields: [updatedBy], references: [id])
 }
 
+// SMTP configuration has a tested draft and an independently active snapshot.
+// Credentials (including login names) are encrypted with an external root key.
+model MailRuntimeConfig {
+  id                            Int      @id @default(1)
+  version                       Int      @default(0)
+  draft                         Json?
+  draftCredentialsCiphertext    String?
+  testedVersion                 Int?
+  active                        Json?
+  activeCredentialsCiphertext   String?
+  activeVersion                 Int      @default(0)
+  previous                      Json?
+  previousCredentialsCiphertext String?
+  rollbackAvailable             Boolean  @default(false)
+  updatedBy                     Int?
+  updatedAt                     DateTime @updatedAt
+}
+
 // P5：受控文件交付的文件登记。对象本体在私有交付桶（DELIVERY_STORAGE_BUCKET，
 // 键 = 内容寻址 sha256.ext），本表是引用与生命周期的真相源。
 // 行永不物理删除：status 走 active → revoked（管理员吊销，仅管理员可取证下载）
@@ -2060,10 +2082,54 @@ model ProductShareLink {
   leaseUntil   DateTime?
   url          String?
   targetUrl    String
+  configRevisionId String? @db.Uuid
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  configRevision IntegrationConfigRevision? @relation(fields: [configRevisionId], references: [id], onDelete: Restrict)
+}
+
+// Operational drafts and pointers are mutable; published service snapshots are retained.
+model IntegrationConfig {
+  key String @id
+  version Int @default(0)
+  draft Json?
+  draftRevisionId String? @db.Uuid
+  draftCredentialsCiphertext String?
+  testedVersion Int?
+  activeRevisionId String? @db.Uuid
+  previousRevisionId String? @db.Uuid
+  enabled Boolean @default(true)
+  previousEnabled Boolean @default(true)
+  rollbackAvailable Boolean @default(false)
+  updatedBy Int?
+  updatedAt DateTime @updatedAt
+  activeRevision IntegrationConfigRevision? @relation("IntegrationActive", fields: [activeRevisionId], references: [id], onDelete: Restrict)
+  previousRevision IntegrationConfigRevision? @relation("IntegrationPrevious", fields: [previousRevisionId], references: [id], onDelete: Restrict)
+}
+
+model IntegrationConfigRevision {
+  paymentAccountId String? @db.Uuid
+  paymentAccount PaymentRuntimeAccount? @relation(fields: [paymentAccountId], references: [id], onDelete: Restrict)
+  id String @id @default(uuid()) @db.Uuid
+  key String
+  settings Json
+  credentialsCiphertext String?
+  createdBy Int?
+  createdAt DateTime @default(now())
+  activeFor IntegrationConfig[] @relation("IntegrationActive")
+  previousFor IntegrationConfig[] @relation("IntegrationPrevious")
+  fakaTasks FakaBridgeTask[]
+  resetOperations XboardTrafficResetOperation[]
+  paymentQuotes RechargeQuote[]
+  paymentOrders RechargeOrder[]
+  paymentAttempts PaymentAttempt[]
+  paymentEvents PaymentEvent[]
+  reconciliationRuns ReconciliationRun[]
+  shareLinks ProductShareLink[]
+  @@index([key, createdAt])
+  @@index([paymentAccountId, createdAt])
 }
 
 // ── SPEC-CATALOG-VIS-001 §4.3（P1.5）：商品游客公开准入 ──────────────────
@@ -2491,6 +2557,8 @@ model RechargeSuggestedAmount {
 }
 
 model RechargeQuote {
+  providerCredentialRevisionId String? @db.Uuid
+  providerCredentialRevision IntegrationConfigRevision? @relation(fields: [providerCredentialRevisionId], references: [id], onDelete: Restrict)
   id                      String    @id @default(uuid()) @db.Uuid
   userId                  Int
   pricePolicyId           String    @db.Uuid
@@ -2521,6 +2589,8 @@ model RechargeQuote {
 }
 
 model RechargeOrder {
+  providerCredentialRevisionId String? @db.Uuid
+  providerCredentialRevision IntegrationConfigRevision? @relation(fields: [providerCredentialRevisionId], references: [id], onDelete: Restrict)
   id                      String    @id @default(uuid()) @db.Uuid
   userId                  Int
   quoteId                 String    @unique @db.Uuid
@@ -2590,6 +2660,8 @@ model PaymentIntent {
 }
 
 model PaymentAttempt {
+  providerCredentialRevisionId String? @db.Uuid
+  providerCredentialRevision IntegrationConfigRevision? @relation(fields: [providerCredentialRevisionId], references: [id], onDelete: Restrict)
   id                          String    @id @default(uuid()) @db.Uuid
   paymentIntentId             String    @db.Uuid
   provider                    String
@@ -2623,6 +2695,8 @@ model PaymentAttempt {
 }
 
 model PaymentEvent {
+  providerCredentialRevisionId String? @db.Uuid
+  providerCredentialRevision IntegrationConfigRevision? @relation(fields: [providerCredentialRevisionId], references: [id], onDelete: Restrict)
   id                   String    @id @default(uuid()) @db.Uuid
   provider             String
   providerAccountKey   String
@@ -2824,6 +2898,8 @@ model AccountRestriction {
 }
 
 model ReconciliationRun {
+  providerCredentialRevisionId String? @db.Uuid
+  providerCredentialRevision IntegrationConfigRevision? @relation(fields: [providerCredentialRevisionId], references: [id], onDelete: Restrict)
   id                 String    @id @default(uuid()) @db.Uuid
   provider           String
   providerAccountKey String
@@ -3317,4 +3393,16 @@ model WalletIntegrityIssue {
 
   @@unique([userId, type])
   @@index([lastSeenAt, id])
+}
+
+// Physical merchant identity is stable across credential revisions and payment event deduplication.
+model PaymentRuntimeAccount {
+  revisions IntegrationConfigRevision[]
+  id String @id @default(uuid()) @db.Uuid
+  provider String
+  providerAccountKey String
+  environment String
+  identity Json
+  createdAt DateTime @default(now())
+  @@unique([provider, providerAccountKey])
 }

@@ -3,6 +3,8 @@ import { api, authHeader, createTestUser, issueTestInviteCode, loginAs } from '.
 import { prisma } from '../lib/prisma.js'
 
 const defaultConfig = {
+  notificationEnabled: 0,
+  notificationExpiryDays: 90,
   registerReward: 500,
   checkinReward: 50,
   inviteReward: 200,

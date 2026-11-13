@@ -98,7 +98,7 @@ describe('mail delivery status DTO (P.5)', () => {
   it('reports the console fallback as not ready', async () => {
     setMailerConfig({ kind: 'console' })
 
-    expect(getMailDeliveryStatus()).toEqual({
+    expect(await getMailDeliveryStatus()).toEqual({
       mode: 'console',
       deliveryReady: false,
       from: null,
@@ -107,10 +107,10 @@ describe('mail delivery status DTO (P.5)', () => {
     })
   })
 
-  it('returns the explicitly configured SMTP_FROM only', () => {
+  it('returns the explicitly configured SMTP_FROM only', async () => {
     setMailerConfig(smtpConfig({ displayFrom: 'noreply@monexus.test' }))
 
-    expect(getMailDeliveryStatus()).toEqual({
+    expect(await getMailDeliveryStatus()).toEqual({
       mode: 'smtp',
       deliveryReady: true,
       from: 'noreply@monexus.test',
@@ -119,28 +119,28 @@ describe('mail delivery status DTO (P.5)', () => {
     })
   })
 
-  it('stays ready with a SMTP_USER fallback while never echoing it (C3)', () => {
+  it('stays ready with a SMTP_USER fallback while never echoing it (C3)', async () => {
     // 只配 SMTP_USER：投递可用，但发件地址不公开展示。
     setMailerConfig(smtpConfig())
 
-    const status = getMailDeliveryStatus()
+    const status = await getMailDeliveryStatus()
     expect(status.deliveryReady).toBe(true)
     expect(status.from).toBeNull()
     expect(JSON.stringify(status)).not.toContain(CANARY_USER)
   })
 
-  it('decouples authConfigured from deliveryReady (C4)', () => {
+  it('decouples authConfigured from deliveryReady (C4)', async () => {
     // 免认证 relay：没有 user/pass 也可能是正常的受控中继。
     setMailerConfig(smtpConfig({ user: undefined, pass: undefined, displayFrom: 'relay@monexus.test' }))
-    expect(getMailDeliveryStatus()).toMatchObject({ deliveryReady: true, authConfigured: false })
+    expect(await getMailDeliveryStatus()).toMatchObject({ deliveryReady: true, authConfigured: false })
 
     // 有 user 无 pass：认证不完整，但发件地址仍然有效。
     setMailerConfig(smtpConfig({ pass: undefined }))
-    expect(getMailDeliveryStatus()).toMatchObject({ deliveryReady: true, authConfigured: false })
+    expect(await getMailDeliveryStatus()).toMatchObject({ deliveryReady: true, authConfigured: false })
 
     // 既无 SMTP_FROM 也无 SMTP_USER：没有生效发件地址，不就绪。
     setMailerConfig(smtpConfig({ user: undefined, from: undefined }))
-    expect(getMailDeliveryStatus()).toMatchObject({ deliveryReady: false, from: null })
+    expect(await getMailDeliveryStatus()).toMatchObject({ deliveryReady: false, from: null })
   })
 
   it('serializes exactly five whitelisted fields with no SMTP secret (P.5)', async () => {

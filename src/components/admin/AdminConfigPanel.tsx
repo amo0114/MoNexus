@@ -1,8 +1,11 @@
+import AdminPaymentSettingsPanel from './AdminPaymentSettingsPanel'
+import AdminFakaSettingsPanel from './AdminFakaSettingsPanel'
 import { useEffect, useState } from 'react'
 import { getAdminConfig, updateAdminConfig, AdminSystemConfig, AdminSystemConfigKey } from '../../api/adminConfig'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import AdminMailPanel from './AdminMailPanel'
+import AdminShortlinkSettingsPanel from './AdminShortlinkSettingsPanel'
 import AdminAiSettingsPanel from './AdminAiSettingsPanel'
 import { useTabActions } from '../../auth/adminAccess'
 import AdminSystemInfoPanel from './AdminSystemInfoPanel'
@@ -176,6 +179,7 @@ export default function AdminConfigPanel() {
     setSavingKey(key)
     try {
       const updated = await updateAdminConfig(key, valueToSave)
+      if (key === 'notificationEnabled') void useAppStore.getState().loadRegistry()
       setConfigs((prev) => prev.map((c) => (c.key === updated.key ? updated : c)))
       setDrafts((prev) => ({
         ...prev,
@@ -330,34 +334,53 @@ export default function AdminConfigPanel() {
 
                     <div className="flex-shrink-0 sm:w-72">
                       <div className="flex items-center gap-2">
-                        <input
-                          id={`admin-config-input-${c.key}`}
-                          type="number"
-                          min={c.min ?? meta.min ?? 0}
-                          max={c.max ?? meta.max}
-                          step="1"
-                          value={rawVal}
-                          onChange={(e) => handleChange(c.key, e.target.value)}
-                          disabled={isSaving}
-                          aria-describedby={`admin-config-hint-${c.key}`}
-                          data-testid={`admin-config-input-${c.key}`}
-                          className={`input py-1.5 px-2 w-28 ${error ? 'border-[var(--color-danger)]' : ''}`}
-                        />
-                        {meta.unit && (
-                          <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">{meta.unit}</span>
+                        {meta.type === 'switch' ? (
+                          <button
+                            id={`admin-config-input-${c.key}`}
+                            type="button"
+                            role="switch"
+                            aria-label={meta.label}
+                            aria-checked={c.value === 1}
+                            aria-describedby={`admin-config-hint-${c.key}`}
+                            disabled={savingKey !== null}
+                            onClick={() => void handleSave(c.key, c.value === 1 ? '0' : '1')}
+                            data-testid={`admin-config-switch-${c.key}`}
+                            className="btn-secondary min-h-10 min-w-20 px-4"
+                          >
+                            {isSaving ? '保存中…' : c.value === 1 ? '已开启' : '已关闭'}
+                          </button>
+                        ) : (
+                          <>
+                            <input
+                              id={`admin-config-input-${c.key}`}
+                              type="number"
+                              min={c.min ?? meta.min ?? 0}
+                              max={c.max ?? meta.max}
+                              step="1"
+                              value={rawVal}
+                              onChange={(e) => handleChange(c.key, e.target.value)}
+                              disabled={isSaving}
+                              aria-describedby={`admin-config-hint-${c.key}`}
+                              data-testid={`admin-config-input-${c.key}`}
+                              className={`input py-1.5 px-2 w-28 ${error ? 'border-[var(--color-danger)]' : ''}`}
+                            />
+                            {meta.unit && (
+                              <span className="text-xs text-[var(--color-text-muted)] whitespace-nowrap">{meta.unit}</span>
+                            )}
+                            <button
+                              type="button"
+                              disabled={isSaving || savingKey !== null}
+                              onClick={() => void handleSave(c.key, rawVal)}
+                              data-testid={`admin-config-save-${c.key}`}
+                              className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            >
+                              {isSaving ? '保存中...' : '保存'}
+                            </button>
+                          </>
                         )}
-                        <button
-                          type="button"
-                          disabled={isSaving || savingKey !== null}
-                          onClick={() => void handleSave(c.key, rawVal)}
-                          data-testid={`admin-config-save-${c.key}`}
-                          className="text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] font-semibold text-xs px-3 py-1.5 btn-sm rounded-lg transition-colors border border-[color-mix(in_srgb,var(--color-primary)_25%,transparent)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                        >
-                          {isSaving ? '保存中...' : '保存'}
-                        </button>
                       </div>
                       <div className="text-xs text-[var(--color-text-muted)] mt-1">
-                        当前部署默认值：{c.defaultValue} {meta.unit ?? ''}
+                        当前部署默认值：{meta.type === 'switch' ? (c.defaultValue === 1 ? '已开启' : '已关闭') : c.defaultValue} {meta.unit ?? ''}
                       </div>
                     </div>
                   </div>
@@ -370,6 +393,9 @@ export default function AdminConfigPanel() {
           {activeGroup === 'ops' && (
             <div className="mt-6 pt-6 border-t border-[var(--color-border)]">
               <AdminMailPanel />
+              <AdminShortlinkSettingsPanel />
+              <AdminFakaSettingsPanel />
+              <AdminPaymentSettingsPanel />
             </div>
           )}
         </div>

@@ -98,7 +98,7 @@ function resolveConfig(options: ShortlinkClientOptions): ShortlinkConfig | undef
   } : undefined
 }
 
-export function createShortlinkClient(options: ShortlinkClientOptions = {}): ShortlinkClient {
+export function createShortlinkClient(options: ShortlinkClientOptions = {}): ShortlinkClient & { testAuthentication: () => Promise<void> } {
   const cfg = resolveConfig(options)
   const fetchImplementation = options.fetchImplementation ?? globalThis.fetch
   const budgetMs = options.remoteBudgetMs ?? SHORTLINK_REMOTE_BUDGET_MS
@@ -208,6 +208,9 @@ export function createShortlinkClient(options: ShortlinkClientOptions = {}): Sho
   }
 
   return {
+    async testAuthentication() {
+      await login(Date.now() + budgetMs)
+    },
     async createShortLink(originUrl: string): Promise<ShortlinkCreateResult> {
       if (!cfg || typeof fetchImplementation !== 'function') {
         throw new ShortlinkError('unconfigured')

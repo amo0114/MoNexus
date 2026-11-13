@@ -12,7 +12,7 @@ export interface AdminMailStatus {
   /** 仅显式配置 SMTP_FROM 时返回；否则为 null（不回显 SMTP_USER 兜底值） */
   from: string | null
   authConfigured: boolean
-  configuredVia: 'environment'
+  configuredVia: 'environment' | 'database'
 }
 
 export async function getAdminMailStatus(): Promise<AdminMailStatus> {
@@ -30,5 +30,48 @@ export async function getAdminMailStatus(): Promise<AdminMailStatus> {
 export async function sendAdminMailTest(email: string): Promise<{ message: string }> {
   // 收件地址只随本次请求出网，调用方不得持久化（规格 §5.2）。
   const { data } = await api.post<{ message: string }>('/admin/mail/test', { email })
+  return data
+}
+
+export interface MailTransportSettings {
+  host: string
+  port: number
+  secure: boolean
+  from: string
+  fromName: string
+}
+
+export interface AdminMailSettings {
+  version: number
+  activeVersion: number
+  source: 'environment' | 'database'
+  encryptionReady: boolean
+  draft: MailTransportSettings | null
+  bootstrap: MailTransportSettings | null
+  draftAuthConfigured: boolean
+  tested: boolean
+  rollbackAvailable: boolean
+  updatedAt: string | null
+}
+
+export async function getAdminMailSettings(): Promise<AdminMailSettings> {
+  const { data } = await api.get<AdminMailSettings>('/admin/mail/config')
+  return data
+}
+
+export async function saveAdminMailDraft(settings: MailTransportSettings & {
+  expectedVersion: number
+  credentials?: { user: string; pass: string } | null
+}): Promise<AdminMailSettings> {
+  const { data } = await api.put<AdminMailSettings>('/admin/mail/config', settings)
+  return data
+}
+
+export async function operateAdminMailSettings(
+  action: 'test' | 'activate' | 'rollback', expectedVersion: number, email?: string,
+): Promise<AdminMailSettings> {
+  const { data } = await api.post<AdminMailSettings>(`/admin/mail/config/${action}`, {
+    expectedVersion, ...(email ? { email } : {}),
+  })
   return data
 }

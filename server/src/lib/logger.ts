@@ -135,6 +135,12 @@ const TURNSTILE_SITEVERIFY_PATHS = [
  * `config.mailer` 结构、以及 nodemailer 的 `auth: { user, pass }`。
  */
 const SMTP_CREDENTIAL_PATHS = [
+  ...['MAIL_CREDENTIALS_ENC_KEY', 'MAIL_CREDENTIALS_ENC_KEY_PREVIOUS',
+    'INTEGRATION_CREDENTIALS_ENC_KEY', 'INTEGRATION_CREDENTIALS_ENC_KEY_PREVIOUS',
+    'integrationCredentialsEncKey', 'integrationCredentialsEncKeyPrevious', 'credentialsCiphertext',
+    'mailCredentialsEncKey', 'mailCredentialsEncKeyPrevious',
+    'draftCredentialsCiphertext', 'activeCredentialsCiphertext', 'previousCredentialsCiphertext',
+    'credentials'].flatMap(nestedSensitivePaths),
   'SMTP_USER',
   'SMTP_PASS',
   '*.SMTP_USER',

@@ -1,3 +1,5 @@
+import { withFakaTask, withFakaTaskInBatch } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig } from '../../lib/runtimeSettings/fakaBridge.js'
 import { grantForOrderInTx } from '../trafficReset/benefits.js'
 /**
  * FakaBridge refund + revoke + reconcile hooks.
@@ -218,6 +220,9 @@ export function scheduleFakaRevokeAttempt(taskId: number): void {
 }
 
 export async function processFakaRevokeTask(taskId: number): Promise<'succeeded' | 'failed' | 'skipped'> {
+  return withFakaTask(taskId, () => processBoundFakaRevokeTask(taskId))
+}
+async function processBoundFakaRevokeTask(taskId: number): Promise<'succeeded' | 'failed' | 'skipped'> {
   if (!hasClientCredentials()) {
     fakaRevokeTotal.inc({ outcome: 'skipped' })
     return 'skipped'
@@ -243,7 +248,7 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
       data: {
         revokeAttempts: attempts,
         leaseToken,
-        leaseUntil: new Date(now.getTime() + config.fakaBridge.timeoutMs + 20_000),
+        leaseUntil: new Date(now.getTime() + fakaBridgeConfig().timeoutMs + 20_000),
         // Pre-write backoff so crash mid-HTTP does not tight-loop
         nextAttemptAt: new Date(now.getTime() + revokeBackoffMs(attempts)),
       },
@@ -394,7 +399,6 @@ export async function processFakaRevokeTask(taskId: number): Promise<'succeeded'
 }
 
 export async function runFakaRevokeBatch(limit = 10): Promise<number> {
-  if (!hasClientCredentials()) return 0
   // UTC-safe due selection (nextAttemptAt + lease) — same discipline as provision batch
   const now = new Date()
   const due = await prisma.$queryRaw<Array<{ id: number }>>`
@@ -407,7 +411,7 @@ export async function runFakaRevokeBatch(limit = 10): Promise<number> {
   `
   let n = 0
   for (const row of due) {
-    const outcome = await processFakaRevokeTask(row.id)
+    const outcome = await withFakaTaskInBatch(row.id, () => processBoundFakaRevokeTask(row.id), 'skipped')
     if (outcome !== 'skipped') n += 1
   }
   return n
@@ -712,7 +716,6 @@ async function reconcilePaidTask(full: FakaBridgeTask, snapshot: ReconcileTaskSn
  * - intermediate / unknown → keep needs_reconcile, never hard-cancel
  */
 export async function runFakaReconcileBatch(limit = 20): Promise<number> {
-  if (!hasClientCredentials()) return 0
   let actions = 0
 
   // Refunded orders that still have open provision or missing revoke
@@ -720,6 +723,11 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     where: {
       status: 'refunded',
       fakaBridgeTask: {
+        AND: [{ OR: [
+          { lastError: null },
+          { lastError: { not: 'CONFIG_UNAVAILABLE' } },
+          { nextAttemptAt: { lte: new Date() } },
+        ] }],
         OR: [
           { status: 'pending' },
           // Exhausted revokes wait for an operator; keep them from filling the batch.
@@ -734,6 +742,9 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       },
     },
     select: { id: true, fakaBridgeTask: { select: { id: true, status: true, revokeStatus: true } } },
+    // In-flight tasks cannot be probed yet. Let claimable tasks progress before
+    // cancellation bookkeeping for active leases, including unreadable revisions.
+    orderBy: [{ fakaBridgeTask: { leaseUntil: { sort: 'asc', nulls: 'first' } } }, { id: 'asc' }],
     take: limit,
   })
 
@@ -742,6 +753,8 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     if (!task) continue
     const full = await prisma.fakaBridgeTask.findUnique({ where: { id: task.id } })
     if (!full) continue
+    await withFakaTaskInBatch(full.id, async () => {
+      if (!hasClientCredentials()) return
     const fullSnapshot = snapshotReconcileTask(full)
     const leaseExpired = await isLeaseExpiredUtc(prisma, full.id)
     const inFlight = full.status === 'pending' && !leaseExpired
@@ -753,16 +766,16 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           { allowedOrderStatuses: ['refunded'], requireExpiredLease: false })
         if (queued) actions++
       }
-      continue
+      return
     }
 
     // Defer status probes until nextAttemptAt (UTC; 5‑minute park after intermediate).
     // Still process in-flight cancel_requested and pure revoke queue without waiting.
     if ((full.status === 'pending' || full.status === 'needs_reconcile') && !inFlight) {
       // A queued/exhausted revoke tombstone owns convergence; probing would race it.
-      if (full.revokeStatus === 'pending' || full.revokeStatus === 'failed') continue
+      if (full.revokeStatus === 'pending' || full.revokeStatus === 'failed') return
       const sched = await readTaskScheduleUtc(prisma, full.id)
-      if (sched && !sched.nextAttemptDue) continue
+      if (sched && !sched.nextAttemptDue) return
     }
 
     if (full.status === 'pending' && inFlight) {
@@ -804,7 +817,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           fakaReconcileTotal.inc({ action: 'refund_status_order_no_mismatch' })
           actions += 1
         }
-        continue
+        return
       }
       const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
       const xbTrade = xbBody && xbBody.trade_no != null ? String(xbBody.trade_no) : null
@@ -927,6 +940,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
         }
       }
     }
+    }, undefined)
   }
 
   // Stuck / needs_reconcile while MN order still pending (points held).
@@ -938,16 +952,18 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
     // claimed by another instance never receives a stale reconcile write.
     const full = await prisma.fakaBridgeTask.findUnique({ where: { id: selected.id } })
     if (!full || full.status !== selected.status || full.leaseToken !== selected.leaseToken) continue
+    await withFakaTaskInBatch(full.id, async () => {
+      if (!hasClientCredentials()) return
     const snapshot = snapshotReconcileTask(full)
     const schedule = await readTaskScheduleUtc(prisma, full.id)
-    if (!schedule?.leaseExpired || !schedule.nextAttemptDue) continue
+    if (!schedule?.leaseExpired || !schedule.nextAttemptDue) return
 
     if (full.protocolVersion === 2) {
       if (await reconcilePaidTask(full, snapshot)) actions++
-      continue
+      return
     }
     // The revoke worker refunds once the tombstone is confirmed; failed needs an operator.
-    if (full.revokeStatus === 'pending' || full.revokeStatus === 'failed') continue
+    if (full.revokeStatus === 'pending' || full.revokeStatus === 'failed') return
 
     if (full.status === 'succeeded') {
       // Task already succeeded without MN delivery (race). Probe status for
@@ -972,7 +988,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       if (delivered) {
         fakaReconcileTotal.inc({ action: 'deliver_after_success' })
         actions += 1
-        continue
+        return
       }
       // Already delivered with a local validityDays projection that drifted from
       // Xboard (e.g. buy while remaining time existed): align expiresAt to panel.
@@ -983,7 +999,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
           actions += 1
         }
       }
-      continue
+      return
     }
 
     const statusRes = await callFakaOrderStatus(full.requestOrderNo, clientOverrides())
@@ -1008,7 +1024,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
         fakaReconcileTotal.inc({ action: 'status_order_no_mismatch' })
         actions += 1
       }
-      continue
+      return
     }
     const xbStatus = xbBody ? String(xbBody.status ?? '') : ''
     const tradeNo = xbBody && xbBody.trade_no != null ? String(xbBody.trade_no) : null
@@ -1020,13 +1036,13 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
       if (full.status === 'needs_reconcile' || full.attempts >= full.maxAttempts) {
         remoteClass = 'not_opened'
       } else {
-        continue
+        return
       }
     } else if (xbBody) {
       remoteClass = classifyFakaRemoteStatus(xbStatus, tradeNo)
     } else {
       fakaReconcileTotal.inc({ action: 'status_probe_fail' })
-      continue
+      return
     }
 
     if (remoteClass === 'opened') {
@@ -1116,6 +1132,7 @@ export async function runFakaReconcileBatch(limit = 20): Promise<number> {
         actions += 1
       }
     }
+    }, undefined)
   }
 
   return actions
@@ -1194,7 +1211,10 @@ async function tryRefundPendingOrder(
  * Admin / ops: probe Xboard order-status and write user.expired_at onto the
  * MoNexus DeliveryRecord for a succeeded Faka task (historical drift repair).
  */
-export async function syncFakaExpiresAtFromRemote(
+export async function syncFakaExpiresAtFromRemote(taskId: number) {
+  return withFakaTask(taskId, () => syncBoundFakaExpiresAtFromRemote(taskId))
+}
+async function syncBoundFakaExpiresAtFromRemote(
   taskId: number
 ): Promise<{
   aligned: boolean
@@ -1325,7 +1345,7 @@ async function tryDeliverPendingOrder(
   const delivery = buildFakaDeliveryPayload({
     tradeNo: tradeNo ?? null,
     email,
-    panelUrl: config.fakaBridge.panelUrl || 'https://v.uuwu.de',
+    panelUrl: fakaBridgeConfig().panelUrl || 'https://v.uuwu.de',
     subscription,
   })
   try {

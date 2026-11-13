@@ -3,10 +3,8 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
 import { HttpError, notFound, type ErrorCode } from '../../lib/httpError.js'
-import {
-  getShortlinkClient,
-  type ShortlinkClient,
-} from '../../lib/shortlinkClient.js'
+import type { ShortlinkClient } from '../../lib/shortlinkClient.js'
+import { getShortlinkRuntimeConfig, shortlinkClientForSnapshot } from '../../lib/runtimeSettings/shortlink.js'
 import { CATALOG_ERROR_CODES } from '../../lib/productCatalog/constants.js'
 import {
   assertPublicProductAccess,
@@ -24,7 +22,7 @@ export type ProductShareLinkResponse = {
 
 type ClaimResult =
   | { kind: 'ready'; url: string }
-  | { kind: 'claimed'; attemptToken: string; targetUrl: string }
+  | { kind: 'claimed'; attemptToken: string; targetUrl: string; client: ShortlinkClient; revisionId: string | null }
 
 const productAccessSelect = {
   status: true,
@@ -67,9 +65,12 @@ function canonicalProductUrl(productId: number): string {
   return `${base}/product/${productId}`
 }
 
-function resolveClient(): ShortlinkClient | null {
-  if (clientForTests !== undefined) return clientForTests
-  return getShortlinkClient()
+async function resolveClient(tx: Prisma.TransactionClient) {
+  if (clientForTests !== undefined) return clientForTests ? { client: clientForTests, revisionId: null } : null
+  try {
+    const snapshot = await getShortlinkRuntimeConfig(tx)
+    return snapshot ? { client: shortlinkClientForSnapshot(snapshot), revisionId: snapshot.revisionId } : null
+  } catch { throw shareUnavailable() }
 }
 
 function isUniqueConflict(err: unknown): boolean {
@@ -113,6 +114,10 @@ async function claimAttempt(productId: number, audience: ProductAudience): Promi
     const leaseUntil = new Date(now.getTime() + SHARE_LINK_LEASE_MS)
 
     let existing = await tx.productShareLink.findUnique({ where: { productId } })
+    if (existing?.status === 'ready' && existing.url) return { kind: 'ready', url: existing.url }
+    if (existing?.status === 'creating' && leaseUnexpired(existing.leaseUntil, now)) throw shareCreating()
+    const runtime = await resolveClient(tx)
+    if (!runtime) throw shareUnavailable()
     if (!existing) {
       try {
         await tx.productShareLink.create({
@@ -123,9 +128,10 @@ async function claimAttempt(productId: number, audience: ProductAudience): Promi
             leaseUntil,
             url: null,
             targetUrl,
+            configRevisionId: runtime.revisionId,
           },
         })
-        return { kind: 'claimed', attemptToken, targetUrl }
+        return { kind: 'claimed', attemptToken, targetUrl, ...runtime }
       } catch (err) {
         if (!isUniqueConflict(err)) throw err
         existing = await tx.productShareLink.findUnique({ where: { productId } })
@@ -155,10 +161,11 @@ async function claimAttempt(productId: number, audience: ProductAudience): Promi
         leaseUntil,
         url: null,
         targetUrl,
+        configRevisionId: runtime.revisionId,
       },
     })
     if (cas.count !== 1) throw shareCreating()
-    return { kind: 'claimed', attemptToken, targetUrl }
+    return { kind: 'claimed', attemptToken, targetUrl, ...runtime }
   })
 }
 
@@ -167,6 +174,7 @@ async function casReady(
   attemptToken: string,
   url: string,
   targetUrl: string,
+  revisionId: string | null,
 ): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ productId: number }>>`
     UPDATE "ProductShareLink"
@@ -179,6 +187,7 @@ async function casReady(
     WHERE "productId" = ${productId}
       AND "attemptToken" = ${attemptToken}::uuid
       AND "status" = 'creating'
+      AND "configRevisionId" IS NOT DISTINCT FROM ${revisionId}::uuid
     RETURNING "productId"
   `
   return rows.length === 1
@@ -212,9 +221,6 @@ export async function createProductShareLink(
   productId: number,
   audience: ProductAudience,
 ): Promise<ProductShareLinkResponse> {
-  const client = resolveClient()
-  if (!client) throw shareUnavailable()
-
   const product = await loadProductAccess(productId)
   assertAudienceAccess(product, audience)
 
@@ -225,14 +231,14 @@ export async function createProductShareLink(
 
   let created: { url: string }
   try {
-    created = await client.createShortLink(claim.targetUrl)
+    created = await claim.client.createShortLink(claim.targetUrl)
   } catch (err) {
     await casFailed(productId, claim.attemptToken)
     if (err instanceof HttpError) throw err
     throw shareUnavailable()
   }
 
-  const committed = await casReady(productId, claim.attemptToken, created.url, claim.targetUrl)
+  const committed = await casReady(productId, claim.attemptToken, created.url, claim.targetUrl, claim.revisionId)
   if (!committed) {
     const current = await prisma.productShareLink.findUnique({ where: { productId } })
     if (current?.status === 'ready' && current.url) {

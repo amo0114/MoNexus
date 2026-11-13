@@ -4,7 +4,7 @@ import { loginAs, SEED_ACCOUNTS, selectAdminTab } from './helpers'
 /**
  * SPEC-OPS-REGMAIL-001 阶段 B：管理后台注册开关 + 邮件投递运营面。
  *
- * 策略（计划 C16）：用真实 seed 管理员（密码 + TOTP）登录，只对本特性的三个
+ * 策略（计划 C16）：用真实 seed 管理员（密码 + TOTP）登录，只对本特性的注册/邮件
  * 端点做**精确 pathname** mock（不能用宽松 glob，否则会拦到 Vite 的模块请求）。
  * 真正的持久化/API 拒绝语义由后端 Supertest 覆盖——在 E2E 里改全局配置会与
  * 并行跑的注册用例互相踩踏。
@@ -14,6 +14,7 @@ const CONFIG_PATH = '/api/admin/config'
 const CONFIG_KEY_PATH = '/api/admin/config/registrationEnabled'
 const MAIL_STATUS_PATH = '/api/admin/mail/status'
 const MAIL_TEST_PATH = '/api/admin/mail/test'
+const MAIL_CONFIG_PATH = '/api/admin/mail/config'
 
 function pathIs(path: string) {
   return (url: URL) => url.pathname === path
@@ -92,6 +93,11 @@ async function mockMailStatus(page: Page, body: MailStatusBody) {
   await page.route(pathIs(MAIL_STATUS_PATH), async (route: Route) => {
     await route.fulfill({ json: body })
   })
+  await page.route(pathIs(MAIL_CONFIG_PATH), route => route.fulfill({ json: {
+    version: 0, activeVersion: 0, source: 'environment', encryptionReady: true,
+    draft: null, bootstrap: null, draftAuthConfigured: false,
+    tested: false, rollbackAvailable: false, updatedAt: null,
+  } }))
 }
 
 async function openConfigTab(page: Page) {
@@ -199,6 +205,50 @@ test.describe('注册开关面板', () => {
 })
 
 test.describe('邮件投递面板', () => {
+  test('业务 SMTP 草稿保存、测试、激活和回滚旅程', async ({ page }) => {
+    await loginAs(page, SEED_ACCOUNTS.admin)
+    await mockAdminConfig(page, 1)
+    await mockMailStatus(page, READY_STATUS)
+    let settings = {
+      version: 0, activeVersion: 0, source: 'environment', encryptionReady: true,
+      draft: null as null | { host: string; port: number; secure: boolean; from: string; fromName: string },
+      bootstrap: null, draftAuthConfigured: false, tested: false, rollbackAvailable: false, updatedAt: null,
+    }
+    await page.route(url => url.pathname === MAIL_CONFIG_PATH || url.pathname.startsWith(`${MAIL_CONFIG_PATH}/`), async route => {
+      const request = route.request()
+      const action = new URL(request.url()).pathname.slice(MAIL_CONFIG_PATH.length)
+      if (request.method() === 'PUT') {
+        const body = request.postDataJSON()
+        settings = { ...settings, version: 1, draft: {
+          host: body.host, port: body.port, secure: body.secure, from: body.from, fromName: body.fromName,
+        }, draftAuthConfigured: true }
+      } else if (action === '/test') settings = { ...settings, tested: true }
+      else if (action === '/activate') settings = { ...settings, version: 2, activeVersion: 1, source: 'database', tested: false, rollbackAvailable: true }
+      else if (action === '/rollback') settings = { ...settings, version: 3, activeVersion: 2, source: 'environment' }
+      await route.fulfill({ json: settings })
+    })
+    await openConfigTab(page)
+    await page.getByRole('tab', { name: '高级运维' }).click()
+    const panel = page.getByTestId('admin-mail-settings')
+    await panel.getByLabel('SMTP 主机').fill('smtp.example.com')
+    await panel.getByLabel('发件邮箱').fill('mail@example.com')
+    await panel.getByLabel('SMTP 账号').fill('ui-smoke-login')
+    await panel.getByLabel('SMTP 密码').fill('ui-smoke-password')
+    await panel.getByRole('button', { name: '保存草稿' }).click()
+    await expect(panel.getByLabel('SMTP 密码')).toHaveValue('')
+    await expect(panel.getByRole('button', { name: '激活当前草稿' })).toBeDisabled()
+    await panel.getByLabel('草稿测试收件地址').fill('operator@example.com')
+    await panel.getByRole('button', { name: '发送草稿测试邮件' }).click()
+    await expect(panel.getByRole('button', { name: '激活当前草稿' })).toBeEnabled()
+    await panel.getByRole('button', { name: '激活当前草稿' }).click()
+    await expect(panel.getByText(/当前来源：管理员后台/)).toBeVisible()
+    await panel.getByRole('button', { name: '回滚上一版' }).click()
+    await expect(panel.getByText(/当前来源：部署环境变量/)).toBeVisible()
+    await page.setViewportSize({ width: 375, height: 812 })
+    await expect(panel).toBeVisible()
+    expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true)
+  })
+
   test('P.15 只渲染白名单字段，注入的秘密金丝雀不出现在页面或 console', async ({ page }) => {
     const canaries = [
       'smtp-host-canary.internal',
@@ -235,7 +285,7 @@ test.describe('邮件投递面板', () => {
     }
     // 运维提示必须给出受控变更路径
     await expect(
-      page.getByText('SMTP_HOST / SMTP_PORT / SMTP_SECURE / SMTP_USER / SMTP_PASS / SMTP_FROM 需在部署环境中配置，修改后重启后端。')
+      page.getByText('业务邮件可在下方配置并激活，对后续发送生效。首次接管前沿用部署环境配置；监控告警邮件仍由运维独立管理。')
     ).toBeVisible()
   })
 

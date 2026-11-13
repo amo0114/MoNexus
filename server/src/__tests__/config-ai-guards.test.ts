@@ -35,16 +35,14 @@ describe('AI config guards (SPEC-AI-001 §15)', () => {
     expect(result.ai).toEqual({ enabled: false, productCopilotEnabled: false, openaiApiKey: null, credentialsEncKey: null, timeoutMs: 40_000 })
   })
 
-  it('requires AI_ENABLED for the product copilot flag', () => {
+  it('does not let stale bootstrap flags block database-managed AI at startup', () => {
     const result = loadAiConfig({ AI_PRODUCT_COPILOT_ENABLED: 'true' })
-    expect(result.status).toBe(1)
-    expect(result.output).toContain('AI_PRODUCT_COPILOT_ENABLED=true requires AI_ENABLED=true')
+    expect(result.status).toBe(0)
   })
 
-  it('requires an OpenAI key when AI is enabled', () => {
+  it('allows an absent env key because the database can hold the active key', () => {
     const result = loadAiConfig({ AI_ENABLED: 'true' })
-    expect(result.status).toBe(1)
-    expect(result.output).toContain('AI_ENABLED=true requires OPENAI_API_KEY')
+    expect(result.status).toBe(0)
   })
 
   it('keeps the timeout under the 60s proxy read timeout', () => {

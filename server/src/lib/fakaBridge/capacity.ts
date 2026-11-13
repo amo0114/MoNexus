@@ -1,3 +1,5 @@
+import { fakaCacheIdentity } from '../runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig } from '../runtimeSettings/fakaBridge.js'
 import { config } from '../../config/index.js'
 import { callFakaPlanCapacity, isFakaBridgeConfigured } from './client.js'
 import { logger } from '../logger.js'
@@ -39,25 +41,25 @@ type CapacityFailureEntry = {
   value: FakaCapacitySnapshot
 }
 
-/** Successful Xboard snapshots, retained through their bounded SWR window. */
-const capacityCache = new Map<string, CapacityCacheEntry>()
-/**
- * Short negative TTL kept separately from the last successful snapshot.  A
- * transient Xboard failure must not overwrite stale-but-useful public data.
- */
-const capacityFailures = new Map<string, CapacityFailureEntry>()
-/** planId → sku key that holds the latest xboard snapshot */
-const planToSkuKey = new Map<number, string>()
-const capacityInflight = new Map<string, Promise<FakaCapacitySnapshot>>()
-
+const stores = new Map<string, {
+  success: Map<string, CapacityCacheEntry>; failures: Map<string, CapacityFailureEntry>;
+  plans: Map<number, string>; inflight: Map<string, Promise<FakaCapacitySnapshot>>
+}>()
+function store() {
+  const key = fakaCacheIdentity()
+  let value = stores.get(key)
+  if (!value) {
+    value = { success: new Map(), failures: new Map(), plans: new Map(), inflight: new Map() }
+    if (stores.size >= 16) stores.delete(stores.keys().next().value!)
+    stores.set(key, value)
+  }
+  return value
+}
 /** Test seam: avoids a real Xboard HTTP server in cache/SWR regressions. */
 let capacityProbeForTests: ((sku: string) => Promise<FakaCapacitySnapshot>) | undefined
 
 export function __clearFakaCapacityCacheForTests(): void {
-  capacityCache.clear()
-  capacityFailures.clear()
-  planToSkuKey.clear()
-  capacityInflight.clear()
+  stores.clear()
   capacityProbeForTests = undefined
 }
 
@@ -70,27 +72,27 @@ export function __setFakaCapacityProbeForTests(
 /** Drop cached snapshot after admin writes capacity_limit to Xboard. */
 export function invalidateFakaCapacityCache(sku?: string): void {
   if (!sku) {
-    capacityCache.clear()
-    capacityFailures.clear()
-    planToSkuKey.clear()
+    store().success.clear()
+    store().failures.clear()
+    store().plans.clear()
     return
   }
   const key = sku.trim().toLowerCase()
-  const prev = capacityCache.get(key)
-  capacityCache.delete(key)
-  capacityFailures.delete(key)
+  const prev = store().success.get(key)
+  store().success.delete(key)
+  store().failures.delete(key)
   if (prev?.value.planId != null) {
-    planToSkuKey.delete(prev.value.planId)
+    store().plans.delete(prev.value.planId)
     // Drop all SKU entries that pointed at same plan
-    for (const [k, v] of capacityCache) {
-      if (v.value.planId === prev.value.planId) capacityCache.delete(k)
+    for (const [k, v] of store().success) {
+      if (v.value.planId === prev.value.planId) store().success.delete(k)
     }
   }
 }
 
 /** Drop only negative cache entries (so a transient failure can retry immediately). */
 export function invalidateFakaCapacityFailures(): void {
-  capacityFailures.clear()
+  store().failures.clear()
 }
 
 function cloneForSku(snap: FakaCapacitySnapshot, sku: string): FakaCapacitySnapshot {
@@ -127,27 +129,27 @@ function cacheSuccessfulCapacity(key: string, value: FakaCapacitySnapshot): Capa
     staleUntil: expiresAt + CAPACITY_STALE_OK_MS,
     value,
   }
-  capacityCache.set(key, entry)
+  store().success.set(key, entry)
   return entry
 }
 
 function cacheCapacityFailure(key: string, value: FakaCapacitySnapshot): void {
-  capacityFailures.set(key, {
+  store().failures.set(key, {
     expiresAt: Date.now() + CAPACITY_TTL_FAIL_MS,
     value,
   })
 }
 
 function getCachedCapacityFailure(normalized: string): FakaCapacitySnapshot | null {
-  const entry = capacityFailures.get(normalized)
+  const entry = store().failures.get(normalized)
   if (!entry) return null
   if (entry.expiresAt > Date.now()) return cloneForSku(entry.value, normalized)
-  capacityFailures.delete(normalized)
+  store().failures.delete(normalized)
   return null
 }
 
 function copyCachedCapacity(key: string, value: FakaCapacitySnapshot, source: CapacityCacheEntry): void {
-  capacityCache.set(key, {
+  store().success.set(key, {
     expiresAt: source.expiresAt,
     staleUntil: source.staleUntil,
     value,
@@ -162,14 +164,14 @@ function getCachedFakaCapacityForSkuInternal(
   const usable = (entry: CapacityCacheEntry | undefined) =>
     entry != null && (allowStale ? entry.staleUntil > now : entry.expiresAt > now)
 
-  const direct = capacityCache.get(normalized)
+  const direct = store().success.get(normalized)
   if (usable(direct)) return cloneForSku(direct!.value, normalized)
 
   // Plan aliases can share a single Xboard plan-level snapshot without a
   // second probe.  Named SKUs intentionally do not guess plan membership.
   const planAlias = normalized.match(/^plan-(\d+)-/)
   if (!planAlias) return null
-  const planEntry = capacityCache.get(`plan:${Number(planAlias[1])}`)
+  const planEntry = store().success.get(`plan:${Number(planAlias[1])}`)
   if (usable(planEntry) && planEntry!.value.source === 'xboard') {
     return cloneForSku(planEntry!.value, normalized)
   }
@@ -274,23 +276,23 @@ export async function fetchFakaCapacityForSku(sku: string): Promise<FakaCapacity
 
   const now = Date.now()
 
-  const pending = capacityInflight.get(normalized)
+  const pending = store().inflight.get(normalized)
   if (pending) return pending.then(v => cloneForSku(v, normalized))
 
   // If another inflight for same plan via plan-* alias
   const planAlias = normalized.match(/^plan-(\d+)-/)
   if (planAlias) {
     const planId = Number(planAlias[1])
-    const siblingKey = planToSkuKey.get(planId)
+    const siblingKey = store().plans.get(planId)
     if (siblingKey) {
-      const siblingPending = capacityInflight.get(siblingKey)
+      const siblingPending = store().inflight.get(siblingKey)
       if (siblingPending) {
         return siblingPending.then(v => {
           const adapted = cloneForSku(v, normalized)
           return adapted
         })
       }
-      const siblingHit = capacityCache.get(siblingKey)
+      const siblingHit = store().success.get(siblingKey)
       if (siblingHit && siblingHit.expiresAt > now && siblingHit.value.source === 'xboard') {
         const adapted = cloneForSku(siblingHit.value, normalized)
         copyCachedCapacity(normalized, adapted, siblingHit)
@@ -309,37 +311,37 @@ export async function fetchFakaCapacityForSku(sku: string): Promise<FakaCapacity
       )
       if (value.source === 'xboard' && value.planId != null) {
         const entry = cacheSuccessfulCapacity(normalized, value)
-        capacityFailures.delete(normalized)
-        planToSkuKey.set(value.planId, normalized)
+        store().failures.delete(normalized)
+        store().plans.set(value.planId, normalized)
         // Seed plan-* alias keys for free sibling hits
         const planKey = `plan:${value.planId}`
         copyCachedCapacity(planKey, value, entry)
       } else if (value.source === 'xboard') {
         cacheSuccessfulCapacity(normalized, value)
-        capacityFailures.delete(normalized)
+        store().failures.delete(normalized)
       } else {
         cacheCapacityFailure(normalized, value)
       }
       fakaCapacityProbeTotal.inc({ source: value.source })
       return value
     } finally {
-      capacityInflight.delete(normalized)
+      store().inflight.delete(normalized)
     }
   })()
 
-  capacityInflight.set(normalized, work)
+  store().inflight.set(normalized, work)
   return work
 }
 
 export function getCachedFakaCapacityByPlanId(planId: number): FakaCapacitySnapshot | null {
   const now = Date.now()
-  const entry = capacityCache.get(`plan:${planId}`)
+  const entry = store().success.get(`plan:${planId}`)
   if (entry && entry.expiresAt > now && entry.value.source === 'xboard') {
     return entry.value
   }
-  const skuKey = planToSkuKey.get(planId)
+  const skuKey = store().plans.get(planId)
   if (!skuKey) return null
-  const hit = capacityCache.get(skuKey)
+  const hit = store().success.get(skuKey)
   if (hit && hit.expiresAt > now && hit.value.source === 'xboard') return hit.value
   return null
 }
@@ -354,7 +356,7 @@ async function fetchFakaCapacityUncached(normalized: string): Promise<FakaCapaci
 
   try {
     const res = await callFakaPlanCapacity(normalized, {
-      timeoutMs: Math.min(config.fakaBridge.timeoutMs, 8_000),
+      timeoutMs: Math.min(fakaBridgeConfig().timeoutMs, 8_000),
     })
     if (!res.ok || !res.body || res.body.success !== true) {
       const errMsg =

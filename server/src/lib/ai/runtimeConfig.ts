@@ -7,7 +7,7 @@ import { DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL } from './endpoint.js'
 
 export function resolveAiRuntimeConfig(row: AiRuntimeConfig | null) {
   let apiKey = row ? null : config.ai.openaiApiKey ?? null
-  let credentialError = false
+  let credentialError = !row && config.ai.enabled && !apiKey
   if (row?.apiKeyCiphertext) {
     try {
       apiKey = decryptAiApiKey(row.apiKeyCiphertext)

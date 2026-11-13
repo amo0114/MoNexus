@@ -669,9 +669,9 @@ export async function offerReport(req: Request, res: Response, next: NextFunctio
 
 // ---- SPEC-OPS-REGMAIL-001：邮件投递运营面 ----
 
-export function mailStatus(_req: Request, res: Response, next: NextFunction) {
+export async function mailStatus(_req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(mailOperations.getMailDeliveryStatus())
+    res.json(await mailOperations.getMailDeliveryStatus())
   } catch (err) { next(err) }
 }
 

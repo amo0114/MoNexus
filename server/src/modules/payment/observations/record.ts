@@ -10,6 +10,7 @@ function isUniqueViolation(err: unknown): boolean {
 }
 
 export type RecordPaymentObservationInput = {
+  providerCredentialRevisionId?: string | null
   provider: string
   providerAccountKey: string
   source: PaymentObservationSource
@@ -40,9 +41,12 @@ export async function recordPaymentObservation(
   input: RecordPaymentObservationInput,
   db: Prisma.TransactionClient | typeof prisma = prisma,
 ): Promise<RecordedPaymentObservation> {
+  const revisionId = input.providerCredentialRevisionId ?? (input.paymentAttemptId
+    ? (await db.paymentAttempt.findUnique({ where: { id: input.paymentAttemptId }, select: { providerCredentialRevisionId: true } }))?.providerCredentialRevisionId : null)
   try {
     const row = await db.paymentEvent.create({
       data: {
+        providerCredentialRevisionId: revisionId ?? null,
         provider: input.provider,
         providerAccountKey: input.providerAccountKey,
         source: input.source,

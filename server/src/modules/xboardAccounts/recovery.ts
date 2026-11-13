@@ -1,3 +1,4 @@
+import { historicalFakaSnapshot } from '../../lib/runtimeSettings/fakaBridge.js'
 import { randomUUID } from 'node:crypto'
 import { prisma } from '../../lib/prisma.js'
 import * as bridge from '../../lib/fakaBridge/accountV2.js'
@@ -16,6 +17,9 @@ export async function recoverAccount(taskId: number, apply = false, previewOwner
   const blocked = sourceBlockReason(source)
   if (blocked) return blocked
   if (!source || !await ownershipProof(source)) return 'ownership_proof_missing'
+  const originalTarget = await historicalFakaSnapshot(source.configRevisionId)
+  if (!originalTarget.bridge.url || new URL(originalTarget.bridge.url).origin !== settings.origin
+    || (originalTarget.instanceId && originalTarget.instanceId !== settings.instanceId)) return 'untrusted_source'
   const known = await prisma.xboardAccountEvidence.findUnique({ where: { sourceOrderId: source.order.id }, include: { accountLink: true } })
   if (known) return known.accountLink.instanceId === settings.instanceId && known.accountLink.userId === source.order.userId
     && known.accountLink.status === 'active' ? 'existing' : 'conflict'

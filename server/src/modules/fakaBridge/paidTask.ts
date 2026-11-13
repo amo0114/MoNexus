@@ -1,3 +1,4 @@
+import { fakaBridgeConfig, fakaClientId } from '../../lib/runtimeSettings/fakaBridge.js'
 import { isAccountBanned } from '../accountGovernance/status.js'
 import type { FakaBridgeTask, Prisma } from '@prisma/client'
 import { isDeepStrictEqual } from 'node:util'
@@ -28,8 +29,8 @@ export function paidTargetMatches(task: TaskIdentity, options: FakaBridgeClientO
     const current = accountSettings()
     return task.protocolVersion === 2 && !!task.accountLinkIdSnapshot && !!payload(task)
       && current.instanceId === task.instanceIdSnapshot && current.origin === task.originSnapshot
-      && config.trafficReset.clientId === task.clientIdSnapshot
-      && new URL(options.url ?? config.fakaBridge.url ?? '').origin === task.originSnapshot
+      && fakaClientId() === task.clientIdSnapshot
+      && new URL(options.url ?? fakaBridgeConfig().url ?? '').origin === task.originSnapshot
   } catch { return false }
 }
 /** Ownership is checked only before new execution; reconciliation/cancel use frozen identity. */
