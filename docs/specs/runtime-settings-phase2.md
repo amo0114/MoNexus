@@ -4,7 +4,8 @@
 
 实施与恢复说明：`../operations/runtime-settings.md`。支付当前限制为每个物理账号最多保留 8 个凭据版本，达到上限后拒绝新增；尚未提供版本退休流程。
 
-基线：`origin/develop` + PR #353 + 第一阶段运行时配置改动。
+基线：`origin/develop@2ac1c7c885f04703c0a3dd07eba66d7090166b94`（已包含合并的
+#353、#354、#356）+ 第一阶段运行时配置改动。
 第一阶段实现与部署边界见 `../operations/runtime-settings.md`。
 
 ## 目标与交付顺序

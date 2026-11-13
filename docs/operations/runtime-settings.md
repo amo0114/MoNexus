@@ -1,6 +1,6 @@
 # 运行时配置与精简部署
 
-本说明对应 `feat/runtime-settings-phase1`。它扩展早期
+本说明对应 `feat/admin-runtime-settings`。它扩展早期
 `registration-gate-and-mail-operations.md` 中仅提供邮件状态/测试的范围。
 旧环境文件继续兼容；升级不会自动创建或激活新的 SMTP 配置。
 
@@ -194,7 +194,7 @@ mchid/appid，支付宝填写 appId/sellerId，VMQFox 填写稳定商户标识�
 
 ## 本地验收记录（2026-11-13）
 
-第二阶段三项已在专用 worktree 完成实现，未提交、推送或部署。验证使用临时
+第二阶段三项已在专用 worktree 完成实现。验证使用临时
 PostgreSQL 与受控 HTTP/SDK fixture，不连接真实支付或履约系统。
 
 | 检查 | 结果 |
@@ -210,3 +210,9 @@ PostgreSQL 与受控 HTTP/SDK fixture，不连接真实支付或履约系统。
 
 上述测试集合有重叠，不相加为独立用例总数。真实部署前仍需完成商户后台回调登记、
 真实凭据与权限核验、受控业务流程验收，以及数据库与独立根密钥的恢复演练。
+
+代码已同步至 `origin/develop@2ac1c7c885f04703c0a3dd07eba66d7090166b94`，包含
+已合并的 #353、#354、#356。新增带历史业务记录的迁移升级测试（旧行保持原值、
+新增绑定为空、并发索引有效），以及两个独立 Node 进程间 PayPal 配置激活、停收、
+回滚与历史版本保留测试。更新基线后 71 项前端回归和前后端构建通过。
+发布状态及受保护预发布步骤见[发布验收清单](./runtime-settings-release-checklist.md)。
