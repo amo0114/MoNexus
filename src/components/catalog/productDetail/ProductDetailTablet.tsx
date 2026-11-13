@@ -304,12 +304,12 @@ const ProductDetailTablet = forwardRef<HTMLDivElement, ProductDetailTabletProps>
                     <div className="flex items-baseline gap-1.5 mt-0.5">
                       <span className="product-text-readable text-2xl sm:text-3xl font-bold text-[var(--color-points)] flex items-center gap-1.5 tabular-nums">
                         <PointCoin className="w-6 h-6 shrink-0" />
-                        <span>{displayPrice}</span>
+                        <span>{displayPrice.toLocaleString('zh-CN')}</span>
                         <span className="text-sm font-normal text-[var(--color-text-muted)]">积分</span>
                       </span>
                       {displayOriginalPrice && displayOriginalPrice > displayPrice && (
                         <span className="text-xs text-[var(--color-text-muted)] line-through ml-1">
-                          {displayOriginalPrice}
+                          {displayOriginalPrice.toLocaleString('zh-CN')}
                         </span>
                       )}
                     </div>
@@ -331,7 +331,7 @@ const ProductDetailTablet = forwardRef<HTMLDivElement, ProductDetailTabletProps>
                   </span>
                   {isLoggedIn && (
                     <span>
-                      余额: <strong className="text-[var(--color-text)]">{userPoints}</strong>
+                      余额: <strong className="text-[var(--color-text)]">{userPoints.toLocaleString('zh-CN')}</strong>
                     </span>
                   )}
                 </div>

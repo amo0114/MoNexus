@@ -177,13 +177,13 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           <div className="flex flex-col min-w-0">
             {product.originalPrice && product.originalPrice > product.price && (
               <span className="product-text-readable text-xs text-[var(--color-text-muted)] line-through mb-0.5 tabular-nums">
-                {product.originalPrice}
+                {product.originalPrice.toLocaleString('zh-CN')}
               </span>
             )}
             <div className={`flex items-baseline gap-1 text-[var(--color-points)] font-bold text-lg md:text-xl tracking-tight ${compact ? 'flex-wrap' : 'whitespace-nowrap'}`}>
               <PointCoin className="w-4 h-4 shrink-0 self-center" />
               <span className="tabular-nums font-semibold" style={{ fontFeatureSettings: '"tnum" 1' }}>
-                {product.price}
+                {product.price.toLocaleString('zh-CN')}
               </span>
               <span className="product-text-readable text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
             </div>

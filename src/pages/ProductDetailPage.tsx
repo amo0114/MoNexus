@@ -725,7 +725,7 @@ export default function ProductDetailPage() {
                   )}
                 <div className="flex items-center gap-1 text-[var(--color-points)] font-bold text-lg">
                   <PointCoin className="w-5 h-5 shrink-0" />
-                  <span className="product-text-readable tabular-nums">{displayPrice}</span>
+                  <span className="product-text-readable tabular-nums">{displayPrice.toLocaleString('zh-CN')}</span>
                   <span className="text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
                 </div>
               </div>
