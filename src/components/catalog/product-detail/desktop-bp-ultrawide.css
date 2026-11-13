@@ -1,0 +1,24 @@
+@media (min-width: 2000px) {
+  .pd-detail-features {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .pd-related-item {
+    display: grid;
+    grid-template-columns: 77px minmax(0, 1fr);
+    gap: 14px;
+  }
+  .pd-related-cover {
+    margin: 0;
+  }
+  .pd-related-meta {
+    flex-wrap: wrap;
+    padding-right: 16px;
+  }
+  .pd-related-cart {
+    top: auto;
+    bottom: 12px;
+    right: 12px;
+    width: 26px;
+    height: 26px;
+  }
+}

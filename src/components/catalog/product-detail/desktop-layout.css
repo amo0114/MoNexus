@@ -1,9 +1,9 @@
 @media (min-width: 1024px) {
-  /* Same content width as the global header/footer (Layout max-w-7xl px-6)
-     so the page edges line up at every desktop size. */
+  /* The product page deliberately runs wider than the header/footer so the
+     gallery and purchase panel use the screen on large displays. */
   .product-layout > main {
-    max-width: 80rem;
-    padding: 0 24px 48px;
+    max-width: 2064px;
+    padding: 0 32px 48px;
   }
   .product-layout.bg-grid-pattern {
     background-color: var(--color-background);
