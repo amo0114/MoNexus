@@ -376,7 +376,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           data-order-phase={orderIslandPhase}
           data-favorite-open={favoriteIslandVisible}
           data-action-open={Boolean(actionNotice) && !searchBusy && !modalOpen}
-          className={`navbar-shell ${isMobileViewport ? 't-resize' : ''} pointer-events-auto ${
+          className={`navbar-shell chrome-bound ${isMobileViewport ? 't-resize' : ''} pointer-events-auto ${
             isAdminPage ? 'max-w-[1600px] px-4 xl:px-6' : 'max-w-7xl'
           } mx-auto flex justify-between items-center relative w-full
           transition-[max-width,border-radius,box-shadow,background-color,border-color] duration-200 ${
@@ -736,7 +736,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Footer */}
       <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_50%,transparent)] backdrop-blur-md relative overflow-hidden z-10 shrink-0">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] pointer-events-none" />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="chrome-bound max-w-7xl mx-auto px-4 sm:px-6 py-6 relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 opacity-80">
             <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
             <span className="font-display text-sm font-bold text-[var(--color-text-muted)] tracking-[0.15em]">MONEXUS</span>

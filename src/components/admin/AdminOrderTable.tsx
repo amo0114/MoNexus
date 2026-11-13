@@ -206,75 +206,75 @@ export default function AdminOrderTable({ active = true }: Props) {
       <AdminPanelHeader
         title="订单记录"
         description="全平台订单交易明细、状态跟踪与争议仲裁"
-        actions={
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
-              <input
-                type="text"
-                value={draftSearch}
-                onChange={(e) => setDraftSearch(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
-                placeholder="搜索买家邮箱 / 订单号"
-                aria-label="搜索买家邮箱或订单号"
-                data-testid="admin-order-search"
-                className="input py-1.5 pl-8 w-44 text-xs"
-              />
-            </div>
-            <select
-              value={draftStatus}
-              onChange={(e) => setDraftStatus(e.target.value)}
-              aria-label="筛选订单状态"
-              data-testid="admin-order-status-filter"
-              className="input py-1.5 w-32 text-xs"
-            >
-              <option value="">全部状态</option>
-              {statusOptions.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={draftFulfillmentReview}
-              onChange={event => setDraftFulfillmentReview(event.target.checked)} />仅待核对履约</label>
-            <div className="flex items-center gap-1">
-              <input
-                type="date"
-                value={draftFromDate}
-                onChange={(e) => setDraftFromDate(e.target.value)}
-                data-testid="admin-order-from-date"
-                aria-label="起始日期"
-                className="input py-1.5 w-32 text-xs"
-              />
-              <span className="text-xs text-[var(--color-text-muted)]">-</span>
-              <input
-                type="date"
-                value={draftToDate}
-                onChange={(e) => setDraftToDate(e.target.value)}
-                data-testid="admin-order-to-date"
-                aria-label="结束日期"
-                className="input py-1.5 w-32 text-xs"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleSearchSubmit}
-              className="btn-primary py-1.5 px-3 text-xs cursor-pointer"
-              data-testid="admin-order-search-btn"
-            >
-              查询
-            </button>
-            <button
-              type="button"
-              onClick={handleReset}
-              className="btn-secondary py-1.5 px-3 text-xs cursor-pointer"
-              data-testid="admin-order-reset-btn"
-            >
-              重置
-            </button>
-          </div>
-        }
       />
+
+      {/* Filters live below the header: as header actions they took the width and squeezed the title. */}
+      <div className="card p-3 flex flex-wrap items-center gap-2.5">
+        <div className="relative">
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+          <input
+            type="text"
+            value={draftSearch}
+            onChange={(e) => setDraftSearch(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
+            placeholder="搜索买家邮箱 / 订单号"
+            aria-label="搜索买家邮箱或订单号"
+            data-testid="admin-order-search"
+            className="input py-1.5 pl-8 w-44 text-xs"
+          />
+        </div>
+        <select
+          value={draftStatus}
+          onChange={(e) => setDraftStatus(e.target.value)}
+          aria-label="筛选订单状态"
+          data-testid="admin-order-status-filter"
+          className="input py-1.5 w-32 text-xs"
+        >
+          <option value="">全部状态</option>
+          {statusOptions.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1 text-xs"><input type="checkbox" checked={draftFulfillmentReview}
+          onChange={event => setDraftFulfillmentReview(event.target.checked)} />仅待核对履约</label>
+        <div className="flex items-center gap-1">
+          <input
+            type="date"
+            value={draftFromDate}
+            onChange={(e) => setDraftFromDate(e.target.value)}
+            data-testid="admin-order-from-date"
+            aria-label="起始日期"
+            className="input py-1.5 w-32 text-xs"
+          />
+          <span className="text-xs text-[var(--color-text-muted)]">-</span>
+          <input
+            type="date"
+            value={draftToDate}
+            onChange={(e) => setDraftToDate(e.target.value)}
+            data-testid="admin-order-to-date"
+            aria-label="结束日期"
+            className="input py-1.5 w-32 text-xs"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={handleSearchSubmit}
+          className="btn-primary py-1.5 px-3 text-xs cursor-pointer"
+          data-testid="admin-order-search-btn"
+        >
+          查询
+        </button>
+        <button
+          type="button"
+          onClick={handleReset}
+          className="btn-secondary py-1.5 px-3 text-xs cursor-pointer"
+          data-testid="admin-order-reset-btn"
+        >
+          重置
+        </button>
+      </div>
 
       <div className="overflow-x-auto">
         {loading && orders.length === 0 ? (
@@ -286,8 +286,8 @@ export default function AdminOrderTable({ active = true }: Props) {
                 <th>订单号 / 时间</th>
                 <th>买家</th>
                 <th>商品信息</th>
-                <th>扣除积分</th>
-                <th>状态</th>
+                <th className="whitespace-nowrap">扣除积分</th>
+                <th className="whitespace-nowrap">状态</th>
                 <th className="text-right">操作</th>
               </tr>
             </thead>
@@ -348,8 +348,8 @@ export default function AdminOrderTable({ active = true }: Props) {
                       </div>
                     )}
                   </td>
-                  <td className="text-[var(--color-cta)] font-bold" data-label="扣除积分">
-                    {o.price}
+                  <td className="text-[var(--color-cta)] font-bold tabular-nums" data-label="扣除积分">
+                    {o.price.toLocaleString('zh-CN')}
                   </td>
                   <td data-label="状态">
                     <RegistryPill value={o.status} category="orderStatuses" />

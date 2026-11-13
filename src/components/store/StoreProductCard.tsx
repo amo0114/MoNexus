@@ -57,6 +57,10 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           ? '查看套餐'
           : `库存 ${product.stockMode === 'unlimited' ? '不限' : product.stock}`
 
+  const extraRows = Number(Boolean(disclosure?.kind === 'editorial' && disclosure.publicReason))
+    + Number(Boolean(product.merchandising?.merchantPartner))
+  const descriptionLines = Math.max(0, 2 - extraRows)
+
   return (
     <div
       key={product.id}
@@ -158,8 +162,15 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
             <MerchantPartnerMark merchantPartner={product.merchandising.merchantPartner} />
           </div>
         )}
-        {!compact && (
-          <p className="product-text-readable hidden md:block text-[var(--color-text-muted)] text-xs flex-grow mb-4 leading-relaxed line-clamp-2">
+        {!compact && descriptionLines > 0 && (
+          // The card height is fixed: each extra row above takes one description line,
+          // otherwise the shrinking box cuts the clamped text through the middle of a line.
+          // Keep line-clamp's -webkit-box display (md:block would disable the clamp) and
+          // no flex-grow: a stretched box would expose the top of the third line.
+          <p
+            className={`product-text-readable max-md:hidden text-[var(--color-text-muted)] text-xs mb-4 leading-relaxed ${descriptionLines === 2 ? 'line-clamp-2' : 'line-clamp-1'}`}
+            data-testid={`store-product-description-${product.id}`}
+          >
             {product.description}
           </p>
         )}
@@ -168,13 +179,13 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           <div className="flex flex-col min-w-0">
             {product.originalPrice && product.originalPrice > product.price && (
               <span className="product-text-readable text-xs text-[var(--color-text-muted)] line-through mb-0.5 tabular-nums">
-                {product.originalPrice}
+                {product.originalPrice.toLocaleString('zh-CN')}
               </span>
             )}
             <div className={`flex items-baseline gap-1 text-[var(--color-points)] font-bold text-lg md:text-xl tracking-tight ${compact ? 'flex-wrap' : 'whitespace-nowrap'}`}>
               <PointCoin className="w-4 h-4 shrink-0 self-center" />
               <span className="tabular-nums font-semibold" style={{ fontFeatureSettings: '"tnum" 1' }}>
-                {product.price}
+                {product.price.toLocaleString('zh-CN')}
               </span>
               <span className="product-text-readable text-xs font-normal text-[var(--color-text-muted)] ml-0.5">积分</span>
             </div>

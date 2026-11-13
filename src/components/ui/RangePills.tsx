@@ -24,7 +24,7 @@ export default function RangePills<T extends string>({
   testIdPrefix?: string
 }) {
   return (
-    <div role="group" aria-label={ariaLabel} className="flex items-center gap-2">
+    <div role="group" aria-label={ariaLabel} className="flex flex-wrap items-center gap-2">
       {options.map((opt) => {
         const active = value === opt.value
         return (
@@ -34,7 +34,7 @@ export default function RangePills<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             data-testid={testIdPrefix ? `${testIdPrefix}-${opt.value}` : undefined}
-            className={`px-4 py-1.5 btn-sm rounded-full text-sm font-medium transition-colors border cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+            className={`shrink-0 whitespace-nowrap px-3 sm:px-4 py-1.5 btn-sm rounded-full text-sm font-medium transition-colors border cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
               active
                 ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] border-transparent'
                 : 'bg-[var(--color-surface)] text-[var(--color-text-muted)] border-[var(--color-border)] hover:text-[var(--color-text)]'

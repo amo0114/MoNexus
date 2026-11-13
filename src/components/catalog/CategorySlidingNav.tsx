@@ -91,56 +91,59 @@ export default function CategorySlidingNav({
 
   return (
     <div className="w-full min-w-0 flex justify-center py-1">
-      {/* 移动端外框属于固定视口，仅内部按钮横滑；阻止横向滚动传递到页面。 */}
-      <div
-        ref={scrollContainerRef}
-        className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain hide-scrollbar rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xs md:rounded-none md:bg-transparent md:border-0 md:shadow-none md:px-1 md:py-0.5"
-      >
-        {/* 桌面保留原导轨外观；移动端内容层不绘制随滚动移动的外框。 */}
+      {/* 移动端外框属于固定视口，仅内部按钮横滑；阻止横向滚动传递到页面。
+          外框在外层，边缘渐隐只作用于滚动内容，不会把圆角边框一起淡掉。 */}
+      <div className="min-w-0 max-w-full overflow-hidden rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xs md:overflow-visible md:rounded-none md:bg-transparent md:border-0 md:shadow-none">
         <div
-          ref={containerRef}
-          aria-label="商品分类筛选"
-          className="relative flex w-max items-center p-1 md:rounded-full md:bg-[var(--color-surface)] md:border md:border-[var(--color-border)] md:shadow-xs select-none"
+          ref={scrollContainerRef}
+          className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain hide-scrollbar scroll-fade-x md:px-1 md:py-0.5"
         >
-          {/* 动态平滑滑动的背景胶囊：显式 left-0，上下直接锚定 top-1 bottom-1，垂直水平严丝合缝 */}
-          {pillGeometry.ready && (
-            <span
-              aria-hidden="true"
-              className={`absolute top-1 bottom-1 left-0 rounded-full bg-[var(--color-primary)] pointer-events-none z-0 shadow-sm ${
-                hasRenderedOnce
-                  ? 'transition-[transform,width] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)]'
-                  : 'transition-none'
-              }`}
-              style={{
-                transform: `translate3d(${pillGeometry.left}px, 0, 0)`,
-                width: `${pillGeometry.width}px`,
-              }}
-            />
-          )}
-
-          {categories.map((cat, index) => {
-            const isSelected = activeCategory === cat
-            return (
-              <button
-                key={cat}
-                ref={(el) => {
-                  if (el) tabsRef.current.set(cat, el)
-                  else tabsRef.current.delete(cat)
-                }}
-                type="button"
-                aria-pressed={isSelected}
-                onClick={() => onSelectCategory(cat)}
-                onKeyDown={(e) => handleKeyDown(e, index)}
-                className={`relative z-10 shrink-0 px-4 sm:px-5 py-1.5 md:py-2 rounded-full text-xs md:text-sm cursor-pointer whitespace-nowrap min-h-[40px] md:min-h-[36px] flex items-center justify-center transition-colors duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] border-0 leading-none ${
-                  isSelected
-                    ? `text-[var(--color-on-primary)] font-semibold ${!pillGeometry.ready ? 'bg-[var(--color-primary)] shadow-sm' : ''}`
-                    : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-medium'
+          {/* 桌面保留原导轨外观；移动端内容层不绘制随滚动移动的外框。 */}
+          <div
+            ref={containerRef}
+            aria-label="商品分类筛选"
+            className="relative flex w-max items-center p-1 md:rounded-full md:bg-[var(--color-surface)] md:border md:border-[var(--color-border)] md:shadow-xs select-none"
+          >
+            {/* 动态平滑滑动的背景胶囊：显式 left-0，上下直接锚定 top-1 bottom-1，垂直水平严丝合缝 */}
+            {pillGeometry.ready && (
+              <span
+                aria-hidden="true"
+                className={`absolute top-1 bottom-1 left-0 rounded-full bg-[var(--color-primary)] pointer-events-none z-0 shadow-sm ${
+                  hasRenderedOnce
+                    ? 'transition-[transform,width] duration-250 ease-[cubic-bezier(0.22,1,0.36,1)]'
+                    : 'transition-none'
                 }`}
-              >
-                {getCategoryLabel(cat)}
-              </button>
-            )
-          })}
+                style={{
+                  transform: `translate3d(${pillGeometry.left}px, 0, 0)`,
+                  width: `${pillGeometry.width}px`,
+                }}
+              />
+            )}
+
+            {categories.map((cat, index) => {
+              const isSelected = activeCategory === cat
+              return (
+                <button
+                  key={cat}
+                  ref={(el) => {
+                    if (el) tabsRef.current.set(cat, el)
+                    else tabsRef.current.delete(cat)
+                  }}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => onSelectCategory(cat)}
+                  onKeyDown={(e) => handleKeyDown(e, index)}
+                  className={`relative z-10 shrink-0 px-4 sm:px-5 py-1.5 md:py-2 rounded-full text-xs md:text-sm cursor-pointer whitespace-nowrap min-h-[40px] md:min-h-[36px] flex items-center justify-center transition-colors duration-200 focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] border-0 leading-none ${
+                    isSelected
+                      ? `text-[var(--color-on-primary)] font-semibold ${!pillGeometry.ready ? 'bg-[var(--color-primary)] shadow-sm' : ''}`
+                      : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)] font-medium'
+                  }`}
+                >
+                  {getCategoryLabel(cat)}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
     </div>

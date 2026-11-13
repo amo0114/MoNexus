@@ -626,7 +626,7 @@ export default function MerchantDashboardPage() {
             <div className="fade-in">
               <WorkbenchSummary />
               <h2 className="font-heading text-xl font-bold max-md:mb-4 mb-6 text-[var(--color-text)]">数据概览</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {!stats ? (
                   <>
                     <StatCardSkeleton />
@@ -986,7 +986,7 @@ function StatCard({ label, value, tone }: { label: string; value: number | strin
   return (
     <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] max-md:p-3 p-4">
       <div className="text-[var(--color-text-muted)] max-md:text-xs text-sm mb-1">{label}</div>
-      <div className={`font-heading max-md:text-xl text-2xl font-bold ${valueColor}`}>{value}</div>
+      <div className={`font-heading max-md:text-xl text-2xl font-bold tabular-nums ${valueColor}`}>{typeof value === 'number' ? value.toLocaleString('zh-CN') : value}</div>
     </div>
   )
 }

@@ -195,14 +195,15 @@ export default function DesktopPurchasePanel({
                 formatFn={(val) => (preview ? val.toFixed(2) : val.toLocaleString())}
               />
             </strong>
+            {!preview && <span className="pd-price-unit"> 积分</span>}
             {activeOffer?.originalPrice != null && activeOffer.originalPrice > price && (
               <del>
-                {preview ? '¥ ' : ''}
-                {activeOffer.originalPrice}
+                {preview
+                  ? `¥ ${activeOffer.originalPrice.toFixed(2)}`
+                  : `${activeOffer.originalPrice.toLocaleString()} 积分`}
               </del>
             )}
           </div>
-          {!preview && <span className="pd-price-unit">积分</span>}
           <span className="pd-selected-offer">已选：{activeOffer?.name || '暂无可售套餐'}</span>
         </div>
         {!preview && (

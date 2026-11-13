@@ -170,7 +170,7 @@ export function FluidSegmentedControl<T extends string | number = string>({
     },
     md: {
       container: 'p-1 text-sm',
-      button: iconLayout === 'vertical' ? 'py-1.5 px-3' : 'py-1.5 px-3.5',
+      button: iconLayout === 'vertical' ? 'py-1.5 px-3' : 'py-1.5 px-2.5 sm:px-3.5',
       icon: 'w-4 h-4',
       text: 'text-[13px]',
       gap: iconLayout === 'vertical' ? 'gap-1' : 'gap-2',
@@ -310,7 +310,7 @@ export function FluidSegmentedControl<T extends string | number = string>({
             ) : null}
 
             <span className="relative inline-flex items-center justify-center text-center">
-              <span className={`tracking-tight leading-tight text-center ${sizeStyles.text}`}>
+              <span className={`whitespace-nowrap tracking-tight leading-tight text-center ${sizeStyles.text}`}>
                 {opt.label}
               </span>
               {/* Count sits after the label (not on the icon) so it never covers the glyph. */}

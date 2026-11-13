@@ -38,7 +38,7 @@ export default function RegistryPill({ value, category }: Props) {
   }
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border ${styles}`}>
+    <span className={`inline-flex shrink-0 items-center whitespace-nowrap px-2 py-0.5 rounded text-xs font-bold border ${styles}`}>
       {label}
     </span>
   )
