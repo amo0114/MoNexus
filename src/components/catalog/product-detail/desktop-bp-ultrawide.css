@@ -12,7 +12,8 @@
   }
   .pd-related-meta {
     flex-wrap: wrap;
-    padding-right: 16px;
+    /* Clear the absolutely positioned cart button (right 12px + 26px). */
+    padding-right: 44px;
   }
   .pd-related-cart {
     top: auto;
