@@ -626,7 +626,7 @@ export default function MerchantDashboardPage() {
             <div className="fade-in">
               <WorkbenchSummary />
               <h2 className="font-heading text-xl font-bold max-md:mb-4 mb-6 text-[var(--color-text)]">数据概览</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {!stats ? (
                   <>
                     <StatCardSkeleton />

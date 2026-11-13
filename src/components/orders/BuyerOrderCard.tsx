@@ -107,9 +107,9 @@ export default function BuyerOrderCard({
               {order.deliveryMode && (
                 <RegistryPill value={order.deliveryMode} category="deliveryModes" />
               )}
-              <span className="text-[11px] leading-tight font-medium text-[var(--color-text-muted)] inline-flex items-center gap-0.5">
-                <Store className="w-3 h-3" />
-                <span className="max-w-[80px] truncate">{order.merchant?.name || '平台自营'}</span>
+              <span className="text-[11px] leading-tight font-medium text-[var(--color-text-muted)] inline-flex min-w-0 items-center gap-0.5">
+                <Store className="w-3 h-3 shrink-0" />
+                <span className="max-w-[150px] truncate">{order.merchant?.name || '平台自营'}</span>
               </span>
             </div>
 
