@@ -18,6 +18,7 @@ for script in \
   deploy/vps/monexus-compose-deploy-ssh-wrapper \
   deploy/vps/install-compose-production-deploy.sh \
   scripts/staging-compose.sh \
+  scripts/rehearse-runtime-settings-staging.sh \
   scripts/notification-realtime-staging-host.sh \
   scripts/run-notification-realtime-staging-rehearsal.sh; do
   bash -n "${ROOT_DIR}/${script}"

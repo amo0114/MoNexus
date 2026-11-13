@@ -34,6 +34,11 @@ on:
         required: false
         default: false
         type: boolean
+      runtime_rehearsal:
+        description: 'Run runtime API fixtures against a disposable staging database and check live encryption readiness'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: staging-compose-deploy
@@ -100,6 +105,7 @@ jobs:
       DRY_RUN: ${{ github.event.inputs.dry_run }}
       CONFIRM_REHEARSAL: ${{ github.event.inputs.confirm_rehearsal }}
       PREPARE_RUNTIME: ${{ github.event.inputs.prepare_runtime || 'false' }}
+      RUNTIME_REHEARSAL: ${{ github.event.inputs.runtime_rehearsal || 'false' }}
     steps:
       - name: Validate staging-only release plan
         id: readiness
@@ -112,6 +118,7 @@ jobs:
           echo "dry_run=${DRY_RUN}"
           echo "deploy_base_path=/opt/monexus-staging"
           [[ "$PREPARE_RUNTIME" == true || "$PREPARE_RUNTIME" == false ]] || { echo '::error::prepare_runtime must be boolean'; exit 1; }
+          [[ "$RUNTIME_REHEARSAL" == true || "$RUNTIME_REHEARSAL" == false ]] || { echo '::error::runtime_rehearsal must be boolean'; exit 1; }
 
           case "$RELEASE_ACTION" in
             deploy|realtime_rehearsal)
@@ -242,7 +249,7 @@ jobs:
             -p "$STAGING_SSH_PORT" \
             -o StrictHostKeyChecking=yes \
             "$STAGING_SSH_USER@$STAGING_SSH_HOST" \
-            "bash -s -- '$RELEASE_ACTION' '$DEPLOY_COMMIT' '$TARGET_RELEASE' '$source_archive' '$PREPARE_RUNTIME'" <<'REMOTE'
+            "bash -s -- '$RELEASE_ACTION' '$DEPLOY_COMMIT' '$TARGET_RELEASE' '$source_archive' '$PREPARE_RUNTIME' '$RUNTIME_REHEARSAL'" <<'REMOTE'
           set -euo pipefail
 
           release_action="$1"
@@ -250,6 +257,7 @@ jobs:
           target_release="$3"
           source_archive="$4"
           prepare_runtime="$5"
+          runtime_rehearsal="$6"
           base_path="/opt/monexus-staging"
           env_file="/etc/monexus/staging.env"
           project_name="monexus-staging"
@@ -270,6 +278,9 @@ jobs:
                 bash scripts/staging-compose.sh smoke
             )
             ln -sfn "$release_path" "$base_path/current"
+            if [[ "$runtime_rehearsal" == true ]]; then
+              bash "$release_path/scripts/rehearse-runtime-settings-staging.sh" REHEARSE_STAGING_RUNTIME
+            fi
           }
 
           case "$release_action" in

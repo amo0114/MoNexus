@@ -4,9 +4,10 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { prepareStagingRuntime } from './prepare-staging-runtime.mjs'
+import { prepareStagingRuntime as prepare } from './prepare-staging-runtime.mjs'
+const prepareStagingRuntime = (text, storageRows) => prepare(text, storageRows, 0, 0)
 
-const base = 'FRONTEND_ORIGIN=https://staging.monexus.oai-o.com\nTRUST_PROXY=2\nTURNSTILE_SITE_KEY=staging-fixture\nTURNSTILE_SECRET_KEY=staging-fixture-secret\n'
+const base = 'FRONTEND_ORIGIN=https://staging.monexus.oai-o.com\nTRUST_PROXY=2\nTURNSTILE_SITE_KEY=staging-fixture\nTURNSTILE_SECRET_KEY=staging-fixture-secret\nSTORAGE_CREDENTIALS_ENC_KEY=' + '11'.repeat(32) + '\n'
 
 test('prepares only missing staging fields, preserving existing credentials and choices', () => {
   const result = prepareStagingRuntime(base + 'MAIL_CREDENTIALS_ENC_KEY=\n')
@@ -24,6 +25,12 @@ test('prepares only missing staging fields, preserving existing credentials and 
   assert.ok(legacy.keys.includes('TRUST_PROXY'))
   assert.ok(legacy.text.includes('TRUST_PROXY=2'))
   assert.ok(!legacy.text.includes('TRUST_PROXY=1'))
+  const withoutStorage = base.replace(/^STORAGE_CREDENTIALS_ENC_KEY=.*\n/m, '')
+  assert.throws(() => prepareStagingRuntime(withoutStorage))
+  assert.throws(() => prepareStagingRuntime(withoutStorage, 1))
+  assert.ok(prepareStagingRuntime(withoutStorage, 0).keys.includes('STORAGE_CREDENTIALS_ENC_KEY'))
+  assert.throws(() => prepare(base, 0, 1, 0))
+  assert.throws(() => prepare(base, 0, 0, 1))
 })
 
 test('rejects another origin, incompatible topology, duplicate assignments and malformed keys without exposing values', () => {

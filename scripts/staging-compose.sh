@@ -103,10 +103,21 @@ case "$action" in
     [[ "${2:-}" == PREPARE_STAGING_RUNTIME ]] || { echo '[ERROR] Missing staging preparation confirmation.' >&2; exit 2; }
     candidate="$(mktemp /etc/monexus/.staging.env.runtime.candidate.XXXXXX)"
     trap 'rm -f -- "$candidate"' EXIT
+    postgres_id="$(docker ps -q --filter label=com.docker.compose.project=monexus-staging --filter label=com.docker.compose.service=postgres)"
+    [[ -n "$postgres_id" && "$postgres_id" != *$'\n'* ]] || { echo '[ERROR] Exactly one staging Postgres is required.' >&2; exit 1; }
+    credential_rows="$(docker exec -i "$postgres_id" sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -qAt -v ON_ERROR_STOP=1' <<'SQL'
+SELECT format('SELECT %L || count(*)::text FROM %I', tablename || '=', tablename)
+FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('StorageProviderConfig', 'MailRuntimeConfig', 'IntegrationConfig', 'IntegrationConfigRevision')
+\gexec
+SQL
+    )"
+    storage_rows="$(awk -F= '$1 == "StorageProviderConfig" {n += $2} END {print n+0}' <<< "$credential_rows")"
+    mail_rows="$(awk -F= '$1 == "MailRuntimeConfig" {n += $2} END {print n+0}' <<< "$credential_rows")"
+    integration_rows="$(awk -F= '$1 == "IntegrationConfig" || $1 == "IntegrationConfigRevision" {n += $2} END {print n+0}' <<< "$credential_rows")"
     docker run --rm --network none --user "$(id -u):$(id -g)" \
       -v "$ROOT_DIR:$ROOT_DIR:ro" -v /etc/monexus:/etc/monexus \
       -w "$ROOT_DIR" node:22-bookworm-slim \
-      node scripts/prepare-staging-runtime.mjs "$env_file" "$candidate"
+      node scripts/prepare-staging-runtime.mjs "$env_file" "$candidate" "$storage_rows" "$mail_rows" "$integration_rows"
     preflight_file "$candidate"
     backup="$(mktemp /etc/monexus/.staging.env.runtime.backup.XXXXXX)"
     cp -p -- "$env_file" "$backup"
