@@ -304,7 +304,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
         <p className="text-white/85 font-medium mb-1 text-sm flex items-center gap-1.5">
           <Wallet className="w-4 h-4" /> 当前可用积分
         </p>
-        <h2 className="font-heading text-4xl sm:text-5xl font-bold tracking-tight">{user?.points ?? '--'}</h2>
+        <h2 className="font-heading text-4xl sm:text-5xl font-bold tracking-tight">{user?.points != null ? user.points.toLocaleString('zh-CN') : '--'}</h2>
       </div>
 
       <div className="card space-y-5">
