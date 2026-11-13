@@ -103,21 +103,37 @@ case "$action" in
     [[ "${2:-}" == PREPARE_STAGING_RUNTIME ]] || { echo '[ERROR] Missing staging preparation confirmation.' >&2; exit 2; }
     candidate="$(mktemp /etc/monexus/.staging.env.runtime.candidate.XXXXXX)"
     trap 'rm -f -- "$candidate"' EXIT
-    postgres_id="$(docker ps -q --filter label=com.docker.compose.project=monexus-staging --filter label=com.docker.compose.service=postgres)"
+    postgres_id="$(docker ps -aq --filter label=com.docker.compose.project=monexus-staging --filter label=com.docker.compose.service=postgres)"
+    if [[ -z "$postgres_id" ]]; then
+      # Compose interpolates the entire file even when starting only Postgres.
+      # These non-secret placeholders satisfy unrelated server-only variables;
+      # they are never persisted or supplied to an application container.
+      STORAGE_CREDENTIALS_ENC_KEY="$(printf '%064d' 0)" WEBHOOK_SECRET_ENC_KEY="$(printf '%064d' 0)" \
+        "${compose[@]}" up -d --no-deps postgres
+      postgres_id="$(docker ps -aq --filter label=com.docker.compose.project=monexus-staging --filter label=com.docker.compose.service=postgres)"
+    fi
     [[ -n "$postgres_id" && "$postgres_id" != *$'\n'* ]] || { echo '[ERROR] Exactly one staging Postgres is required.' >&2; exit 1; }
+    docker start "$postgres_id" >/dev/null
+    postgres_ready=false
+    for ((attempt = 0; attempt < 30; attempt++)); do
+      if docker exec "$postgres_id" sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"' >/dev/null 2>&1; then postgres_ready=true; break; fi
+      sleep 1
+    done
+    [[ "$postgres_ready" == true ]] || { echo '[ERROR] Staging Postgres is not ready.' >&2; exit 1; }
     credential_rows="$(docker exec -i "$postgres_id" sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -qAt -v ON_ERROR_STOP=1' <<'SQL'
 SELECT format('SELECT %L || count(*)::text FROM %I', tablename || '=', tablename)
-FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('StorageProviderConfig', 'MailRuntimeConfig', 'IntegrationConfig', 'IntegrationConfigRevision')
+FROM pg_tables WHERE schemaname = 'public' AND tablename IN ('StorageProviderConfig', 'MailRuntimeConfig', 'IntegrationConfig', 'IntegrationConfigRevision', 'MerchantWebhookConfig')
 \gexec
 SQL
     )"
     storage_rows="$(awk -F= '$1 == "StorageProviderConfig" {n += $2} END {print n+0}' <<< "$credential_rows")"
     mail_rows="$(awk -F= '$1 == "MailRuntimeConfig" {n += $2} END {print n+0}' <<< "$credential_rows")"
     integration_rows="$(awk -F= '$1 == "IntegrationConfig" || $1 == "IntegrationConfigRevision" {n += $2} END {print n+0}' <<< "$credential_rows")"
+    webhook_rows="$(awk -F= '$1 == "MerchantWebhookConfig" {n += $2} END {print n+0}' <<< "$credential_rows")"
     docker run --rm --network none --user "$(id -u):$(id -g)" \
       -v "$ROOT_DIR:$ROOT_DIR:ro" -v /etc/monexus:/etc/monexus \
       -w "$ROOT_DIR" node:22-bookworm-slim \
-      node scripts/prepare-staging-runtime.mjs "$env_file" "$candidate" "$storage_rows" "$mail_rows" "$integration_rows"
+      node scripts/prepare-staging-runtime.mjs "$env_file" "$candidate" "$storage_rows" "$mail_rows" "$integration_rows" "$webhook_rows"
     preflight_file "$candidate"
     backup="$(mktemp /etc/monexus/.staging.env.runtime.backup.XXXXXX)"
     cp -p -- "$env_file" "$backup"

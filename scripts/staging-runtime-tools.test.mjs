@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process'
 import { prepareStagingRuntime as prepare } from './prepare-staging-runtime.mjs'
 const prepareStagingRuntime = (text, storageRows) => prepare(text, storageRows, 0, 0)
 
-const base = 'FRONTEND_ORIGIN=https://staging.monexus.oai-o.com\nTRUST_PROXY=2\nTURNSTILE_SITE_KEY=staging-fixture\nTURNSTILE_SECRET_KEY=staging-fixture-secret\nSTORAGE_CREDENTIALS_ENC_KEY=' + '11'.repeat(32) + '\n'
+const base = 'FRONTEND_ORIGIN=https://staging.monexus.oai-o.com\nTRUST_PROXY=2\nTURNSTILE_SITE_KEY=staging-fixture\nTURNSTILE_SECRET_KEY=staging-fixture-secret\nSTORAGE_CREDENTIALS_ENC_KEY=' + '11'.repeat(32) + '\nWEBHOOK_SECRET_ENC_KEY=' + '33'.repeat(32) + '\n'
 
 test('prepares only missing staging fields, preserving existing credentials and choices', () => {
   const result = prepareStagingRuntime(base + 'MAIL_CREDENTIALS_ENC_KEY=\n')

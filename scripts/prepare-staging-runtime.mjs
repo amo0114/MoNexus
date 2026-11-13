@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 
 // Read the same single-line dotenv syntax accepted by check-prod-env.sh.
 // Never include values in diagnostics, including invalid or duplicate values.
-export function prepareStagingRuntime(text, storageRows, mailRows, integrationRows) {
+export function prepareStagingRuntime(text, storageRows, mailRows, integrationRows, webhookRows) {
   const values = new Map()
   for (const line of text.split(/\r?\n/)) {
     const match = line.trim().match(/^(?:export\s+)?([A-Za-z_][A-Za-z_0-9]*)\s*=(.*)$/)
@@ -30,9 +30,9 @@ export function prepareStagingRuntime(text, storageRows, mailRows, integrationRo
     if (!values.get('TURNSTILE_SITE_KEY') || !values.get('TURNSTILE_SECRET_KEY')) throw new Error('Existing staging Turnstile configuration required')
     additions.set('HUMAN_VERIFICATION_PROVIDER', 'turnstile')
   }
-  for (const key of ['MAIL_CREDENTIALS_ENC_KEY', 'INTEGRATION_CREDENTIALS_ENC_KEY', 'STORAGE_CREDENTIALS_ENC_KEY']) {
+  for (const key of ['MAIL_CREDENTIALS_ENC_KEY', 'INTEGRATION_CREDENTIALS_ENC_KEY', 'STORAGE_CREDENTIALS_ENC_KEY', 'WEBHOOK_SECRET_ENC_KEY']) {
     if (values.get(key) && !/^[a-fA-F0-9]{64}$/.test(values.get(key))) throw new Error('Invalid existing key: ' + key)
-    const rows = key === 'STORAGE_CREDENTIALS_ENC_KEY' ? storageRows : key === 'MAIL_CREDENTIALS_ENC_KEY' ? mailRows : integrationRows
+    const rows = key === 'STORAGE_CREDENTIALS_ENC_KEY' ? storageRows : key === 'MAIL_CREDENTIALS_ENC_KEY' ? mailRows : key === 'WEBHOOK_SECRET_ENC_KEY' ? webhookRows : integrationRows
     if (!values.get(key) && rows !== 0) throw new Error('Cannot initialize root without evidence of empty configuration tables: ' + key)
     if (!values.get(key)) additions.set(key, randomBytes(32).toString('hex'))
   }
@@ -46,7 +46,7 @@ export function prepareStagingRuntime(text, storageRows, mailRows, integrationRo
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const prepared = prepareStagingRuntime(readFileSync(process.argv[2], 'utf8'), Number(process.argv[4]), Number(process.argv[5]), Number(process.argv[6]))
+    const prepared = prepareStagingRuntime(readFileSync(process.argv[2], 'utf8'), Number(process.argv[4]), Number(process.argv[5]), Number(process.argv[6]), Number(process.argv[7]))
     writeFileSync(process.argv[3], prepared.text, { mode: 0o600 })
     console.log('Prepared staging fields: ' + (prepared.keys.join(', ') || 'already present'))
   } catch (error) {
