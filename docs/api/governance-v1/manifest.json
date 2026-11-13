@@ -26,7 +26,7 @@
     "audit-unknown.json",
     "audit-mail-sent.json"
   ],
-  "validatedRuntimeCommit": "2c53ba7",
+  "validatedRuntimeCommit": "0f0d95d",
   "pullRequest": "https://github.com/amo0114/MoNexus/pull/349",
   "deploymentStatus": "not_deployed",
   "contractRevision": "1.0.3"

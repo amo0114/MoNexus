@@ -2,7 +2,7 @@
 
 版本：`governance-v1 / 1.0.3`。基线：`develop@8da71e0`。
 
-**契约和后端实现已交付；运行时代码 2c53ba7 已完成本地定向验证，完整 CI 见 [PR #349](https://github.com/amo0114/MoNexus/pull/349)。尚未部署生产；此目录 JSON 均为合成数据。**
+**契约和后端实现已交付；运行时代码 0f0d95d 已完成本地定向验证，完整 CI 见 [PR #349](https://github.com/amo0114/MoNexus/pull/349)。尚未部署生产；此目录 JSON 均为合成数据。**
 
 - `openapi.json`：可独立导入的 OpenAPI 3.0.3；39 个方法、64 个 schema。相同增量已合入 `docs/superpowers/specs/monexus-api-openapi.json`。
 - `manifest.json`：夹具索引。每个文件带 method/path/status/schema/response；mock 返回 `response`，不要返回整个夹具包装。
@@ -61,4 +61,4 @@
 
 ## 真实接口联调
 
-后端运行时代码基线为 `2c53ba7`。本地数据库须先按[发布手册](../../operations/backend-governance-v1.md)完成扩展、回填、finalize 和 verify；不要对另一 agent 正在使用的开发库直接重置。`GET /api/admin/capabilities` 需要完成 MFA 且有授权记录的管理员。新建管理员缺省无权限；原有管理员由迁移初始化，测试夹具中的管理员由测试辅助代码显式授权。未配置持久私有存储时，导出明确返回 503。
+后端运行时代码基线为 `0f0d95d`。本地数据库须先按[发布手册](../../operations/backend-governance-v1.md)完成扩展、回填、finalize 和 verify；不要对另一 agent 正在使用的开发库直接重置。`GET /api/admin/capabilities` 需要完成 MFA 且有授权记录的管理员。新建管理员缺省无权限；原有管理员由迁移初始化，测试夹具中的管理员由测试辅助代码显式授权。未配置持久私有存储时，导出明确返回 503。

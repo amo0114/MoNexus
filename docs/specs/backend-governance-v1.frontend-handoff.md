@@ -1,6 +1,6 @@
 # 后台运营治理 v1：前端 agent 交接书
 
-日期：2026-11-13｜状态：契约 1.0.3 与后端已交付，完整 CI 见后端 PR｜运行时代码：2c53ba7（基线 develop@8da71e0）
+日期：2026-11-13｜状态：契约 1.0.3 与后端已交付，完整 CI 见后端 PR｜运行时代码：0f0d95d（基线 develop@8da71e0）
 
 主方案：[后端业务闭环与运营治理实施书](../implementation/2026-11-12-backend-governance-implementation-plan.md)。本交接书只给页面方向和协作边界，具体视觉与组件由前端 agent 决定。
 

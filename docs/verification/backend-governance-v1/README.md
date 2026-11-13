@@ -1,6 +1,6 @@
 # 后端治理 v1 验证记录
 
-本目录仅含合成数据及本地隔离环境证据，不包含线上数据或凭据。基线 develop@8da71e0；契约版本 1.0.2。运行时代码 `2c53ba7` 已完成本地验证，最终 CI 与跨端门禁见 [后端 PR #349](https://github.com/amo0114/MoNexus/pull/349)。
+本目录仅含合成数据及本地隔离环境证据，不包含线上数据或凭据。基线 develop@8da71e0；契约版本 1.0.3。运行时代码 `0f0d95d` 已完成本地验证，最终 CI 与跨端门禁见 [后端 PR #349](https://github.com/amo0114/MoNexus/pull/349)。
 
 ## 已取得的证据
 
@@ -13,7 +13,7 @@
 | 账务及其他回归 | commerce-accounting-closure、accounting-concurrency、offers、refund-inventory-policy、chatbot-bind-abuse、xboard-bot-v2、leaderboard、announcements、admin-ai-settings、recharge-reconcile-resolution、p7b-result-settlement 全部通过；同轮仅 p7b-lifecycle-races 的旧邮件编号断言失败，该文件已在最终 65 项回归中通过 |
 | CI 修复定向回归 | pagination-policy、admin-query、user-status-cache 共 3 文件 24 项通过；refund-reconcile-required-items、recharge-migration-replay 共 2 文件 6 项通过。保留已有分页配置，验证跨实例封禁不能被暖缓存绕过，以及空库/历史支付升级迁移 |
 | 完整后端 CI | [运行 43257132934](https://github.com/amo0114/MoNexus/actions/runs/43257132934)：六个分片全部通过，323 个文件通过、1 个文件跳过；3,147 项通过、4 项按既有配置跳过 |
-| 契约夹具 | 39 个操作、64 个 schema 引用有效；20 个合成 response 通过 schema 校验；导出按 kind 拒绝无关字段 |
+| 契约夹具 | 39 个操作、64 个 schema 引用有效；23 个合成 response 通过 schema 校验；导出按 kind 拒绝无关字段 |
 | 真实存储 | [storage-evidence.txt](storage-evidence.txt)：真实本机 MinIO，私有访问、冻结快照、切换提供商后读取旧报告、有效文件保活和到期清理通过；可重跑 server/scripts/verify-governance-storage.mjs |
 | 数据迁移 | [migration-verified.json](migration-verified.json)：回填、约束、索引验证通过。完整从旧 schema 的 118 个历史迁移升级：旧用户/商家/商品/订单/结算批次/售后均在扩展迁移前写入；未知状态阻止回填、最终约束缺项检测与修复均通过 |
 | 规模查询 | [scale-evidence.json](scale-evidence.json)：10,004 用户、100,001 订单、100,000 流水、30,000 lot；每类查询 20 次，含 EXPLAIN ANALYZE/BUFFERS |
@@ -72,3 +72,9 @@
 ## 尚需发布门禁
 
 同一 PR 需带 run-e2e，等待完整 backend / external-dependencies / E2E / CI OK。治理前端尚由另一 agent 负责，新页面全旅程在前端 PR 联调。生产迁移、备份恢复、真实支付渠道和告警 receiver 演练未执行；本批不部署生产或发送外部告警。
+
+## 前端真实联调反馈的后端补齐
+
+运行时代码 0f0d95d：契约 1.0.3 新增审计 operationState；治理决定为 committed，显式支付请求为 attempt，邮件保留已记录的阶段，未标记历史为 unknown。旧日志不根据中文动作猜成功，也不暴露原始 JSON。治理/支付审计/邮件运营共 3 文件 31 项定向回归通过，服务端编译与架构/API 检查通过；23 份夹具通过 schema 校验。
+
+停用商家的授权范围未扩大，交接文档已列精确只读白名单；20 个后台标签的入口/子动作权限已补入 admin-navigation.json 和可读映射。前端工作树保持未动；既有 MinIO 和迁移证据仍适用，本次无需新增数据库迁移。新增提交的完整 CI 状态见 PR #349，旧运行的通过结论不冒充新提交的 CI。
