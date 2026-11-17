@@ -101,5 +101,5 @@
 
 | 存量文档 | 被取代的章节 | OpenSpec 能力 | 基线 change（已归档） | 生效（合入 develop 的提交） |
 |---|---|---|---|---|
-| [`2026-10-25-performance-and-qq-xboard/performance-plan.md`](2026-10-25-performance-and-qq-xboard/performance-plan.md) | §2.1 中"在页面内容处设置 `Suspense`，fallback 使用页面对应的稳定骨架"一条（该节其余条目不变） | `web-route-loading` | `2026-11-17-baseline-route-loading-states` | 待合入（分支 `fix/route-loading-skeletons`） |
+| [`2026-10-25-performance-and-qq-xboard/performance-plan.md`](2026-10-25-performance-and-qq-xboard/performance-plan.md) | §2.1 中"在页面内容处设置 `Suspense`，fallback 使用页面对应的稳定骨架"一条（该节其余条目不变） | `web-route-loading` | `2026-11-17-baseline-route-loading-states` | `054a4d4`（#360，2026-11-17） |
 | [`product-commerce-v2/spec.md`](product-commerce-v2/spec.md) | §10.2 表中"首次加载""需要登录"两行（其余各行不变，含"数据请求失败"） | `web-route-loading` | 同上 | 同上 |

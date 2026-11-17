@@ -2,7 +2,7 @@
 
 - Spec / 契约: 本 change（proposal / design / specs / tasks）；基线 `openspec/changes/archive/2026-11-17-baseline-route-loading-states/`，主规格 `openspec/specs/web-route-loading/spec.md`；Owner 任务说明《MoNexus P1 — 首个 OpenSpec 驱动的业务开发试点》（2026-11-17）的范围与验收已落入 proposal（Out of scope）、spec、design（Verification plan）
 - 审查记录: [R1](../../../docs/reviews/2026-11-17-align-route-loading-skeletons-review-r1.md) — Codex，R1 REQUEST_CHANGES（P2×3、P3×1）已在 `158aa99` 处置；R2 APPROVE（同一文件）
-- 写入负责人: Claude Code（Opus 5.5）（更新时间 2026-11-17）；审查通过，等待合入流程
+- 写入负责人: Claude Code（Opus 5.5）（更新时间 2026-11-17）；已完成（2026-11-17 合并并归档）
 - 分支 / worktree: `fix/route-loading-skeletons`（无上游跟踪，未 push）/ `/root/projects/worktrees/monexus-route-skeletons`
 - Base: `origin/chore/agent-sdd-p0@08a8118`（PR #359 尚未合并；前端代码与 `origin/develop@3b6f1e0` 相同）。#359 合并后需把 `origin/develop` 合入本分支（merge，不 rebase），再开 PR → `develop`
 - 提交: `974049d` 实施；`158aa99` R1 修复（代码与证据脚本）；其后一个提交只加入证据结果、审查记录与本交接（无代码改动）
@@ -15,7 +15,8 @@
 - R1 修复（`158aa99`）：F-01 中屏 / 宽屏网格与画廊上限；F-02 `matchPath`；F-03 证据脚本；F-04 测试加强 — 处置表见 R1 记录
 
 ## 待完成
-- 复审通过后：等待 #359 合并 → merge `origin/develop` → Owner 授权 push / 开 PR → 合并后 `openspec archive align-route-loading-skeletons`（tasks.md §4.5 余项）
+- 无。#360 已合并（`054a4d4`）；本 change 已归档（`openspec archive`），`docs/specs/INDEX.md` 已填生效提交。
+- FOLLOW_UP（未立项）：详情页 CSS 迟到时 `.product-layout` 外壳跳变，见下方风险。
 
 ## 已批准的设计决策
 - 按路径集中选择占位类型，默认中性 `page` — design Decision 1，Owner 2026-11-17 批准

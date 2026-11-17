@@ -26,4 +26,4 @@
 - [x] 4.2 `npm run build` 与 `npm run check:bundle-budget`，记录主包增量
 - [x] 4.3 Playwright 一次性检查：慢分包、慢商品 API；390 / 768 / 1280 截图与横向溢出断言；减少动效
 - [x] 4.4 `openspec validate align-route-loading-skeletons --strict`
-- [ ] 4.5 更新 `handoff.md`，提交固定快照，交独立审查
+- [x] 4.5 更新 `handoff.md`，提交固定快照，交独立审查
