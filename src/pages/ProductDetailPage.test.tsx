@@ -152,6 +152,9 @@ describe('ProductDetailPage createOrder term fields', () => {
     expect(loading.querySelector('[data-testid="product-detail-skeleton"]')).not.toBeNull()
     expect(screen.getAllByRole('status')).toHaveLength(1)
     expect(screen.queryByText('条款商品')).toBeNull()
+    expect(screen.queryByText('默认规格')).toBeNull()
+    expect(screen.queryByText(/积分/)).toBeNull()
+    expect(loading.querySelectorAll('img, video, button, a')).toHaveLength(0)
 
     await act(async () => { resolveProduct({ data: PRODUCT }) })
     expect(screen.queryByTestId('product-detail-loading')).toBeNull()

@@ -1,8 +1,26 @@
-import { useLocation } from 'react-router-dom'
+import { matchPath, useLocation } from 'react-router-dom'
 import { Skeleton } from './Skeleton'
 import { ProductDetailSkeleton } from '../catalog/ProductDetailSkeleton'
 
 export type RouteFallbackKind = 'product' | 'storefront' | 'list' | 'workspace' | 'form' | 'page'
+
+// Ordered like App.tsx; matchPath keeps React Router's case and slash
+// handling, so any URL that reaches a page gets that page's placeholder.
+const ROUTE_FALLBACK_KINDS: Array<[string, RouteFallbackKind]> = [
+  ['/product/:id', 'product'],
+  ['/shops/:merchantId', 'storefront'],
+  ['/orders', 'list'],
+  ['/notifications', 'list'],
+  ['/leaderboard', 'list'],
+  ['/recharge', 'form'],
+  ['/merchant/apply', 'form'],
+  ['/admin/products/new', 'form'],
+  ['/admin/products/:id/edit', 'form'],
+  ['/merchant/products/new', 'form'],
+  ['/merchant/products/:id/edit', 'form'],
+  ['/admin/*', 'workspace'],
+  ['/merchant/*', 'workspace'],
+]
 
 /**
  * Picks a placeholder shaped like the page whose chunk is loading. Unknown
@@ -10,13 +28,7 @@ export type RouteFallbackKind = 'product' | 'storefront' | 'list' | 'workspace' 
  * product grid.
  */
 export function routeFallbackKind(pathname: string): RouteFallbackKind {
-  if (/^\/product\/[^/]+\/?$/.test(pathname)) return 'product'
-  if (/^\/shops\/[^/]+\/?$/.test(pathname)) return 'storefront'
-  if (/^\/(orders|notifications|leaderboard)\/?$/.test(pathname)) return 'list'
-  if (/^\/(recharge|merchant\/apply)\/?$/.test(pathname)) return 'form'
-  if (/^\/(admin|merchant)\/products\/(new|[^/]+\/edit)\/?$/.test(pathname)) return 'form'
-  if (/^\/(admin|merchant)(\/|$)/.test(pathname)) return 'workspace'
-  return 'page'
+  return ROUTE_FALLBACK_KINDS.find(([path]) => matchPath(path, pathname))?.[1] ?? 'page'
 }
 
 /**
@@ -85,7 +97,7 @@ function ListShape() {
       <HeadingShape />
       <div className="space-y-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-4 rounded-xl border border-[var(--color-border)] p-4">
+          <div key={i} className="flex items-center gap-4 rounded-xl border border-[var(--color-border)] p-4" data-testid="route-fallback-row">
             <Skeleton className="w-10 h-10 rounded-full shrink-0" />
             <div className="flex-1 min-w-0 space-y-2">
               <Skeleton className="h-4 w-2/5" />
@@ -102,7 +114,7 @@ function ListShape() {
 function WorkspaceShape() {
   return (
     <div className="flex flex-col md:flex-row gap-6">
-      <div className="hidden md:block w-56 shrink-0 space-y-2">
+      <div className="hidden md:block w-56 shrink-0 space-y-2" data-testid="route-fallback-nav">
         {Array.from({ length: 7 }).map((_, i) => (
           <Skeleton key={i} className="h-9 rounded-lg" />
         ))}
@@ -129,7 +141,7 @@ function FormShape() {
     <div className="max-w-3xl mx-auto space-y-6">
       <HeadingShape />
       {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="space-y-2">
+        <div key={i} className="space-y-2" data-testid="route-fallback-field">
           <Skeleton className="h-4 w-24" />
           <Skeleton className="h-11 w-full rounded-lg" />
         </div>

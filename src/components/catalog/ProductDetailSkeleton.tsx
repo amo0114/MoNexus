@@ -27,10 +27,14 @@ export function ProductDetailSkeleton() {
         <Skeleton className="h-4 w-1/3" />
       </div>
 
-      <div className="lg:grid lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] lg:gap-8 lg:items-start">
+      {/* Columns and gaps follow desktop-layout.css (>=1280) and desktop-bp-mid.css (1024–1279) */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-[18px] xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:gap-7 lg:items-start">
         <div className="min-w-0">
-          {/* Tablet gallery is a bordered card capped at 400px; desktop and mobile use 515/444 */}
-          <Skeleton className="w-full aspect-[515/444] rounded-t-none rounded-b-[14px] md:aspect-auto md:h-[434px] md:rounded-2xl lg:h-auto lg:aspect-[515/444]" />
+          {/* Tablet gallery is a bordered card capped at 400px; desktop and mobile use 515/444,
+              and desktop also caps the width by viewport height like the real stage */}
+          <div data-skeleton-part="gallery">
+            <Skeleton className="w-full aspect-[515/444] rounded-t-none rounded-b-[14px] md:aspect-auto md:h-[434px] md:rounded-2xl lg:h-auto lg:aspect-[515/444] lg:mx-auto lg:max-w-[calc((100dvh-260px)*515/444)]" />
+          </div>
           <div className="hidden lg:flex gap-3 mt-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <Skeleton key={i} className="h-16 w-16 rounded-lg" />
@@ -42,7 +46,7 @@ export function ProductDetailSkeleton() {
         </div>
 
         {/* Summary, price, offers and purchase actions */}
-        <div className="min-w-0 px-4 pt-5 md:px-0 md:pt-6 space-y-5 lg:rounded-2xl lg:border lg:border-[var(--color-border)] lg:bg-[var(--color-surface)] lg:p-6">
+        <div data-skeleton-part="summary" className="min-w-0 px-4 pt-5 md:px-0 md:pt-6 space-y-5 lg:rounded-2xl lg:border lg:border-[var(--color-border)] lg:bg-[var(--color-surface)] lg:p-6">
           <div className="space-y-3 md:hidden lg:block">
             <div className="flex gap-2">
               <Skeleton className="h-5 w-14 rounded-full" />

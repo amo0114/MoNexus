@@ -25,6 +25,12 @@ describe('routeFallbackKind', () => {
     ['/some-future-page', 'page'],
     ['/product/42/extra', 'page'],
     ['/administrator', 'page'],
+    // React Router matches these too (case-insensitive, extra slashes), so must the fallback.
+    ['/PRODUCT/42', 'product'],
+    ['/product/42/', 'product'],
+    ['/product/42//', 'product'],
+    ['/Orders', 'list'],
+    ['/admin/', 'workspace'],
   ])('%s → %s', (pathname, kind) => {
     expect(routeFallbackKind(pathname)).toBe(kind)
   })
@@ -39,13 +45,31 @@ function renderAt(pathname: string) {
 }
 
 describe('RouteFallback', () => {
-  it.each(['/product/42', '/orders', '/leaderboard', '/notifications', '/profile', '/recharge', '/admin', '/merchant/dashboard', '/some-future-page'])(
+  // Independent of test ids: the old fallback was a grid of six identical cards.
+  function cardGrids(container: HTMLElement) {
+    return [...container.querySelectorAll('[class*="grid-cols"]')].filter((el) => el.children.length >= 6)
+  }
+
+  it.each(['/product/42', '/orders', '/leaderboard', '/notifications', '/profile', '/recharge', '/admin', '/merchant/dashboard', '/merchant/products/new', '/some-future-page'])(
     'does not pose as a product grid on %s',
     (pathname) => {
-      renderAt(pathname)
-      expect(screen.queryByTestId('route-fallback-grid')).toBeNull()
+      const { container } = renderAt(pathname)
+      expect(cardGrids(container)).toHaveLength(0)
     },
   )
+
+  it.each([
+    ['/orders', 'route-fallback-row'],
+    ['/notifications', 'route-fallback-row'],
+    ['/leaderboard', 'route-fallback-row'],
+    ['/admin', 'route-fallback-nav'],
+    ['/merchant/dashboard', 'route-fallback-nav'],
+    ['/recharge', 'route-fallback-field'],
+    ['/merchant/products/new', 'route-fallback-field'],
+  ])('renders the page-type structure on %s', (pathname, testId) => {
+    renderAt(pathname)
+    expect(screen.getAllByTestId(testId).length).toBeGreaterThan(0)
+  })
 
   it('renders the product detail skeleton for product routes', () => {
     renderAt('/product/42')
@@ -53,8 +77,9 @@ describe('RouteFallback', () => {
   })
 
   it('keeps a grid for the shop page', () => {
-    renderAt('/shops/7')
+    const { container } = renderAt('/shops/7')
     expect(screen.getByTestId('route-fallback-grid')).toBeInTheDocument()
+    expect(cardGrids(container)).toHaveLength(1)
   })
 
   it.each(['/product/42', '/shops/7', '/orders', '/admin', '/recharge', '/profile'])(
