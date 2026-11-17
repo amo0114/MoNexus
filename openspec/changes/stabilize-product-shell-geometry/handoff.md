@@ -2,7 +2,7 @@
 
 - Spec / 契约: 本 change（proposal / design / specs / tasks）；Owner 2026-11-17 指示："为 CSS 迟到问题编写 P2 的 OpenSpec 提案，但只批准设计阶段，不授权立即修代码"
 - 来源: #360 R1 复审（Codex）场景 B 发现；记录见 `docs/reviews/2026-11-17-align-route-loading-skeletons-review-r1.md`
-- 审查记录: [设计 R1](../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md) — CHANGES_REQUIRED（P2×2、P3×1），已处置，待复审
+- 审查记录: [设计 R1](../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md) — R1 CHANGES_REQUIRED（P2×2、P3×1）已处置；R2 APPROVE_DESIGN（R2-01 P3 列入 tasks §2.0）
 - 写入负责人: Claude Code（Opus 5.5）（更新时间 2026-11-17）
 - 分支 / worktree: `chore/product-shell-css-proposal`（无上游跟踪，未 push）/ `/root/projects/worktrees/monexus-product-shell-css`
 - Base: `origin/develop@80a9e3b`
@@ -17,7 +17,6 @@
 - proposal / design / spec（1 条 ADDED）/ tasks
 
 ## 待完成
-- 设计复审（R1 处置）
 - Owner 批准规格与设计（tasks §0.1）
 - Owner 另行授权实施（tasks §0.2）；之前不得修改 `src/**`
 
@@ -49,4 +48,4 @@ node openspec/changes/stabilize-product-shell-geometry/evidence/shell-check.mjs 
 阶段、测量对象、固定状态与硬检查见脚本头部注释与 design「Verification plan」。
 
 ## 下一步
-- 复审 R1 处置；通过后 Owner 批准设计，再另行决定是否授权实施
+- Owner 正式批准设计（tasks §0.1）；之后另行决定是否授权实施（§0.2）。实施完成后与代码同一个 PR
