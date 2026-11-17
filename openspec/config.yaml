@@ -1,0 +1,18 @@
+schema: spec-driven
+
+# OpenSpec CLI pinned to @fission-ai/openspec@2.1.0 (Node >=22.20); see docs/agent-workflow.md §2.
+context: |
+  Language: zh-CN
+  All artifacts must be written in zh-CN.
+  Keep OpenSpec structural headings and SHALL/MUST keywords in English.
+  Engineering rules and business hard constraints live in AGENTS.md (repo root); artifacts must not contradict or relax them.
+  Legacy specs stay in docs/specs/ and docs/superpowers/specs/ (see docs/specs/INDEX.md); cite them instead of copying them.
+
+rules:
+  proposal:
+    - State what is out of scope.
+    - List which AGENTS.md hard constraints (money/transaction, idempotency, ownership 404, lock order, business time, cron/worker safety) the change touches, or state none.
+  design:
+    - For orders, recharge, refund, wallet, inventory, settlement or permissions, describe state transitions, concurrency, idempotency, rollback and failure recovery.
+  tasks:
+    - End with verification tasks that name real repository commands (docs/testing-policy.md) and the test layer chosen.
