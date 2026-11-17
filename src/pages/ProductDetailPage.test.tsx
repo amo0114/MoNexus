@@ -135,6 +135,29 @@ describe('ProductDetailPage createOrder term fields', () => {
     })
   })
 
+  it.each([
+    ['guest', { user: null, accessToken: null, isLoggedIn: false }],
+    ['signed-in user', null],
+  ])('shows the shared layout skeleton without product data while loading for a %s', async (_who, auth) => {
+    if (auth) useAuthStore.setState(auth)
+    let resolveProduct!: (value: { data: typeof PRODUCT }) => void
+    const fallback = apiGet.getMockImplementation()!
+    apiGet.mockImplementation((url: string) => (url === '/products/42'
+      ? new Promise((resolve) => { resolveProduct = resolve })
+      : fallback(url)))
+    renderPage()
+
+    const loading = screen.getByTestId('product-detail-loading')
+    expect(loading).toHaveAttribute('role', 'status')
+    expect(loading.querySelector('[data-testid="product-detail-skeleton"]')).not.toBeNull()
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    expect(screen.queryByText('条款商品')).toBeNull()
+
+    await act(async () => { resolveProduct({ data: PRODUCT }) })
+    expect(screen.queryByTestId('product-detail-loading')).toBeNull()
+    expect((await screen.findAllByText('条款商品')).length).toBeGreaterThan(0)
+  })
+
   it('sends expectedProductContentVersion and expectedAssuranceGrantId from the confirmed preview, including null grant id', async () => {
     renderPage()
     expect(await screen.findByTestId('product-gallery')).toBeInTheDocument()

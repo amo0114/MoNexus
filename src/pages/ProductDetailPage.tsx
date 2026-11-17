@@ -40,6 +40,7 @@ import type { ProductTemplateDefinition } from '../types/catalog'
 import ProductDetailDesktop from '../components/catalog/ProductDetailDesktop'
 import ProductDetailMobile from '../components/catalog/ProductDetailMobile'
 import ProductDetailTablet from '../components/catalog/productDetail/ProductDetailTablet'
+import { ProductDetailSkeleton } from '../components/catalog/ProductDetailSkeleton'
 import RelatedProductsSection from '../components/catalog/productDetail/RelatedProductsSection'
 import { referenceProduct, referenceReviews } from '../components/catalog/productDetailMock'
 
@@ -407,23 +408,11 @@ export default function ProductDetailPage() {
   }
 
   if (loading) {
+    // Same structure as the route fallback for every visitor: the skeleton
+    // carries no product data, so guests learn nothing before access is known.
     return (
-      <div
-        className="max-w-6xl mx-auto px-4 lg:px-8 py-6 pb-8 fade-in relative animate-pulse"
-        data-testid="product-detail-loading"
-      >
-        {!isLoggedIn ? (
-          <div className="h-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]" />
-        ) : (
-          <div className="space-y-6">
-            <div className="w-24 h-6 bg-[var(--color-border)] rounded-lg"></div>
-            <div className="w-64 h-8 bg-[var(--color-border)] rounded-lg"></div>
-            <div className="flex flex-col lg:flex-row gap-8 items-start">
-              <div className="flex-1 w-full aspect-[4/3] bg-[var(--color-image-placeholder)] rounded-2xl border border-[var(--color-border)]"></div>
-              <div className="w-full lg:w-[368px] h-96 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)]"></div>
-            </div>
-          </div>
-        )}
+      <div role="status" aria-label="正在加载商品" data-testid="product-detail-loading">
+        <ProductDetailSkeleton />
       </div>
     )
   }
