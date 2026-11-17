@@ -1,0 +1,40 @@
+# Handoff: stabilize-product-shell-geometry
+
+- Spec / 契约: 本 change（proposal / design / specs / tasks）；Owner 2026-11-17 指示："为 CSS 迟到问题编写 P2 的 OpenSpec 提案，但只批准设计阶段，不授权立即修代码"
+- 来源: #360 R1 复审（Codex）场景 B 发现；记录见 `docs/reviews/2026-11-17-align-route-loading-skeletons-review-r1.md`
+- 审查记录: 无
+- 写入负责人: Claude Code（Opus 5.5）（更新时间 2026-11-17）
+- 分支 / worktree: `chore/product-shell-css-proposal`（无上游跟踪，未 push）/ `/root/projects/worktrees/monexus-product-shell-css`
+- Base: `origin/develop@80a9e3b`
+- 已验证 revision: `80a9e3b`（业务代码未改；工作区只新增本 change 目录）
+- 隔离资源: 本地 `vite preview` 端口 5299（已停止）
+
+## 已完成（附证据）
+- 根因调查：外壳规则位于详情页分包 CSS；Vite 预加载等 CSS `load` 后才执行模块 — design Context
+- 现状实测：`evidence/shell-check.mjs` 在 `80a9e3b` 构建上 exit 1（≥1024 外壳移动），结果 `evidence/results-80a9e3b-before.json`
+- 构建产物核对：只有详情页分包含外壳选择器
+- proposal / design / spec（1 条 ADDED）/ tasks
+
+## 待完成
+- Owner 批准规格与设计（tasks §0.1）
+- Owner 另行授权实施（tasks §0.2）；之前不得修改 `src/**`
+
+## 已批准的设计决策
+- 无（待批准）
+
+## 风险与阻断
+- 阻断：设计批准门与实施授权门。
+- 范围外已记录：`Layout` 的商品详情判断区分大小写（`/PRODUCT/42` 不加 `.product-layout`）。
+
+## 验证记录
+| 命令 | 结果（exit code） | revision |
+|---|---|---|
+| `npm ci && npm run build`（Node 22.23.1） | 0 | 80a9e3b |
+| `node .../evidence/shell-check.mjs`（`vite preview` :5299） | 1，SHELL MOVED at 1024x900, 1279x900, 1280x900, 1920x1000（预期：记录现状） | 80a9e3b（结果中 `dirty: true` 仅因本 change 目录未提交） |
+| `openspec validate stabilize-product-shell-geometry --strict`；`openspec validate --all --strict` | 0；0 | 本分支提交前 |
+
+## 未运行 / 无法验证
+- 实施后的效果 — 未授权实施
+
+## 下一步
+- Owner 审阅 proposal 与 design；批准后由 Owner 决定实施时机
