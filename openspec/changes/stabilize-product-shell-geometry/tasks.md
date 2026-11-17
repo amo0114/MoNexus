@@ -16,4 +16,4 @@
 - [x] 2.3 ≥1024 时深色与浅色主题下 `main`、页头、横幅、页脚的计算样式与基线相同
 - [x] 2.4 `npm test`、`npm run build`；记录主包 CSS gzip 变化
 - [x] 2.5 `openspec validate stabilize-product-shell-geometry --strict`
-- [ ] 2.6 更新 `handoff.md`，提交固定快照，交独立审查
+- [x] 2.6 更新 `handoff.md`，提交固定快照，交独立审查

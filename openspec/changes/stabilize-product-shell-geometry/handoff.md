@@ -3,7 +3,7 @@
 - Spec / 契约: 本 change（proposal / design / specs / tasks）
 - 来源: #360 R1 复审场景 B；设计审查 [R1/R2](../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md)（R2 APPROVE_DESIGN）
 - Owner 决定: 2026-11-17 批准设计并授权实施（tasks §0.1、§0.2）；push / PR 未授权
-- 审查记录: 实施审查尚未进行
+- 审查记录: 实施审查 APPROVE（`80a9e3b..d8d747b`），见 [审查记录](../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md#实施审查)
 - 写入负责人: Claude Code（Opus 5.5）（更新时间 2026-11-17）；实施完成，进入审查后停止写入
 - 分支 / worktree: `chore/product-shell-css-proposal`（无上游跟踪，未 push）/ `/root/projects/worktrees/monexus-product-shell-css`
 - Base: `origin/develop@80a9e3b`
@@ -17,8 +17,8 @@
 - 构建产物：`.product-layout` 选择器只出现在 `index-*.css`（9 处），详情分包 0 处；1024–1279 覆盖规则位于 ≥1024 规则之后
 
 ## 待完成
-- 独立审查（建议 `80a9e3b..HEAD` 全量，代码部分为 `f52f683..f1ea31a`）
-- 审查通过后：Owner 授权 push / 开 PR → `develop`（UI 外壳改动，建议带 `run-e2e`）→ 合并后 `openspec archive stabilize-product-shell-geometry`
+- 独立审查已通过（APPROVE，无 Finding）
+- 下一步：Owner 授权 push / 开 PR → `develop`（UI 外壳改动，建议带 `run-e2e`）→ 合并后 `openspec archive stabilize-product-shell-geometry`
 
 ## 已批准的设计决策
 - 外壳规则原样移入主包 CSS — design Decision 1，Owner 2026-11-17 批准
