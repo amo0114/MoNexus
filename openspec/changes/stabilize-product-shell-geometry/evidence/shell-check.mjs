@@ -196,7 +196,8 @@ for (const theme of ['light', 'dark']) {
       const pick = (el) => el && Object.fromEntries(props.map((p) => [p, getComputedStyle(el)[p]]))
       const header = document.querySelector('.navbar-shell')
       return {
-        theme: document.documentElement.getAttribute('data-theme'),
+        // ThemeProvider: dark → html.dark; soft/ink → data-theme; light → neither.
+        theme: document.documentElement.classList.contains('dark') ? 'dark' : (document.documentElement.getAttribute('data-theme') ?? 'light'),
         root: pick(document.querySelector('.product-layout')),
         header: pick(header),
         banners: [...document.querySelectorAll('.chrome-bound')].filter((el) => el !== header && !el.closest('footer')).map(pick),
