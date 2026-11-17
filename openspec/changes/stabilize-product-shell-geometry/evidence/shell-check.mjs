@@ -21,7 +21,12 @@
 // Hard checks: each held resource was requested once, the detail CSS applied,
 // required nodes exist, t0 = t1 = t2 = t3, and with --baseline t3 equals the
 // baseline's t3. Member runs also check that after client-side navigation to
-// /orders the shell equals a direct cold load of /orders.
+// /orders (URL, orders page and shell nodes asserted, no page errors) the shell
+// equals a direct cold load of /orders.
+// Styles: member, light and dark themes at 1024/1280/1920, fully loaded product
+// page; computed max-width, paddings and backgrounds of the layout root,
+// header, banners, main and footer. With --baseline they must equal the
+// baseline's snapshot.
 import { createRequire } from 'node:module'
 import { execSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -65,8 +70,9 @@ async function stubApi(page, productGate) {
   })
 }
 
-async function newPage(width, height, mode) {
+async function newPage(width, height, mode, theme = null) {
   const ctx = await browser.newContext({ viewport: { width, height } })
+  if (theme) await ctx.addInitScript((t) => localStorage.setItem('theme', t), theme)
   if (mode === 'member') {
     await ctx.addInitScript(([user, token]) => {
       localStorage.setItem('monexus-auth', JSON.stringify({ state: { user, isLoggedIn: true, accessToken: token, sessionId: 'shell-check' }, version: 0 }))
@@ -152,17 +158,60 @@ for (const mode of ['guest', 'member']) {
     if (mode === 'member') {
       // Leave the product route client-side, then compare with a cold /orders load.
       await page.evaluate(() => { window.history.pushState({}, '', '/orders'); window.dispatchEvent(new PopStateEvent('popstate')) })
+      const errorsBeforeNav = errors.length
       await page.waitForFunction(() => !document.querySelector('.product-layout'), null, { timeout: 15000 })
+      const reachedOrders = await page.waitForSelector('[data-testid="orders-page"]', { timeout: 15000 }).then(() => true, () => false)
       await page.waitForLoadState('networkidle')
       run.ordersAfterNav = await shell(page)
+      run.ordersAfterNavCheck = { path: new URL(page.url()).pathname, ordersPage: reachedOrders, pageErrors: errors.length - errorsBeforeNav }
       const direct = await newPage(width, height, mode)
       await stubApi(direct.page, null)
       await direct.page.goto(`${BASE}/orders`, { waitUntil: 'networkidle' })
+      const directOrders = await direct.page.locator('[data-testid="orders-page"]').count()
       run.ordersDirect = await shell(direct.page)
+      run.ordersDirectCheck = { path: new URL(direct.page.url()).pathname, ordersPage: directOrders === 1, pageErrors: direct.errors.length }
       await direct.ctx.close()
+      for (const [label, check, snap] of [['after nav', run.ordersAfterNavCheck, run.ordersAfterNav], ['direct', run.ordersDirectCheck, run.ordersDirect]]) {
+        if (check.path !== '/orders' || !check.ordersPage || check.pageErrors) fail(`${tag} /orders ${label} ${JSON.stringify(check)}`)
+        if (!snap.header || !snap.main || !snap.footer) fail(`${tag} /orders ${label} missing shell node`)
+      }
       if (JSON.stringify(run.ordersAfterNav) !== JSON.stringify(run.ordersDirect)) fail(`${tag} /orders shell after leaving product ≠ direct load`)
     }
     results.runs.push(run)
+    await ctx.close()
+  }
+}
+
+// Computed styles of the fully loaded product shell, per theme.
+const styleProps = ['maxWidth', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'backgroundColor', 'backgroundImage']
+results.styles = []
+for (const theme of ['light', 'dark']) {
+  for (const width of [1024, 1280, 1920]) {
+    const tag = `member@${width}/${theme}`
+    const { ctx, page, errors } = await newPage(width, 900, 'member', theme)
+    await stubApi(page, null)
+    await page.goto(`${BASE}/product/42`, { waitUntil: 'networkidle' })
+    await page.getByText('外壳核验商品').first().waitFor()
+    const snap = await page.evaluate((props) => {
+      const pick = (el) => el && Object.fromEntries(props.map((p) => [p, getComputedStyle(el)[p]]))
+      const header = document.querySelector('.navbar-shell')
+      return {
+        theme: document.documentElement.getAttribute('data-theme'),
+        root: pick(document.querySelector('.product-layout')),
+        header: pick(header),
+        banners: [...document.querySelectorAll('.chrome-bound')].filter((el) => el !== header && !el.closest('footer')).map(pick),
+        main: pick(document.querySelector('main')),
+        footer: pick(document.querySelector('footer .chrome-bound')),
+      }
+    }, styleProps)
+    results.styles.push({ run: tag, ...snap })
+    if (snap.theme !== theme || !snap.root || !snap.header || !snap.main || !snap.footer || snap.banners.length === 0) fail(`${tag} style snapshot incomplete`)
+    if (errors.length) fail(`${tag} page errors`)
+    if (baseline?.styles) {
+      const prev = baseline.styles.find((r) => r.run === tag)
+      if (!prev) fail(`${tag} styles missing in baseline`)
+      else if (JSON.stringify(prev) !== JSON.stringify({ run: tag, ...snap })) fail(`${tag} computed styles differ from baseline`)
+    }
     await ctx.close()
   }
 }
