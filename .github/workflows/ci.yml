@@ -21,6 +21,10 @@
 # backend build). After path filtering, frontend, backend and Playwright
 # jobs can all start in parallel. "CI OK" aggregates every result, so the
 # parallelism preserves every gate. See docs/testing-policy.md for layering.
+#
+# Runners are pinned to ubuntu-24.04: since 2026-11-17 ubuntu-latest resolves
+# to ubuntu-26.04, where the pinned Playwright cannot install Chromium.
+# Move the pin only together with a Playwright version that supports it.
 
 name: CI
 
@@ -41,7 +45,7 @@ concurrency:
 jobs:
   changes:
     name: Detect changed areas
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     # Pushes to master/develop always run the full suite; path filtering
     # only trims PR runs.
@@ -128,7 +132,7 @@ jobs:
         github.event_name == 'push' ||
         needs.changes.outputs.server == 'true'
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The real-PostgreSQL suite runs serially within each of 6 file-level
     # shards. Every shard owns its PostgreSQL service because setup.ts
     # TRUNCATEs shared tables before each test.
@@ -212,7 +216,7 @@ jobs:
         github.event_name == 'push' ||
         needs.changes.outputs.frontend == 'true'
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Bound runner/download variance while retaining all unit/build/mobile gates.
     timeout-minutes: 20
 
@@ -270,7 +274,7 @@ jobs:
         needs.changes.outputs.e2e == 'true' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -483,7 +487,7 @@ jobs:
         needs.changes.outputs.e2e == 'true' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Playwright's cached-browser path still runs apt-based install-deps.
     # GitHub-hosted runners can spend more than 10 minutes in that step, so
     # keep this aligned with the compatibility E2E job's fail-closed window.
@@ -544,7 +548,7 @@ jobs:
 
       - name: Install Playwright chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        # ubuntu-latest already supplies the Chromium runtime libraries. Do
+        # The hosted ubuntu-24.04 image already supplies the Chromium runtime libraries. Do
         # not repeat the apt-based install-deps step here: its package mirror
         # can hang for the entire job window before the realtime tests start.
         run: npx playwright install chromium
@@ -578,7 +582,7 @@ jobs:
         needs.changes.outputs.e2e == 'true' ||
         contains(github.event.pull_request.labels.*.name, 'run-e2e')
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     services:
@@ -657,7 +661,7 @@ jobs:
       !failure() && !cancelled() && (
         github.event_name == 'push' || needs.changes.outputs.server == 'true'
       )
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
       postgres:
@@ -736,7 +740,7 @@ jobs:
     # workflow or forced-command wrapper must not reach the release branch just
     # because the surrounding change is documentation or operations-only.
     name: Compose production deploy contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check out repository
@@ -749,7 +753,7 @@ jobs:
 
   architecture:
     name: Architecture boundaries and API contract
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check out repository
@@ -779,7 +783,7 @@ jobs:
     name: CI OK
     needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract, architecture, external-dependencies]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Check upstream job results
