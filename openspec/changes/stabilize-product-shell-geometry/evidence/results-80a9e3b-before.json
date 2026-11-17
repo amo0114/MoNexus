@@ -1,5 +1,5 @@
 {
-  "revision": "65e7a36b304ca63edbc5b0755b2b2782a70cbe5e",
+  "revision": "f52f68365b3402ada5877e567f9847889423c2c4",
   "dirtyFiles": [],
   "base": "http://127.0.0.1:5299",
   "baseline": null,
@@ -1070,7 +1070,7 @@
       },
       "t1": {
         "header": {
-          "x": 68,
+          "x": 67,
           "w": 1785,
           "pad": [
             0,
@@ -1351,6 +1351,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 12,
@@ -1384,6 +1389,11 @@
             16
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
       }
     },
     {
@@ -1565,6 +1575,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 12,
@@ -1598,6 +1613,11 @@
             24
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
       }
     },
     {
@@ -1839,6 +1859,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 24,
@@ -1884,6 +1909,11 @@
             24
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
       }
     },
     {
@@ -2125,6 +2155,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 24,
@@ -2170,6 +2205,11 @@
             24
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
       }
     },
     {
@@ -2411,6 +2451,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 24,
@@ -2456,6 +2501,11 @@
             24
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
       }
     },
     {
@@ -2697,6 +2747,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 24,
@@ -2742,6 +2797,11 @@
             24
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
       }
     },
     {
@@ -2983,6 +3043,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 24,
@@ -3028,6 +3093,11 @@
             24
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
       }
     },
     {
@@ -3086,7 +3156,7 @@
       },
       "t1": {
         "header": {
-          "x": 68,
+          "x": 67,
           "w": 1785,
           "pad": [
             0,
@@ -3269,6 +3339,11 @@
           ]
         }
       },
+      "ordersAfterNavCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      },
       "ordersDirect": {
         "header": {
           "x": 320,
@@ -3314,6 +3389,319 @@
             24
           ]
         }
+      },
+      "ordersDirectCheck": {
+        "path": "/orders",
+        "ordersPage": true,
+        "pageErrors": 0
+      }
+    }
+  ],
+  "styles": [
+    {
+      "run": "member@1024/light",
+      "theme": "light",
+      "root": {
+        "maxWidth": "none",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgb(248, 250, 252)",
+        "backgroundImage": "none"
+      },
+      "header": {
+        "maxWidth": "2016px",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "banners": [
+        {
+          "maxWidth": "2064px",
+          "paddingTop": "10px",
+          "paddingRight": "24px",
+          "paddingBottom": "0px",
+          "paddingLeft": "24px",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none"
+        }
+      ],
+      "main": {
+        "maxWidth": "2064px",
+        "paddingTop": "0px",
+        "paddingRight": "24px",
+        "paddingBottom": "48px",
+        "paddingLeft": "24px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "footer": {
+        "maxWidth": "2064px",
+        "paddingTop": "24px",
+        "paddingRight": "24px",
+        "paddingBottom": "24px",
+        "paddingLeft": "24px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      }
+    },
+    {
+      "run": "member@1280/light",
+      "theme": "light",
+      "root": {
+        "maxWidth": "none",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgb(248, 250, 252)",
+        "backgroundImage": "none"
+      },
+      "header": {
+        "maxWidth": "2016px",
+        "paddingTop": "0px",
+        "paddingRight": "8px",
+        "paddingBottom": "0px",
+        "paddingLeft": "8px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "banners": [
+        {
+          "maxWidth": "2064px",
+          "paddingTop": "10px",
+          "paddingRight": "32px",
+          "paddingBottom": "0px",
+          "paddingLeft": "32px",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none"
+        }
+      ],
+      "main": {
+        "maxWidth": "2064px",
+        "paddingTop": "0px",
+        "paddingRight": "32px",
+        "paddingBottom": "48px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "footer": {
+        "maxWidth": "2064px",
+        "paddingTop": "24px",
+        "paddingRight": "32px",
+        "paddingBottom": "24px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      }
+    },
+    {
+      "run": "member@1920/light",
+      "theme": "light",
+      "root": {
+        "maxWidth": "none",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgb(248, 250, 252)",
+        "backgroundImage": "none"
+      },
+      "header": {
+        "maxWidth": "2016px",
+        "paddingTop": "0px",
+        "paddingRight": "8px",
+        "paddingBottom": "0px",
+        "paddingLeft": "8px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "banners": [
+        {
+          "maxWidth": "2064px",
+          "paddingTop": "10px",
+          "paddingRight": "32px",
+          "paddingBottom": "0px",
+          "paddingLeft": "32px",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none"
+        }
+      ],
+      "main": {
+        "maxWidth": "2064px",
+        "paddingTop": "0px",
+        "paddingRight": "32px",
+        "paddingBottom": "48px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "footer": {
+        "maxWidth": "2064px",
+        "paddingTop": "24px",
+        "paddingRight": "32px",
+        "paddingBottom": "24px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      }
+    },
+    {
+      "run": "member@1024/dark",
+      "theme": "dark",
+      "root": {
+        "maxWidth": "none",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgb(10, 10, 20)",
+        "backgroundImage": "none"
+      },
+      "header": {
+        "maxWidth": "2016px",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "banners": [
+        {
+          "maxWidth": "2064px",
+          "paddingTop": "10px",
+          "paddingRight": "24px",
+          "paddingBottom": "0px",
+          "paddingLeft": "24px",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none"
+        }
+      ],
+      "main": {
+        "maxWidth": "2064px",
+        "paddingTop": "0px",
+        "paddingRight": "24px",
+        "paddingBottom": "48px",
+        "paddingLeft": "24px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "footer": {
+        "maxWidth": "2064px",
+        "paddingTop": "24px",
+        "paddingRight": "24px",
+        "paddingBottom": "24px",
+        "paddingLeft": "24px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      }
+    },
+    {
+      "run": "member@1280/dark",
+      "theme": "dark",
+      "root": {
+        "maxWidth": "none",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgb(10, 10, 20)",
+        "backgroundImage": "none"
+      },
+      "header": {
+        "maxWidth": "2016px",
+        "paddingTop": "0px",
+        "paddingRight": "8px",
+        "paddingBottom": "0px",
+        "paddingLeft": "8px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "banners": [
+        {
+          "maxWidth": "2064px",
+          "paddingTop": "10px",
+          "paddingRight": "32px",
+          "paddingBottom": "0px",
+          "paddingLeft": "32px",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none"
+        }
+      ],
+      "main": {
+        "maxWidth": "2064px",
+        "paddingTop": "0px",
+        "paddingRight": "32px",
+        "paddingBottom": "48px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "footer": {
+        "maxWidth": "2064px",
+        "paddingTop": "24px",
+        "paddingRight": "32px",
+        "paddingBottom": "24px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      }
+    },
+    {
+      "run": "member@1920/dark",
+      "theme": "dark",
+      "root": {
+        "maxWidth": "none",
+        "paddingTop": "0px",
+        "paddingRight": "0px",
+        "paddingBottom": "0px",
+        "paddingLeft": "0px",
+        "backgroundColor": "rgb(10, 10, 20)",
+        "backgroundImage": "none"
+      },
+      "header": {
+        "maxWidth": "2016px",
+        "paddingTop": "0px",
+        "paddingRight": "8px",
+        "paddingBottom": "0px",
+        "paddingLeft": "8px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "banners": [
+        {
+          "maxWidth": "2064px",
+          "paddingTop": "10px",
+          "paddingRight": "32px",
+          "paddingBottom": "0px",
+          "paddingLeft": "32px",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none"
+        }
+      ],
+      "main": {
+        "maxWidth": "2064px",
+        "paddingTop": "0px",
+        "paddingRight": "32px",
+        "paddingBottom": "48px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
+      },
+      "footer": {
+        "maxWidth": "2064px",
+        "paddingTop": "24px",
+        "paddingRight": "32px",
+        "paddingBottom": "24px",
+        "paddingLeft": "32px",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "backgroundImage": "none"
       }
     }
   ],
