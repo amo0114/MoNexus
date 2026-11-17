@@ -1,0 +1,906 @@
+{
+  "revision": "158aa999c60dcdeece380cbe2a8d01e1cec6fa4e",
+  "dirty": false,
+  "base": "http://127.0.0.1:5299",
+  "viewports": [
+    {
+      "viewport": "390x900",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 390,
+            "h": 336
+          },
+          "summary": {
+            "x": 0,
+            "y": 401,
+            "w": 390,
+            "h": 434
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 390,
+            "h": 336
+          },
+          "summary": {
+            "x": 0,
+            "y": 401,
+            "w": 390,
+            "h": 434
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 390,
+            "h": 336
+          },
+          "summary": null,
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "1e-05s",
+          "iterations": "1"
+        },
+        "reducedMotion": true,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 390,
+            "h": 336
+          },
+          "summary": {
+            "x": 0,
+            "y": 401,
+            "w": 390,
+            "h": 434
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 390,
+            "h": 336
+          },
+          "summary": {
+            "x": 0,
+            "y": 401,
+            "w": 390,
+            "h": 434
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "767x900",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 767,
+            "h": 661
+          },
+          "summary": {
+            "x": 0,
+            "y": 726,
+            "w": 767,
+            "h": 434
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 767,
+            "h": 661
+          },
+          "summary": {
+            "x": 0,
+            "y": 726,
+            "w": 767,
+            "h": 434
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 767,
+            "h": 661
+          },
+          "summary": null,
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "0s",
+          "iterations": "1"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 767,
+            "h": 661
+          },
+          "summary": {
+            "x": 0,
+            "y": 726,
+            "w": 767,
+            "h": 434
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 0,
+            "y": 65,
+            "w": 767,
+            "h": 661
+          },
+          "summary": {
+            "x": 0,
+            "y": 726,
+            "w": 767,
+            "h": 434
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "768x900",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 688,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 688,
+            "h": 350
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 688,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 688,
+            "h": 350
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 40,
+            "y": 304,
+            "w": 688,
+            "h": 434
+          },
+          "summary": null,
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "2s",
+          "iterations": "infinite"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 688,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 688,
+            "h": 350
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 688,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 688,
+            "h": 350
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "1023x900",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 943,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 943,
+            "h": 350
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 943,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 943,
+            "h": 350
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 40,
+            "y": 301,
+            "w": 943,
+            "h": 434
+          },
+          "summary": null,
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "2s",
+          "iterations": "infinite"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 943,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 943,
+            "h": 350
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 40,
+            "y": 294,
+            "w": 943,
+            "h": 434
+          },
+          "summary": {
+            "x": 40,
+            "y": 728,
+            "w": 943,
+            "h": 350
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "1024x900",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 512,
+            "h": 442
+          },
+          "summary": {
+            "x": 554,
+            "y": 113,
+            "w": 446,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 512,
+            "h": 442
+          },
+          "summary": {
+            "x": 554,
+            "y": 113,
+            "w": 446,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 512,
+            "h": 442
+          },
+          "summary": {
+            "x": 554,
+            "y": 113,
+            "w": 446,
+            "h": 771
+          },
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "2s",
+          "iterations": "infinite"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 24,
+            "y": 129,
+            "w": 512,
+            "h": 442
+          },
+          "summary": {
+            "x": 554,
+            "y": 129,
+            "w": 446,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 512,
+            "h": 442
+          },
+          "summary": {
+            "x": 554,
+            "y": 113,
+            "w": 446,
+            "h": 540
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "1279x900",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 649,
+            "h": 559
+          },
+          "summary": {
+            "x": 691,
+            "y": 113,
+            "w": 564,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 649,
+            "h": 559
+          },
+          "summary": {
+            "x": 691,
+            "y": 113,
+            "w": 564,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 649,
+            "h": 559
+          },
+          "summary": {
+            "x": 691,
+            "y": 113,
+            "w": 564,
+            "h": 771
+          },
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "2s",
+          "iterations": "infinite"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 24,
+            "y": 129,
+            "w": 649,
+            "h": 559
+          },
+          "summary": {
+            "x": 691,
+            "y": 129,
+            "w": 564,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 24,
+            "y": 113,
+            "w": 649,
+            "h": 559
+          },
+          "summary": {
+            "x": 691,
+            "y": 113,
+            "w": 564,
+            "h": 540
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "1280x900",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 32,
+            "y": 113,
+            "w": 703,
+            "h": 606
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 32,
+            "y": 113,
+            "w": 703,
+            "h": 606
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 32,
+            "y": 113,
+            "w": 703,
+            "h": 606
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 771
+          },
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "2s",
+          "iterations": "infinite"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 24,
+            "y": 129,
+            "w": 713,
+            "h": 614
+          },
+          "summary": {
+            "x": 765,
+            "y": 129,
+            "w": 491,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 32,
+            "y": 113,
+            "w": 703,
+            "h": 606
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 540
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "1280x720",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 117,
+            "y": 113,
+            "w": 534,
+            "h": 460
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 117,
+            "y": 113,
+            "w": 534,
+            "h": 460
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 117,
+            "y": 113,
+            "w": 534,
+            "h": 460
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 612
+          },
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "2s",
+          "iterations": "infinite"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 114,
+            "y": 129,
+            "w": 534,
+            "h": 460
+          },
+          "summary": {
+            "x": 765,
+            "y": 129,
+            "w": 491,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 117,
+            "y": 113,
+            "w": 534,
+            "h": 460
+          },
+          "summary": {
+            "x": 763,
+            "y": 113,
+            "w": 485,
+            "h": 540
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    },
+    {
+      "viewport": "1920x1000",
+      "A": {
+        "phase1": {
+          "gallery": {
+            "x": 144,
+            "y": 113,
+            "w": 858,
+            "h": 740
+          },
+          "summary": {
+            "x": 1142,
+            "y": 113,
+            "w": 746,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "phase2": {
+          "gallery": {
+            "x": 144,
+            "y": 113,
+            "w": 858,
+            "h": 740
+          },
+          "summary": {
+            "x": 1142,
+            "y": 113,
+            "w": 746,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "loaded": {
+          "gallery": {
+            "x": 144,
+            "y": 113,
+            "w": 858,
+            "h": 740
+          },
+          "summary": {
+            "x": 1142,
+            "y": 113,
+            "w": 746,
+            "h": 871
+          },
+          "overflow": 0
+        },
+        "statusCount": 1,
+        "nested": 0,
+        "leaked": 0,
+        "focusable": 0,
+        "anim": {
+          "duration": "2s",
+          "iterations": "infinite"
+        },
+        "reducedMotion": false,
+        "pageErrors": 0
+      },
+      "B": {
+        "noCss": {
+          "gallery": {
+            "x": 344,
+            "y": 129,
+            "w": 713,
+            "h": 614
+          },
+          "summary": {
+            "x": 1085,
+            "y": 129,
+            "w": 491,
+            "h": 540
+          },
+          "overflow": 0
+        },
+        "withCss": {
+          "gallery": {
+            "x": 144,
+            "y": 113,
+            "w": 858,
+            "h": 740
+          },
+          "summary": {
+            "x": 1142,
+            "y": 113,
+            "w": 746,
+            "h": 540
+          },
+          "overflow": 0
+        }
+      },
+      "C": {
+        "/terms": {
+          "overflow": 0,
+          "shapes": 4
+        },
+        "/shops/7": {
+          "overflow": 0,
+          "shapes": 11
+        }
+      }
+    }
+  ],
+  "failures": []
+}

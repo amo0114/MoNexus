@@ -39,9 +39,9 @@
 
 ## Decisions
 
-1. **按路径选择占位类型，集中在一个纯函数中。** `routeFallbackKind(pathname)` 返回 `product | storefront | list | workspace | form | page`，`RouteFallback` 通过 `useLocation()` 取当前路径（`SessionLayout` 在 `BrowserRouter` 内，嵌套 `/*` 路由也能取到真实路径）。备选：每个 `<Route>` 各包一层 `Suspense` 并传 fallback——会改动全部路由声明且重复 JSX，否决。默认值为 `page`，新路由不归类也不会冒充网格。
+1. **按路径选择占位类型，集中在一个纯函数中。** `routeFallbackKind(pathname)` 用 React Router 的 `matchPath` 按 `App.tsx` 的路由模式匹配（与路由器的大小写和斜杠语义一致）， 返回 `product | storefront | list | workspace | form | page`，`RouteFallback` 通过 `useLocation()` 取当前路径（`SessionLayout` 在 `BrowserRouter` 内，嵌套 `/*` 路由也能取到真实路径）。备选：每个 `<Route>` 各包一层 `Suspense` 并传 fallback——会改动全部路由声明且重复 JSX，否决。默认值为 `page`，新路由不归类也不会冒充网格。
 2. **一个文件提供类型骨架。** `RouteFallback.tsx` 内为每种类型写一个小组件（只用现有 `Skeleton` 原语），对外只有一个 `role="status"`。不嵌套 `TableSkeleton` / `StatCardSkeleton`，因为它们各自带 `role="status"`，会重复播报。
-3. **商品详情骨架独立成组件** `src/components/catalog/ProductDetailSkeleton.tsx`，由 `RouteFallback`（`product` 类型）与 `ProductDetailPage` 的 `loading` 分支共同使用，保证两阶段结构相同。只用 Tailwind 断点（`md` / `lg`），不依赖 `useMediaQuery`，也不依赖只在详情页 chunk 中加载的 `ProductDetail*.css`，因此可放进主包且首帧即为正确布局。桌面列宽对齐 `minmax(0,1.45fr) minmax(0,1fr)`；桌面与手机画廊沿用真实页面的 `515/444`（手机通栏），平板沿用真实画廊卡片高度（内框上限 400px，含边框约 434px）；底部购买条在骨架中以文档流内的价格 / 按钮块表示，不使用 `fixed`（避免与路由切换时的外壳元素叠放）。
+3. **商品详情骨架独立成组件** `src/components/catalog/ProductDetailSkeleton.tsx`，由 `RouteFallback`（`product` 类型）与 `ProductDetailPage` 的 `loading` 分支共同使用，保证两阶段结构相同。只用 Tailwind 断点（`md` / `lg`），不依赖 `useMediaQuery`，也不依赖只在详情页 chunk 中加载的 `ProductDetail*.css`，因此可放进主包且首帧即为正确布局。桌面列宽与间距对齐真实页面：≥1280px 为 `minmax(0,1.45fr) minmax(0,1fr)`、28px（`desktop-layout.css`），1024–1279px 为 `1.15fr / 1fr`、18px（`desktop-bp-mid.css`），画廊宽度同样受 `(100dvh - 260px) × 515/444` 上限约束；桌面与手机画廊沿用真实页面的 `515/444`（手机通栏），平板沿用真实画廊卡片高度（内框上限 400px，含边框约 434px）；底部购买条在骨架中以文档流内的价格 / 按钮块表示，不使用 `fixed`（避免与路由切换时的外壳元素叠放）。
 4. **`ProductDetailPage` 只改 `loading` 分支**：去掉访客 / 登录二分与自带 `max-w-6xl` 容器，直接返回 `<ProductDetailSkeleton />`，保留 `data-testid="product-detail-loading"`。`loginRequired`、错误处理、请求与鉴权逻辑不动。
 5. **外壳外公共路由**：顶层 `Suspense` 改用同文件导出的 `StandaloneRouteFallback`（`min-h-screen` 内居中的几条中性线条），不做页面专属形态。
 6. **可访问性与动效**：骨架原语已是 `aria-hidden`；容器仅一个 `role="status"` + `aria-label`；不含可聚焦元素；减少动效由 `src/styles/50-island-reveal.css` 的全局 `prefers-reduced-motion` 规则（动画时长 0.01ms、仅 1 次）覆盖，不新增 CSS。
@@ -53,6 +53,7 @@
 - [`MerchantShell` 在模块加载期间仍会被整体替换（现状如此）] → 用 `workspace` 骨架近似外壳形态；把 `Suspense` 下移到外壳内会改变路由组织，不在本次范围。
 - [按路径匹配与路由声明分离，可能漂移] → 默认 `page` 兜底；单测覆盖矩阵中全部路由。
 - [主包体积增加] → 目标 < 2 KB gzip，以 `check:bundle-budget` 及构建产物对比确认。
+- [详情页 CSS 晚于 JS 到达时外壳变宽（R1 复核发现，既有）] → `.product-layout > main` / `.chrome-bound` 的宽度与内边距规则在详情页分包 CSS 中，路由占位阶段若该 CSS 未到达，外壳按通用宽度渲染（≥1280px 时更窄、上边距多 16px），CSS 到达后变宽。骨架本身两阶段一致；把这些外壳规则移入主包 CSS 会修改既有页面样式，超出本次批准范围，交 Owner 决定。
 - [移动端底部固定购买条在骨架中不固定，数据到达时出现购买条] → 属于真实页面挂载行为，非骨架跳变；骨架为其保留底部空间。
 
 ## Verification plan
