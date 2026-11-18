@@ -586,10 +586,6 @@
     color: var(--pd-muted);
   }
 
-  .dark .product-layout.bg-grid-pattern,
-  [data-theme='dark'] .product-layout.bg-grid-pattern {
-    background-image: none;
-  }
   .dark .pd-desktop,
   [data-theme='dark'] .pd-desktop {
     --pd-ink: var(--color-text);
