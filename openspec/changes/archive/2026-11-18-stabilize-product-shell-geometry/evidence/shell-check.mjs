@@ -4,7 +4,7 @@
 // Usage, from the repository root on the revision under test:
 //   npm run build
 //   npx vite preview --port 5299 --strictPort --host 127.0.0.1 &
-//   node openspec/changes/stabilize-product-shell-geometry/evidence/shell-check.mjs <out-dir> [--baseline <results.json>]
+//   node openspec/changes/archive/2026-11-18-stabilize-product-shell-geometry/evidence/shell-check.mjs <out-dir> [--baseline <results.json>]
 //
 // All /api requests are stubbed in the browser. Two fixed external states:
 //   guest  — no announcements, no email banner
