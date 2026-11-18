@@ -1,13 +1,14 @@
 # Handoff: stabilize-product-shell-geometry
 
 - Spec / 契约: 本 change（proposal / design / specs / tasks）
-- 来源: #360 R1 复审场景 B；设计审查 [R1/R2](../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md)（R2 APPROVE_DESIGN）
-- Owner 决定: 2026-11-17 批准设计并授权实施（tasks §0.1、§0.2）；push / PR 未授权
-- 审查记录: 实施审查 APPROVE（`80a9e3b..d8d747b`），见 [审查记录](../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md#实施审查)
-- 写入负责人: Claude Code（Opus 5.5）（更新时间 2026-11-17）；实施完成，进入审查后停止写入
-- 分支 / worktree: `chore/product-shell-css-proposal`（无上游跟踪，未 push）/ `/root/projects/worktrees/monexus-product-shell-css`
+- 来源: #360 R1 复审场景 B；设计审查 [R1/R2](../../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md)（R2 APPROVE_DESIGN）
+- Owner 决定: 2026-11-17 批准设计并授权实施（tasks §0.1、§0.2）；其后授权 push / 开 PR；2026-11-18 Owner 合并 #363 并批准归档收尾
+- 审查记录: 实施审查 APPROVE（`80a9e3b..d8d747b`），见 [审查记录](../../../../docs/reviews/2026-11-17-stabilize-product-shell-geometry-design-review-r1.md#实施审查)；设计与实施审查由 Codex 独立会话完成，但实施由 Claude Code 执行，不计为"跨 Agent 无上下文接手"实验
+- 写入负责人: Claude Code（Opus 5.5）（更新时间 2026-11-17）；已完成（2026-11-18 合并并归档）
+- 分支 / worktree: `chore/product-shell-css-proposal`（已 push，PR #363 合并）/ `/root/projects/worktrees/monexus-product-shell-css`
 - Base: `origin/develop@80a9e3b`
-- 提交: `b2dd703`–`5fecf89` 设计；`6934363`、`f52f683` 证据脚本加固（R2-01、主题快照）；`f1ea31a` 实施；其后一个提交仅加入实施后证据与本交接
+- 合并: PR #363（Head `ad796f2`，`run-e2e`，`CI OK` 与 4 组 E2E 通过）→ `develop` merge commit `342b171`（2026-11-18）
+- 提交: `b2dd703`–`5fecf89` 设计；`6934363`、`f52f683` 证据脚本加固（R2-01、主题快照）；`f1ea31a` 实施；`d8d747b` 实施后证据与本交接；`ad796f2` 实施审查记录
 - 已验证 revision: 代码 = `f1ea31a`（浏览器证据、构建、单测均在该提交的干净工作区执行）
 - 隔离资源: 本地 `vite preview` 端口 5299（已停止）；临时基线 worktree 已删除
 
@@ -17,8 +18,8 @@
 - 构建产物：`.product-layout` 选择器只出现在 `index-*.css`（9 处），详情分包 0 处；1024–1279 覆盖规则位于 ≥1024 规则之后
 
 ## 待完成
-- 独立审查已通过（APPROVE，无 Finding）
-- 下一步：Owner 授权 push / 开 PR → `develop`（UI 外壳改动，建议带 `run-e2e`）→ 合并后 `openspec archive stabilize-product-shell-geometry`
+- 无。实施审查 APPROVE（无 Finding）；#363 已合并（`342b171`）；本 change 已归档，要求并入 `openspec/specs/web-route-loading/spec.md`。本 change 未取代存量文档章节，`docs/specs/INDEX.md` 无需登记。
+- FOLLOW_UP（未立项）：`/PRODUCT/42` 不加 `.product-layout`；`.product-layout.bg-grid-pattern` 背景选择器不命中；soft / ink 主题计算样式未单独验证；商品详情非 404 失败处理与 `product-commerce-v2` §10.2 不一致；路由模块加载失败 UI
 
 ## 已批准的设计决策
 - 外壳规则原样移入主包 CSS — design Decision 1，Owner 2026-11-17 批准
@@ -45,20 +46,16 @@
 ```bash
 npm ci && npm run build      # Node 22
 npx vite preview --port 5299 --strictPort --host 127.0.0.1 &
-node openspec/changes/stabilize-product-shell-geometry/evidence/shell-check.mjs /tmp/shell-check \
-  --baseline openspec/changes/stabilize-product-shell-geometry/evidence/results-80a9e3b-before.json
+node openspec/changes/archive/2026-11-18-stabilize-product-shell-geometry/evidence/shell-check.mjs /tmp/shell-check \
+  --baseline openspec/changes/archive/2026-11-18-stabilize-product-shell-geometry/evidence/results-80a9e3b-before.json
 node openspec/changes/archive/2026-11-17-align-route-loading-skeletons/evidence/loading-check.mjs /tmp/loading-check
 ```
 
 ## 未运行 / 无法验证
 - soft / ink 主题的计算样式快照（只覆盖 light / dark）
 - 真实网络下的冷启动时序（证据为人为拦截资源的确定性时序）
-- GitHub CI — 未 push
 
-## 下一步
-- 审查者：`git -C /root/projects/worktrees/monexus-product-shell-css log --oneline 80a9e3b..HEAD`，重点见下
-
-## 独立审查重点
+## 独立审查重点（已完成，结论见审查记录）
 - `85-product-shell.css` 与原三处规则逐字一致（选择器、媒体查询、声明、顺序）；原文件只删除了这些规则
 - `index.css` 引入位置；构建产物中规则顺序
 - 证据脚本加固（R2-01、主题快照）是否足以支撑"最终几何与样式不变"
