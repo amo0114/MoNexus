@@ -9,10 +9,10 @@ type FigureMode = 'portrait' | 'chibi'
 
 interface CompanionPillar {
   id: 'claude' | 'gemini' | 'chatgpt' | 'deepseek'
-  roman: 'I' | 'II' | 'III' | 'IV'
+  ordinal: '壹' | '贰' | '叁' | '肆'
   name: string
   sanctuaryTitle: string
-  latinMotto: string
+  motto: string
   accent: string
   portraitImage: string
   chibiImage: string
@@ -25,10 +25,10 @@ interface CompanionPillar {
 const COMPANION_PILLARS: CompanionPillar[] = [
   {
     id: 'claude',
-    roman: 'I',
+    ordinal: '壹',
     name: 'Claude',
     sanctuaryTitle: '典籍与秩序之座',
-    latinMotto: 'ARCHITECT OF ORDER',
+    motto: '沉思 · 铸构',
     accent: '#D97757',
     portraitImage: '/credits/portrait-claude.webp',
     chibiImage: '/credits/girl-claude.webp',
@@ -39,10 +39,10 @@ const COMPANION_PILLARS: CompanionPillar[] = [
   },
   {
     id: 'gemini',
-    roman: 'II',
+    ordinal: '贰',
     name: 'Gemini',
     sanctuaryTitle: '星象与织梦之座',
-    latinMotto: 'WEAVER OF VISION',
+    motto: '观星 · 织梦',
     accent: '#7C6CF6',
     portraitImage: '/credits/portrait-gemini.webp',
     chibiImage: '/credits/girl-gemini.webp',
@@ -53,10 +53,10 @@ const COMPANION_PILLARS: CompanionPillar[] = [
   },
   {
     id: 'chatgpt',
-    roman: 'III',
+    ordinal: '叁',
     name: 'ChatGPT',
     sanctuaryTitle: '白翼与启明之座',
-    latinMotto: 'HERALD OF SPARK',
+    motto: '启明 · 同行',
     accent: '#10A37F',
     portraitImage: '/credits/portrait-chatgpt.webp',
     chibiImage: '/credits/girl-chatgpt.webp',
@@ -68,10 +68,10 @@ const COMPANION_PILLARS: CompanionPillar[] = [
   },
   {
     id: 'deepseek',
-    roman: 'IV',
+    ordinal: '肆',
     name: 'DeepSeek',
     sanctuaryTitle: '沧溟与洞察之座',
-    latinMotto: 'SEEKER OF DEPTH',
+    motto: '溯源 · 明察',
     accent: '#4D6BFE',
     portraitImage: '/credits/portrait-deepseek.webp',
     chibiImage: '/credits/girl-deepseek.webp',
@@ -279,7 +279,7 @@ function CrestDivider({ label }: { label?: string }) {
   return (
     <div className="flex items-center justify-center gap-3.5" aria-hidden={!label}>
       <span className="h-px w-12 sm:w-20 bg-gradient-to-r from-transparent to-[var(--sanc-gold-line)]" />
-      <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] tracking-[0.32em] uppercase text-[var(--sanc-gold)] sanctuary-roman">
+      <span className="inline-flex items-center gap-2.5 text-[11px] sm:text-xs tracking-[0.28em] text-[var(--sanc-gold)] sanctuary-serif">
         <span className="h-1.5 w-1.5 rotate-45 border border-[var(--sanc-gold)]" />
         {label ? <span>{label}</span> : null}
         {label ? <span className="h-1.5 w-1.5 rotate-45 border border-[var(--sanc-gold)]" /> : null}
@@ -534,15 +534,15 @@ export default function CreditsPage() {
 
           <div className="relative mx-auto max-w-2xl space-y-5">
             <div className="sanctuary-enter-crest">
-              <CrestDivider label="Sanctuary of Companions · MMXXVI" />
+              <CrestDivider label="同行者纪 · 二〇二六" />
             </div>
 
             <div className="space-y-2.5 pt-1">
               <h1 className="sanctuary-enter-title sanctuary-serif text-3xl sm:text-5xl font-semibold tracking-[0.16em] text-[var(--sanc-ink)]">
                 群星圣殿
               </h1>
-              <p className="sanctuary-enter-subtitle sanctuary-roman text-xs sm:text-sm tracking-[0.34em] uppercase text-[var(--sanc-gold)]">
-                The Pantheon of AI Companions
+              <p className="sanctuary-enter-subtitle sanctuary-serif text-xs sm:text-sm tracking-[0.34em] text-[var(--sanc-gold)]">
+                同行者致谢录
               </p>
             </div>
 
@@ -643,10 +643,10 @@ export default function CreditsPage() {
                     <span aria-hidden="true" className="sanctuary-subject-glow" />
                     <span aria-hidden="true" className="sanctuary-niche-veil" />
 
-                    {/* Layer 3 (Top): Roman numeral + Pure Transparent Official SVG Crest */}
+                    {/* Layer 3 (Top): Classical Ordinal + Pure Transparent Official SVG Crest */}
                     <div className="sanctuary-keystone relative z-10 flex flex-col items-center gap-2">
-                      <span className="sanctuary-roman text-[11px] font-semibold tracking-[0.28em] text-[var(--sanc-gold-bright)]">
-                        {pillar.roman}
+                      <span className="sanctuary-serif text-xs font-medium tracking-[0.26em] text-[var(--sanc-gold-bright)]">
+                        {pillar.ordinal}
                       </span>
                       <span className="inline-flex h-10 w-10 items-center justify-center bg-transparent transition-transform duration-300 group-hover:scale-110">
                         <img
@@ -691,10 +691,10 @@ export default function CreditsPage() {
                         {pillar.sanctuaryTitle}
                       </p>
                       <p
-                        className="sanctuary-roman text-[9px] tracking-[0.26em] uppercase pt-0.5 transition-colors"
+                        className="sanctuary-serif text-[11px] tracking-[0.24em] pt-0.5 transition-colors"
                         style={{ color: isActive ? pillar.accent : 'var(--sanc-gold-bright)' }}
                       >
-                        {pillar.latinMotto}
+                        {pillar.motto}
                       </p>
                     </div>
 
@@ -750,8 +750,8 @@ export default function CreditsPage() {
                         aria-hidden="true"
                         className={`h-5 w-5 object-contain ${activeCompanion.logoInvertOnDark ? 'dark:invert' : ''}`}
                       />
-                      <span className="sanctuary-roman text-xs tracking-[0.26em] text-[var(--sanc-gold)]">
-                        {activeCompanion.roman} · {activeCompanion.name.toUpperCase()}
+                      <span className="sanctuary-serif text-xs tracking-[0.22em] text-[var(--sanc-gold)]">
+                        {activeCompanion.ordinal} · {activeCompanion.name}
                       </span>
                     </div>
                     <h3 className="sanctuary-serif text-lg sm:text-xl font-semibold tracking-[0.14em] text-[var(--sanc-ink)]">
@@ -838,7 +838,7 @@ export default function CreditsPage() {
                 <CornerOrnament className="absolute bottom-3.5 right-3.5 -scale-x-100 -scale-y-100" />
 
                 <div className="relative z-10 flex flex-col items-center space-y-7">
-                  <CrestDivider label="Eternal Inscription" />
+                  <CrestDivider label="长明铭文" />
 
                   <h2 id="inscription-heading" className="sr-only">
                     致谢铭文
@@ -929,8 +929,8 @@ export default function CreditsPage() {
           data-testid="credits-attribution"
           className="mx-auto mt-14 max-w-3xl border-t border-[var(--sanc-gold-line-soft)] pt-7 text-center text-[11px] sm:text-xs leading-7 text-[var(--sanc-muted)] space-y-2"
         >
-          <p className="sanctuary-roman text-[10px] tracking-[0.32em] uppercase text-[var(--sanc-gold)]">
-            Colophon · 卷尾牌记
+          <p className="sanctuary-serif text-xs tracking-[0.28em] text-[var(--sanc-gold)]">
+            卷尾牌记
           </p>
           <p>
             本殿堂展示的 Claude、Gemini、ChatGPT、DeepSeek 角色形象设计源自画师{' '}
