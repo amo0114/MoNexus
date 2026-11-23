@@ -26,6 +26,8 @@
 
 联合后端回归覆盖 13 个文件。运行期间调整了登录证明前置配额，首次联合运行中其余 112 项通过，唯一失败项为运行期间变动的登录用例。上表的最终版认证复跑已通过该用例。
 
+PR 后续检查发现请求 ID 测试仍断言旧健康响应。`4156d25` 上单跑 `npm --prefix server test -- src/__tests__/observability.test.ts` 有 2 项失败（退出 1）。更新响应断言后，联合运行 `npm --prefix server test -- src/__tests__/observability.test.ts src/__tests__/health.test.ts src/__tests__/health-endpoints.test.ts` 有 15 项通过（退出 0）。
+
 ## 待完成
 
 - 同一个 PR 送交独立审查及 CI。生产镜像、429 上游来源、外部探针消费者和边缘响应头仍待核实。

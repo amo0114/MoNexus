@@ -6,11 +6,7 @@ describe('observability middleware', () => {
     const res = await api.get('/api/health').expect(200)
 
     expect(res.headers['x-request-id']).toEqual(expect.any(String))
-    expect(res.body).toEqual({
-      status: 'live',
-      uptime: expect.any(Number),
-      timestamp: expect.any(String),
-    })
+    expect(res.body).toEqual({ status: 'live' })
   })
 
   it('leaves HSTS to the edge and keeps the other helmet headers (SEC-09)', async () => {
@@ -30,11 +26,7 @@ describe('observability middleware', () => {
       .expect(200)
 
     expect(res.headers['x-request-id']).toBe(requestId)
-    expect(res.body).toEqual({
-      status: 'live',
-      uptime: expect.any(Number),
-      timestamp: expect.any(String),
-    })
+    expect(res.body).toEqual({ status: 'live' })
   })
 
   it('replaces a malformed or oversized request id with a server UUID', async () => {
