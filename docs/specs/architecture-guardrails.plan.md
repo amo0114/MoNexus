@@ -112,6 +112,15 @@ defineLeasedCron({ name, intervalMs, run }) => { start(), stop(), tick() }
 - `server/src/__tests__/openapi-contract.test.ts` 覆盖：`GET /api/products`、`GET /api/products/{id}`、`GET /api/checkout/preview`、`POST /api/orders`、`GET /api/orders/{id}`、`GET /api/auth/me`。
 - 发现文档与实现不一致时，按 AGENTS.md §1 **停止并报告 Owner**，不自行改动任一侧。
 
+**实施结果（2026-11-23）**：`POST /api/orders`、`GET /api/orders/{id}` 与文档一致，已纳入测试。其余 4 个接口与文档不一致，**待 Owner 裁定**以哪一侧为准后再纳入：
+
+| 接口 | 文档 → 实际 | 线索 |
+|---|---|---|
+| `GET /api/products` | 文档为数组；实际为分页对象 | 游标分页 |
+| `GET /api/products/{id}` | 文档要求 `merchantId`、`createdAt`、`isHot`；实际不返回 | `isHot` 按 D-MERCH-01 有意移除 |
+| `GET /api/checkout/preview` | 文档要求 `requiresProvisionEmailProof`；实际不返回 | — |
+| `GET /api/auth/me` | 文档要求 `inviteCode`；实际不返回 | SPEC-INVITE-001 v2 删除常驻邀请码 |
+
 ---
 
 ## 3. Specs（ADDED Requirements）
@@ -149,7 +158,7 @@ Crons defined through `defineLeasedCron` MUST keep lease name and period, MUST i
 With `PROCESS_ROLE` unset the server MUST behave exactly as before; `api` MUST start no cron/worker; `worker` MUST start all cron/workers and no realtime LISTEN.
 
 ### Requirement: OpenAPI response contract
-The six endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in backend tests.
+The endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in backend tests; an endpoint whose document and implementation disagree MUST be reported to the Owner and stays out of the test until resolved.
 
 ### Requirement: Business-time delivery labels
 `formatExpiryUnix` MUST render Asia/Shanghai wall time regardless of host TZ.
@@ -174,13 +183,13 @@ The six endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in b
 
 ## 5. Tasks
 
-- [ ] 1. 本计划文档
-- [ ] 2. AG-01…AG-04 规则与单测；修复 `formatExpiryUnix`（Shanghai）并补回归
-- [ ] 3. AG-05 模块环棘轮与单测
-- [ ] 4. AG-06 路由挂载顺序测试
-- [ ] 5. AG-07 `leasedCron` + 指标 + `MoNexusCronStale`；迁移 traffic、recommendationEvents 两个 cron
-- [ ] 6. AG-08 `PROCESS_ROLE`（config、`.env.example`、`main.ts`）
-- [ ] 7. AG-09 OpenAPI 契约测试（6 个接口）
+- [x] 1. 本计划文档
+- [x] 2. AG-01…AG-04 规则与单测；修复 `formatExpiryUnix`（Shanghai）并补回归
+- [x] 3. AG-05 模块环棘轮与单测
+- [x] 4. AG-06 路由挂载顺序测试
+- [x] 5. AG-07 `leasedCron` + 指标 + `MoNexusCronStale`；迁移 traffic、recommendationEvents 两个 cron
+- [x] 6. AG-08 `PROCESS_ROLE`（config、`.env.example`、`main.ts`）
+- [x] 7. AG-09 OpenAPI 契约测试（2 个接口已纳入；4 个漂移待 Owner 裁定，见 §2.5）
 - [ ] 8. 验证（每个任务各自提交前执行）：
   - `npm run test:architecture`、`npm run check:architecture`（node:test，静态层）
   - `npm --prefix server run build`（后端类型检查）
@@ -196,6 +205,9 @@ The six endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in b
 5. 所有发现的文档/实现不一致已报告 Owner，未被单方面"修正"。
 
 ## 7. Owner 操作项（本变更不执行）
+
+- 裁定 §2.5 的 4 处 OpenAPI 漂移以哪一侧为准。
+- 实施中由 AG-01/AG-02 发现并已修复：`admin/productAdmin.ts` 全表计数、`formatExpiryUnix` 本地时区（各自独立提交）。
 
 - compose 拆分 `server-api` / `server-worker`，nginx 只指向 api。
 - 为 monexus-server / monexus-db 设置内存预留与上限（生产机 40+ 容器共存、`RECHARGE_MODE=live`）。
