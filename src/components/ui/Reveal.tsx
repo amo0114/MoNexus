@@ -1,8 +1,7 @@
 /**
- * Scroll reveal: content eases in as it enters the viewport using a CSS
- * scroll-driven animation (see `.reveal`). Visibility never depends on
- * JavaScript, so full-page captures, find-in-page and unsupported browsers
- * always see the content.
+ * Structural reveal wrapper. Content renders visibly by default without
+ * gating visibility on JS or scroll-driven `opacity: 0` animations, which
+ * can leave cards unpainted on iOS Safari / WebKit.
  */
 export default function Reveal({
   children,
