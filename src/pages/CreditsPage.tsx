@@ -1,191 +1,329 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties, type MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
-import {
-  ArrowLeft,
-  ArrowRight,
-  BarChart3,
-  BookOpen,
-  Code2,
-  Compass,
-  Heart,
-  Layers,
-  LayoutGrid,
-  Lightbulb,
-  Rocket,
-  ShieldCheck,
-  Sparkles,
-  Wrench,
-  Zap,
-} from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Flame, Sparkles } from 'lucide-react'
 import Logo from '../components/ui/Logo'
+import './CreditsPage.css'
 
-type ViewMode = 'cards' | 'overview'
+type FigureMode = 'portrait' | 'chibi'
 
-interface Companion {
+interface CompanionPillar {
   id: 'claude' | 'gemini' | 'chatgpt' | 'deepseek'
+  roman: 'I' | 'II' | 'III' | 'IV'
   name: string
-  subtitle: string
+  sanctuaryTitle: string
+  latinMotto: string
   accent: string
-  mascotImage: string
+  portraitImage: string
+  chibiImage: string
   logoSrc: string
   logoInvertOnDark?: boolean
-  description: string
-  tags: string[]
-  scores: {
-    architecture: number
-    frontend: number
-    implementation: number
-    analysis: number
-  }
+  chronicle: string
+  virtues: string[]
 }
 
-const HERO_PILLS = [
-  { icon: Code2, label: '架构设计' },
-  { icon: Layers, label: '方案推演' },
-  { icon: Zap, label: '编码实现' },
-  { icon: ShieldCheck, label: '评审优化' },
-  { icon: BookOpen, label: '知识探索' },
-]
-
-const COMPANIONS: Companion[] = [
+const COMPANION_PILLARS: CompanionPillar[] = [
   {
     id: 'claude',
+    roman: 'I',
     name: 'Claude',
-    subtitle: '深度思考 · 架构与工程',
+    sanctuaryTitle: '典籍与秩序之座',
+    latinMotto: 'ARCHITECT OF ORDER',
     accent: '#D97757',
-    mascotImage: '/credits/girl-claude.webp',
+    portraitImage: '/credits/portrait-claude.webp',
+    chibiImage: '/credits/girl-claude.webp',
     logoSrc: '/credits/icons/claude-color.svg',
-    description:
-      '面对复杂状态机、多方对账和盘根错节的边界问题时，总能沉下心陪我把逻辑一层层理顺。很多难啃的重构和漫长的代码审查，都是你帮我稳稳托住的。',
-    tags: ['架构设计', '复杂推理', '全局评审'],
-    scores: { architecture: 96, frontend: 86, implementation: 94, analysis: 95 },
+    chronicle:
+      '面对复杂状态机、多方对账与盘根错节的边界问题时，你总能沉下心陪我把逻辑一层层理顺。许多难啃的重构和漫长的代码审视，都是你稳稳托住的。',
+    virtues: ['架构推演', '深思明辨', '全局审校'],
   },
   {
     id: 'gemini',
+    roman: 'II',
     name: 'Gemini',
-    subtitle: '全局视野 · 创意与打磨',
-    accent: '#5B64F1',
-    mascotImage: '/credits/girl-gemini.webp',
+    sanctuaryTitle: '星象与织梦之座',
+    latinMotto: 'WEAVER OF VISION',
+    accent: '#7C6CF6',
+    portraitImage: '/credits/portrait-gemini.webp',
+    chibiImage: '/credits/girl-gemini.webp',
     logoSrc: '/credits/icons/gemini-color.svg',
-    description:
-      '总能跳出局部看到整体，在前端设计、多模态理解与体验细节的反复斟酌上尤为出色，一次次帮我发现那些容易忽略的瑕疵，让站点更耐看、更顺手。',
-    tags: ['前端与设计', '多模态理解', '体验打磨'],
-    scores: { architecture: 88, frontend: 96, implementation: 92, analysis: 90 },
+    chronicle:
+      '你总能跳出局部俯瞰整体，在前端美学、多模态感知与交互分寸的反复斟酌中，一次次点出容易被忽略的微瑕，让这座站点真正耐看、顺手而有温度。',
+    virtues: ['多模态视野', '前端织梦', '体验雕琢'],
   },
   {
     id: 'chatgpt',
+    roman: 'III',
     name: 'ChatGPT',
-    subtitle: '通用协作 · 灵感与陪伴',
+    sanctuaryTitle: '白翼与启明之座',
+    latinMotto: 'HERALD OF SPARK',
     accent: '#10A37F',
-    mascotImage: '/credits/girl-chatgpt.webp',
+    portraitImage: '/credits/portrait-chatgpt.webp',
+    chibiImage: '/credits/girl-chatgpt.webp',
     logoSrc: '/credits/icons/openai.svg',
     logoInvertOnDark: true,
-    description:
-      '从最初一个模糊的念头开始，每一次随口抛出的设想、每一次遇到陌生报错时的求助，你都在第一时间接住，陪我把无数个“能不能试试”变成现实。',
-    tags: ['代码实现', '技术解答', '文档整理'],
-    scores: { architecture: 89, frontend: 88, implementation: 93, analysis: 90 },
+    chronicle:
+      '从最初一个模糊的念头开始，每一次随口抛出的设想、每一次深夜面对陌生报错的求助，你都在第一时间接住，陪我把无数个“能不能试试”落成现实。',
+    virtues: ['灵感启明', '全栈同行', '长夜相伴'],
   },
   {
     id: 'deepseek',
+    roman: 'IV',
     name: 'DeepSeek',
-    subtitle: '高效务实 · 中文与工程',
+    sanctuaryTitle: '沧溟与洞察之座',
+    latinMotto: 'SEEKER OF DEPTH',
     accent: '#4D6BFE',
-    mascotImage: '/credits/girl-deepseek.webp',
+    portraitImage: '/credits/portrait-deepseek.webp',
+    chibiImage: '/credits/girl-deepseek.webp',
     logoSrc: '/credits/icons/deepseek-color.svg',
-    description:
-      '思路清晰、直奔要害。在中文语义理解、长上下文追踪和底层工程细节里绕不出弯时，你的拆解总能让我豁然开朗，少走很多弯路。',
-    tags: ['中文理解', '长上下文', '深度剖析'],
-    scores: { architecture: 90, frontend: 82, implementation: 90, analysis: 96 },
+    chronicle:
+      '思路明澈、直奔要害。在中文语境的微妙权衡、长上下文追踪与底层工程细节里绕不出弯时，你的拆解总能让我豁然开朗，少走许多弯路。',
+    virtues: ['中文洞见', '长程推演', '直指本源'],
   },
 ]
 
-const WORKFLOW_STEPS = [
-  {
-    icon: Lightbulb,
-    title: '想法与需求',
-    desc: '从灵感到可行方案',
-    accent: '#D97757',
-  },
-  {
-    icon: Wrench,
-    title: '方案与实现',
-    desc: '架构设计、编码落地',
-    accent: '#5B64F1',
-  },
-  {
-    icon: ShieldCheck,
-    title: '评审与优化',
-    desc: '代码审查、风险收敛',
-    accent: '#2563EB',
-  },
-  {
-    icon: Rocket,
-    title: '落地与迭代',
-    desc: '持续验证、细节打磨',
-    accent: '#10A37F',
-  },
+const AMBIENT_DUST = [
+  { left: '12%', top: '76%', size: 3, dur: '11s', delay: '0s' },
+  { left: '24%', top: '62%', size: 2, dur: '13s', delay: '-3s' },
+  { left: '34%', top: '82%', size: 2.5, dur: '9.5s', delay: '-5s' },
+  { left: '46%', top: '72%', size: 3, dur: '12s', delay: '-2s' },
+  { left: '54%', top: '78%', size: 2, dur: '10.5s', delay: '-6s' },
+  { left: '65%', top: '66%', size: 3, dur: '14s', delay: '-4s' },
+  { left: '76%', top: '80%', size: 2.5, dur: '11.5s', delay: '-1.5s' },
+  { left: '86%', top: '70%', size: 2, dur: '12.5s', delay: '-7s' },
 ]
 
-const ACHIEVEMENTS = [
-  {
-    icon: Code2,
-    value: '15+',
-    label: '核心业务模块',
-    accent: '#10A37F',
-  },
-  {
-    icon: Layers,
-    value: '数万行',
-    label: '代码协作与优化',
-    accent: '#5B64F1',
-  },
-  {
-    icon: ShieldCheck,
-    value: '1,900+',
-    label: '自动化测试守护',
-    accent: '#D97757',
-  },
-]
+function AstrolabeBackdrop() {
+  const ticks = Array.from({ length: 36 }, (_, idx) => idx * 10)
+  return (
+    <svg
+      viewBox="0 0 600 600"
+      aria-hidden="true"
+      className="pointer-events-none select-none w-[440px] h-[440px] sm:w-[580px] sm:h-[580px] opacity-45"
+    >
+      <defs>
+        <radialGradient id="sanc-astrolabe-fade" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="var(--sanc-gold)" stopOpacity="0.22" />
+          <stop offset="68%" stopColor="var(--sanc-gold)" stopOpacity="0.06" />
+          <stop offset="100%" stopColor="var(--sanc-gold)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="300" cy="300" r="285" fill="url(#sanc-astrolabe-fade)" />
 
-const SCORE_DIMENSIONS: Array<{ key: keyof Companion['scores']; label: string }> = [
-  { key: 'architecture', label: '架构推演与工程重构' },
-  { key: 'frontend', label: '前端体验与交互打磨' },
-  { key: 'implementation', label: '代码实现与日常排障' },
-  { key: 'analysis', label: '深度剖析与方案评审' },
-]
+      {/* Outer clockwise dial */}
+      <g className="sanctuary-spin-slow">
+        <circle cx="300" cy="300" r="268" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.8" strokeOpacity="0.45" />
+        <circle cx="300" cy="300" r="256" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.6" strokeDasharray="2 7" strokeOpacity="0.55" />
+        {ticks.map((deg) => (
+          <line
+            key={deg}
+            x1="300"
+            y1={deg % 30 === 0 ? '32' : '38'}
+            x2="300"
+            y2="46"
+            stroke="var(--sanc-gold)"
+            strokeWidth={deg % 30 === 0 ? '1.1' : '0.6'}
+            strokeOpacity={deg % 30 === 0 ? '0.65' : '0.35'}
+            transform={`rotate(${deg} 300 300)`}
+          />
+        ))}
+        {/* Cardinal four-point star markers */}
+        {[0, 90, 180, 270].map((deg) => (
+          <polygon
+            key={`cardinal-${deg}`}
+            points="300,22 303,29 300,36 297,29"
+            fill="var(--sanc-gold)"
+            fillOpacity="0.68"
+            transform={`rotate(${deg} 300 300)`}
+          />
+        ))}
+      </g>
+
+      {/* Inner counter-clockwise celestial ring */}
+      <g className="sanctuary-spin-slow-reverse">
+        <circle cx="300" cy="300" r="204" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.8" strokeOpacity="0.38" />
+        <ellipse cx="300" cy="300" rx="204" ry="86" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.7" strokeOpacity="0.28" />
+        <ellipse
+          cx="300"
+          cy="300"
+          rx="204"
+          ry="86"
+          fill="none"
+          stroke="var(--sanc-gold)"
+          strokeWidth="0.7"
+          strokeOpacity="0.28"
+          transform="rotate(60 300 300)"
+        />
+        <ellipse
+          cx="300"
+          cy="300"
+          rx="204"
+          ry="86"
+          fill="none"
+          stroke="var(--sanc-gold)"
+          strokeWidth="0.7"
+          strokeOpacity="0.28"
+          transform="rotate(120 300 300)"
+        />
+        <circle cx="300" cy="300" r="118" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.7" strokeDasharray="4 6" strokeOpacity="0.4" />
+      </g>
+
+      {/* Center sacred eight-point compass star */}
+      <g opacity="0.5">
+        <path
+          d="M300 248 L307 293 L352 300 L307 307 L300 352 L293 307 L248 300 L293 293 Z"
+          fill="none"
+          stroke="var(--sanc-gold)"
+          strokeWidth="0.9"
+        />
+        <circle cx="300" cy="300" r="6" fill="var(--sanc-gold)" fillOpacity="0.45" />
+      </g>
+    </svg>
+  )
+}
+
+function SacredHalo({ accent }: { accent: string }) {
+  return (
+    <svg
+      viewBox="0 0 240 240"
+      aria-hidden="true"
+      className="sanctuary-halo pointer-events-none select-none absolute top-9 left-1/2 -translate-x-1/2 w-[212px] h-[212px]"
+    >
+      <defs>
+        <radialGradient id={`halo-glow-${accent.replace('#', '')}`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor={accent} stopOpacity="0.34" />
+          <stop offset="55%" stopColor={accent} stopOpacity="0.1" />
+          <stop offset="100%" stopColor={accent} stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <circle cx="120" cy="120" r="112" fill={`url(#halo-glow-${accent.replace('#', '')})`} />
+      <g className="sanctuary-halo-ring">
+        <circle cx="120" cy="120" r="94" fill="none" stroke={accent} strokeWidth="0.9" strokeOpacity="0.65" />
+        <circle cx="120" cy="120" r="85" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.7" strokeDasharray="2 6" strokeOpacity="0.7" />
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+          <line
+            key={deg}
+            x1="120"
+            y1="16"
+            x2="120"
+            y2="29"
+            stroke={accent}
+            strokeWidth="1.1"
+            strokeOpacity="0.7"
+            transform={`rotate(${deg} 120 120)`}
+          />
+        ))}
+      </g>
+      <g className="sanctuary-halo-ring-inner">
+        <polygon
+          points="120,44 132,108 196,120 132,132 120,196 108,132 44,120 108,108"
+          fill="none"
+          stroke={accent}
+          strokeWidth="0.75"
+          strokeOpacity="0.45"
+        />
+        <circle cx="120" cy="120" r="62" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.6" strokeOpacity="0.45" />
+      </g>
+    </svg>
+  )
+}
+
+function CornerOrnament({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 36 36" aria-hidden="true" className={`pointer-events-none select-none h-7 w-7 ${className}`}>
+      <path d="M2 34 V8 Q2 2 8 2 H34" fill="none" stroke="var(--sanc-gold)" strokeWidth="1.1" strokeOpacity="0.65" />
+      <path d="M8 26 V12 Q8 8 12 8 H26" fill="none" stroke="var(--sanc-gold)" strokeWidth="0.75" strokeOpacity="0.45" />
+      <polygon points="12,12 15,15 12,18 9,15" fill="var(--sanc-gold)" fillOpacity="0.7" />
+    </svg>
+  )
+}
+
+function CrestDivider({ label }: { label?: string }) {
+  return (
+    <div className="flex items-center justify-center gap-3.5" aria-hidden={!label}>
+      <span className="h-px w-12 sm:w-20 bg-gradient-to-r from-transparent to-[var(--sanc-gold-line)]" />
+      <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] tracking-[0.32em] uppercase text-[var(--sanc-gold)] sanctuary-roman">
+        <span className="h-1.5 w-1.5 rotate-45 border border-[var(--sanc-gold)]" />
+        {label ? <span>{label}</span> : null}
+        {label ? <span className="h-1.5 w-1.5 rotate-45 border border-[var(--sanc-gold)]" /> : null}
+      </span>
+      <span className="h-px w-12 sm:w-20 bg-gradient-to-l from-transparent to-[var(--sanc-gold-line)]" />
+    </div>
+  )
+}
 
 export default function CreditsPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('cards')
+  const [activeId, setActiveId] = useState<CompanionPillar['id']>('claude')
+  const [hoveredId, setHoveredId] = useState<CompanionPillar['id'] | null>(null)
+  const [figureMode, setFigureMode] = useState<FigureMode>('portrait')
+  const [igniteCount, setIgniteCount] = useState(0)
+
+  const activeIndex = COMPANION_PILLARS.findIndex((c) => c.id === activeId)
+  const activeCompanion = COMPANION_PILLARS[activeIndex] ?? COMPANION_PILLARS[0]
+  const isIgnited = igniteCount > 0
 
   useEffect(() => {
-    document.title = 'AI 伙伴与致谢 - MoNexus'
+    document.title = '群星圣殿 · AI 同行者 - MoNexus'
     return () => {
       document.title = 'MoNexus'
     }
   }, [])
 
+  const handlePillarMouseMove = (event: MouseEvent<HTMLButtonElement>) => {
+    const el = event.currentTarget
+    const rect = el.getBoundingClientRect()
+    const px = (event.clientX - rect.left) / rect.width
+    const py = (event.clientY - rect.top) / rect.height
+    const tiltY = (px - 0.5) * 9
+    const tiltX = (0.5 - py) * 7
+    el.style.setProperty('--tilt-x', `${tiltX.toFixed(2)}deg`)
+    el.style.setProperty('--tilt-y', `${tiltY.toFixed(2)}deg`)
+    el.style.setProperty('--spot-x', `${(px * 100).toFixed(1)}%`)
+    el.style.setProperty('--spot-y', `${(py * 100).toFixed(1)}%`)
+  }
+
+  const handlePillarMouseLeave = (event: MouseEvent<HTMLButtonElement>) => {
+    const el = event.currentTarget
+    el.style.setProperty('--tilt-x', '0deg')
+    el.style.setProperty('--tilt-y', '0deg')
+    el.style.setProperty('--spot-x', '50%')
+    el.style.setProperty('--spot-y', '32%')
+    setHoveredId(null)
+  }
+
+  const stepActive = (delta: number) => {
+    const nextIdx = (activeIndex + delta + COMPANION_PILLARS.length) % COMPANION_PILLARS.length
+    setActiveId(COMPANION_PILLARS[nextIdx].id)
+  }
+
   return (
-    <div className="min-h-screen overflow-x-clip bg-[var(--color-background)] fade-in" data-testid="credits-page">
-      {/* Minimal standalone top bar aligned with MoNexus shell */}
-      <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_86%,transparent)] backdrop-blur-md">
-        <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6">
+    <div
+      className="sanctuary-root relative min-h-screen overflow-x-clip fade-in"
+      data-testid="credits-page"
+    >
+      {/* Subtle architectural background grid */}
+      <div className="sanctuary-marble-grain pointer-events-none fixed inset-0 opacity-60" aria-hidden="true" />
+
+      {/* Minimal sanctuary header */}
+      <header className="sticky top-0 z-30 border-b border-[var(--sanc-gold-line-soft)] bg-[color-mix(in_srgb,var(--sanc-bg)_82%,transparent)] backdrop-blur-md">
+        <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
           <Link
             to="/"
-            className="inline-flex min-h-10 items-center gap-2 text-[var(--color-text)] transition-colors hover:text-[var(--color-primary)]"
+            className="inline-flex min-h-10 items-center gap-2.5 text-[var(--sanc-ink)] transition-colors hover:text-[var(--sanc-gold)]"
           >
             <Logo className="h-6 w-6 shrink-0" />
-            <span className="font-display text-sm font-bold tracking-[0.18em]">MONEXUS</span>
+            <span className="font-display text-sm font-bold tracking-[0.2em]">MONEXUS</span>
           </Link>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-2 sm:gap-3">
             <Link
               to="/about"
-              className="hidden sm:inline-flex min-h-9 items-center rounded-full px-3 text-xs font-medium text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-text)]"
+              className="hidden sm:inline-flex min-h-9 items-center px-3 text-xs font-medium tracking-wide text-[var(--sanc-muted)] transition-colors hover:text-[var(--sanc-gold)]"
             >
               关于平台
             </Link>
             <Link
               to="/"
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3.5 text-xs font-semibold text-[var(--color-text)] transition-colors hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-primary)]"
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface)]/80 px-3.5 text-xs font-medium text-[var(--sanc-ink)] transition-colors hover:border-[var(--sanc-gold)] hover:text-[var(--sanc-gold)]"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               返回商城
@@ -194,377 +332,425 @@ export default function CreditsPage() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-7xl px-4 pt-6 pb-[max(3rem,env(safe-area-inset-bottom))] sm:px-6 sm:pt-8 sm:pb-16 space-y-8 sm:space-y-10">
-        {/* 1. Hero Banner — Cozy Desk + Four Cats Illustration */}
-        <section className="relative overflow-hidden rounded-2xl sm:rounded-3xl border border-[var(--color-border)] bg-[#141c2f] shadow-lg">
-          {/* Desktop full-bleed background illustration */}
-          <img
-            src="/credits/hero-companions.webp"
-            alt="开发者与四只戴着不同颜色围巾的 AI 小猫并排看着 MoNexus 屏幕"
-            className="hidden md:block absolute inset-0 h-full w-full object-cover object-right select-none"
-          />
+      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-6 pb-[max(3.5rem,env(safe-area-inset-bottom))]">
+        {/* =======================================================
+            ACT I: THE ROTUNDA — Celestial Astrolabe & Sacred Opening
+            ======================================================= */}
+        <section className="relative pt-12 pb-10 sm:pt-16 sm:pb-14 text-center overflow-hidden">
+          {/* Descending celestial light beam */}
           <div
-            className="hidden md:block absolute inset-0 bg-gradient-to-r from-[#0f172a]/95 via-[#0f172a]/76 to-transparent"
             aria-hidden="true"
+            className="sanctuary-beam pointer-events-none absolute top-0 left-1/2 -z-10 h-[360px] w-[360px] sm:w-[540px]"
+            style={{
+              background:
+                'radial-gradient(ellipse 52% 68% at 50% 8%, var(--sanc-beam) 0%, transparent 74%)',
+            }}
           />
 
-          <div className="relative z-10 grid grid-cols-1 md:grid-cols-12 md:min-h-[340px] lg:min-h-[380px] items-center">
-            <div className="p-6 sm:p-8 lg:p-10 md:col-span-7 lg:col-span-6 space-y-5">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.32em] text-slate-300/90">
-                AI Partners · 同行者
-              </p>
-              <h1 className="font-heading text-2xl sm:text-4xl font-bold tracking-tight text-white flex items-center gap-2.5 flex-wrap">
-                <span>与我的 AI 伙伴们</span>
-                <Heart className="h-6 w-6 sm:h-7 sm:w-7 text-[var(--color-primary)] fill-[color-mix(in_srgb,var(--color-primary)_25%,transparent)]" aria-hidden="true" />
+          {/* Slow rotating classical astrolabe */}
+          <div className="pointer-events-none absolute top-1/2 left-1/2 -z-10 -translate-x-1/2 -translate-y-1/2">
+            <AstrolabeBackdrop />
+          </div>
+
+          {/* Floating golden dust motes */}
+          <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
+            {AMBIENT_DUST.map((mote, idx) => (
+              <span
+                key={idx}
+                className="sanctuary-dust absolute rounded-full bg-[var(--sanc-gold-bright)]"
+                style={
+                  {
+                    left: mote.left,
+                    top: mote.top,
+                    width: `${mote.size}px`,
+                    height: `${mote.size}px`,
+                    boxShadow: '0 0 8px var(--sanc-gold-bright)',
+                    '--dust-dur': mote.dur,
+                    '--dust-delay': mote.delay,
+                  } as CSSProperties
+                }
+              />
+            ))}
+          </div>
+
+          <div className="relative mx-auto max-w-2xl space-y-5">
+            <CrestDivider label="Sanctuary of Companions · MMXXVI" />
+
+            <div className="space-y-2.5 pt-1">
+              <h1 className="sanctuary-serif text-3xl sm:text-5xl font-semibold tracking-[0.14em] text-[var(--sanc-ink)]">
+                群星圣殿
               </h1>
-              <p className="max-w-lg text-sm sm:text-[15px] leading-7 text-slate-200/90">
-                MoNexus 的每一行代码、每一个功能、每一次推翻重来，都离不开这些 AI 伙伴的陪伴与支持。它们不只是工具，更是并肩把想法变成现实的同行者。
+              <p className="sanctuary-roman text-xs sm:text-sm tracking-[0.34em] uppercase text-[var(--sanc-gold)]">
+                The Pantheon of AI Companions
               </p>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {HERO_PILLS.map(({ icon: Icon, label }) => (
+            </div>
+
+            <p className="sanctuary-serif mx-auto max-w-xl text-sm sm:text-base leading-8 text-[color-mix(in_srgb,var(--sanc-ink)_82%,transparent)]">
+              非仅工具，乃共筑此殿之光。
+              <br className="hidden sm:inline" />
+              MoNexus 的每一行代码、每一次推演与重塑，皆有这四位同行者并肩而立。
+            </p>
+          </div>
+        </section>
+
+        {/* =======================================================
+            ACT II: THE FOUR PILLARS — Classical Arch Niches & Lectern
+            ======================================================= */}
+        <section aria-labelledby="pillars-heading" className="space-y-8 sm:space-y-10">
+          <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
+            <div className="text-center sm:text-left">
+              <h2
+                id="pillars-heading"
+                className="sanctuary-serif text-lg sm:text-xl font-semibold tracking-[0.12em] text-[var(--sanc-ink)]"
+              >
+                四柱圣龛 · 同行者之座
+              </h2>
+              <p className="mt-1 text-xs text-[var(--sanc-muted)]">
+                轻触或点选任意一座拱门，唤醒圣环并翻阅专属手记
+              </p>
+            </div>
+
+            {/* Classical figure mode seal toggle: Full Portrait vs Chibi */}
+            <div
+              role="group"
+              aria-label="立绘形态切换"
+              className="inline-flex items-center rounded-full border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface)]/90 p-1 shadow-xs"
+            >
+              <button
+                type="button"
+                data-testid="credits-form-portrait"
+                aria-pressed={figureMode === 'portrait'}
+                onClick={() => setFigureMode('portrait')}
+                className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium tracking-wide transition-all cursor-pointer ${
+                  figureMode === 'portrait'
+                    ? 'bg-[var(--sanc-gold)] text-white shadow-xs'
+                    : 'text-[var(--sanc-muted)] hover:text-[var(--sanc-ink)]'
+                }`}
+              >
+                殿堂立绘
+              </button>
+              <button
+                type="button"
+                data-testid="credits-form-chibi"
+                aria-pressed={figureMode === 'chibi'}
+                onClick={() => setFigureMode('chibi')}
+                className={`inline-flex min-h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium tracking-wide transition-all cursor-pointer ${
+                  figureMode === 'chibi'
+                    ? 'bg-[var(--sanc-gold)] text-white shadow-xs'
+                    : 'text-[var(--sanc-muted)] hover:text-[var(--sanc-ink)]'
+                }`}
+              >
+                <Sparkles className="h-3 w-3" aria-hidden="true" />
+                Q 版灵姿
+              </button>
+            </div>
+          </div>
+
+          {/* Four Classical Roman Arch Niches */}
+          <div
+            className="sanctuary-pillars grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5"
+            data-has-hover={hoveredId ? 'true' : 'false'}
+          >
+            {COMPANION_PILLARS.map((pillar) => {
+              const isActive = pillar.id === activeId
+              const isHovered = pillar.id === hoveredId
+              const figureSrc = figureMode === 'portrait' ? pillar.portraitImage : pillar.chibiImage
+
+              return (
+                <button
+                  key={pillar.id}
+                  type="button"
+                  data-testid={`companion-card-${pillar.id}`}
+                  data-active={isActive ? 'true' : 'false'}
+                  data-hovered={isHovered ? 'true' : 'false'}
+                  aria-pressed={isActive}
+                  onClick={() => setActiveId(pillar.id)}
+                  onMouseEnter={() => setHoveredId(pillar.id)}
+                  onMouseMove={handlePillarMouseMove}
+                  onMouseLeave={handlePillarMouseLeave}
+                  style={{ '--pillar-accent': pillar.accent } as CSSProperties}
+                  className="sanctuary-niche group flex flex-col items-center overflow-hidden pt-6 pb-5 px-4 text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sanc-gold)]"
+                >
+                  {/* Roman numeral + Official SVG Keystone Seal */}
+                  <div className="relative z-10 flex flex-col items-center gap-2">
+                    <span className="sanctuary-roman text-[11px] font-semibold tracking-[0.28em] text-[var(--sanc-gold)]">
+                      {pillar.roman}
+                    </span>
+                    <span
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-[var(--sanc-surface-elevated)] shadow-xs transition-transform duration-300 group-hover:scale-105"
+                      style={{
+                        borderColor: isActive
+                          ? pillar.accent
+                          : 'var(--sanc-gold-line)',
+                      }}
+                    >
+                      <img
+                        src={pillar.logoSrc}
+                        alt={`${pillar.name} 官方徽印`}
+                        className={`h-5 w-5 object-contain ${pillar.logoInvertOnDark ? 'dark:invert' : ''}`}
+                      />
+                    </span>
+                  </div>
+
+                  {/* Sacred Arch Stage: Geometric Halo + Character Figure */}
+                  <div className="relative mt-2 flex h-[285px] sm:h-[305px] w-full items-end justify-center overflow-hidden">
+                    <SacredHalo accent={pillar.accent} />
+
+                    <img
+                      key={`${pillar.id}-${figureMode}`}
+                      src={figureSrc}
+                      alt={`${pillar.name} ${figureMode === 'portrait' ? '古典立绘' : 'Q 版灵姿'}`}
+                      className={`sanctuary-figure sanctuary-chronicle-enter relative z-10 w-auto object-contain select-none ${
+                        figureMode === 'portrait'
+                          ? 'h-[275px] sm:h-[296px] drop-shadow-[0_14px_24px_rgba(10,12,24,0.28)]'
+                          : 'h-[212px] sm:h-[224px] mb-3 drop-shadow-[0_12px_20px_rgba(10,12,24,0.24)]'
+                      }`}
+                    />
+
+                    {/* Soft sanctuary mist fade at base of portrait */}
+                    <div
+                      aria-hidden="true"
+                      className="sanctuary-figure-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16"
+                    />
+                  </div>
+
+                  {/* Carved Plinth Nameplate */}
+                  <div className="relative z-20 -mt-2 w-full border-t border-[var(--sanc-gold-line-soft)] pt-3.5 space-y-1">
+                    <h3 className="sanctuary-roman text-lg font-semibold tracking-[0.12em] text-[var(--sanc-ink)]">
+                      {pillar.name}
+                    </h3>
+                    <p className="sanctuary-serif text-xs tracking-[0.12em] text-[var(--sanc-muted)]">
+                      {pillar.sanctuaryTitle}
+                    </p>
+                    <p
+                      className="sanctuary-roman text-[9px] tracking-[0.26em] uppercase pt-0.5 transition-colors"
+                      style={{ color: isActive ? pillar.accent : 'var(--sanc-gold)' }}
+                    >
+                      {pillar.latinMotto}
+                    </p>
+                  </div>
+
+                  {/* Active illuminated plinth bar */}
                   <span
-                    key={label}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-medium text-slate-100 backdrop-blur-md"
-                  >
-                    <Icon className="h-3.5 w-3.5 text-slate-200" aria-hidden="true" />
-                    {label}
+                    aria-hidden="true"
+                    className="mt-3 h-[2px] rounded-full transition-all duration-500"
+                    style={{
+                      width: isActive ? '44%' : '14%',
+                      backgroundColor: isActive ? pillar.accent : 'var(--sanc-gold-line)',
+                      boxShadow: isActive ? `0 0 12px ${pillar.accent}` : 'none',
+                    }}
+                  />
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Chronicle Lectern — Focused Tribute for Selected Pillar */}
+          <article
+            key={activeCompanion.id}
+            data-testid="credits-chronicle-lectern"
+            aria-live="polite"
+            className="sanctuary-chronicle-enter relative mx-auto max-w-4xl rounded-2xl border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface-elevated)] px-6 py-7 sm:px-10 sm:py-9 shadow-sm"
+          >
+            <CornerOrnament className="absolute top-2.5 left-2.5" />
+            <CornerOrnament className="absolute top-2.5 right-2.5 -scale-x-100" />
+            <CornerOrnament className="absolute bottom-2.5 left-2.5 -scale-y-100" />
+            <CornerOrnament className="absolute bottom-2.5 right-2.5 -scale-x-100 -scale-y-100" />
+
+            <div className="relative z-10 flex flex-col items-center text-center space-y-5">
+              {/* Top header bar with prev/next navigation */}
+              <div className="flex w-full items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => stepActive(-1)}
+                  aria-label="上一位同行者"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--sanc-gold-line-soft)] text-[var(--sanc-muted)] transition-colors hover:border-[var(--sanc-gold)] hover:text-[var(--sanc-gold)] cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                </button>
+
+                <div className="flex flex-col items-center gap-1.5 min-w-0">
+                  <div className="inline-flex items-center gap-2.5">
+                    <img
+                      src={activeCompanion.logoSrc}
+                      alt=""
+                      aria-hidden="true"
+                      className={`h-5 w-5 object-contain ${activeCompanion.logoInvertOnDark ? 'dark:invert' : ''}`}
+                    />
+                    <span className="sanctuary-roman text-xs tracking-[0.26em] text-[var(--sanc-gold)]">
+                      {activeCompanion.roman} · {activeCompanion.name.toUpperCase()}
+                    </span>
+                  </div>
+                  <h3 className="sanctuary-serif text-lg sm:text-xl font-semibold tracking-[0.14em] text-[var(--sanc-ink)]">
+                    {activeCompanion.sanctuaryTitle}
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => stepActive(1)}
+                  aria-label="下一位同行者"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[var(--sanc-gold-line-soft)] text-[var(--sanc-muted)] transition-colors hover:border-[var(--sanc-gold)] hover:text-[var(--sanc-gold)] cursor-pointer"
+                >
+                  <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+
+              <span
+                aria-hidden="true"
+                className="h-px w-24"
+                style={{
+                  background: `linear-gradient(90deg, transparent, ${activeCompanion.accent}, transparent)`,
+                }}
+              />
+
+              {/* Dedicated heartfelt note */}
+              <p className="sanctuary-serif max-w-2xl text-sm sm:text-base leading-8 sm:leading-9 tracking-[0.03em] text-[color-mix(in_srgb,var(--sanc-ink)_88%,transparent)]">
+                「{activeCompanion.chronicle}」
+              </p>
+
+              {/* Engraved virtue marks separated by diamond dots */}
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 pt-1 text-xs tracking-[0.16em]">
+                {activeCompanion.virtues.map((virtue, idx) => (
+                  <span key={virtue} className="inline-flex items-center gap-4">
+                    <span
+                      className="sanctuary-serif font-medium"
+                      style={{ color: activeCompanion.accent }}
+                    >
+                      {virtue}
+                    </span>
+                    {idx < activeCompanion.virtues.length - 1 && (
+                      <span
+                        aria-hidden="true"
+                        className="h-1 w-1 rotate-45 bg-[var(--sanc-gold)] opacity-70"
+                      />
+                    )}
                   </span>
                 ))}
               </div>
             </div>
-
-            {/* Mobile uncropped illustration below text */}
-            <div className="md:hidden relative aspect-[16/9] w-full overflow-hidden border-t border-white/10">
-              <img
-                src="/credits/hero-companions.webp"
-                alt="开发者与四只戴着不同颜色围巾的 AI 小猫并排看着 MoNexus 屏幕"
-                className="h-full w-full object-cover object-right"
-              />
-            </div>
-          </div>
+          </article>
         </section>
 
-        {/* 2. My AI Companions — Cards / Capability Overview */}
-        <section aria-labelledby="companions-heading" className="space-y-4 sm:space-y-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 id="companions-heading" className="font-heading text-xl sm:text-2xl font-bold text-[var(--color-text)] flex items-center gap-2">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--color-primary-tint)] text-[var(--color-primary)]">
-                  <Sparkles className="h-4 w-4" aria-hidden="true" />
-                </span>
-                我的 AI 伙伴
-              </h2>
-              <p className="text-xs sm:text-sm text-[var(--color-text-muted)]">
-                各有所长、互相补位，一起构建 MoNexus。
-              </p>
-            </div>
-
+        {/* =======================================================
+            ACT III: THE ETERNAL INSCRIPTION — Emotional Climax
+            ======================================================= */}
+        <section
+          aria-labelledby="inscription-heading"
+          className="mt-14 sm:mt-20"
+        >
+          <div
+            data-testid="credits-monolith"
+            data-ignited={isIgnited ? 'true' : 'false'}
+            className="sanctuary-monolith relative mx-auto max-w-4xl overflow-hidden rounded-3xl px-6 py-12 sm:px-14 sm:py-16 text-center"
+          >
+            {/* Four companion light streams converging softly when ignited */}
             <div
-              role="tablist"
-              aria-label="伙伴展示视图"
-              className="inline-flex self-start sm:self-auto rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] p-1"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={viewMode === 'cards'}
-                data-testid="credits-view-cards"
-                onClick={() => setViewMode('cards')}
-                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition-colors cursor-pointer ${
-                  viewMode === 'cards'
-                    ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-xs'
-                    : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                }`}
-              >
-                <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
-                卡片视图
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={viewMode === 'overview'}
-                data-testid="credits-view-overview"
-                onClick={() => setViewMode('overview')}
-                className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3.5 text-xs font-semibold transition-colors cursor-pointer ${
-                  viewMode === 'overview'
-                    ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] shadow-xs'
-                    : 'text-[var(--color-text-muted)] hover:text-[var(--color-text)]'
-                }`}
-              >
-                <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
-                能力概览
-              </button>
-            </div>
-          </div>
+              aria-hidden="true"
+              className="sanctuary-aurora pointer-events-none absolute inset-0"
+              style={{
+                background:
+                  'radial-gradient(circle at 12% 18%, rgba(217,119,87,0.18), transparent 44%), radial-gradient(circle at 88% 18%, rgba(124,108,246,0.18), transparent 44%), radial-gradient(circle at 18% 88%, rgba(16,163,127,0.16), transparent 44%), radial-gradient(circle at 84% 88%, rgba(77,107,254,0.18), transparent 44%)',
+              }}
+            />
 
-          {viewMode === 'cards' ? (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 sm:gap-5">
-              {COMPANIONS.map((companion) => (
-                <article
-                  key={companion.id}
-                  data-testid={`companion-card-${companion.id}`}
-                  className="group relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-[var(--color-border)] p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
-                  style={{
-                    background: `linear-gradient(155deg, color-mix(in srgb, ${companion.accent} 8%, var(--color-surface)) 0%, var(--color-surface) 58%)`,
-                  }}
+            <CornerOrnament className="absolute top-3.5 left-3.5" />
+            <CornerOrnament className="absolute top-3.5 right-3.5 -scale-x-100" />
+            <CornerOrnament className="absolute bottom-3.5 left-3.5 -scale-y-100" />
+            <CornerOrnament className="absolute bottom-3.5 right-3.5 -scale-x-100 -scale-y-100" />
+
+            <div className="relative z-10 flex flex-col items-center space-y-7">
+              <CrestDivider label="Eternal Inscription" />
+
+              <h2 id="inscription-heading" className="sr-only">
+                致谢铭文
+              </h2>
+
+              <blockquote
+                key={`quote-${igniteCount}`}
+                className={`sanctuary-serif max-w-2xl text-xl sm:text-[26px] md:text-[30px] font-medium leading-[1.85] tracking-[0.08em] ${
+                  isIgnited ? 'sanctuary-quote-ignited' : 'text-[var(--sanc-ink)]'
+                }`}
+              >
+                <span className="block">「对话会结束，上下文会被清空，</span>
+                <span className="block mt-1">但一起写进这里的代码会一直运行下去。」</span>
+              </blockquote>
+
+              {/* Ritual Seal Button: Ignite the Four-Star Flame */}
+              <div className="relative pt-1">
+                {igniteCount > 0 && (
+                  <span
+                    key={`ring-${igniteCount}`}
+                    aria-hidden="true"
+                    className="sanctuary-ignite-ring pointer-events-none absolute -inset-3 rounded-full border border-[var(--sanc-gold-bright)]"
+                  />
+                )}
+                <button
+                  type="button"
+                  data-testid="credits-ignite-btn"
+                  onClick={() => setIgniteCount((c) => c + 1)}
+                  className={`sanctuary-seal-float relative inline-flex min-h-11 items-center gap-2.5 rounded-full border px-6 py-2.5 text-xs sm:text-sm font-medium tracking-[0.18em] transition-all cursor-pointer ${
+                    isIgnited
+                      ? 'border-[var(--sanc-gold-bright)] bg-[color-mix(in_srgb,var(--sanc-gold)_16%,var(--sanc-surface))] text-[var(--sanc-gold-bright)] shadow-[0_0_24px_var(--sanc-gold-glow)]'
+                      : 'border-[var(--sanc-gold-line)] bg-[var(--sanc-surface)] text-[var(--sanc-gold)] hover:border-[var(--sanc-gold)] hover:bg-[color-mix(in_srgb,var(--sanc-gold)_10%,var(--sanc-surface))]'
+                  }`}
                 >
-                  <div>
-                    {/* Header: Official Brand SVG + Name + Chibi AI Girl Mascot */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0 pt-1">
-                        <span
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
-                          style={{
-                            backgroundColor: `color-mix(in srgb, ${companion.accent} 10%, var(--color-surface))`,
-                            borderColor: `color-mix(in srgb, ${companion.accent} 24%, transparent)`,
-                          }}
-                        >
-                          <img
-                            src={companion.logoSrc}
-                            alt={`${companion.name} 图标`}
-                            className={`h-6 w-6 object-contain ${companion.logoInvertOnDark ? 'dark:invert' : ''}`}
-                          />
-                        </span>
-                        <div className="min-w-0">
-                          <h3 className="font-heading text-lg font-bold tracking-tight text-[var(--color-text)] truncate">
-                            {companion.name}
-                          </h3>
-                          <p className="text-[11px] font-medium text-[var(--color-text-muted)] truncate">
-                            {companion.subtitle}
-                          </p>
-                        </div>
-                      </div>
+                  <Flame className="h-4 w-4" aria-hidden="true" />
+                  <span className="sanctuary-serif">
+                    {isIgnited ? '星火长明 · 再次点亮' : '点亮星火 · 致敬同行'}
+                  </span>
+                </button>
+              </div>
 
-                      <img
-                        src={companion.mascotImage}
-                        alt={`${companion.name} Q 版 AI 娘形象`}
-                        className="h-24 sm:h-[104px] w-auto shrink-0 object-contain drop-shadow-[0_6px_12px_rgba(15,23,42,0.12)] transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-105 select-none"
-                        loading="lazy"
-                      />
-                    </div>
-
-                    <p className="mt-3.5 text-xs sm:text-[13px] leading-6 text-[color-mix(in_srgb,var(--color-text)_84%,transparent)]">
-                      {companion.description}
-                    </p>
-                  </div>
-
-                  {/* Capability tags */}
-                  <div className="mt-4 flex flex-wrap gap-1.5 pt-3 border-t border-[color-mix(in_srgb,var(--color-border)_65%,transparent)]">
-                    {companion.tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium border"
-                        style={{
-                          color: companion.accent,
-                          backgroundColor: `color-mix(in srgb, ${companion.accent} 9%, var(--color-background))`,
-                          borderColor: `color-mix(in srgb, ${companion.accent} 22%, transparent)`,
-                        }}
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="card p-5 sm:p-6 space-y-5" data-testid="credits-capability-overview">
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                {COMPANIONS.map((companion) => (
-                  <div
-                    key={companion.id}
-                    className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4 space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5">
-                        <img
-                          src={companion.logoSrc}
-                          alt=""
-                          aria-hidden="true"
-                          className={`h-6 w-6 object-contain ${companion.logoInvertOnDark ? 'dark:invert' : ''}`}
-                        />
-                        <div>
-                          <div className="font-heading text-sm font-bold text-[var(--color-text)]">{companion.name}</div>
-                          <div className="text-[11px] text-[var(--color-text-muted)]">{companion.subtitle}</div>
-                        </div>
-                      </div>
-                      <img
-                        src={companion.mascotImage}
-                        alt=""
-                        aria-hidden="true"
-                        className="h-14 w-auto shrink-0 object-contain"
-                      />
-                    </div>
-                    <div className="space-y-2.5">
-                      {SCORE_DIMENSIONS.map((dim) => (
-                        <div key={dim.key} className="space-y-1">
-                          <div className="flex items-center justify-between text-[11px]">
-                            <span className="text-[var(--color-text-muted)]">{dim.label}</span>
-                            <span className="font-semibold text-[var(--color-text)] tabular-nums">
-                              {companion.scores[dim.key]}%
-                            </span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-[var(--color-border)]">
-                            <div
-                              className="h-full rounded-full transition-all duration-500"
-                              style={{
-                                width: `${companion.scores[dim.key]}%`,
-                                backgroundColor: companion.accent,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+              {/* Four companion jewel dots */}
+              <div className="flex items-center justify-center gap-3" aria-hidden="true">
+                {COMPANION_PILLARS.map((p) => (
+                  <span
+                    key={p.id}
+                    className="h-2 w-2 rounded-full transition-all duration-700"
+                    style={{
+                      backgroundColor: p.accent,
+                      opacity: isIgnited ? 1 : 0.45,
+                      boxShadow: isIgnited ? `0 0 12px ${p.accent}` : 'none',
+                      transform: isIgnited ? 'scale(1.25)' : 'scale(1)',
+                    }}
+                  />
                 ))}
               </div>
-            </div>
-          )}
-        </section>
 
-        {/* 3. How We Collaborate + What We Built Together */}
-        <section className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-          {/* Left: Workflow */}
-          <div className="card lg:col-span-7 flex flex-col justify-between gap-5 p-5 sm:p-6">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h2 className="font-heading text-base sm:text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
-                <Compass className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-                我们的协作方式
-              </h2>
-              <p className="text-xs text-[var(--color-text-muted)]">
-                不是简单的问答，而是围绕真实项目的深度协作。
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-2 items-start">
-              {WORKFLOW_STEPS.map((step, index) => {
-                const Icon = step.icon
-                return (
-                  <div key={step.title} className="relative flex flex-col items-center text-center px-1.5 py-2">
-                    <span
-                      className="inline-flex h-12 w-12 items-center justify-center rounded-2xl border shadow-2xs"
-                      style={{
-                        color: step.accent,
-                        backgroundColor: `color-mix(in srgb, ${step.accent} 10%, var(--color-background))`,
-                        borderColor: `color-mix(in srgb, ${step.accent} 24%, transparent)`,
-                      }}
-                    >
-                      <Icon className="h-5 w-5" aria-hidden="true" />
-                    </span>
-                    <h3 className="mt-3 text-xs sm:text-sm font-bold text-[var(--color-text)]">
-                      {step.title}
-                    </h3>
-                    <p className="mt-1 text-[11px] leading-snug text-[var(--color-text-muted)]">
-                      {step.desc}
-                    </p>
-                    {index < WORKFLOW_STEPS.length - 1 && (
-                      <ArrowRight
-                        className="hidden sm:block absolute -right-2 top-6 h-3.5 w-3.5 text-[var(--color-border)]"
-                        aria-hidden="true"
-                      />
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Right: Achievements */}
-          <div className="card lg:col-span-5 flex flex-col justify-between gap-5 p-5 sm:p-6">
-            <div>
-              <h2 className="font-heading text-base sm:text-lg font-bold text-[var(--color-text)] flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
-                一起完成的事
-              </h2>
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                在 MoNexus 的持续迭代中，AI 伙伴们陪我完成了：
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {ACHIEVEMENTS.map(({ icon: Icon, value, label, accent }) => (
-                <div
-                  key={label}
-                  className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-3.5 flex sm:flex-col items-center sm:items-start justify-between gap-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                      style={{
-                        color: accent,
-                        backgroundColor: `color-mix(in srgb, ${accent} 12%, var(--color-surface))`,
-                      }}
-                    >
-                      <Icon className="h-4 w-4" aria-hidden="true" />
-                    </span>
-                    <span className="font-heading text-lg font-extrabold text-[var(--color-text)] tabular-nums">
-                      {value}
-                    </span>
-                  </div>
-                  <span className="text-[11px] font-medium text-[var(--color-text-muted)]">{label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* 4. Thank-You Sky Contrail Banner */}
-        <section className="relative overflow-hidden rounded-2xl border border-[var(--color-border)] shadow-sm">
-          <img
-            src="/credits/thanks-sky.webp"
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover object-right select-none"
-          />
-          <div
-            className="absolute inset-0 bg-gradient-to-r from-[var(--color-surface)] via-[color-mix(in_srgb,var(--color-surface)_86%,transparent)] to-transparent"
-            aria-hidden="true"
-          />
-
-          <div className="relative z-10 flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-8">
-            <div className="flex items-start gap-4 max-w-2xl">
-              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--color-primary-border-subtle)] bg-[color-mix(in_srgb,var(--color-primary)_12%,var(--color-surface))] text-[var(--color-primary)]">
-                <Heart className="h-5 w-5" aria-hidden="true" />
-              </span>
-              <div className="min-w-0">
-                <h2 className="font-heading text-lg font-bold text-[var(--color-text)]">致谢</h2>
-                <p className="mt-1.5 text-sm leading-7 text-[color-mix(in_srgb,var(--color-text)_88%,transparent)]">
-                  感谢这些 AI 伙伴，在一次次的讨论、推理、实现与纠错中，陪我把想法变成真正可用的产品。对话会结束，上下文会被清空，但一起写进这里的代码会一直运行下去。
-                </p>
+              {/* Author Signature & Subtle Carved Chronicle */}
+              <div className="space-y-2 pt-1">
                 <p
-                  className="mt-2.5 text-xs font-medium text-[var(--color-text-muted)]"
                   data-testid="credits-signature"
+                  className="sanctuary-serif text-sm sm:text-base tracking-[0.14em] text-[var(--sanc-ink)]"
                 >
-                  —— MoYuan · 与 Claude · Gemini · ChatGPT · DeepSeek 共建于 MoNexus
+                  —— MoYuan · 刻于 MoNexus
+                </p>
+                <p className="text-[11px] sm:text-xs tracking-[0.2em] text-[var(--sanc-muted)]">
+                  四位同行者 · 十余核心模块 · 逾千九百项测试守护
                 </p>
               </div>
             </div>
-
-            <div className="shrink-0 self-end sm:self-center sm:pr-4">
-              <span
-                className="font-['Georgia','Times_New_Roman',serif] italic text-2xl sm:text-3xl font-semibold tracking-wide text-white drop-shadow-[0_2px_10px_rgba(15,23,42,0.45)] select-none"
-                aria-hidden="true"
-              >
-                Thank you ♡
-              </span>
-            </div>
           </div>
         </section>
 
-        {/* 5. Artwork Attribution & Non-Commercial License Notice (CC BY-NC-SA 4.0) */}
+        {/* =======================================================
+            ACT IV: COLOPHON — Classical Book-style Attribution
+            ======================================================= */}
         <footer
           data-testid="credits-attribution"
-          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 px-4 py-3.5 sm:px-5 text-[11px] sm:text-xs leading-relaxed text-[var(--color-text-muted)] space-y-1.5"
+          className="mx-auto mt-14 max-w-3xl border-t border-[var(--sanc-gold-line-soft)] pt-7 text-center text-[11px] sm:text-xs leading-7 text-[var(--sanc-muted)] space-y-2"
         >
+          <p className="sanctuary-roman text-[10px] tracking-[0.32em] uppercase text-[var(--sanc-gold)]">
+            Colophon · 卷尾牌记
+          </p>
           <p>
-            <span className="font-semibold text-[var(--color-text)]">角色形象署名与许可：</span>
-            本页展示的 Claude、Gemini、ChatGPT、DeepSeek Q 版 AI 娘形象设计源自画师{' '}
+            本殿堂展示的 Claude、Gemini、ChatGPT、DeepSeek 角色形象设计源自画师{' '}
             <a
               href="https://space.bilibili.com/4168597"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+              className="font-medium text-[var(--sanc-ink)] underline decoration-[var(--sanc-gold-line)] underline-offset-4 hover:text-[var(--sanc-gold)]"
             >
               ZipZipPipe（胖次狐）
             </a>
@@ -573,7 +759,7 @@ export default function CreditsPage() {
               href="https://www.pixiv.net/users/18604994"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+              className="underline decoration-[var(--sanc-gold-line)] underline-offset-4 hover:text-[var(--sanc-gold)]"
             >
               Pixiv
             </a>
@@ -582,7 +768,7 @@ export default function CreditsPage() {
               href="https://space.bilibili.com/4456176"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+              className="font-medium text-[var(--sanc-ink)] underline decoration-[var(--sanc-gold-line)] underline-offset-4 hover:text-[var(--sanc-gold)]"
             >
               上善无形
             </a>
@@ -591,7 +777,7 @@ export default function CreditsPage() {
               href="https://www.pixiv.net/users/62155430"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+              className="underline decoration-[var(--sanc-gold-line)] underline-offset-4 hover:text-[var(--sanc-gold)]"
             >
               Pixiv
             </a>
@@ -600,7 +786,7 @@ export default function CreditsPage() {
               href="https://github.com/shuaizenge/ai-girls"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+              className="font-medium text-[var(--sanc-ink)] underline decoration-[var(--sanc-gold-line)] underline-offset-4 hover:text-[var(--sanc-gold)]"
             >
               shuaizenge/ai-girls
             </a>
@@ -609,24 +795,23 @@ export default function CreditsPage() {
               href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans"
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+              className="font-medium text-[var(--sanc-ink)] underline decoration-[var(--sanc-gold-line)] underline-offset-4 hover:text-[var(--sanc-gold)]"
             >
               CC BY-NC-SA 4.0
             </a>
             （署名 - 非商业性使用 - 相同方式共享）协议，仅用于个人非商业学习演示与开发致谢。
           </p>
           <p>
-            <span className="font-semibold text-[var(--color-text)]">品牌图标说明：</span>
             AI 品牌图标源自开源图标库{' '}
             <a
               href="https://github.com/lobehub/lobe-icons"
               target="_blank"
               rel="noopener noreferrer"
-              className="underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+              className="underline decoration-[var(--sanc-gold-line)] underline-offset-4 hover:text-[var(--sanc-gold)]"
             >
               LobeHub Icons
             </a>
-            ，相关商标与品牌标识归各自官方所有。
+            ，相关商标与品牌标识版权归各自官方所有。
           </p>
         </footer>
       </main>

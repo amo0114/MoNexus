@@ -1,0 +1,399 @@
+/* =========================================================
+   The Pantheon of Companions — Classical Sanctuary Aesthetics
+   Scoped strictly to [data-testid="credits-page"] so it rides
+   inside the lazy-loaded CreditsPage chunk with zero main-bundle cost.
+   ========================================================= */
+
+.sanctuary-root {
+  --sanc-bg: color-mix(in srgb, var(--color-background) 86%, #f4ede0);
+  --sanc-surface: color-mix(in srgb, var(--color-surface) 92%, #faf4e8);
+  --sanc-surface-elevated: color-mix(in srgb, var(--color-surface) 96%, #fffdf8);
+  --sanc-gold: #9a7432;
+  --sanc-gold-bright: #c59b49;
+  --sanc-gold-line: rgba(154, 116, 50, 0.32);
+  --sanc-gold-line-soft: rgba(154, 116, 50, 0.16);
+  --sanc-gold-glow: rgba(197, 155, 73, 0.16);
+  --sanc-beam: rgba(212, 175, 95, 0.16);
+  --sanc-ink: var(--color-text);
+  --sanc-muted: var(--color-text-muted);
+  --sanc-niche-shadow: 0 22px 48px -28px rgba(42, 31, 14, 0.28);
+  --sanc-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
+  --sanc-roman: 'Cinzel', 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+
+  background-color: var(--sanc-bg);
+  background-image:
+    radial-gradient(ellipse 75% 42% at 50% -6%, var(--sanc-beam), transparent 72%),
+    radial-gradient(ellipse 55% 32% at 50% 102%, var(--sanc-gold-glow), transparent 75%);
+  color: var(--sanc-ink);
+}
+
+.dark .sanctuary-root,
+:root[data-theme='dark'] .sanctuary-root {
+  --sanc-bg: #080912;
+  --sanc-surface: #101322;
+  --sanc-surface-elevated: #14182b;
+  --sanc-gold: #d6b168;
+  --sanc-gold-bright: #f2d593;
+  --sanc-gold-line: rgba(214, 177, 104, 0.34);
+  --sanc-gold-line-soft: rgba(214, 177, 104, 0.15);
+  --sanc-gold-glow: rgba(214, 177, 104, 0.14);
+  --sanc-beam: rgba(214, 177, 104, 0.14);
+  --sanc-niche-shadow: 0 26px 60px -24px rgba(0, 0, 0, 0.72);
+}
+
+:root[data-theme='soft'] .sanctuary-root {
+  --sanc-bg: #fcf4e4;
+  --sanc-surface: #fffaf0;
+  --sanc-surface-elevated: #fffdf8;
+  --sanc-gold: #a6692b;
+  --sanc-gold-bright: #d48b3c;
+  --sanc-gold-line: rgba(166, 105, 43, 0.3);
+  --sanc-gold-line-soft: rgba(166, 105, 43, 0.15);
+  --sanc-gold-glow: rgba(212, 139, 60, 0.15);
+  --sanc-beam: rgba(235, 168, 84, 0.18);
+}
+
+:root[data-theme='ink'] .sanctuary-root {
+  --sanc-bg: #ebeeeb;
+  --sanc-surface: #f5f7f4;
+  --sanc-surface-elevated: #fafbf9;
+  --sanc-gold: #50657d;
+  --sanc-gold-bright: #34507a;
+  --sanc-gold-line: rgba(52, 80, 122, 0.28);
+  --sanc-gold-line-soft: rgba(52, 80, 122, 0.14);
+  --sanc-gold-glow: rgba(52, 80, 122, 0.11);
+  --sanc-beam: rgba(80, 101, 125, 0.12);
+}
+
+.sanctuary-serif {
+  font-family: var(--sanc-serif);
+}
+
+.sanctuary-roman {
+  font-family: var(--sanc-roman);
+}
+
+/* Subtle architectural floor/ceiling fine grid texture */
+.sanctuary-marble-grain {
+  background-image:
+    linear-gradient(to right, var(--sanc-gold-line-soft) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--sanc-gold-line-soft) 1px, transparent 1px);
+  background-size: 96px 96px;
+  mask-image: radial-gradient(ellipse 72% 58% at 50% 18%, black 15%, transparent 78%);
+}
+
+/* Astrolabe gentle counter-rotations */
+@keyframes sanctuary-spin-cw {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sanctuary-spin-ccw {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes sanctuary-beam-breathe {
+  0%,
+  100% {
+    opacity: 0.65;
+    transform: translateX(-50%) scaleX(1);
+  }
+  50% {
+    opacity: 1;
+    transform: translateX(-50%) scaleX(1.08);
+  }
+}
+
+@keyframes sanctuary-dust-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.7);
+  }
+  20% {
+    opacity: 0.85;
+  }
+  80% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-76px) scale(1.15);
+  }
+}
+
+@keyframes sanctuary-float-gentle {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes sanctuary-chronicle-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sanctuary-shimmer-sweep {
+  0% {
+    background-position: -180% 50%;
+  }
+  100% {
+    background-position: 180% 50%;
+  }
+}
+
+@keyframes sanctuary-pulse-ring {
+  0% {
+    opacity: 0.72;
+    transform: scale(0.86);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.42);
+  }
+}
+
+.sanctuary-spin-slow {
+  transform-origin: center;
+  animation: sanctuary-spin-cw 110s linear infinite;
+}
+
+.sanctuary-spin-slow-reverse {
+  transform-origin: center;
+  animation: sanctuary-spin-ccw 84s linear infinite;
+}
+
+.sanctuary-beam {
+  animation: sanctuary-beam-breathe 9s ease-in-out infinite;
+}
+
+.sanctuary-dust {
+  animation: sanctuary-dust-rise var(--dust-dur, 10s) ease-in-out infinite;
+  animation-delay: var(--dust-delay, 0s);
+}
+
+.sanctuary-chronicle-enter {
+  animation: sanctuary-chronicle-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Arch Niche Card — 3D Tilt + Spotlight + Sacred Halo */
+.sanctuary-niche {
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --spot-x: 50%;
+  --spot-y: 32%;
+  --pillar-accent: var(--sanc-gold);
+
+  position: relative;
+  border-radius: 999px 999px 18px 18px;
+  border: 1px solid var(--sanc-gold-line);
+  background:
+    radial-gradient(
+      circle at var(--spot-x) var(--spot-y),
+      color-mix(in srgb, var(--pillar-accent) 18%, transparent) 0%,
+      transparent 58%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--pillar-accent) 9%, var(--sanc-surface)) 0%,
+      var(--sanc-surface) 46%,
+      color-mix(in srgb, var(--sanc-surface) 90%, var(--sanc-bg)) 100%
+    );
+  box-shadow: var(--sanc-niche-shadow);
+  transform: perspective(1000px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(0);
+  transition:
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.35s ease,
+    box-shadow 0.4s ease,
+    opacity 0.35s ease,
+    filter 0.35s ease;
+  will-change: transform;
+}
+
+.sanctuary-niche::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 999px 999px 13px 13px;
+  border: 1px solid var(--sanc-gold-line-soft);
+  pointer-events: none;
+  transition: border-color 0.35s ease;
+}
+
+.sanctuary-niche:hover,
+.sanctuary-niche[data-active='true'] {
+  border-color: color-mix(in srgb, var(--pillar-accent) 62%, var(--sanc-gold));
+  box-shadow:
+    0 24px 56px -22px color-mix(in srgb, var(--pillar-accent) 36%, rgba(0, 0, 0, 0.4)),
+    0 0 0 1px color-mix(in srgb, var(--pillar-accent) 28%, transparent);
+}
+
+.sanctuary-niche:hover::before,
+.sanctuary-niche[data-active='true']::before {
+  border-color: color-mix(in srgb, var(--pillar-accent) 42%, var(--sanc-gold-line));
+}
+
+.sanctuary-niche:hover {
+  transform: perspective(1000px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-5px);
+}
+
+/* Theater spotlight dimming on sibling niches when hovering one */
+.sanctuary-pillars[data-has-hover='true'] .sanctuary-niche:not([data-hovered='true']) {
+  opacity: 0.72;
+  filter: saturate(0.84);
+}
+
+/* Sacred halo behind each figure */
+.sanctuary-halo {
+  opacity: 0.24;
+  transform: scale(0.88);
+  transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sanctuary-niche:hover .sanctuary-halo,
+.sanctuary-niche[data-active='true'] .sanctuary-halo {
+  opacity: 0.92;
+  transform: scale(1.03);
+}
+
+.sanctuary-halo-ring {
+  transform-origin: center;
+  animation: sanctuary-spin-cw 38s linear infinite;
+}
+
+.sanctuary-halo-ring-inner {
+  transform-origin: center;
+  animation: sanctuary-spin-ccw 26s linear infinite;
+}
+
+.sanctuary-figure {
+  transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), filter 0.45s ease;
+}
+
+.sanctuary-niche:hover .sanctuary-figure,
+.sanctuary-niche[data-active='true'] .sanctuary-figure {
+  transform: translateY(-6px) scale(1.035);
+}
+
+/* Bottom soft mist fade inside arch so figure merges gracefully into plinth */
+.sanctuary-figure-fade {
+  background: linear-gradient(
+    to top,
+    var(--sanc-surface) 0%,
+    color-mix(in srgb, var(--sanc-surface) 82%, transparent) 24%,
+    transparent 62%
+  );
+}
+
+/* Eternal Inscription Monolith */
+.sanctuary-monolith {
+  position: relative;
+  border: 1px solid var(--sanc-gold-line);
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 0%, var(--sanc-gold-glow), transparent 72%),
+    var(--sanc-surface-elevated);
+  box-shadow: var(--sanc-niche-shadow);
+  transition: border-color 0.6s ease, box-shadow 0.8s ease;
+}
+
+.sanctuary-monolith::before {
+  content: '';
+  position: absolute;
+  inset: 9px;
+  border: 1px solid var(--sanc-gold-line-soft);
+  border-radius: inherit;
+  pointer-events: none;
+  transition: border-color 0.6s ease;
+}
+
+.sanctuary-monolith[data-ignited='true'] {
+  border-color: color-mix(in srgb, var(--sanc-gold-bright) 72%, transparent);
+  box-shadow:
+    0 28px 72px -24px color-mix(in srgb, var(--sanc-gold-bright) 34%, rgba(0, 0, 0, 0.45)),
+    0 0 42px -12px var(--sanc-gold-glow);
+}
+
+.sanctuary-monolith[data-ignited='true']::before {
+  border-color: color-mix(in srgb, var(--sanc-gold-bright) 48%, transparent);
+}
+
+/* Four companion light streams converging when ignited */
+.sanctuary-aurora {
+  opacity: 0;
+  transition: opacity 0.9s ease;
+}
+
+.sanctuary-monolith[data-ignited='true'] .sanctuary-aurora {
+  opacity: 1;
+}
+
+.sanctuary-quote-ignited {
+  background-image: linear-gradient(
+    110deg,
+    var(--sanc-ink) 0%,
+    var(--sanc-ink) 32%,
+    var(--sanc-gold-bright) 48%,
+    #fff4d6 52%,
+    var(--sanc-gold-bright) 58%,
+    var(--sanc-ink) 72%,
+    var(--sanc-ink) 100%
+  );
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sanctuary-shimmer-sweep 2.4s cubic-bezier(0.22, 1, 0.36, 1) 1 forwards;
+}
+
+.sanctuary-ignite-ring {
+  animation: sanctuary-pulse-ring 1.15s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.sanctuary-seal-float {
+  animation: sanctuary-float-gentle 5.5s ease-in-out infinite;
+}
+
+/* Respect accessibility reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .sanctuary-spin-slow,
+  .sanctuary-spin-slow-reverse,
+  .sanctuary-beam,
+  .sanctuary-dust,
+  .sanctuary-halo-ring,
+  .sanctuary-halo-ring-inner,
+  .sanctuary-seal-float,
+  .sanctuary-chronicle-enter,
+  .sanctuary-ignite-ring,
+  .sanctuary-quote-ignited {
+    animation: none !important;
+  }
+
+  .sanctuary-quote-ignited {
+    color: var(--sanc-ink);
+    background-image: none;
+  }
+
+  .sanctuary-niche,
+  .sanctuary-figure,
+  .sanctuary-halo {
+    transition: none !important;
+  }
+}
