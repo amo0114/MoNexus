@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, ExternalLink, Loader2, X } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
-import { getAuthSessionContext } from '../auth/sessionContext'
+import { getAuthSessionContext, getAuthSessionScopeKey } from '../auth/sessionContext'
 import { getOrderDetail } from '../api/orders'
 import { getMe } from '../api/auth'
 import { Dialog, DialogContent, DialogTitle } from './ui/Dialog'
@@ -58,6 +58,8 @@ export default function SuccessModal({
   provisionPending = false,
   /** Override default title (e.g. 续费成功 for renew checkout). */
   headline = null,
+  /** Owning auth session scope key. Defaults to the logged-in session at mount. */
+  ownerSessionKey,
   onClose,
   onViewOrders
 }: {
@@ -75,10 +77,26 @@ export default function SuccessModal({
    */
   provisionPending?: boolean
   headline?: string | null
+  ownerSessionKey?: string | null
   onClose: () => void
   onViewOrders?: () => void
 }) {
   const showToast = useAppStore((s) => s.showToast)
+  const currentSessionKey = useAuthStore(getAuthSessionScopeKey)
+  const capturedOwnerSessionKeyRef = useRef<string | null>(
+    ownerSessionKey !== undefined ? ownerSessionKey : currentSessionKey,
+  )
+  const effectiveOwnerSessionKey =
+    ownerSessionKey !== undefined ? ownerSessionKey : capturedOwnerSessionKeyRef.current
+  const sessionRevokedRef = useRef(false)
+  if (effectiveOwnerSessionKey === null || currentSessionKey !== effectiveOwnerSessionKey) {
+    sessionRevokedRef.current = true
+  }
+  const sessionAuthorized =
+    !sessionRevokedRef.current
+    && effectiveOwnerSessionKey !== null
+    && currentSessionKey === effectiveOwnerSessionKey
+
   const [deliveryContent, setDeliveryContent] = useState(initialContent)
   const [deliveryContentType, setDeliveryContentType] = useState(initialContentType)
   const [structuredContent, setStructuredContent] = useState(initialStructured ?? null)
@@ -94,11 +112,30 @@ export default function SuccessModal({
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    if (!awaitingProvision || orderId == null) return
+    if (sessionAuthorized) return
+    if (pollTimerRef.current != null) {
+      clearTimeout(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+    setDeliveryContent('')
+    setDeliveryContentType(undefined)
+    setStructuredContent(null)
+    setDeliveryFile(null)
+    setExpiresAt(null)
+    setExpired(false)
+    setBookingDate(null)
+    setProgress([])
+    setAwaitingProvision(false)
+  }, [sessionAuthorized])
+
+  useEffect(() => {
+    if (!sessionAuthorized || !effectiveOwnerSessionKey || !awaitingProvision || orderId == null) return
 
     let cancelled = false
     const started = Date.now()
-    const authContext = getAuthSessionContext(useAuthStore.getState())
+    const isSameSession = () =>
+      getAuthSessionScopeKey(useAuthStore.getState()) === effectiveOwnerSessionKey
+    const isPollingActive = () => !cancelled && isSameSession()
 
     const clearPollTimer = () => {
       if (pollTimerRef.current != null) {
@@ -109,16 +146,17 @@ export default function SuccessModal({
 
     const schedule = (ms: number) => {
       clearPollTimer()
+      if (!isPollingActive()) return
       pollTimerRef.current = setTimeout(() => {
         void tick()
       }, ms)
     }
 
     async function tick() {
-      if (cancelled) return
+      if (!isPollingActive()) return
       try {
         const detail = await getOrderDetail(orderId!)
-        if (cancelled) return
+        if (!isPollingActive()) return
 
         if (detail.status === 'delivered' || detail.status === 'completed' || detail.status === 'closed') {
           setDeliveryContent(detail.delivery?.content ?? '')
@@ -148,19 +186,55 @@ export default function SuccessModal({
           setAwaitingProvision(false)
           setRefunded(true)
           // The checkout debited the header balance; reflect the refund without a reload.
-          if (authContext) {
-            void getMe()
-              .then((me) => { useAuthStore.getState().updatePoints(me.points, authContext) })
+          // Decouple from polling `cancelled` (flipped when `awaitingProvision` becomes false),
+          // keep strict session binding, and drop the result if a newer balance/user write
+          // occurred in this session while `/auth/me` was in flight.
+          const authStateAtRequest = useAuthStore.getState()
+          const authContext = getAuthSessionContext(authStateAtRequest)
+          if (authContext && isSameSession()) {
+            let balanceSuperseded = false
+            const initialPoints = authStateAtRequest.user?.points
+            const initialUser = authStateAtRequest.user
+            const unsubscribe = useAuthStore.subscribe((nextState) => {
+              if (
+                nextState.user?.points !== initialPoints
+                || nextState.user !== initialUser
+              ) {
+                balanceSuperseded = true
+                unsubscribe()
+              }
+            })
+            let meRequest: Promise<{ points: number }>
+            try {
+              meRequest = getMe()
+            } catch {
+              unsubscribe()
+              return
+            }
+            void Promise.resolve(meRequest)
+              .then((me) => {
+                if (
+                  !balanceSuperseded
+                  && isSameSession()
+                  && typeof me?.points === 'number'
+                ) {
+                  useAuthStore.getState().updatePoints(me.points, authContext)
+                }
+              })
               .catch(() => {})
+              .finally(() => {
+                unsubscribe()
+              })
           }
           return
         }
         // pending / processing：继续等异步开通
       } catch {
+        if (!isPollingActive()) return
         // transient network — keep polling until timeout
       }
 
-      if (cancelled) return
+      if (!isPollingActive()) return
       if (Date.now() - started >= POLL_MAX_MS) {
         // Stop spinner + stop requests; user can open 个人中心
         setPollTimedOut(true)
@@ -175,7 +249,7 @@ export default function SuccessModal({
       cancelled = true
       clearPollTimer()
     }
-  }, [awaitingProvision, orderId])
+  }, [awaitingProvision, orderId, sessionAuthorized, effectiveOwnerSessionKey])
 
   const hasPayload =
     Boolean(deliveryFile) ||
@@ -198,6 +272,12 @@ export default function SuccessModal({
   }, [])
 
   async function copyContent() {
+    if (
+      !effectiveOwnerSessionKey
+      || getAuthSessionScopeKey(useAuthStore.getState()) !== effectiveOwnerSessionKey
+    ) {
+      return
+    }
     const text = deliveryContent?.trim()
     if (!text) {
       showToast('发货信息尚未就绪', 'error')
@@ -214,6 +294,10 @@ export default function SuccessModal({
     } else {
       showToast('复制失败，请长按或手动选中文本复制', 'error')
     }
+  }
+
+  if (!sessionAuthorized) {
+    return null
   }
 
   return (
@@ -291,6 +375,7 @@ export default function SuccessModal({
               expiresAt={expiresAt}
               expired={expired}
               orderId={orderId}
+              ownerSessionKey={effectiveOwnerSessionKey}
               progress={progress}
               bookingDate={bookingDate}
               urlTestId="success-delivery-link"

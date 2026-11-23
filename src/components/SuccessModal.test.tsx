@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
 
 const { copyToClipboard } = vi.hoisted(() => ({ copyToClipboard: vi.fn() }))
 vi.mock('../utils/clipboard', () => ({ copyToClipboard }))
@@ -10,11 +11,30 @@ vi.mock('../api/auth', () => ({ getMe: vi.fn() }))
 import SuccessModal from './SuccessModal'
 import { getOrderDetail } from '../api/orders'
 
+function signInBuyer() {
+  const payload = btoa(JSON.stringify({ userId: 1, sid: 'buyer-sess', exp: 4102444800 })).replace(/=+$/, '')
+  useAuthStore.setState({
+    user: {
+      id: 1,
+      email: 'buyer@test.local',
+      role: 'user',
+      status: 'active',
+      points: 500,
+      merchant: null,
+    },
+    accessToken: `header.${payload}.sig`,
+    sessionId: 'buyer-sess',
+    isLoggedIn: true,
+    authEpoch: 1,
+  })
+}
+
 describe('SuccessModal delivery reveal', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     copyToClipboard.mockResolvedValue(true)
     useAppStore.setState({ toasts: [] })
+    signInBuyer()
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   })
 
@@ -59,6 +79,7 @@ describe('SuccessModal async provision', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [] })
+    signInBuyer()
   })
 
   it('shows a refunded provision as a failure, not as a successful redemption', async () => {
