@@ -833,11 +833,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       {link.title}
                     </Link>
                   ))}
+                <Link to="/credits" className="hover:text-[var(--color-primary)] transition-colors" data-testid="footer-credits-link">
+                  同行者
+                </Link>
               </span>
             </nav>
           )}
-          <div className="text-xs text-[var(--color-text-muted)]">
-            © {new Date().getFullYear()} MoNexus. All rights reserved.
+          <div className="text-center md:text-right text-xs text-[var(--color-text-muted)] space-y-1">
+            <div>© {new Date().getFullYear()} MoNexus. All rights reserved.</div>
+            <div>
+              <Link
+                to="/credits"
+                data-testid="footer-credits-colophon"
+                className="text-[11px] text-[color-mix(in_srgb,var(--color-text-muted)_82%,transparent)] hover:text-[var(--color-primary)] transition-colors"
+              >
+                与 Claude · Gemini · ChatGPT · DeepSeek 共建
+              </Link>
+            </div>
           </div>
         </div>
       </footer>
