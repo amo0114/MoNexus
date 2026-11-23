@@ -10,6 +10,7 @@ import {
 } from '../catalog/guestEligibility.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
+import { countAvailableByOfferId, countAvailableByProductId } from '../../lib/inventoryCounts.js'
 import {
   assertProductDeliveryConfiguration,
   normalizeProductImageFields,
@@ -32,14 +33,27 @@ import { insertOffer, type OfferWriteInput } from './offerService.js'
 
 const productListInclude = {
   ...guestReviewInclude,
-  _count: { select: { inventory: { where: { status: 'available' } } } },
-  offers: {
-    orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
-    include: { _count: { select: { inventory: { where: { status: 'available' } } } } },
-  },
+  offers: { orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }] },
 } satisfies Prisma.ProductInclude
 
-type ProductWithAvailableStock = Prisma.ProductGetPayload<{ include: typeof productListInclude }>
+type ProductListRow = Prisma.ProductGetPayload<{ include: typeof productListInclude }>
+type AvailableCount = { _count: { inventory: number } }
+type ProductWithAvailableStock = Omit<ProductListRow, 'offers'> & AvailableCount & {
+  offers: Array<ProductListRow['offers'][number] & AvailableCount>
+}
+
+// Available counts are attached in the shape the serializers already read.
+async function withAvailableStock(products: ProductListRow[]): Promise<ProductWithAvailableStock[]> {
+  const [byProduct, byOffer] = await Promise.all([
+    countAvailableByProductId(products.map(product => product.id)),
+    countAvailableByOfferId(products.flatMap(product => product.offers.map(offer => offer.id))),
+  ])
+  return products.map(product => ({
+    ...product,
+    _count: { inventory: byProduct.get(product.id) ?? 0 },
+    offers: product.offers.map(offer => ({ ...offer, _count: { inventory: byOffer.get(offer.id) ?? 0 } })),
+  }))
+}
 
 export interface MerchantProductListFilters {
   page?: number
@@ -138,11 +152,11 @@ export async function listMyProducts(merchantId: number, filters: MerchantProduc
   const orderBy = { createdAt: 'desc' } as const
 
   if (typeof filters.lowStock === 'boolean') {
-    const products = await prisma.product.findMany({
+    const products = await withAvailableStock(await prisma.product.findMany({
       where,
       include: productListInclude,
       orderBy,
-    })
+    }))
     const filtered = products
       .filter(product => isLowStockProduct(product, lowStockThreshold) === filters.lowStock)
       .map(product => serializeMerchantProduct(product, lowStockThreshold))
@@ -167,7 +181,7 @@ export async function listMyProducts(merchantId: number, filters: MerchantProduc
   ])
 
   return {
-    items: products.map(product => serializeMerchantProduct(product, lowStockThreshold)),
+    items: (await withAvailableStock(products)).map(product => serializeMerchantProduct(product, lowStockThreshold)),
     total,
     page,
     pageSize,

@@ -58,18 +58,147 @@ function resolveSource(file, specifier, sources) {
   return [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`].find(target => sources.has(target)) ?? `${base}.ts`
 }
 
+
 // wallet is the single writer of real balances, lots, allocations and PointLog
 // rows; the dev seed is not financial history and is the only exception.
 const walletWrites = /\.pointLog\.create(?:Many)?\(|\.pointAccount\.(?:update|updateMany|upsert)\(|UPDATE\s+"PointAccount"|\.pointLot\.(?:create|update|delete)|\.walletAllocation\.(?:create|update|delete)|\.walletOperation\.(?:create|update|delete)/
 const walletOwners = [`${modules}wallet/`, 'server/src/prisma/seed.ts']
 
+// AG-01: Prisma compiles a filtered relation _count into a GROUP BY over the
+// whole related table (seq scan per read); count with an id-scoped groupBy.
+const filteredRelationCount = /_count:\s*\{\s*select:\s*\{\s*\w+:\s*\{\s*where\b/
+
+// AG-02: calendar math goes through lib/businessTime; production does not set TZ.
+const hostLocalDateMethods = new Set([
+  'getFullYear', 'getMonth', 'getDate', 'getDay', 'getHours',
+  'setFullYear', 'setMonth', 'setDate', 'setHours', 'getTimezoneOffset', 'toDateString', 'toTimeString',
+])
+const localeDateMethods = new Set(['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString'])
+const businessTimeOwner = `${lib}businessTime.ts`
+
+// AG-03: interval loops are leased (lib/cronLease, lib/leasedCron) or claim rows
+// themselves. These row-claim owners existed on 2026-11-23; new entries need review.
+const intervalLeaseImport = /(?:lib|\.)\/(?:cronLease|leasedCron)\.js['"]/
+const rowClaimIntervalOwners = new Set([
+  `${lib}cronLease.ts`, // owns the lease heartbeat timer
+  `${modules}adminExports/service.ts`, // export jobs claim rows with leaseToken
+  `${modules}fakaBridge/worker.ts`, // provision tasks claim rows with leaseToken
+  `${modules}fulfillment/jobProvider.ts`, // locks Order, then leases FulfillmentJob
+  `${modules}orders/provisionCron.ts`, // FOR UPDATE SKIP LOCKED
+  `${modules}payment/workers/index.ts`, // lease-conditioned UPDATE … RETURNING
+  `${modules}xboardAccounts/cron.ts`, // backfill.ts acquires the cron lease
+  `${modules}notifications/realtime/hub.ts`, // SSE heartbeat, no business writes
+])
+
+// AG-05: module-level static runtime import cycles as of 2026-11-23. Cycles may
+// only shrink; shrink this baseline when a decoupling lands.
+const moduleCycleBaseline = [
+  ['accountGovernance', 'adminAuthorization', 'adminExports', 'auth', 'catalog', 'checkout', 'fakaBridge',
+    'fulfillment', 'governance', 'invite', 'merchant', 'merchantFinance', 'merchantGovernance', 'orders', 'points',
+    'portable-backups', 'productVideos', 'trafficReset', 'valuePolicy', 'wallet', 'xboardAccounts'],
+  ['payment', 'recharge'],
+].map(members => new Set(members))
+
+function lineOf(ast, node) {
+  return ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1
+}
+
+function checkHostLocalDates(file, ast, failures) {
+  const visit = node => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text
+      const zoned = node.arguments.some(arg => ts.isObjectLiteralExpression(arg)
+        && arg.properties.some(property => property.name && ts.isIdentifier(property.name) && property.name.text === 'timeZone'))
+      if (hostLocalDateMethods.has(method) || (localeDateMethods.has(method) && !zoned)) {
+        failures.push(`${file}:${lineOf(ast, node)} AG-02 host-local date API ${method}(); use lib/businessTime or pass timeZone`)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+}
+
+function isFunctionLike(node) {
+  return ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node)
+}
+
+function checkControllerAwaits(file, ast, failures) {
+  const handlers = []
+  for (const statement of ast.statements) {
+    if (!statement.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue
+    if (ts.isFunctionDeclaration(statement)) handlers.push(statement)
+    if (ts.isVariableStatement(statement)) {
+      for (const declaration of statement.declarationList.declarations) {
+        if (declaration.initializer && isFunctionLike(declaration.initializer)) handlers.push(declaration.initializer)
+      }
+    }
+  }
+  for (const handler of handlers) {
+    if (!handler.body || !handler.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.AsyncKeyword)) continue
+    // A nested function owns its own awaits; only the handler's rejection path matters here.
+    const visit = (node, guarded) => {
+      if (node !== handler.body && isFunctionLike(node)) return
+      if (ts.isAwaitExpression(node) && !guarded) {
+        failures.push(`${file}:${lineOf(ast, node)} AG-04 await outside try/catch in an async handler; errors must reach next(err)`)
+      }
+      if (ts.isTryStatement(node) && node.catchClause) {
+        visit(node.tryBlock, true)
+        visit(node.catchClause, true)
+        if (node.finallyBlock) visit(node.finallyBlock, guarded)
+        return
+      }
+      ts.forEachChild(node, child => visit(child, guarded))
+    }
+    visit(handler.body, false)
+  }
+}
+
+function moduleOf(file) {
+  return file.startsWith(modules) ? file.slice(modules.length).split('/')[0] : null
+}
+
+function stronglyConnected(graph) {
+  const indices = new Map(), low = new Map(), stack = [], active = new Set(), components = []
+  function visit(node) {
+    indices.set(node, indices.size)
+    low.set(node, indices.get(node))
+    stack.push(node)
+    active.add(node)
+    for (const target of graph.get(node)) {
+      if (!indices.has(target)) { visit(target); low.set(node, Math.min(low.get(node), low.get(target))) }
+      else if (active.has(target)) low.set(node, Math.min(low.get(node), indices.get(target)))
+    }
+    if (low.get(node) !== indices.get(node)) return
+    const component = []
+    let member
+    do { member = stack.pop(); active.delete(member); component.push(member) } while (member !== node)
+    components.push(component)
+  }
+  for (const node of graph.keys()) if (!indices.has(node)) visit(node)
+  return components
+}
+
 export function checkBoundaries(sources) {
   const failures = []
   const graph = new Map([...sources.keys()].map(file => [file, []]))
+  const moduleGraph = new Map()
   for (const [file, source] of sources) {
     if (file.startsWith('server/src/') && !walletOwners.some(owner => file.startsWith(owner)) && walletWrites.test(source)) {
       failures.push(`${file} writes point balances or ledger rows outside wallet`)
     }
+    if (file.startsWith('server/src/')) {
+      if (filteredRelationCount.test(source)) {
+        failures.push(`${file} AG-01 filtered relation _count compiles to a whole-table GROUP BY; use lib/inventoryCounts or an id-scoped groupBy`)
+      }
+      const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+      if (file !== businessTimeOwner) checkHostLocalDates(file, ast, failures)
+      if (/\bsetInterval\(/.test(source) && !intervalLeaseImport.test(source) && !rowClaimIntervalOwners.has(file)) {
+        failures.push(`${file} AG-03 setInterval without cron lease; use lib/leasedCron (or claim rows with a lease token)`)
+      }
+      if (/ontroller[^/]*\.ts$/.test(file)) checkControllerAwaits(file, ast, failures)
+    }
+    const fromModule = moduleOf(file)
+    if (fromModule && !moduleGraph.has(fromModule)) moduleGraph.set(fromModule, new Set())
     for (const dependency of readDependencies(source, file)) {
       const target = resolveSource(file, dependency.specifier, sources)
       const fail = message => failures.push(`${file}:${dependency.line} ${message}: ${dependency.specifier}`)
@@ -94,28 +223,25 @@ export function checkBoundaries(sources) {
       if (pureRules.has(file) && dependency.runtime && !pureDependencies.has(target)) fail('pure rules must not import workflows or database modules')
       if (providerNeutral.some(prefix => file.startsWith(prefix))
         && providerImplementations.some(prefix => target.startsWith(prefix))) fail('provider-neutral core imports a fulfillment provider')
-      if (dependency.runtime && !dependency.dynamic && sources.has(target)) graph.get(file).push(target)
+      if (dependency.runtime && !dependency.dynamic && sources.has(target)) {
+        graph.get(file).push(target)
+        const toModule = moduleOf(target)
+        if (fromModule && toModule && toModule !== fromModule) moduleGraph.get(fromModule).add(toModule)
+      }
     }
   }
 
   // Strongly connected components detect static initialization cycles. A lazy
   // import inside a use case is checked for boundaries, but is not a static edge.
-  const indices = new Map(), low = new Map(), stack = [], active = new Set()
-  function visit(file) {
-    indices.set(file, indices.size)
-    low.set(file, indices.get(file))
-    stack.push(file)
-    active.add(file)
-    for (const target of graph.get(file)) {
-      if (!indices.has(target)) { visit(target); low.set(file, Math.min(low.get(file), low.get(target))) }
-      else if (active.has(target)) low.set(file, Math.min(low.get(file), indices.get(target)))
+  for (const component of stronglyConnected(graph)) {
+    if (component.length > 1 || graph.get(component[0]).includes(component[0])) {
+      failures.push(`Static runtime dependency cycle: ${component.sort().join(', ')}`)
     }
-    if (low.get(file) !== indices.get(file)) return
-    const component = []
-    let member
-    do { member = stack.pop(); active.delete(member); component.push(member) } while (member !== file)
-    if (component.length > 1 || graph.get(file).includes(file)) failures.push(`Static runtime dependency cycle: ${component.sort().join(', ')}`)
   }
-  for (const file of graph.keys()) if (!indices.has(file)) visit(file)
+  for (const node of moduleGraph.keys()) moduleGraph.set(node, [...moduleGraph.get(node)].filter(target => moduleGraph.has(target)))
+  for (const component of stronglyConnected(moduleGraph)) {
+    if (component.length < 2 || moduleCycleBaseline.some(baseline => component.every(member => baseline.has(member)))) continue
+    failures.push(`AG-05 module dependency cycle grew: ${component.sort().join(', ')}`)
+  }
   return failures
 }

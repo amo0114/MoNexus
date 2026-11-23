@@ -14,6 +14,7 @@ import {
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
 import { syncProductProjection, computeOfferCheckoutVersion } from '../../lib/offers.js'
+import { countAvailableByOfferId } from '../../lib/inventoryCounts.js'
 import {
   canonicalFixedStructuredText,
   normalizeFixedStructuredContent,
@@ -264,16 +265,19 @@ export async function listMyOffers(merchantId: number, productId: number) {
     // P5：管理 UI 需要展示已挂载文件的名称/大小/可用状态。
     include: {
       fixedFile: { select: { fileName: true, size: true, status: true } },
-      _count: { select: { inventory: { where: { status: 'available' } } } },
     },
   })
+  const availableByOffer = await countAvailableByOfferId(offers.map(offer => offer.id))
 
   // 即时库存的可售量由 InventoryItem(status=available) 唯一决定；Offer.stock
   // 是旧投影，不能直接返回给 Offer-first 工作台，否则导入后仍显示 0。
-  return offers.map(({ _count, ...offer }) => withCheckoutVersion(offer, {
-    stock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : offer.stock,
-    availableStock: offer.deliveryMode === 'instant_inventory' ? _count.inventory : undefined,
-  }))
+  return offers.map(offer => {
+    const available = availableByOffer.get(offer.id) ?? 0
+    return withCheckoutVersion(offer, {
+      stock: offer.deliveryMode === 'instant_inventory' ? available : offer.stock,
+      availableStock: offer.deliveryMode === 'instant_inventory' ? available : undefined,
+    })
+  })
 }
 
 /**

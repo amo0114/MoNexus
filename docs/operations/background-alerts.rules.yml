@@ -105,3 +105,12 @@ groups:
           routing: governance-p1
         annotations:
           summary: "Wallet integrity scans have not completed for two scheduled rounds; inspect leases and checkpoints."
+      - alert: MoNexusCronStale
+        # lib/leasedCron: last success (or process start) older than three intervals.
+        expr: (time() - max by (job) (monexus_cron_last_success_timestamp_seconds)) > 3 * max by (job) (monexus_cron_interval_seconds)
+        for: 10m
+        labels:
+          severity: P1
+          routing: governance-p1
+        annotations:
+          summary: "Leased cron {{ $labels.job }} has not succeeded for three intervals; inspect its logs and lease row."

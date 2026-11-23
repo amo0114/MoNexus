@@ -398,3 +398,29 @@ export const valuePolicyMissingSnapshotOrders = new client.Gauge({
   help: 'Enabled-window orders missing a pricing snapshot as of the last read-only audit',
   registers: [registry],
 })
+
+// ===========================================================================
+// lib/leasedCron: one series per cron name (bounded, defined in code).
+// MoNexusCronStale alerts on last success older than 3 intervals.
+// ===========================================================================
+
+export const cronRunsTotal = new client.Counter({
+  name: 'monexus_cron_runs_total',
+  help: 'Leased cron ticks by outcome (skipped = lease not acquired)',
+  labelNames: ['job', 'outcome'] as const, // outcome: success | failure | skipped
+  registers: [registry],
+})
+
+export const cronLastSuccessTimestamp = new client.Gauge({
+  name: 'monexus_cron_last_success_timestamp_seconds',
+  help: 'Unix time of the last successful leased cron tick (process start until the first success)',
+  labelNames: ['job'] as const,
+  registers: [registry],
+})
+
+export const cronIntervalSeconds = new client.Gauge({
+  name: 'monexus_cron_interval_seconds',
+  help: 'Configured interval of a leased cron',
+  labelNames: ['job'] as const,
+  registers: [registry],
+})
