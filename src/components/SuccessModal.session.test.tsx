@@ -294,7 +294,38 @@ describe('SuccessModal & renewal delivery session isolation', () => {
     expect(useAuthStore.getState().user?.points).toBe(300)
   })
 
-  it('drops late /auth/me balance refresh after refunded poll if session changed while /auth/me was in flight', async () => {
+  it('does not overwrite a newer same-session write even if points later return to the original numeric value', async () => {
+    vi.useFakeTimers()
+    signIn(101, 'sess-refund-aba-write', 1, 400)
+    const lateMe = deferred<{ id: number; points: number }>()
+    getOrderDetail.mockResolvedValueOnce({ status: 'refunded' })
+    getMe.mockReturnValueOnce(lateMe.promise)
+
+    render(<SuccessModal deliveryContent="" orderId={710} provisionPending onClose={() => {}} />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800)
+    })
+    expect(getMe).toHaveBeenCalledTimes(1)
+
+    const ctx = getAuthSessionContext(useAuthStore.getState())!
+    act(() => {
+      expect(useAuthStore.getState().updatePoints(300, ctx)).toBe(true)
+      expect(useAuthStore.getState().updatePoints(400, ctx)).toBe(true)
+    })
+    expect(useAuthStore.getState().user?.points).toBe(400)
+
+    await act(async () => {
+      lateMe.resolve({ id: 101, points: 500 })
+    })
+    expect(useAuthStore.getState().user?.points).toBe(400)
+  })
+
+  it.each([
+    ['A -> guest', () => signOut(2), undefined],
+    ['A -> B', () => signIn(202, 'sess-b-after-refund', 2, 950), 950],
+    ['same account new sessionId', () => signIn(101, 'sess-refund-switch-2', 1, 450), 450],
+  ])('drops late /auth/me balance refresh after refunded poll when session changed while in flight (%s)', async (_label, transition, expectedPoints) => {
     vi.useFakeTimers()
     signIn(101, 'sess-refund-switch', 1, 400)
     const lateMe = deferred<{ id: number; points: number }>()
@@ -308,13 +339,13 @@ describe('SuccessModal & renewal delivery session isolation', () => {
     expect(getMe).toHaveBeenCalledTimes(1)
 
     act(() => {
-      signIn(202, 'sess-b-after-refund', 2, 950)
+      transition()
     })
 
     await act(async () => {
       lateMe.resolve({ id: 101, points: 500 })
     })
-    expect(useAuthStore.getState().user?.points).toBe(950)
+    expect(useAuthStore.getState().user?.points).toBe(expectedPoints)
   })
 
   it.each([

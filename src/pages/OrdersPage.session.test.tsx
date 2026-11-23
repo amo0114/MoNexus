@@ -6,9 +6,10 @@ import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import type { UserOrderDetail, UserOrderListItem } from '../types/order'
 
-const { getOrdersPage, getOrderDetail } = vi.hoisted(() => ({
+const { getOrdersPage, getOrderDetail, invalidationHandlers } = vi.hoisted(() => ({
   getOrdersPage: vi.fn(),
   getOrderDetail: vi.fn(),
+  invalidationHandlers: new Map<string, () => void>(),
 }))
 
 vi.mock('../api/orders', async (importOriginal) => {
@@ -21,7 +22,9 @@ vi.mock('../api/orders', async (importOriginal) => {
   }
 })
 vi.mock('../hooks/useNotificationInvalidation', () => ({
-  useNotificationInvalidation: vi.fn(),
+  useNotificationInvalidation: (scope: string, handler: () => void) => {
+    invalidationHandlers.set(scope, handler)
+  },
 }))
 
 import OrdersPage from './OrdersPage'
@@ -122,6 +125,9 @@ function Observer({ snapshots, children }: { snapshots: Snapshot[]; children: Re
 describe('OrdersPage session isolation for order detail & list', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    getOrdersPage.mockReset()
+    getOrderDetail.mockReset()
+    invalidationHandlers.clear()
     useAppStore.setState({ toasts: [], islandNotice: null, islandQueue: [], modalDepth: 0 })
     signIn(101, 'sess-orders-a1', 1)
     getOrdersPage.mockResolvedValue({
@@ -215,26 +221,54 @@ describe('OrdersPage session isolation for order detail & list', () => {
     expect(document.body.textContent).not.toContain('SYNTH-ORDERS-PAGE-SECRET-A')
   })
 
-  it('exits skeleton loading when the initial orders list load fails for the current session', async () => {
-    getOrdersPage.mockRejectedValueOnce(new Error('network error'))
+  it('exits skeleton loading into a recoverable error state when initial orders load fails and recovers on retry', async () => {
+    const initialFail = deferred<never>()
+    getOrdersPage
+      .mockReturnValueOnce(initialFail.promise)
+      .mockResolvedValueOnce({
+        items: [ORDER_ITEM_A],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+        counts: { all: 1, active: 0, delivered: 1, done: 0 },
+      })
 
-    const snapshots: Snapshot[] = []
     render(
       <MemoryRouter initialEntries={['/orders']}>
-        <Observer snapshots={snapshots}>
-          <Routes>
-            <Route path="/orders" element={<OrdersPage />} />
-          </Routes>
-        </Observer>
+        <Routes>
+          <Route path="/orders" element={<OrdersPage />} />
+        </Routes>
       </MemoryRouter>,
     )
 
-    expect(await screen.findByText('还没有订单')).toBeInTheDocument()
+    expect(document.body.querySelector('.animate-pulse')).not.toBeNull()
+
+    await act(async () => {
+      initialFail.reject(new Error('network error'))
+    })
+
+    expect(await screen.findByTestId('orders-load-error')).toBeInTheDocument()
+    expect(screen.queryByText('还没有订单')).toBeNull()
     expect(useAppStore.getState().toasts.some((t) => t.type === 'error')).toBe(true)
     expect(document.body.querySelector('.animate-pulse')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('用户A专属商品')).toBeInTheDocument()
+    expect(screen.queryByTestId('orders-load-error')).toBeNull()
   })
 
-  it('exits skeleton loading without leaking A orders when B first orders list load fails after A -> B switch', async () => {
+  it('exits skeleton into recoverable error state without leaking A list or detail when B first load fails after A -> B switch', async () => {
+    const orderItemB: UserOrderListItem = {
+      ...ORDER_ITEM_A,
+      id: 902,
+      orderNo: 'ORD-SYNTH-B-902',
+      product: {
+        ...ORDER_ITEM_A.product,
+        id: 43,
+        name: '用户B专属商品',
+      },
+    }
+
     const snapshots: Snapshot[] = []
     render(
       <MemoryRouter initialEntries={['/orders']}>
@@ -246,9 +280,19 @@ describe('OrdersPage session isolation for order detail & list', () => {
       </MemoryRouter>,
     )
 
-    expect(await screen.findByText('用户A专属商品')).toBeInTheDocument()
+    // Open A's order detail modal too so we prove neither list nor detail leaks
+    fireEvent.click(await screen.findByText('用户A专属商品'))
+    expect(await screen.findByText('SYNTH-ORDERS-PAGE-SECRET-A')).toBeInTheDocument()
 
-    getOrdersPage.mockRejectedValueOnce(new Error('network error for B'))
+    getOrdersPage
+      .mockRejectedValueOnce(new Error('network error for B'))
+      .mockResolvedValueOnce({
+        items: [orderItemB],
+        total: 1,
+        page: 1,
+        pageSize: 10,
+        counts: { all: 1, active: 0, delivered: 1, done: 0 },
+      })
 
     const beforeIdx = snapshots.length
     act(() => {
@@ -258,9 +302,71 @@ describe('OrdersPage session isolation for order detail & list', () => {
     const firstBCommit = snapshots.slice(beforeIdx).find((s) => s.userId === 202)
     expect(firstBCommit).toBeDefined()
     expect(firstBCommit!.bodyText).not.toContain('用户A专属商品')
+    expect(firstBCommit!.bodyText).not.toContain('SYNTH-ORDERS-PAGE-SECRET-A')
 
-    expect(await screen.findByText('还没有订单')).toBeInTheDocument()
+    expect(await screen.findByTestId('orders-load-error')).toBeInTheDocument()
+    expect(screen.queryByText('还没有订单')).toBeNull()
     expect(document.body.textContent).not.toContain('用户A专属商品')
+    expect(document.body.textContent).not.toContain('SYNTH-ORDERS-PAGE-SECRET-A')
     expect(document.body.querySelector('.animate-pulse')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }))
+    expect(await screen.findByText('用户B专属商品')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('用户A专属商品')
+  })
+
+  it('keeps existing orders when a background refresh fails and updates when a subsequent refresh succeeds', async () => {
+    const updatedItemA: UserOrderListItem = {
+      ...ORDER_ITEM_A,
+      id: 903,
+      orderNo: 'ORD-SYNTH-A-903',
+      product: {
+        ...ORDER_ITEM_A.product,
+        id: 44,
+        name: '用户A更新后商品',
+      },
+    }
+
+    render(
+      <MemoryRouter initialEntries={['/orders']}>
+        <Routes>
+          <Route path="/orders" element={<OrdersPage />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('用户A专属商品')).toBeInTheDocument()
+    const triggerBackgroundReload = invalidationHandlers.get('buyer.orders')
+    expect(triggerBackgroundReload).toBeTypeOf('function')
+
+    // Background refresh fails -> existing data stays visible, no skeleton, no error state, no toast
+    const failedBg = deferred<never>()
+    getOrdersPage.mockReturnValueOnce(failedBg.promise)
+    act(() => {
+      triggerBackgroundReload!()
+    })
+    await act(async () => {
+      failedBg.reject(new Error('transient background failure'))
+    })
+
+    expect(screen.getByText('用户A专属商品')).toBeInTheDocument()
+    expect(screen.queryByTestId('orders-load-error')).toBeNull()
+    expect(document.body.querySelector('.animate-pulse')).toBeNull()
+    expect(useAppStore.getState().toasts).toHaveLength(0)
+
+    // Subsequent background refresh succeeds -> updates list cleanly
+    getOrdersPage.mockResolvedValueOnce({
+      items: [updatedItemA],
+      total: 1,
+      page: 1,
+      pageSize: 10,
+      counts: { all: 1, active: 0, delivered: 1, done: 0 },
+    })
+    await act(async () => {
+      triggerBackgroundReload!()
+    })
+
+    expect(await screen.findByText('用户A更新后商品')).toBeInTheDocument()
+    expect(screen.queryByTestId('orders-load-error')).toBeNull()
   })
 })

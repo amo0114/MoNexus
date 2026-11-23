@@ -17,6 +17,7 @@ import BuyerOrderCard from '../components/orders/BuyerOrderCard'
 import OrdersPagination from '../components/orders/OrdersPagination'
 import OrderDetailModal from '../components/OrderDetailModal'
 import EmptyState from '../components/ui/EmptyState'
+import ErrorState from '../components/ui/ErrorState'
 import { TableSkeleton } from '../components/ui/Skeleton'
 import {
   ORDER_LIST_TABS,
@@ -59,6 +60,10 @@ export default function OrdersPage() {
     sessionKey: currentSessionKey,
     loading: currentSessionKey !== null,
   }))
+  const [loadErrorState, setLoadErrorState] = useState<{
+    sessionKey: string
+    message: string
+  } | null>(null)
   const [selectedOrderState, setSelectedOrderState] = useState<{
     sessionKey: string
     order: UserOrderDetail
@@ -96,6 +101,10 @@ export default function OrdersPage() {
     currentSessionKey !== null && loadingOrderState?.sessionKey === currentSessionKey
       ? loadingOrderState.orderId
       : null
+  const activeLoadError =
+    currentSessionKey !== null && loadErrorState?.sessionKey === currentSessionKey
+      ? loadErrorState.message
+      : null
   const effectiveLoading =
     currentSessionKey !== null
     && (loadingState.sessionKey !== currentSessionKey || loadingState.loading)
@@ -109,6 +118,7 @@ export default function OrdersPage() {
     setSelectedOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
     setLoadingOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
     setOrdersState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setLoadErrorState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
     setLoadingState((prev) =>
       prev.sessionKey === currentSessionKey
         ? prev
@@ -122,6 +132,7 @@ export default function OrdersPage() {
     const request = coordinator.begin(opts?.background ? 'background' : 'foreground')
     if (!requestSessionKey) {
       setOrdersState(null)
+      setLoadErrorState(null)
       if (coordinator.finish(request)) {
         setLoadingState({ sessionKey: null, loading: false })
       }
@@ -129,6 +140,7 @@ export default function OrdersPage() {
     }
     if (!opts?.background || coordinator.ownsLoading(request)) {
       setLoadingState({ sessionKey: requestSessionKey, loading: true })
+      setLoadErrorState((prev) => (prev?.sessionKey === requestSessionKey ? null : prev))
     }
     try {
       const list = await getOrdersPage({ page, pageSize, tab, q: query })
@@ -144,18 +156,25 @@ export default function OrdersPage() {
         total: list.total,
         counts: list.counts,
       })
+      setLoadErrorState(null)
       if (page > Math.max(1, Math.ceil(list.total / pageSize))) setPage(Math.max(1, Math.ceil(list.total / pageSize)))
       // PR-3：全局角标由权威计数接口负责，页面不再用首页 100 条覆盖它。
       // 前台加载后补拉一次（本地 dispute/close 动作在 SSE 缺席时的兜底）。
       if (!opts?.background) void refreshOrderAttention()
     } catch (err) {
       // Single background failure keeps old values and waits for the next tick.
+      const ownsLoading = coordinator.ownsLoading(request)
       if (
         coordinator.isLatest(request)
-        && !opts?.background
         && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
       ) {
-        showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
+        const message = getApiErrorMessage(err, '加载订单失败')
+        if (!opts?.background) {
+          showToast(message, 'error')
+          setLoadErrorState({ sessionKey: requestSessionKey, message })
+        } else if (ownsLoading) {
+          setLoadErrorState({ sessionKey: requestSessionKey, message })
+        }
       }
     } finally {
       if (
@@ -351,6 +370,15 @@ export default function OrdersPage() {
 
       {effectiveLoading ? (
         <TableSkeleton rows={5} />
+      ) : activeLoadError ? (
+        <div className="card p-6">
+          <ErrorState
+            title="加载订单失败"
+            description={activeLoadError === '加载订单失败' ? '请检查网络后重试' : activeLoadError}
+            onRetry={() => void load()}
+            testId="orders-load-error"
+          />
+        </div>
       ) : orders.length === 0 ? (
         <div className="card p-6">
           <EmptyState

@@ -193,21 +193,31 @@ export default function SuccessModal({
           const authContext = getAuthSessionContext(authStateAtRequest)
           if (authContext && isSameSession()) {
             let balanceSuperseded = false
-            let lastObservedPoints = authStateAtRequest.user?.points
-            let lastObservedUser = authStateAtRequest.user
+            const initialPoints = authStateAtRequest.user?.points
+            const initialUser = authStateAtRequest.user
             const unsubscribe = useAuthStore.subscribe((nextState) => {
               if (
-                nextState.user?.points !== lastObservedPoints
-                || (nextState.user !== lastObservedUser && nextState.user != null)
+                nextState.user?.points !== initialPoints
+                || nextState.user !== initialUser
               ) {
                 balanceSuperseded = true
-                lastObservedPoints = nextState.user?.points
-                lastObservedUser = nextState.user
+                unsubscribe()
               }
             })
-            void getMe()
+            let meRequest: Promise<{ points: number }>
+            try {
+              meRequest = getMe()
+            } catch {
+              unsubscribe()
+              return
+            }
+            void Promise.resolve(meRequest)
               .then((me) => {
-                if (!balanceSuperseded && isSameSession()) {
+                if (
+                  !balanceSuperseded
+                  && isSameSession()
+                  && typeof me?.points === 'number'
+                ) {
                   useAuthStore.getState().updatePoints(me.points, authContext)
                 }
               })
