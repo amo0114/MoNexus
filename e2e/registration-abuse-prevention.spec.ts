@@ -133,9 +133,14 @@ test('asks for a login proof only after the server requires one, even with regis
     json: {
       registrationEnabled: false,
       registrationAvailable: false,
-      challenge: { provider: 'turnstile', siteKey: 'public-test-site-key' },
+      challenge: null,
     },
   }))
+  let descriptorRequests = 0
+  await page.route(apiRoute('/auth/login-verification'), route => {
+    descriptorRequests += 1
+    return route.fulfill({ json: { challenge: { provider: 'turnstile', siteKey: 'public-test-site-key' } } })
+  })
   await page.route(apiRoute('/auth/login'), async route => {
     const payload = JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>
     loginPayloads.push(payload)
@@ -150,15 +155,17 @@ test('asks for a login proof only after the server requires one, even with regis
   await page.goto('/login')
   await page.getByLabel('邮箱地址').fill(profile.email)
   await page.getByLabel('密码', { exact: true }).fill('correct-password')
+  expect(descriptorRequests).toBe(0)
   // No widget is mounted before the server asks for one.
   expect(await page.evaluate(() => (window as unknown as { turnstileAction?: string }).turnstileAction)).toBeUndefined()
   await page.getByRole('button', { name: '登录', exact: true }).click()
 
-  await expect(page.locator('[data-toast-card]')).toContainText('登录失败次数较多，请完成安全验证后重试')
+  await expect(page.locator('[data-toast-card]')).toContainText('请完成安全验证后继续登录')
   await expect.poll(() => page.evaluate(() => (window as unknown as { turnstileAction?: string }).turnstileAction)).toBe('login')
   await page.getByRole('button', { name: '登录', exact: true }).click()
 
   await expect(page).toHaveURL(/\/$/)
+  expect(descriptorRequests).toBe(1)
   expect(loginPayloads).toEqual([
     { email: profile.email, password: 'correct-password' },
     { email: profile.email, password: 'correct-password', humanVerification: { provider: 'turnstile', payload: proof } },

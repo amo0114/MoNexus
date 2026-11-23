@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, it } from 'vitest'
-import { api, createTestUser, loginAs, authHeader } from '../../__tests__/helpers.js'
+import { api, createTestProduct, createTestUser, loginAs, authHeader } from '../../__tests__/helpers.js'
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
-import { __resetCacheForTests } from '../../lib/cache.js'
+import { __resetCacheForTests, type CacheEnvelope } from '../../lib/cache.js'
+import { buildProductDetailCacheKey, buildProductListCacheKey } from '../../lib/productCatalog/publicCache.js'
 import { runRedisCommandWithTimeout } from '../../lib/redis.js'
 
 /**
@@ -27,6 +28,52 @@ if (process.env.REQUIRE_REAL_REDIS_TESTS === 'true' && !redisUp) throw new Error
   () => {
     afterAll(async () => {
       await __resetCacheForTests()
+    })
+
+    it('does not serve the previous public projection from Redis after deployment', async () => {
+      const product = await createTestProduct('缓存投影版本商品')
+      const listKey = await buildProductListCacheKey({})
+      const detailKey = await buildProductDetailCacheKey(product.id)
+      if (!listKey || !detailKey) throw new Error('Public product cache keys are required')
+
+      const oldItem = {
+        id: product.id,
+        name: product.name,
+        contentVersion: product.contentVersion,
+        publicContentRevision: product.publicContentRevision,
+        guestEligibility: { decision: 'approved', reviewedRevision: product.publicContentRevision },
+      }
+      const previousEntries = [
+        [listKey, { data: { items: [{ ...oldItem, archivedAt: null }], nextCursor: null, hasMore: false } }],
+        [detailKey, oldItem],
+      ] as const
+      const previousVersion = config.xboardAccounts.paidResetEnabled
+        ? 'public-availability-video-v2-paid-reset'
+        : 'public-availability-video-v2'
+      for (const [key, data] of previousEntries) {
+        const previousKey = key.replace(
+          /(:product-(?:list|detail):)[^:]+:/u,
+          `$1${previousVersion}:`,
+        )
+        const envelope: CacheEnvelope<typeof data> = { schemaVersion: 1, cachedAt: Date.now(), data }
+        await runRedisCommandWithTimeout('set', client =>
+          client.set(previousKey, JSON.stringify(envelope), 'EX', 60),
+        )
+      }
+
+      const detail = await api.get(`/api/products/${product.id}`).expect(200)
+      const list = await api.get('/api/products').expect(200)
+      const listed = list.body.items.find((item: { id: number }) => item.id === product.id)
+
+      for (const body of [detail.body, listed]) {
+        expect(body?.name).toBe(product.name)
+        expect(body).not.toHaveProperty('guestEligibility')
+        expect(body).not.toHaveProperty('publicContentRevision')
+        expect(body).not.toHaveProperty('archivedAt')
+      }
+      for (const key of [listKey, detailKey]) {
+        expect(await runRedisCommandWithTimeout('get', client => client.get(key))).not.toBeNull()
+      }
     })
 
     it('预热详情缓存后收紧分类，游客请求仍被拒绝（不依赖缓存失效）', async () => {

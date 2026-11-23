@@ -4,12 +4,12 @@ import { HttpError, sessionChanged, unauthenticated } from '../../lib/httpError.
 import { logger } from '../../lib/logger.js'
 import * as authService from './service.js'
 import * as registrationService from './registrationService.js'
-import { issueHumanChallenge } from './authProtection.js'
+import { issueHumanChallenge, registrationProtectionIsEnforced } from './authProtection.js'
 import * as passwordService from './passwordService.js'
 import * as emailVerificationService from './emailVerificationService.js'
 import * as mfaService from './mfaService.js'
 import * as sessionService from './sessionService.js'
-import type { HumanVerificationAction } from './humanVerification.js'
+import { publicChallengeDescriptor, type HumanVerificationAction } from './humanVerification.js'
 
 function currentSessionId(req: Request) {
   if (typeof req.user?.sid !== 'string') throw unauthenticated('登录会话已失效，请重新登录')
@@ -51,6 +51,12 @@ export async function registrationStatus(_req: Request, res: Response, next: Nex
   } catch (err) {
     next(err)
   }
+}
+
+export function loginVerification(_req: Request, res: Response) {
+  res.set('Cache-Control', 'no-store').json({
+    challenge: registrationProtectionIsEnforced() ? publicChallengeDescriptor('login') : null,
+  })
 }
 
 export async function humanChallenge(req: Request, res: Response, next: NextFunction) {
