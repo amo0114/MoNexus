@@ -9303,11 +9303,6 @@
           "status": {
             "type": "string"
           },
-          "archivedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
           "visibility": {
             "type": "string"
           },
@@ -9325,22 +9320,6 @@
           "assurance": {
             "type": "object",
             "nullable": true
-          },
-          "publicContentRevision": {
-            "type": "integer"
-          },
-          "guestEligibility": {
-            "type": "object",
-            "nullable": true,
-            "properties": {
-              "decision": {
-                "type": "string"
-              },
-              "reviewedRevision": {
-                "type": "integer",
-                "nullable": true
-              }
-            }
           },
           "richDescription": {
             "type": "string",
@@ -9492,11 +9471,6 @@
           "status": {
             "type": "string"
           },
-          "archivedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
           "visibility": {
             "type": "string"
           },
@@ -9514,22 +9488,6 @@
           "assurance": {
             "type": "object",
             "nullable": true
-          },
-          "publicContentRevision": {
-            "type": "integer"
-          },
-          "guestEligibility": {
-            "type": "object",
-            "nullable": true,
-            "properties": {
-              "decision": {
-                "type": "string"
-              },
-              "reviewedRevision": {
-                "type": "integer",
-                "nullable": true
-              }
-            }
           }
         }
       }

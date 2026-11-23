@@ -25,6 +25,15 @@ describe('public product endpoints with instant_fixed', () => {
 
     const list = await api.get('/api/products').expect(200)
     expect(JSON.stringify(list.body)).not.toContain('SECRET-PAID-CONTENT')
+
+    // Guest-visibility inputs are internal review state, not public data.
+    const listed = list.body.items.find((item: { id: number }) => item.id === product.id)
+    for (const body of [detail.body, listed]) {
+      expect(body).toBeDefined()
+      expect(body).not.toHaveProperty('guestEligibility')
+      expect(body).not.toHaveProperty('publicContentRevision')
+      expect(body).not.toHaveProperty('archivedAt')
+    }
   })
 
   it('derives instant inventory stock from available InventoryItem rows, not Product.stock', async () => {
