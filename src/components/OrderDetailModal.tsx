@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import { UserOrderDetail } from '../types/order'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionScopeKey } from '../auth/sessionContext'
 import { captureFeedbackOwner, showCompletionActivity } from '../lib/completionFeedback'
 import { disputeOrder, closeOrder, cancelOrder, fileOverdueComplaint, answerRemedy } from '../api/orders'
 import { OwnReview } from '../api/reviews'
@@ -34,6 +36,8 @@ import { formatOrderRef } from '../utils/governance'
 
 interface OrderDetailModalProps {
   order: UserOrderDetail
+  /** Owning auth session scope key. Defaults to the logged-in session at mount. */
+  ownerSessionKey?: string | null
   onClose: () => void
   /** Called after a successful dispute/close so the parent can reload lists. */
   onUpdated?: () => void
@@ -149,10 +153,25 @@ function paymentSourceText(composition: UserOrderDetail['paymentComposition']): 
   return parts.length > 1 || (parts.length === 1 && !other) ? parts.join('，') : null
 }
 
-export default function OrderDetailModal({ order: initialOrder, onClose, onUpdated }: OrderDetailModalProps) {
+export default function OrderDetailModal({ order: initialOrder, ownerSessionKey, onClose, onUpdated }: OrderDetailModalProps) {
   const navigate = useNavigate()
   const isMobileViewport = useIsMobileViewport()
   const showToast = useAppStore((s) => s.showToast)
+  const currentSessionKey = useAuthStore(getAuthSessionScopeKey)
+  const capturedOwnerSessionKeyRef = useRef<string | null>(
+    ownerSessionKey !== undefined ? ownerSessionKey : currentSessionKey,
+  )
+  const effectiveOwnerSessionKey =
+    ownerSessionKey !== undefined ? ownerSessionKey : capturedOwnerSessionKeyRef.current
+  const sessionRevokedRef = useRef(false)
+  if (effectiveOwnerSessionKey === null || currentSessionKey !== effectiveOwnerSessionKey) {
+    sessionRevokedRef.current = true
+  }
+  const sessionAuthorized =
+    !sessionRevokedRef.current
+    && effectiveOwnerSessionKey !== null
+    && currentSessionKey === effectiveOwnerSessionKey
+
   // The parent replaces this authoritative REST projection after realtime or
   // fallback invalidation. Keeping the first prop in useState freezes an open
   // modal forever even while the list has already converged.
@@ -180,10 +199,16 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     }
   }, [])
 
+  const isSameSession = () =>
+    effectiveOwnerSessionKey !== null
+    && getAuthSessionScopeKey(useAuthStore.getState()) === effectiveOwnerSessionKey
+
   async function copyContent() {
+    if (!isSameSession()) return
     const textToCopy = order.delivery?.content?.trim()
     if (!textToCopy) return
     const success = await copyToClipboard(textToCopy)
+    if (!isSameSession()) return
     if (success) {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
       setCopiedContent(true)
@@ -195,8 +220,9 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   }
 
   async function copyOrderId() {
-    if (!order.id) return
+    if (!order.id || !isSameSession()) return
     const success = await copyToClipboard(String(order.id))
+    if (!isSameSession()) return
     if (success) {
       if (orderIdTimerRef.current) clearTimeout(orderIdTimerRef.current)
       setCopiedOrderId(true)
@@ -206,7 +232,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
   }
 
   async function executeAction(action: OrderAction) {
-    if (actionPending.current) return
+    if (actionPending.current || !isSameSession()) return
     actionPending.current = true
     const isCurrent = captureFeedbackOwner()
     setConfirmAction(null)
@@ -217,7 +243,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
       const cancelPending = action === 'cancel' && (await cancelOrder(order.id)) === 'pending'
       if (action === 'complain') await fileOverdueComplaint(order.id)
       if (action === 'accept_remedy' || action === 'reject_remedy') await answerRemedy(order.id, action === 'accept_remedy')
-      if (!isCurrent()) return
+      if (!isCurrent() || !isSameSession()) return
       onUpdated?.()
       // PR-3 复审：dispute 仍是关注态、close 移出关注态——realtime 关闭时
       // 本地动作也要立即收敛权威计数。
@@ -232,7 +258,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
         onAction: () => navigate(`/orders?focus=${order.id}`),
       })
     } catch (e: any) {
-      if (isCurrent()) showToast(e.response?.data?.error?.message || '操作失败', 'error')
+      if (isCurrent() && isSameSession()) showToast(e.response?.data?.error?.message || '操作失败', 'error')
     } finally {
       actionPending.current = false
       setLoadingAction(null)
@@ -280,6 +306,7 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     provisionPending: Boolean(order.provisionPending),
     progress: progressEvents,
     bookingDate: order.bookingDate ?? null,
+    ownerSessionKey: effectiveOwnerSessionKey,
     emptyLabel: contentMasked
       ? null
       : order.deliveryMode === 'manual_service'
@@ -290,6 +317,10 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
     typeof order.holdingPoints === 'number' &&
     order.holdingPoints > 0 &&
     (order.status === 'pending' || order.status === 'processing' || order.status === 'disputed' || order.status === 'delivered')
+
+  if (!sessionAuthorized) {
+    return null
+  }
 
   return (
     <Dialog open={!(isMobileViewport && renewInfo)} onOpenChange={(o) => { if (!o && !renewSubmitting) onClose() }}>

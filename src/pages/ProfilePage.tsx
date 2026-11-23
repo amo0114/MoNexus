@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Coins,
@@ -36,7 +36,7 @@ import CheckinCard from '../components/checkin/CheckinCard'
 import PushToggle from '../components/PushToggle'
 import { disablePush, isPushSupported } from '../lib/webPush'
 import { useCheckin } from '../hooks/useCheckin'
-import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
+import { getAuthSessionContext, getAuthSessionScopeKey, matchesAuthSessionContext } from '../auth/sessionContext'
 import UserAvatar from '../components/ui/UserAvatar'
 import { ExperienceProgressBar } from '../components/profile/ExperienceProgressBar'
 import { FluidSegmentedControl, type FluidSegmentOption } from '../components/ui/FluidSegmentedControl'
@@ -94,13 +94,17 @@ export default function ProfilePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
+  const currentSessionKey = useAuthStore(getAuthSessionScopeKey)
   const showToast = useAppStore((s) => s.showToast)
   const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
 
   const historyOpen = useAppStore((s) => s.pointsHistoryOpen)
   const setHistoryOpen = useAppStore((s) => s.setPointsHistoryOpen)
   const [historyLoading, setHistoryLoading] = useState(false)
-  const [orders, setOrders] = useState<UserOrderListItem[]>([])
+  const [ordersState, setOrdersState] = useState<{
+    sessionKey: string
+    items: UserOrderListItem[]
+  } | null>(null)
   const [history, setHistory] = useState<any[]>([])
   const checkinState = useCheckin()
   const hasCheckedIn = checkinState.status ? checkinState.status.hasCheckedIn : null
@@ -112,9 +116,29 @@ export default function ProfilePage() {
   const [tierLoading, setTierLoading] = useState(true)
   const tierSkin = getTierSkinConfig(tierData?.tier)
 
-  const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
-  const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
+  const [selectedOrderState, setSelectedOrderState] = useState<{
+    sessionKey: string
+    order: UserOrderDetail
+  } | null>(null)
+  const [loadingOrderState, setLoadingOrderState] = useState<{
+    sessionKey: string
+    orderId: number
+  } | null>(null)
   const [listsLoading, setListsLoading] = useState(true)
+  const orderDetailRequestRef = useRef(0)
+
+  const orders =
+    currentSessionKey !== null && ordersState?.sessionKey === currentSessionKey
+      ? ordersState.items
+      : []
+  const activeSelectedOrder =
+    currentSessionKey !== null && selectedOrderState?.sessionKey === currentSessionKey
+      ? selectedOrderState
+      : null
+  const loadingOrderId =
+    currentSessionKey !== null && loadingOrderState?.sessionKey === currentSessionKey
+      ? loadingOrderState.orderId
+      : null
 
   // 订单 Tab 快速筛选状态
   const [orderFilter, setOrderFilter] = useState<'all' | 'completed' | 'pending'>('all')
@@ -130,15 +154,41 @@ export default function ProfilePage() {
   }
 
   useEffect(() => {
-    Promise.allSettled([
-      getOrders().then(setOrders),
-      getMemberTier().then(setTierData),
-      getConfigRegistry().then(setRegistry),
-    ]).finally(() => {
+    orderDetailRequestRef.current += 1
+    setSelectedOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setLoadingOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setOrdersState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    if (!currentSessionKey) {
       setListsLoading(false)
       setTierLoading(false)
+      return
+    }
+    let cancelled = false
+    const requestSessionKey = currentSessionKey
+    setListsLoading(true)
+    setTierLoading(true)
+    const isSameSession = () =>
+      !cancelled && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+    Promise.allSettled([
+      getOrders().then((items) => {
+        if (isSameSession()) setOrdersState({ sessionKey: requestSessionKey, items })
+      }),
+      getMemberTier().then((tier) => {
+        if (isSameSession()) setTierData(tier)
+      }),
+      getConfigRegistry().then((reg) => {
+        if (isSameSession()) setRegistry(reg)
+      }),
+    ]).finally(() => {
+      if (isSameSession()) {
+        setListsLoading(false)
+        setTierLoading(false)
+      }
     })
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [currentSessionKey])
 
   // 流水明细 Sheet 每次打开时拉取
   useEffect(() => {
@@ -177,14 +227,29 @@ export default function ProfilePage() {
   }
 
   async function openOrderDetail(orderId: number) {
-    setLoadingOrderId(orderId)
+    const requestSessionKey = getAuthSessionScopeKey(useAuthStore.getState())
+    if (!requestSessionKey) return
+    const reqId = ++orderDetailRequestRef.current
+    setLoadingOrderState({ sessionKey: requestSessionKey, orderId })
     try {
       const detail = await getOrderDetail(orderId)
-      setSelectedOrder(detail)
+      if (
+        reqId === orderDetailRequestRef.current
+        && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+      ) {
+        setSelectedOrderState({ sessionKey: requestSessionKey, order: detail })
+      }
     } catch (err: unknown) {
-      showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+      if (
+        reqId === orderDetailRequestRef.current
+        && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+      ) {
+        showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+      }
     } finally {
-      setLoadingOrderId(null)
+      if (reqId === orderDetailRequestRef.current) {
+        setLoadingOrderState((prev) => (prev?.sessionKey === requestSessionKey ? null : prev))
+      }
     }
   }
 
@@ -585,12 +650,25 @@ export default function ProfilePage() {
       />
 
       {/* 订单发货内容详情弹窗 */}
-      {selectedOrder && (
+      {activeSelectedOrder && (
         <OrderDetailModal
-          order={selectedOrder}
-          onClose={() => setSelectedOrder(null)}
+          key={`${activeSelectedOrder.sessionKey}:${activeSelectedOrder.order.id}`}
+          ownerSessionKey={activeSelectedOrder.sessionKey}
+          order={activeSelectedOrder.order}
+          onClose={() => {
+            orderDetailRequestRef.current += 1
+            setSelectedOrderState(null)
+            setLoadingOrderState(null)
+          }}
           onUpdated={() => {
-            getOrders().then(setOrders).catch(() => {})
+            const refreshSessionKey = activeSelectedOrder.sessionKey
+            getOrders()
+              .then((items) => {
+                if (getAuthSessionScopeKey(useAuthStore.getState()) === refreshSessionKey) {
+                  setOrdersState({ sessionKey: refreshSessionKey, items })
+                }
+              })
+              .catch(() => {})
           }}
         />
       )}

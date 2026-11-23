@@ -15,6 +15,7 @@ const {
   createOrder,
   getCheckoutPreview,
   renewOrder,
+  issueOrderFileDownloadUrl,
 } = vi.hoisted(() => ({
   copyToClipboard: vi.fn(),
   getOrderDetail: vi.fn(),
@@ -22,6 +23,7 @@ const {
   createOrder: vi.fn(),
   getCheckoutPreview: vi.fn(),
   renewOrder: vi.fn(),
+  issueOrderFileDownloadUrl: vi.fn(),
 }))
 
 vi.mock('./purchaseConfirmArm', () => ({ CONFIRM_ARM_MS: 0 }))
@@ -38,6 +40,7 @@ vi.mock('../api/orders', async (importOriginal) => {
     createOrder,
     getCheckoutPreview,
     renewOrder,
+    issueOrderFileDownloadUrl,
     getOrderAttentionCount: vi.fn().mockResolvedValue(0),
   }
 })
@@ -231,6 +234,130 @@ describe('SuccessModal & renewal delivery session isolation', () => {
     expect(useAuthStore.getState().user?.points).toBe(900)
   })
 
+  it('restores buyer points when /auth/me resolves after refunded poll stops in the same session', async () => {
+    vi.useFakeTimers()
+    signIn(101, 'sess-refund-same', 1, 400)
+    const lateMe = deferred<{ id: number; points: number }>()
+    getOrderDetail.mockResolvedValueOnce({ status: 'refunded' })
+    getMe.mockReturnValueOnce(lateMe.promise)
+
+    render(<SuccessModal deliveryContent="" orderId={705} provisionPending onClose={() => {}} />)
+
+    // Trigger poll -> receives refunded -> sets awaitingProvision=false -> runs polling effect cleanup
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800)
+    })
+    expect(screen.getByTestId('success-provision-refunded')).toBeInTheDocument()
+    expect(getMe).toHaveBeenCalledTimes(1)
+
+    // Same-session token rotation while /auth/me is still in flight
+    const ctx = getAuthSessionContext(useAuthStore.getState())!
+    act(() => {
+      expect(
+        useAuthStore.getState().setAccessTokenForSession(makeJwt(101, 'sess-refund-same', 4102460000), ctx),
+      ).toBe(true)
+    })
+
+    // Late /auth/me finally resolves in the same session: balance must restore 400 -> 500
+    await act(async () => {
+      lateMe.resolve({ id: 101, points: 500 })
+    })
+    expect(useAuthStore.getState().user?.points).toBe(500)
+  })
+
+  it('drops late /auth/me balance refresh after refunded poll if session changed while /auth/me was in flight', async () => {
+    vi.useFakeTimers()
+    signIn(101, 'sess-refund-switch', 1, 400)
+    const lateMe = deferred<{ id: number; points: number }>()
+    getOrderDetail.mockResolvedValueOnce({ status: 'refunded' })
+    getMe.mockReturnValueOnce(lateMe.promise)
+
+    render(<SuccessModal deliveryContent="" orderId={706} provisionPending onClose={() => {}} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800)
+    })
+    expect(getMe).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      signIn(202, 'sess-b-after-refund', 2, 950)
+    })
+
+    await act(async () => {
+      lateMe.resolve({ id: 101, points: 500 })
+    })
+    expect(useAuthStore.getState().user?.points).toBe(950)
+  })
+
+  it.each([
+    ['A -> guest', () => signOut(2)],
+    ['A -> B', () => signIn(202, 'sess-b-file', 2, 600)],
+    ['same account new sessionId', () => signIn(101, 'sess-modal-2', 1, 500)],
+  ])('blocks file download navigation when grant resolves after session change (%s)', async (_label, transition) => {
+    const lateGrant = deferred<{ url: string }>()
+    issueOrderFileDownloadUrl.mockReturnValueOnce(lateGrant.promise)
+    const assignMock = vi.fn()
+    vi.stubGlobal('location', { assign: assignMock })
+
+    render(
+      <SuccessModal
+        deliveryContent=""
+        deliveryFile={{ fileName: 'synth-secret.zip', size: 1024 }}
+        orderId={707}
+        onClose={() => {}}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('file-delivery-download'))
+    expect(issueOrderFileDownloadUrl).toHaveBeenCalledWith(707)
+
+    // Session changes (unmounting SuccessModal / FileDeliveryCard) before grant is consumed
+    act(() => {
+      transition()
+    })
+    expect(screen.queryByTestId('file-delivery-download')).toBeNull()
+
+    await act(async () => {
+      lateGrant.resolve({ url: 'https://download.synthetic.test/signed-secret-a.zip' })
+    })
+
+    expect(assignMock).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
+  })
+
+  it('allows file download navigation when token rotates within the same session while grant is in flight', async () => {
+    const inFlightGrant = deferred<{ url: string }>()
+    issueOrderFileDownloadUrl.mockReturnValueOnce(inFlightGrant.promise)
+    const assignMock = vi.fn()
+    vi.stubGlobal('location', { assign: assignMock })
+
+    render(
+      <SuccessModal
+        deliveryContent=""
+        deliveryFile={{ fileName: 'synth-ok.zip', size: 1024 }}
+        orderId={708}
+        onClose={() => {}}
+      />,
+    )
+
+    fireEvent.click(screen.getByTestId('file-delivery-download'))
+    expect(issueOrderFileDownloadUrl).toHaveBeenCalledWith(708)
+
+    const ctx = getAuthSessionContext(useAuthStore.getState())!
+    act(() => {
+      expect(
+        useAuthStore.getState().setAccessTokenForSession(makeJwt(101, 'sess-modal-1', 4102464000), ctx),
+      ).toBe(true)
+    })
+
+    await act(async () => {
+      inFlightGrant.resolve({ url: 'https://download.synthetic.test/signed-ok.zip' })
+    })
+
+    expect(assignMock).toHaveBeenCalledTimes(1)
+    expect(assignMock).toHaveBeenCalledWith('https://download.synthetic.test/signed-ok.zip')
+    vi.unstubAllGlobals()
+  })
+
   it('continues provision polling and displays delivery after normal same-session token rotation', async () => {
     vi.useFakeTimers()
     getOrderDetail
@@ -281,7 +408,7 @@ describe('SuccessModal & renewal delivery session isolation', () => {
       },
       delivery: {
         status: 'delivered',
-        content: 'old-order-cred',
+        content: 'SYNTH-ORIG-ORDER-SECRET',
         expiresAt: '2026-10-01T00:00:00.000Z',
         expired: false,
       },
@@ -356,6 +483,8 @@ describe('SuccessModal & renewal delivery session isolation', () => {
     expect(firstBCommit).toBeDefined()
     expect(firstBCommit!.hasSuccessTitle).toBe(false)
     expect(firstBCommit!.bodyText).not.toContain('SYNTH-RENEW-DELIVERY-SECRET')
+    expect(firstBCommit!.bodyText).not.toContain('SYNTH-ORIG-ORDER-SECRET')
     expect(screen.queryByTestId('success-modal-title')).toBeNull()
+    expect(document.body.textContent).not.toContain('SYNTH-ORIG-ORDER-SECRET')
   })
 })

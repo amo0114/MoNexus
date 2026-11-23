@@ -110,9 +110,6 @@ export default function SuccessModal({
   const [awaitingProvision, setAwaitingProvision] = useState(() => Boolean(provisionPending))
   const [refunded, setRefunded] = useState(false)
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
-  const invalidatedCloseNotifiedRef = useRef(false)
 
   useEffect(() => {
     if (sessionAuthorized) return
@@ -129,10 +126,6 @@ export default function SuccessModal({
     setBookingDate(null)
     setProgress([])
     setAwaitingProvision(false)
-    if (!invalidatedCloseNotifiedRef.current) {
-      invalidatedCloseNotifiedRef.current = true
-      onCloseRef.current()
-    }
   }, [sessionAuthorized])
 
   useEffect(() => {
@@ -140,8 +133,9 @@ export default function SuccessModal({
 
     let cancelled = false
     const started = Date.now()
-    const isStillAuthorized = () =>
-      !cancelled && getAuthSessionScopeKey(useAuthStore.getState()) === effectiveOwnerSessionKey
+    const isSameSession = () =>
+      getAuthSessionScopeKey(useAuthStore.getState()) === effectiveOwnerSessionKey
+    const isPollingActive = () => !cancelled && isSameSession()
 
     const clearPollTimer = () => {
       if (pollTimerRef.current != null) {
@@ -152,17 +146,17 @@ export default function SuccessModal({
 
     const schedule = (ms: number) => {
       clearPollTimer()
-      if (!isStillAuthorized()) return
+      if (!isPollingActive()) return
       pollTimerRef.current = setTimeout(() => {
         void tick()
       }, ms)
     }
 
     async function tick() {
-      if (!isStillAuthorized()) return
+      if (!isPollingActive()) return
       try {
         const detail = await getOrderDetail(orderId!)
-        if (!isStillAuthorized()) return
+        if (!isPollingActive()) return
 
         if (detail.status === 'delivered' || detail.status === 'completed' || detail.status === 'closed') {
           setDeliveryContent(detail.delivery?.content ?? '')
@@ -192,11 +186,13 @@ export default function SuccessModal({
           setAwaitingProvision(false)
           setRefunded(true)
           // The checkout debited the header balance; reflect the refund without a reload.
+          // Decouple from polling `cancelled` (flipped when `awaitingProvision` becomes false),
+          // while still strictly binding the refresh to the originating auth session.
           const authContext = getAuthSessionContext(useAuthStore.getState())
-          if (authContext && isStillAuthorized()) {
+          if (authContext && isSameSession()) {
             void getMe()
               .then((me) => {
-                if (isStillAuthorized()) {
+                if (isSameSession()) {
                   useAuthStore.getState().updatePoints(me.points, authContext)
                 }
               })
@@ -206,11 +202,11 @@ export default function SuccessModal({
         }
         // pending / processing：继续等异步开通
       } catch {
-        if (!isStillAuthorized()) return
+        if (!isPollingActive()) return
         // transient network — keep polling until timeout
       }
 
-      if (!isStillAuthorized()) return
+      if (!isPollingActive()) return
       if (Date.now() - started >= POLL_MAX_MS) {
         // Stop spinner + stop requests; user can open 个人中心
         setPollTimedOut(true)
@@ -351,6 +347,7 @@ export default function SuccessModal({
               expiresAt={expiresAt}
               expired={expired}
               orderId={orderId}
+              ownerSessionKey={effectiveOwnerSessionKey}
               progress={progress}
               bookingDate={bookingDate}
               urlTestId="success-delivery-link"
