@@ -29,10 +29,10 @@ import { assertRegistrationEnabled } from './registrationService.js'
 const router = Router()
 
 // Bypass rate limits under NODE_ENV=test so the suite can blast many
-// auth calls per second without hitting the 5/15min cap.
+// auth calls per second without hitting the local cap.
 const skipInTests = () => config.nodeEnv === 'test'
 
-const localAuthLimiter = rateLimit({
+const createLocalAuthLimiter = () => rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 30,
   standardHeaders: true,
@@ -47,18 +47,29 @@ const localAuthLimiter = rateLimit({
 })
 
 // Production already requires shared abuse protection and Redis. Keep the
-// local-development fallback while preserving the existing cross-route budget.
-async function authLimiter(req: Request, res: Response, next: NextFunction) {
-  if (config.abuseProtectionMode !== 'enforce') return localAuthLimiter(req, res, next)
-  try {
-    await consumeAbuseBucket(() => abuseLimiter.consume(
-      { flow: 'authentication', dimension: 'ip', limit: 30, windowMs: 15 * 60 * 1000 },
-      ipKeyGenerator(req.ip ?? 'unknown'),
-    ))
-    next()
-  } catch (error) {
-    next(error)
+// local-development fallback with separate budgets for each auth operation.
+function createAuthLimiter(flow: 'authentication' | 'authentication-password') {
+  const localLimiter = createLocalAuthLimiter()
+  return async (req: Request, res: Response, next: NextFunction) => {
+    if (config.abuseProtectionMode !== 'enforce') return localLimiter(req, res, next)
+    try {
+      await consumeAbuseBucket(() => abuseLimiter.consume(
+        { flow, dimension: 'ip', limit: 30, windowMs: 15 * 60 * 1000 },
+        ipKeyGenerator(req.ip ?? 'unknown'),
+      ), flow)
+      next()
+    } catch (error) {
+      next(error)
+    }
   }
+}
+const mfaLimiter = createAuthLimiter('authentication')
+const passwordLimiter = createAuthLimiter('authentication-password')
+const localLoginLimiter = createLocalAuthLimiter()
+
+function loginLimiter(req: Request, res: Response, next: NextFunction) {
+  if (config.abuseProtectionMode === 'enforce') return next()
+  return localLoginLimiter(req, res, next)
 }
 
 // A valid refresh cookie is a per-session credential, not a password-guessing
@@ -100,10 +111,11 @@ async function registrationGate(_req: Request, _res: Response, next: NextFunctio
   }
 }
 
-// 公开只读：访客登录页据此决定是否展示注册入口。刻意不挂 authLimiter——
+// 公开只读：访客登录页据此决定是否展示注册入口。刻意不消耗认证配额——
 // 它是按"认证尝试"标定的额度，页面加载不该消耗；只读且无副作用，全局
 // /api limiter 已足够（C17/F9）。
 router.get('/registration-status', controller.registrationStatus)
+router.get('/login-verification', controller.loginVerification)
 router.get('/human-challenge', validate({ query: humanChallengeQuerySchema }), controller.humanChallenge)
 
 // Registration deliberately has its own abuse policy. Its
@@ -113,10 +125,10 @@ router.get('/human-challenge', validate({ query: humanChallengeQuerySchema }), c
 // protection and let it consume/reject a request before the registration
 // switch is observed.
 router.post('/register', registrationGate, validate(registerSchema), controller.register)
-router.post('/login', authLimiter, validate(loginSchema), controller.login)
-router.post('/mfa/enrollment/start', authLimiter, validate(mfaEnrollmentStartSchema), controller.startMfaEnrollment)
-router.post('/mfa/enrollment/confirm', authLimiter, validate(mfaEnrollmentConfirmSchema), controller.confirmMfaEnrollment)
-router.post('/mfa/verify', authLimiter, validate(mfaVerifySchema), controller.verifyMfa)
+router.post('/login', loginLimiter, validate(loginSchema), controller.login)
+router.post('/mfa/enrollment/start', mfaLimiter, validate(mfaEnrollmentStartSchema), controller.startMfaEnrollment)
+router.post('/mfa/enrollment/confirm', mfaLimiter, validate(mfaEnrollmentConfirmSchema), controller.confirmMfaEnrollment)
+router.post('/mfa/verify', mfaLimiter, validate(mfaVerifySchema), controller.verifyMfa)
 router.post('/refresh', validate({ body: expectedSessionBodySchema }), refreshLimiter, controller.refresh)
 router.post('/logout', validate({ body: expectedSessionBodySchema }), controller.logout)
 router.get('/me', authenticate, requireActiveUser, controller.me)
@@ -124,12 +136,12 @@ router.patch('/me', authenticate, requireActiveUser, validate(updateMeSchema), c
 router.get('/sessions', authenticate, requireActiveUser, controller.sessions)
 router.delete('/sessions/:sessionId', authenticate, requireActiveUser, validate({ params: sessionIdParamSchema }), controller.revokeSession)
 router.post('/sessions/revoke-others', authenticate, requireActiveUser, controller.revokeOtherSessions)
-router.post('/password-change', authLimiter, authenticate, requireActiveUser, validate(passwordChangeSchema), controller.changePassword)
+router.post('/password-change', passwordLimiter, authenticate, requireActiveUser, validate(passwordChangeSchema), controller.changePassword)
 
 // These two sending routes use the shared, HMAC-keyed Redis policies in the
 // service. A process-local mail limiter would be bypassable across instances.
 router.post('/forgot-password', validate(forgotPasswordSchema), controller.forgotPassword)
-router.post('/reset-password', authLimiter, validate(resetPasswordSchema), controller.resetPassword)
+router.post('/reset-password', passwordLimiter, validate(resetPasswordSchema), controller.resetPassword)
 router.post('/send-verification', authenticate, requireActiveUser, controller.sendVerification)
 router.post('/verify-email', authenticate, requireActiveUser, validate(verifyEmailSchema), controller.verifyEmail)
 // Query-string verification links may remain in old inboxes. Never parse or

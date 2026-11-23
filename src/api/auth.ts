@@ -129,6 +129,11 @@ export async function loginWithPassword(
   })
 }
 
+export async function getLoginVerification(): Promise<RegistrationChallenge | null> {
+  const { data } = await api.get<{ challenge: RegistrationChallenge | null }>('/auth/login-verification', preAuthRequestConfig())
+  return data.challenge
+}
+
 export async function getRegistrationStatus(): Promise<RegistrationStatus> {
   const { data } = await api.get<RegistrationStatus>('/auth/registration-status', preAuthRequestConfig())
   return data

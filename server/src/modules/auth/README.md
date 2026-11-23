@@ -157,9 +157,12 @@ public-registration switch, written through `PUT /api/admin/config/registrationE
 
 | Limiter | Window | Limit | Endpoints / key |
 | --- | --- | --- | --- |
-| `authLimiter` | 15 min | 30 | `/register`, `/login`, all three MFA routes, `/reset-password`, `/password-change`; IP key |
+| Login admission | 15 min | 30 ordinary + 30 verified | `/login` in enforce mode. The ordinary IP budget requires a valid login proof when exhausted. Only verified requests use the separate verified budget. |
+| Login proof verification | 1 min | 120 | Caps provider verification work per IP. Requests without a usable proof do not consume this budget. |
+| MFA routes | 15 min | 30 | The three MFA routes have their own IP budget. Per-challenge limits continue to apply. |
+| Password mutations | 15 min | 30 | `/reset-password` and `/password-change` share an IP budget. |
 | `refreshLimiter` | 15 min | 30 | `/refresh`; one-way refresh-cookie hash, falling back to an IPv6-safe IP key only when no cookie exists |
-| `mailLimiter` | 15 min | 5 | `/forgot-password`, `/send-verification`; IP key |
+| ALTCHA issuance | 1 min / 10 min | 30 / 120 | Login uses its own IP budget for `/human-challenge`. Registration and password recovery keep the existing issuance budget. |
 | `loginFailures.ts` | 15 min | 5 consecutive failures | `/login`; HMAC of the requested email, counted whether or not the account exists, cleared on a correct password. Beyond the limit the login needs a `login` human-verification proof (`HUMAN_VERIFICATION_REQUIRED` / `_FAILED`) instead of being locked, so nobody can lock another user out. Enforce mode only; fails closed (`503`) without Redis, like the shared IP bucket |
 
 `/registration-status` intentionally carries no auth limiter — it is a read-only page-load

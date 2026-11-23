@@ -164,4 +164,32 @@ describe('StorePage request scheduling', () => {
     expect(listCalls()).toHaveLength(1)
     expect(screen.getByTestId('store-product-card-1')).toBeInTheDocument()
   })
+
+  it('never wraps virtualized store cards past the initial rows in .reveal while preserving image loading priority', async () => {
+    const items = Array.from({ length: 8 }, (_, idx) => product(idx + 1))
+    apiGet.mockImplementation((url: string) => Promise.resolve(
+      url === '/products'
+        ? { data: { items, nextCursor: null, hasMore: false } }
+        : { data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } },
+    ))
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    vi.stubGlobal('matchMedia', vi.fn().mockImplementation((query: string) => ({
+      matches: query === '(max-width: 767px)',
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })))
+
+    mount()
+    await flush()
+
+    for (let id = 1; id <= 8; id++) {
+      const card = screen.getByTestId(`store-product-card-${id}`)
+      expect(card.closest('.reveal')).toBeNull()
+      const img = screen.getByTestId(`store-product-image-${id}`)
+      expect(img).toHaveAttribute('loading', id <= 4 ? 'eager' : 'lazy')
+    }
+    expect(screen.getByTestId('store-product-image-1')).toHaveAttribute('fetchpriority', 'high')
+    expect(screen.getByTestId('store-product-image-5')).toHaveAttribute('fetchpriority', 'auto')
+  })
 })

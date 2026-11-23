@@ -38,10 +38,8 @@ import {
 import {
   FROZEN_FILTERS,
   FROZEN_RUN_ID,
-  HOT_CURSOR_ENCODED,
   HOT_CURSOR_PAYLOAD,
   HOT_PROJECTION_FIXTURE,
-  NO_RUN_CURSOR_ENCODED,
   NO_RUN_CURSOR_PAYLOAD,
   NO_RUN_PROJECTION_FIXTURE,
   NON_HOT_PROJECTION_FIXTURE,
@@ -301,19 +299,20 @@ describe('ranking projection — frozen fixtures (pure, no DB)', () => {
     expect(computeFilterHash(FROZEN_FILTERS.CATEGORY_AND_QUERY.filter)).toBe(FROZEN_FILTERS.CATEGORY_AND_QUERY.hash)
   })
 
-  it('encodeOrganicCursor matches the frozen base64url encodings', () => {
-    expect(encodeOrganicCursor(HOT_CURSOR_PAYLOAD)).toBe(HOT_CURSOR_ENCODED)
-    expect(encodeOrganicCursor(NO_RUN_CURSOR_PAYLOAD)).toBe(NO_RUN_CURSOR_ENCODED)
-  })
-
-  it('decodeOrganicCursor round-trips the frozen cursors', () => {
-    expect(decodeOrganicCursor(HOT_CURSOR_ENCODED)).toEqual(HOT_CURSOR_PAYLOAD)
-    expect(decodeOrganicCursor(NO_RUN_CURSOR_ENCODED)).toEqual(NO_RUN_CURSOR_PAYLOAD)
+  it('issues opaque cursors with a fresh nonce and an explicit version', () => {
+    for (const payload of [HOT_CURSOR_PAYLOAD, NO_RUN_CURSOR_PAYLOAD]) {
+      const cursor = encodeOrganicCursor(payload)
+      const envelope = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))
+      expect(Object.keys(envelope)).toEqual(['v', 'token'])
+      expect(envelope.v).toBe(PROJECTION_CURSOR_VERSION)
+      expect(encodeOrganicCursor(payload)).not.toBe(cursor)
+      expect(decodeOrganicCursor(cursor)).toEqual(payload)
+    }
   })
 
   it('frozen projection DTO fixtures only carry Spec §9 allowlist fields (MERCH-015 / CHK-SEC-001)', () => {
-    const allowlist = ['hot', 'merchantPartner', 'platformOwned', 'platformPick', 'rankingRunId']
-    const hotAllowlist = ['computedAt', 'effectiveOrders', 'rank', 'windowDays']
+    const allowlist = ['hot', 'merchantPartner', 'platformOwned', 'platformPick']
+    const hotAllowlist = ['label']
     const fixtures = [
       HOT_PROJECTION_FIXTURE,
       NON_HOT_PROJECTION_FIXTURE,
@@ -337,16 +336,14 @@ describe('ranking projection — cursor decode/encode (pure, no DB)', () => {
   })
 
   it('malformed cursor → 400 PRODUCT_CURSOR_INVALID', () => {
-    const hash = '0'.repeat(64)
     const badCursors = [
       'not-valid-base64url!!',
-      Buffer.from('{"v":1').toString('base64url'), // JSON 解析失败
-      Buffer.from('"just-a-string"').toString('base64url'), // 非对象
+      'a'.repeat(513),
+      Buffer.from('{"v":2').toString('base64url'),
+      Buffer.from('"just-a-string"').toString('base64url'),
       Buffer.from('null').toString('base64url'),
-      Buffer.from(`{"v":"1","runId":"x","isHot":true,"effectiveOrderCount":5,"productId":1,"filterHash":"${hash}"}`).toString('base64url'), // v 是字符串
-      Buffer.from(`{"v":1,"runId":"x","isHot":true,"effectiveOrderCount":-1,"productId":1,"filterHash":"${hash}"}`).toString('base64url'), // 负计数
-      Buffer.from(`{"v":1,"runId":"x","isHot":true,"effectiveOrderCount":5,"productId":0,"filterHash":"${hash}"}`).toString('base64url'), // productId 非正
-      Buffer.from(`{"v":1,"runId":"x","isHot":true,"effectiveOrderCount":5,"productId":1,"filterHash":"short"}`).toString('base64url'), // hash 格式
+      Buffer.from('{"v":"2","token":"AA"}').toString('base64url'),
+      Buffer.from('{"v":2,"token":"AA"}').toString('base64url'),
     ]
     for (const raw of badCursors) {
       const err = capture(() => decodeOrganicCursor(raw))
@@ -356,7 +353,7 @@ describe('ranking projection — cursor decode/encode (pure, no DB)', () => {
   })
 
   it('recognizable old/unknown cursor version → 409 PRODUCT_CURSOR_EXPIRED (D-MERCH-07)', () => {
-    for (const v of [0, 2, 99]) {
+    for (const v of [0, 1, 99]) {
       const raw = Buffer.from(JSON.stringify({ ...HOT_CURSOR_PAYLOAD, v }), 'utf8').toString('base64url')
       const err = capture(() => decodeOrganicCursor(raw))
       expect(err.status).toBe(409)
@@ -422,7 +419,7 @@ describe('ranking projection — keyset predicates (pure, no DB)', () => {
 
   it('non-hot cursor: keyset continues after (isHot=false, count, id)', () => {
     const nonHot: OrganicCursorPayload = {
-      v: 1,
+      v: PROJECTION_CURSOR_VERSION,
       runId: FROZEN_RUN_ID,
       isHot: false,
       effectiveOrderCount: 3,
@@ -512,7 +509,7 @@ describe('ranking projection — decorate contract (pure, no DB)', () => {
       { id: 42, merchandising: HOT_PROJECTION_FIXTURE },
       {
         id: 7,
-        merchandising: { ...NO_RUN_PROJECTION_FIXTURE, rankingRunId: FROZEN_RUN_ID, platformOwned: true },
+        merchandising: { ...NO_RUN_PROJECTION_FIXTURE, platformOwned: true },
       },
     ])
   })
@@ -557,11 +554,6 @@ describe('ranking projection — decorate contract (pure, no DB)', () => {
     expect(queried[0].select).toMatchObject({ isHot: true })
 
     expect(out[0].merchandising.hot).toBeNull()
-    expect(out[1].merchandising.hot).toEqual({
-      effectiveOrders: 18,
-      rank: 1,
-      windowDays: RUN.windowDays,
-      computedAt: '2026-08-09T00:00:00.000Z',
-    })
+    expect(out[1].merchandising.hot).toEqual({ label: '热卖' })
   })
 })

@@ -1,8 +1,10 @@
 import { config } from '../../config/index.js'
-import { buildAbuseLimiterKey, type AbuseLimiterBucket } from '../../lib/abuseLimiter.js'
+import { ipKeyGenerator } from 'express-rate-limit'
+import { abuseLimiter, buildAbuseLimiterKey, type AbuseLimiterBucket } from '../../lib/abuseLimiter.js'
 import { abuseProtectionUnavailable } from '../../lib/httpError.js'
 import { runRedisCommandWithTimeout } from '../../lib/redis.js'
-import { enforceHumanVerification } from './authProtection.js'
+import { LOGIN_IP_BUCKET, VERIFIED_LOGIN_IP_BUCKET } from './abusePolicy.js'
+import { checkAbuseBucket, consumeAbuseBucket, enforceHumanVerification } from './authProtection.js'
 import type { HumanVerificationRequest } from './humanVerification.js'
 
 /**
@@ -55,6 +57,17 @@ export async function enforceLoginVerification(
   ip: string | undefined,
 ) {
   if (!trackingEnabled()) return
+  const ipKey = ipKeyGenerator(ip ?? 'unknown')
+  const admission = await checkAbuseBucket(() => abuseLimiter.consume(LOGIN_IP_BUCKET, ipKey))
+  if (!admission.allowed) {
+    await enforceHumanVerification({ proof: { humanVerification: proof }, ip, action: 'login' })
+    await consumeAbuseBucket(
+      () => abuseLimiter.consume(VERIFIED_LOGIN_IP_BUCKET, ipKey),
+      VERIFIED_LOGIN_IP_BUCKET.flow,
+    )
+    return
+  }
+
   const failures = await withFailureKey(email, key => runRedisCommandWithTimeout(
     'login_failures_read',
     client => client.eval(READ_FAILURES_LUA, 1, key) as Promise<number>,

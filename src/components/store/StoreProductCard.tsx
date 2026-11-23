@@ -114,22 +114,12 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
 
         <div className="absolute bottom-2 left-2 right-2 md:bottom-2.5 md:left-2.5 md:right-2.5 z-10 flex gap-1.5 md:gap-2 min-w-0">
           <span
-            className={`text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 ${sellerLabel ? 'max-w-[48%]' : 'max-w-[85%] sm:max-w-[48%]'} truncate`}
-            style={{
-              background: 'var(--color-glass-bg)',
-              border: '1px solid var(--color-glass-border)',
-              backdropFilter: 'blur(12px)',
-            }}
+            className={`store-card-chip text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-text)] shadow-sm flex items-center gap-1.5 ${sellerLabel ? 'max-w-[48%]' : 'max-w-[85%] sm:max-w-[48%]'} truncate`}
           >
             {product.category?.label ?? product.type}
           </span>
           {showSellerChip && <span
-            className={`${sellerLabel ? 'flex' : 'hidden sm:flex'} text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-primary)] shadow-sm items-center gap-1.5 max-w-[48%] truncate`}
-            style={{
-              background: 'var(--color-glass-bg)',
-              border: '1px solid var(--color-glass-border)',
-              backdropFilter: 'blur(12px)',
-            }}
+            className={`store-card-chip ${sellerLabel ? 'flex' : 'hidden sm:flex'} text-[10px] md:text-xs font-bold px-1.5 py-0.5 md:px-2.5 md:py-1 rounded-lg text-[var(--color-primary)] shadow-sm items-center gap-1.5 max-w-[48%] truncate`}
           >
             <Store className="w-3 h-3 shrink-0" />
             <span className="truncate">{sellerLabel ?? (product.merchant?.name || '平台自营')}</span>

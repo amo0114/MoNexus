@@ -1,5 +1,8 @@
-import { consumeHumanChallengeIssue } from './abusePolicy.js'
+import { LOGIN_PROOF_IP_BUCKET, consumeHumanChallengeIssue } from './abusePolicy.js'
 import { config } from '../../config/index.js'
+import { ipKeyGenerator } from 'express-rate-limit'
+import { abuseLimiter, type AbuseLimiterResult } from '../../lib/abuseLimiter.js'
+import { rateLimitedTotal } from '../../lib/metrics.js'
 import {
   abuseProtectionUnavailable,
   humanVerificationFailed,
@@ -20,18 +23,20 @@ export function registrationProtectionIsEnforced() {
   return config.abuseProtectionMode === 'enforce'
 }
 
-export async function consumeAbuseBucket(
-  consume: () => Promise<{ allowed: boolean; retryAfterSeconds: number }>,
-) {
-  let result: { allowed: boolean; retryAfterSeconds: number }
+export async function checkAbuseBucket(consume: () => Promise<AbuseLimiterResult>) {
   try {
-    result = await consume()
+    return await consume()
   } catch {
     // Never let a Redis client/timeout/circuit error reach the generic error
     // handler with provider/client details. Security callers fail closed.
     throw abuseProtectionUnavailable()
   }
+}
+
+export async function consumeAbuseBucket(consume: () => Promise<AbuseLimiterResult>, limiter?: string) {
+  const result = await checkAbuseBucket(consume)
   if (!result.allowed) {
+    if (limiter) rateLimitedTotal.inc({ limiter, route_group: 'auth' })
     // Expose only the safe, rounded delay. The shared error layer emits it as
     // `Retry-After` without revealing the hit dimension or any identifier.
     throw tooManyRequests(undefined, result.retryAfterSeconds)
@@ -51,6 +56,14 @@ export async function enforceHumanVerification(input: {
     throw humanVerificationFailed()
   }
 
+  if (input.action === 'login') {
+    // Bound provider work separately from expensive password verification.
+    await consumeAbuseBucket(
+      () => abuseLimiter.consume(LOGIN_PROOF_IP_BUCKET, ipKeyGenerator(input.ip ?? 'unknown')),
+      LOGIN_PROOF_IP_BUCKET.flow,
+    )
+  }
+
   let verification: Awaited<ReturnType<ReturnType<typeof getHumanVerifier>['verify']>>
   try {
     verification = await getHumanVerifier().verify({ payload, ip: input.ip, action: input.action })
@@ -66,7 +79,10 @@ export async function issueHumanChallenge(action: HumanVerificationAction, ip?: 
     throw humanVerificationUnavailable()
   }
 
-  await consumeAbuseBucket(() => consumeHumanChallengeIssue(ip ?? ''))
+  await consumeAbuseBucket(
+    () => consumeHumanChallengeIssue(action, ipKeyGenerator(ip ?? 'unknown')),
+    action === 'login' ? 'login-human-challenge' : 'human-challenge',
+  )
 
   const challenge = await issueAltchaChallenge(action)
   if ('kind' in challenge) throw humanVerificationUnavailable()
