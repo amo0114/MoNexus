@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronRight, Clock, X } from 'lucide-react'
 import { type IslandNotice, useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionScopeKey } from '../auth/sessionContext'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import HeartBurst from './ui/HeartBurst'
 import './OrderSuccessIsland.css'
@@ -18,6 +20,7 @@ interface Props {
 /** Keep the outgoing content mounted while the navbar returns to its resting size. */
 export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onHeightChange, onPhaseChange }: Props) {
   const clearNotice = useAppStore((s) => s.clearIslandNotice)
+  const currentSessionKey = useAuthStore(getAuthSessionScopeKey)
   const [content, setContent] = useState<IslandNotice | null>(null)
   const [open, setOpen] = useState(false)
   const [hovered, setHovered] = useState(false)
@@ -28,9 +31,14 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
   const layerRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  const isOwnedByCurrentSession = (item: IslandNotice | null) =>
+    !item || !item.sessionKey || item.sessionKey === currentSessionKey
+  const activeNotice = isOwnedByCurrentSession(notice) ? notice : null
+  const renderedContent = isOwnedByCurrentSession(content) ? content : null
+
   useLayoutEffect(() => {
-    if (notice) setPhase('processing')
-  }, [notice?.id])
+    if (activeNotice) setPhase('processing')
+  }, [activeNotice?.id])
 
   useLayoutEffect(() => onPhaseChange(phase), [phase, onPhaseChange])
 
@@ -48,11 +56,16 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
     const observer = new ResizeObserver(measure)
     observer.observe(panel)
     return () => observer.disconnect()
-  }, [content, phase, onHeightChange])
+  }, [renderedContent, phase, onHeightChange])
 
   useLayoutEffect(() => {
-    if (notice) setContent(notice)
-    if (!notice || obscured) {
+    if (activeNotice) {
+      setContent(activeNotice)
+    } else if (content && !isOwnedByCurrentSession(content)) {
+      // Session changed: purge immediately without waiting for the close transition.
+      setContent(null)
+    }
+    if (!activeNotice || obscured) {
       setOpen(false)
       onOpenChange(false)
       return
@@ -69,20 +82,20 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
       cancelAnimationFrame(frame)
       cancelAnimationFrame(secondFrame)
     }
-  }, [notice, obscured, onOpenChange])
+  }, [activeNotice, content, currentSessionKey, obscured, onOpenChange])
 
   useEffect(() => {
-    if (!open || obscured || reducedMotion || phase !== 'processing' || notice?.kind !== 'order_success') return
+    if (!open || obscured || reducedMotion || phase !== 'processing' || activeNotice?.kind !== 'order_success') return
     // The animation event normally advances at the next revolution. If CSS or
     // the browser suppresses that event, an already accepted order must still
     // reach its details. Never use this clock to infer a server-side success.
     const spinMs = parseFloat(getComputedStyle(layerRef.current!).getPropertyValue('--order-island-spin'))
     const timer = window.setTimeout(() => setPhase('confirmed'), (Number.isFinite(spinMs) && spinMs > 0 ? spinMs : 800) * 2)
     return () => window.clearTimeout(timer)
-  }, [notice, open, obscured, phase, reducedMotion])
+  }, [activeNotice, open, obscured, phase, reducedMotion])
 
   useEffect(() => {
-    if (!open || obscured || notice?.kind !== 'order_success') return
+    if (!open || obscured || activeNotice?.kind !== 'order_success') return
     if (reducedMotion) {
       setPhase('details')
       return
@@ -91,44 +104,45 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
     const duration = parseFloat(getComputedStyle(layerRef.current!).getPropertyValue('--order-island-confirm'))
     const timer = window.setTimeout(() => setPhase('details'), duration)
     return () => window.clearTimeout(timer)
-  }, [notice, open, obscured, phase, reducedMotion])
+  }, [activeNotice, open, obscured, phase, reducedMotion])
 
   useEffect(() => {
-    remaining.current = notice?.durationMs ?? 7000
+    remaining.current = activeNotice?.durationMs ?? 7000
     setHovered(false)
     setFocused(false)
-  }, [notice?.id, notice?.durationMs])
+  }, [activeNotice?.id, activeNotice?.durationMs])
 
   useEffect(() => {
-    if (!notice || phase !== 'details' || !open || obscured || hovered || focused) return
+    if (!activeNotice || phase !== 'details' || !open || obscured || hovered || focused) return
     const startedAt = Date.now()
-    const timer = window.setTimeout(() => clearNotice(notice.id), remaining.current)
+    const timer = window.setTimeout(() => clearNotice(activeNotice.id), remaining.current)
     return () => {
       window.clearTimeout(timer)
       remaining.current = Math.max(0, remaining.current - (Date.now() - startedAt))
     }
-  }, [notice, phase, open, obscured, hovered, focused, clearNotice])
+  }, [activeNotice, phase, open, obscured, hovered, focused, clearNotice])
 
   useEffect(() => {
-    if (notice) return
+    if (activeNotice) return
     // Read the CSS clock so cleanup and the exit transition cannot drift apart.
     const duration = reducedMotion ? 0 : parseFloat(
       getComputedStyle(layerRef.current!).getPropertyValue('--order-island-close'),
     )
     const timer = window.setTimeout(() => setContent(null), duration)
     return () => window.clearTimeout(timer)
-  }, [notice, reducedMotion])
+  }, [activeNotice, reducedMotion])
 
-  const pending = content?.type === 'info'
-  const detailsVisible = open && phase === 'details'
+  const effectiveOpen = open && renderedContent !== null
+  const pending = renderedContent?.type === 'info'
+  const detailsVisible = effectiveOpen && phase === 'details'
 
   return (
     <div
       ref={layerRef}
       className="order-island-layer"
-      data-open={open}
+      data-open={effectiveOpen}
       data-phase={phase}
-      aria-hidden={!open}
+      aria-hidden={!effectiveOpen}
       onPointerEnter={(event) => { if (event.pointerType === 'mouse') setHovered(true) }}
       onPointerLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)}
@@ -136,14 +150,14 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
       }}
       onKeyDown={(event) => {
-        if (event.key === 'Escape' && detailsVisible && content) clearNotice(content.id)
+        if (event.key === 'Escape' && detailsVisible && renderedContent) clearNotice(renderedContent.id)
       }}
     >
       <span className="sr-only" role="status" aria-atomic="true">
-        {open ? phase === 'details' ? `${content?.title}，${content?.subtitle ?? ''}`
-          : phase === 'confirmed' ? (content?.payload?.renewal ? '续费订单已创建' : '下单成功') : (content?.payload?.renewal ? '正在提交续费' : '正在确认支付') : ''}
+        {effectiveOpen ? phase === 'details' ? `${renderedContent?.title}，${renderedContent?.subtitle ?? ''}`
+          : phase === 'confirmed' ? (renderedContent?.payload?.renewal ? '续费订单已创建' : '下单成功') : (renderedContent?.payload?.renewal ? '正在提交续费' : '正在确认支付') : ''}
       </span>
-      {content && (
+      {renderedContent && (
         <>
           <div className="order-island-payment" aria-hidden="true">
             <span className="order-island-payment-halo" />
@@ -152,7 +166,7 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
                 <circle className="order-island-ring-track" cx="32" cy="32" r="24" />
                 <g className="order-island-spinner" onAnimationIteration={() => {
                   // Finish the current revolution only after the server accepts the order.
-                  if (notice?.kind === 'order_success' && open && !obscured) setPhase('confirmed')
+                  if (activeNotice?.kind === 'order_success' && effectiveOpen && !obscured) setPhase('confirmed')
                 }}>
                   <circle className="order-island-ring" cx="32" cy="32" r="24" pathLength="1" />
                 </g>
@@ -163,7 +177,7 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
           </div>
           <div className="order-island-panel" ref={panelRef} aria-hidden={!detailsVisible}>
             <div className="order-island-header">
-              <span className="order-island-icon" data-pending={pending} data-animate={detailsVisible} aria-hidden="true" key={content.id}>
+              <span className="order-island-icon" data-pending={pending} data-animate={detailsVisible} aria-hidden="true" key={renderedContent.id}>
                 <span className="order-island-icon-halo" />
                 <span className="order-island-icon-face">
                   {pending ? <Clock size={19} /> : (
@@ -181,16 +195,16 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
                 ) : <HeartBurst distance={29} delay={340} color="currentColor" />}
               </span>
               <span className="order-island-copy">
-                <strong>{content.title || '兑换成功'}</strong>
-                <span title={content.subtitle}>{content.subtitle}</span>
+                <strong>{renderedContent.title || '兑换成功'}</strong>
+                <span title={renderedContent.subtitle}>{renderedContent.subtitle}</span>
               </span>
               <button
                 type="button"
                 className="order-island-dismiss"
-                aria-label={content.payload?.renewal ? '收起续费提示' : '收起兑换提示'}
+                aria-label={renderedContent.payload?.renewal ? '收起续费提示' : '收起兑换提示'}
                 tabIndex={detailsVisible ? 0 : -1}
                 disabled={!detailsVisible}
-                onClick={() => clearNotice(content.id)}
+                onClick={() => clearNotice(renderedContent.id)}
               >
                 <X size={16} aria-hidden="true" />
               </button>
@@ -204,12 +218,19 @@ export default function OrderSuccessIsland({ notice, obscured, onOpenChange, onH
                 tabIndex={detailsVisible ? 0 : -1}
                 disabled={!detailsVisible}
                 onClick={() => {
-                  if (useAppStore.getState().islandNotice?.id !== content.id) return
-                  clearNotice(content.id)
-                  content.onAction?.()
+                  if (useAppStore.getState().islandNotice?.id !== renderedContent.id) return
+                  if (
+                    renderedContent.sessionKey
+                    && getAuthSessionScopeKey(useAuthStore.getState()) !== renderedContent.sessionKey
+                  ) {
+                    clearNotice(renderedContent.id)
+                    return
+                  }
+                  clearNotice(renderedContent.id)
+                  renderedContent.onAction?.()
                 }}
               >
-                {content.actionLabel || '查看订单'}<ChevronRight size={15} aria-hidden="true" />
+                {renderedContent.actionLabel || '查看订单'}<ChevronRight size={15} aria-hidden="true" />
               </button>
             </div>
           </div>

@@ -10,6 +10,14 @@ export interface AuthSessionContext {
   authEpoch: number
 }
 
+export interface AuthSessionScopeSnapshot {
+  isLoggedIn: boolean
+  authEpoch: number
+  user?: { id: number } | null
+  accessToken: string | null | undefined
+  sessionId?: string | null
+}
+
 export class AuthSessionChangedError extends Error {
   readonly code = 'AUTH_SESSION_CHANGED'
 
@@ -84,6 +92,32 @@ export function matchesAuthSessionContext(
     && left.userId === right.userId
     && left.sessionId === right.sessionId
     && left.authEpoch === right.authEpoch
+}
+
+/**
+ * Stable ownership key for an authenticated login session, or `null` for guests
+ * and inconsistent auth states. Remains identical across normal same-session
+ * access-token rotation (same `authEpoch`, `userId`, and `sessionId`), and
+ * changes or becomes `null` on logout, account switch, or session replacement.
+ */
+export function getAuthSessionScopeKey(state: AuthSessionScopeSnapshot): string | null {
+  if (!state.isLoggedIn) return null
+
+  const tokenIdentity = readAccessTokenIdentity(state.accessToken)
+  if (tokenIdentity) {
+    if (!Number.isSafeInteger(state.user?.id) || state.user!.id !== tokenIdentity.userId) {
+      return null
+    }
+    const effectiveSessionId = state.sessionId ?? tokenIdentity.sessionId
+    return `auth:${state.authEpoch}:${tokenIdentity.userId}:${tokenIdentity.sessionId}:${effectiveSessionId}`
+  }
+
+  // Compatibility for legacy non-JWT unit-test fixtures (`accessToken: 'token'`).
+  const hasUserId = Number.isSafeInteger(state.user?.id)
+  const hasToken = typeof state.accessToken === 'string' && state.accessToken.length > 0
+  if (!hasUserId && !hasToken) return null
+
+  return `auth-legacy:${state.authEpoch}:${hasUserId ? state.user!.id : ''}:${state.sessionId ?? ''}`
 }
 
 export function accessTokenMatchesSession(token: string, context: AuthSessionContext): boolean {

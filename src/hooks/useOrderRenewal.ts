@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { createOrder, renewOrder, type CheckoutPreview, type RenewPrecheck } from '../api/orders'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
-import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
+import { getAuthSessionContext, getAuthSessionScopeKey, matchesAuthSessionContext } from '../auth/sessionContext'
 import { captureFeedbackOwner } from '../lib/completionFeedback'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
@@ -22,12 +22,17 @@ interface Options {
 export function useOrderRenewal({ orderId, productName, isMobileViewport, onClose, onUpdated }: Options) {
   const navigate = useNavigate()
   const showToast = useAppStore(s => s.showToast)
+  const currentSessionKey = useAuthStore(getAuthSessionScopeKey)
   // P6a：续费预检结果；非 null 时打开标准结算弹窗（新订单带 renewalOfOrderId）。
-  const [renewInfo, setRenewInfo] = useState<RenewPrecheck | null>(null)
+  const [renewInfoState, setRenewInfoState] = useState<{
+    sessionKey: string
+    info: RenewPrecheck
+  } | null>(null)
   const [renewLoading, setRenewLoading] = useState(false)
   const [renewSubmitting, setRenewSubmitting] = useState(false)
   // 续费下单成功后用 SuccessModal 展示开通前后对比（与商品页新购一致）。
-  const [renewSuccess, setRenewSuccess] = useState<{
+  const [renewSuccessState, setRenewSuccessState] = useState<{
+    sessionKey: string
     orderId: number
     deliveryContent: string
     deliveryContentType?: string
@@ -35,15 +40,31 @@ export function useOrderRenewal({ orderId, productName, isMobileViewport, onClos
     provisionPending: boolean
   } | null>(null)
 
+  const renewInfo =
+    currentSessionKey !== null && renewInfoState?.sessionKey === currentSessionKey
+      ? renewInfoState.info
+      : null
+  const renewSuccess =
+    currentSessionKey !== null && renewSuccessState?.sessionKey === currentSessionKey
+      ? renewSuccessState
+      : null
+
+  useEffect(() => {
+    setRenewInfoState((prev) => (prev && prev.sessionKey === currentSessionKey ? prev : null))
+    setRenewSuccessState((prev) => (prev && prev.sessionKey === currentSessionKey ? prev : null))
+  }, [currentSessionKey])
+
   async function startRenew() {
+    const startSessionKey = getAuthSessionScopeKey(useAuthStore.getState())
+    if (!startSessionKey) return
     const isCurrent = captureFeedbackOwner()
     setRenewLoading(true)
     try {
       const info = await renewOrder(orderId)
-      if (!isCurrent()) return
-      setRenewInfo(info)
+      if (!isCurrent() || getAuthSessionScopeKey(useAuthStore.getState()) !== startSessionKey) return
+      setRenewInfoState({ sessionKey: startSessionKey, info })
     } catch (e: any) {
-      if (!isCurrent()) return
+      if (!isCurrent() || getAuthSessionScopeKey(useAuthStore.getState()) !== startSessionKey) return
       const code = getApiErrorCode(e)
       if (code === 'RENEW_NOT_AVAILABLE') {
         showToast('该商品或规格已下架，无法续费', 'error')
@@ -72,9 +93,15 @@ export function useOrderRenewal({ orderId, productName, isMobileViewport, onClos
     agreementVersions?: Record<string, string>
   ): Promise<ConfirmOutcome> {
     if (!renewInfo || renewSubmitting) return 'failed'
-    const renewalAuthContext = getAuthSessionContext(useAuthStore.getState())
-    if (!renewalAuthContext) return 'failed'
-    const isCurrent = () => matchesAuthSessionContext(renewalAuthContext, getAuthSessionContext(useAuthStore.getState()))
+    const initialAuthState = useAuthStore.getState()
+    const renewalAuthContext = getAuthSessionContext(initialAuthState)
+    const renewalSessionKey = getAuthSessionScopeKey(initialAuthState)
+    if (!renewalAuthContext || !renewalSessionKey) return 'failed'
+    const isCurrent = () => {
+      const currentState = useAuthStore.getState()
+      return matchesAuthSessionContext(renewalAuthContext, getAuthSessionContext(currentState))
+        && getAuthSessionScopeKey(currentState) === renewalSessionKey
+    }
     setRenewSubmitting(true)
     const processingId = isMobileViewport ? useAppStore.getState().triggerIslandActivity({
       kind: 'order_processing',
@@ -82,6 +109,7 @@ export function useOrderRenewal({ orderId, productName, isMobileViewport, onClos
       subtitle: productName,
       type: 'info',
       payload: { renewal: true },
+      sessionKey: renewalSessionKey,
     }) : undefined
     try {
       const data = await createOrder(renewInfo.productId, {
@@ -105,7 +133,7 @@ export function useOrderRenewal({ orderId, productName, isMobileViewport, onClos
       // PR-3 复审：续费是全新的进行中订单——人工履约续费不会产生买家
       // 「新订单」实时事件，这里无条件补拉权威计数（即时已交付单不计数）。
       void useAppStore.getState().refreshOrderAttention()
-      setRenewInfo(null)
+      setRenewInfoState(null)
       if (isMobileViewport) {
         const hasDelivery = Boolean(data.deliveryContent?.trim() || data.deliveryFile || data.deliveryStructuredContent?.fields.length)
         const pending = data.provisionPending || !hasDelivery
@@ -116,11 +144,13 @@ export function useOrderRenewal({ orderId, productName, isMobileViewport, onClos
           type: pending ? 'info' : 'success',
           actionLabel: pending ? '查看续费订单' : '查看交付内容',
           payload: { renewal: true },
+          sessionKey: renewalSessionKey,
           onAction: () => { if (isCurrent()) navigate(`/orders?focus=${data.orderId}`) },
           durationMs: 7000,
         })
         onClose()
-      } else setRenewSuccess({
+      } else setRenewSuccessState({
+        sessionKey: renewalSessionKey,
         orderId: data.orderId,
         deliveryContent: data.deliveryContent ?? '',
         deliveryContentType: data.deliveryContentType,
@@ -151,13 +181,13 @@ export function useOrderRenewal({ orderId, productName, isMobileViewport, onClos
       }
       if (code === 'RENEW_OFFER_UNAVAILABLE') {
         showToast('该规格已下架，无法续费', 'error')
-        setRenewInfo(null)
+        setRenewInfoState(null)
         return 'failed'
       }
       if (code === 'RENEW_ALREADY_RENEWED') {
         // 结算期间他处已完成续费（多标签页等）：关弹窗并指引到最新订单。
         showToast('该订单已续费，请在最新的续费订单上操作', 'error')
-        setRenewInfo(null)
+        setRenewInfoState(null)
         return 'failed'
       }
       showToast(getApiErrorMessage(err, '续费失败'), 'error')
@@ -168,11 +198,11 @@ export function useOrderRenewal({ orderId, productName, isMobileViewport, onClos
   }
 
   function closeRenewCheckout() {
-    if (!renewSubmitting) setRenewInfo(null)
+    if (!renewSubmitting) setRenewInfoState(null)
   }
 
   function closeRenewSuccess() {
-    setRenewSuccess(null)
+    setRenewSuccessState(null)
     onClose()
   }
 

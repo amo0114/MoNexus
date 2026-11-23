@@ -779,6 +779,8 @@ export default function OrderDetailModal({ order: initialOrder, onClose, onUpdat
 
       {renewSuccess && (
         <SuccessModal
+          key={`${renewSuccess.sessionKey}:${renewSuccess.orderId}`}
+          ownerSessionKey={renewSuccess.sessionKey}
           orderId={renewSuccess.orderId}
           deliveryContent={renewSuccess.deliveryContent}
           deliveryContentType={renewSuccess.deliveryContentType}
