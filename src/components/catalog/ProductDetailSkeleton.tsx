@@ -31,14 +31,11 @@ export function ProductDetailSkeleton() {
       <div className="lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] lg:gap-[18px] xl:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] xl:gap-7 lg:items-start">
         <div className="min-w-0">
           {/* Tablet gallery is a bordered card capped at 400px; desktop and mobile use 515/444,
-              and desktop also caps the width by viewport height like the real stage */}
+              and desktop also caps the width by viewport height like the real stage.
+              Single-image products have no thumbnail rail (and multi-image desktop puts it
+              vertically beside the stage), so keep the gallery placeholder to the main stage. */}
           <div data-skeleton-part="gallery">
             <Skeleton className="w-full aspect-[515/444] rounded-t-none rounded-b-[14px] md:aspect-auto md:h-[434px] md:rounded-2xl lg:h-auto lg:aspect-[515/444] lg:mx-auto lg:max-w-[calc((100dvh-260px)*515/444)]" />
-          </div>
-          <div className="hidden lg:flex gap-3 mt-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-16 rounded-lg" />
-            ))}
           </div>
           <div className="hidden lg:block mt-8">
             <DetailSectionSkeleton />
@@ -60,10 +57,11 @@ export function ProductDetailSkeleton() {
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-4/5" />
           </div>
-          <div className="grid grid-cols-2 gap-2.5">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-14 rounded-xl" />
-            ))}
+          {/* Mirrors .pd-offers: 2 columns below 1280px, 3 columns at >=1280px (single restrained row) */}
+          <div className="grid grid-cols-2 xl:grid-cols-3 gap-2.5" data-skeleton-part="offers">
+            <Skeleton className="h-14 rounded-xl" />
+            <Skeleton className="h-14 rounded-xl" />
+            <Skeleton className="hidden xl:block h-14 rounded-xl" />
           </div>
           <div className="hidden lg:grid grid-cols-4 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -91,6 +89,7 @@ function DetailSectionSkeleton() {
         <Skeleton className="h-5 w-16" />
         <Skeleton className="h-5 w-16" />
         <Skeleton className="h-5 w-16" />
+        <Skeleton className="h-5 w-20" />
       </div>
       <Skeleton className="h-4 w-full" />
       <Skeleton className="h-4 w-11/12" />

@@ -141,4 +141,44 @@ describe('SPEC-ENGAGE-001 check-in streak', () => {
     await expect.poll(() => prisma.userActiveDay.count({ where: { userId: user.id } })).toBe(1)
     expect((await prisma.userActiveDay.findFirstOrThrow({ where: { userId: user.id } })).day).toBe(today())
   })
+
+  it('returns GitHub-style check-in & active heatmap levels and summary', async () => {
+    const { user, headers } = await signedInUser('heatmap-user@test.local')
+    const other = await signedInUser('heatmap-other@test.local')
+
+    await prisma.userActiveDay.createMany({
+      data: [
+        { userId: user.id, day: daysAgo(10) },
+        { userId: other.user.id, day: daysAgo(9) },
+      ],
+      skipDuplicates: true,
+    })
+    await prisma.checkinRecord.createMany({
+      data: [
+        { userId: user.id, date: daysAgo(5), streak: 1, source: 'makeup' },
+        { userId: user.id, date: daysAgo(4), streak: 2, source: 'web' },
+        { userId: user.id, date: daysAgo(3), streak: 3, source: 'qq' },
+        { userId: other.user.id, date: daysAgo(2), streak: 5, source: 'web' },
+      ],
+    })
+
+    const res = await api.get('/api/points/checkin/heatmap?weeks=12').set(headers).expect(200)
+    expect(res.body.weeks).toBe(12)
+    expect(res.body.today).toBe(today())
+    expect(res.body.summary).toMatchObject({
+      checkinDays: 3,
+      longestStreak: 3,
+    })
+    expect(res.body.summary.activeDays).toBeGreaterThanOrEqual(4)
+
+    const byDate = new Map(res.body.days.map((d: { date: string }) => [d.date, d]))
+    expect(byDate.get(daysAgo(10))).toMatchObject({ level: 1, active: true, checkedIn: false, makeup: false })
+    expect(byDate.get(daysAgo(5))).toMatchObject({ level: 2, checkedIn: true, makeup: true, streak: 1 })
+    expect(byDate.get(daysAgo(4))).toMatchObject({ level: 3, checkedIn: true, makeup: false, streak: 2 })
+    expect(byDate.get(daysAgo(3))).toMatchObject({ level: 4, checkedIn: true, makeup: false, streak: 3 })
+    expect(byDate.has(daysAgo(2))).toBe(false)
+    expect(byDate.has(daysAgo(9))).toBe(false)
+
+    await api.get('/api/points/checkin/heatmap?weeks=100').set(headers).expect(400)
+  })
 })

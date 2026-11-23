@@ -10,7 +10,7 @@ test('logged-in user can claim daily check-in', async ({ page }) => {
   })
   await page.getByRole('button', { name: '没有账号？立即注册' }).click()
   await page.getByPlaceholder('邮箱地址').fill(email)
-  await page.getByPlaceholder('密码（至少 8 位）').fill(password)
+  await page.getByPlaceholder('密码').fill(password)
   await page.getByRole('button', { name: '创建账号' }).click()
 
   await expect(page).toHaveURL(/\/$/)
@@ -28,7 +28,11 @@ test('logged-in user can claim daily check-in', async ({ page }) => {
   await expect(card.getByTestId('checkin-recent').locator('[data-checked]')).toHaveCount(1)
 
   await page.goto('/')
-  const today = page.getByTestId('today-panel')
-  await expect(today).toBeVisible({ timeout: 10_000 })
-  await expect(today.getByRole('button', { name: '今日已签到' })).toBeDisabled()
+  const navCheckin = page.getByTestId('nav-checkin')
+  await expect(navCheckin).toBeVisible({ timeout: 10_000 })
+  await expect(navCheckin).toHaveAttribute('data-checkin-state', 'done', { timeout: 10_000 })
+  await navCheckin.click()
+  const modal = page.getByTestId('checkin-modal')
+  await expect(modal).toBeVisible({ timeout: 10_000 })
+  await expect(modal.getByRole('button', { name: '今日已签到' })).toBeDisabled({ timeout: 10_000 })
 })

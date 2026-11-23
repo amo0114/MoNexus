@@ -104,17 +104,28 @@ export default function AdminDashboardPanel({ active = true }: Props) {
 
   if (loading && !stats) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" role="status" aria-label="正在加载数据仪表盘" data-testid="admin-dashboard-skeleton">
         <AdminPanelHeader
           title="数据仪表盘"
           description="平台关键运行指标、经营概览与实时数据"
         />
-        <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
-          <StatCardSkeleton />
-          <StatCardSkeleton />
-          <StatCardSkeleton />
-          <StatCardSkeleton />
-        </div>
+        <section className="space-y-3" data-testid="admin-dashboard-skeleton-today">
+          <h3 className="text-xs font-semibold text-[var(--color-text-muted)]">今日（北京时间）</h3>
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <StatCardSkeleton decorative />
+            <StatCardSkeleton decorative />
+          </div>
+        </section>
+        <section className="space-y-3" data-testid="admin-dashboard-skeleton-totals">
+          <h3 className="text-xs font-semibold text-[var(--color-text-muted)]">平台累计</h3>
+          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3 sm:gap-4">
+            <StatCardSkeleton decorative />
+            <StatCardSkeleton decorative />
+            <StatCardSkeleton decorative />
+            <StatCardSkeleton decorative />
+            <StatCardSkeleton decorative />
+          </div>
+        </section>
       </div>
     )
   }

@@ -122,7 +122,7 @@ async function mockNormalLogin(page: Page) {
 async function loginThroughPage(page: Page) {
   await page.goto('/login')
   await page.getByLabel('邮箱地址').fill(profile.email)
-  await page.getByLabel('密码（至少 6 位）').fill('not-a-real-password')
+  await page.getByLabel('密码', { exact: true }).fill('not-a-real-password')
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page).toHaveURL(/\/$/)
 }
@@ -184,7 +184,7 @@ test('keeps the enrollment challenge and recovery codes in memory, without refre
 
   await page.goto('/login')
   await page.getByLabel('邮箱地址').fill(profile.email)
-  await page.getByLabel('密码（至少 6 位）').fill('not-a-real-password')
+  await page.getByLabel('密码', { exact: true }).fill('not-a-real-password')
   await page.getByRole('button', { name: '登录' }).click()
 
   await expect(page.getByTestId('mfa-enrollment')).toBeVisible()
@@ -260,7 +260,7 @@ test('lets an enrolled administrator switch to a recovery code without refreshin
 
   await page.goto('/login')
   await page.getByLabel('邮箱地址').fill(profile.email)
-  await page.getByLabel('密码（至少 6 位）').fill('not-a-real-password')
+  await page.getByLabel('密码', { exact: true }).fill('not-a-real-password')
   await page.getByRole('button', { name: '登录' }).click()
 
   await expect(page.getByTestId('mfa-verification')).toBeVisible()
@@ -383,7 +383,7 @@ test('keeps MFA enrollment usable without horizontal overflow at 320px', async (
 
   await page.goto('/login')
   await page.getByLabel('邮箱地址').fill(profile.email)
-  await page.getByLabel('密码（至少 6 位）').fill('not-a-real-password')
+  await page.getByLabel('密码', { exact: true }).fill('not-a-real-password')
   await page.getByRole('button', { name: '登录' }).click()
   await expect(page.getByTestId('mfa-enrollment')).toBeVisible()
   await expect(page.getByTestId('mfa-enrollment-confirm')).toBeVisible()

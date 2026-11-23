@@ -3,10 +3,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Menu, X, Coins, User, ShieldCheck, Store, Clock, XCircle,
-  AlertTriangle, Plus, Home, Trophy, Package, Wallet,
+  AlertTriangle, Plus, Home, Trophy, Package, Wallet, CalendarCheck,
 } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
+import { hasStreakDetails } from '../api/checkin'
+import { useCheckin } from '../hooks/useCheckin'
 import ThemeToggle from './ThemeToggle'
 import { DialogOverlay } from './ui/Dialog'
 import UserAvatar from './ui/UserAvatar'
@@ -35,6 +37,12 @@ export default function MobileNavDrawer() {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
+  const setCheckinModalOpen = useAppStore((s) => s.setCheckinModalOpen)
+  const showCheckinEntry = Boolean(user && user.role !== 'admin')
+  const checkinState = useCheckin({ enabled: open && showCheckinEntry })
+  const checkinClaimableCount = hasStreakDetails(checkinState.status) ? checkinState.status.claimable.length : 0
+  const checkinDone = Boolean(checkinState.status?.hasCheckedIn)
+  const checkinNeedsAction = Boolean(checkinState.status && !checkinDone) || checkinClaimableCount > 0
 
   const go = (path: string) => {
     setOpen(false)
@@ -95,6 +103,31 @@ export default function MobileNavDrawer() {
               积分余额
               <span className="ml-auto font-bold font-mono text-[var(--color-text)]">
                 {user.points ?? '--'}
+              </span>
+            </button>
+            )}
+            {showCheckinEntry && (
+            <button
+              type="button"
+              data-testid="drawer-checkin"
+              onClick={() => {
+                setOpen(false)
+                setCheckinModalOpen(true)
+              }}
+              className={`${ROW} mt-1 text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] active:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)]`}
+            >
+              <span className="bg-[var(--color-primary-tint)] p-1.5 rounded-full">
+                <CalendarCheck className="w-4 h-4 text-[var(--color-primary)]" />
+              </span>
+              每日签到
+              <span
+                className={`ml-auto rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  checkinNeedsAction
+                    ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)]'
+                    : 'bg-[var(--color-background)] text-[var(--color-text-muted)]'
+                }`}
+              >
+                {checkinClaimableCount > 0 ? '有奖励' : checkinDone ? '今日已签' : '去签到'}
               </span>
             </button>
             )}

@@ -94,7 +94,7 @@ export default function InviteCard() {
 
   if (loading) {
     return (
-      <div className="card flex items-center justify-center py-8">
+      <div className="card h-full flex items-center justify-center py-8">
         <Loader2 className="w-5 h-5 animate-spin text-[var(--color-text-muted)] mr-2" />
         <span className="text-sm text-[var(--color-text-muted)]">加载邀请信息...</span>
       </div>
@@ -109,7 +109,7 @@ export default function InviteCard() {
   )
 
   return (
-    <div className="card flex flex-col gap-4">
+    <div className="card h-full flex flex-col gap-4">
       <div className="flex items-start sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center shrink-0">

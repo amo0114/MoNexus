@@ -15,3 +15,7 @@ export const makeupBodySchema = z.object({
 export const rewardParamsSchema = z.object({
   id: z.coerce.number().int().positive(),
 })
+
+export const heatmapQuerySchema = z.object({
+  weeks: z.coerce.number().int().min(4).max(52).optional(),
+})

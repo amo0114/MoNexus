@@ -106,6 +106,8 @@ interface AppState {
   storeCategory: string
   /** 积分流水 Sheet（V3 角色化 Tab Bar）：Tab Bar「积分」与 Profile 按钮共用 */
   pointsHistoryOpen: boolean
+  /** 全局签到弹窗：顶栏签到胶囊与移动抽屉入口共用 */
+  checkinModalOpen: boolean
   /** BottomTabBar 下滑自动隐藏状态：吸底浮层（如排行榜 MyRankBar）随之联动 */
   tabbarHidden: boolean
   /**
@@ -118,6 +120,7 @@ interface AppState {
   submitStoreSearch: () => void
   setStoreCategory: (c: string) => void
   setPointsHistoryOpen: (open: boolean) => void
+  setCheckinModalOpen: (open: boolean) => void
   setTabbarHidden: (hidden: boolean) => void
   setOrderAttentionCount: (n: number) => void
   /**
@@ -208,6 +211,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   storeSearchSubmission: 0,
   storeCategory: '全部',
   pointsHistoryOpen: false,
+  checkinModalOpen: false,
   tabbarHidden: false,
   orderAttentionCount: -1,
   notificationUnreadCount: 0,
@@ -219,6 +223,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   submitStoreSearch: () => set((state) => ({ storeSearchSubmission: state.storeSearchSubmission + 1 })),
   setStoreCategory: (c) => set({ storeCategory: c }),
   setPointsHistoryOpen: (open) => set({ pointsHistoryOpen: open }),
+  setCheckinModalOpen: (open) => set({ checkinModalOpen: open }),
   setTabbarHidden: (hidden) => set({ tabbarHidden: hidden }),
   setOrderAttentionCount: (n) => set({ orderAttentionCount: Math.max(0, n) }),
   refreshOrderAttention: async () => {
@@ -494,6 +499,7 @@ useAuthStore.subscribe((authState) => {
     notificationUnreadCount: 0,
     notificationUnreadStatus: 'unknown',
     notificationStreamState: 'disabled',
+    checkinModalOpen: false,
     toasts: [],
     islandNotice: null,
     islandQueue: [],

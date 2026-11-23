@@ -545,8 +545,8 @@ export default function LoginPage() {
         <div className="space-y-1">
           <PasswordInput
             autoComplete={isRegister ? 'new-password' : 'current-password'}
-            placeholder={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
-            aria-label={isRegister ? `密码（至少 ${PASSWORD_MIN_LENGTH} 位）` : '密码（至少 6 位）'}
+            placeholder="密码"
+            aria-label="密码"
             aria-describedby={isRegister ? 'register-password-hint' : undefined}
             value={password}
             onChange={(event) => {
@@ -554,8 +554,7 @@ export default function LoginPage() {
               if (isRegister) humanVerificationRef.current?.reset()
             }}
             required
-            // Login keeps the legacy minimum so existing accounts can still sign in.
-            minLength={isRegister ? PASSWORD_MIN_LENGTH : 6}
+            minLength={isRegister ? PASSWORD_MIN_LENGTH : undefined}
             disabled={loading}
           />
           {isRegister && (

@@ -259,6 +259,23 @@ export default function LegalDocumentPage({ slug }: { slug: LegalDocumentSlug })
               </footer>
             </article>
           )}
+
+          {readyDocument && slug === 'about' && (
+            <div className="mt-6 flex flex-col items-start justify-between gap-3 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] px-5 py-4 sm:flex-row sm:items-center sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[var(--color-text)]">Co-Built With · 同行者致谢</p>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                  记录与 Claude · Gemini · ChatGPT · DeepSeek 并肩完成 MoNexus 的一段同行时光。
+                </p>
+              </div>
+              <Link
+                to="/credits"
+                className="btn-secondary inline-flex min-h-10 shrink-0 items-center px-4 text-xs font-semibold"
+              >
+                查看同行者 →
+              </Link>
+            </div>
+          )}
         </main>
       </div>
     </div>

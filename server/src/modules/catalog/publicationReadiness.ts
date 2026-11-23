@@ -16,6 +16,7 @@ import { Prisma } from '@prisma/client'
 import { evaluateActiveOffer } from './readinessOffer.js'
 import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
+import { countAvailableByOfferId } from '../../lib/inventoryCounts.js'
 import { isFakaBridgeConfigured } from '../../lib/fakaBridge/client.js'
 import {
   CATEGORY_STATUS,
@@ -97,7 +98,6 @@ const readinessProductSelect = {
       attributes: true,
       deliveryFields: true,
       fixedStructuredContent: true,
-      _count: { select: { inventory: { where: { status: 'available' } } } },
     },
   },
 } satisfies Prisma.ProductSelect
@@ -187,6 +187,7 @@ export async function inspectProductReadiness(
     select: readinessProductSelect,
   })
   if (!product) throw notFound('商品不存在')
+  const availableByOffer = await countAvailableByOfferId(product.offers.map(offer => offer.id), db)
 
   const details: ReadinessDetail[] = []
   const isFirstPublish = product.publishedAt == null
@@ -243,7 +244,7 @@ export async function inspectProductReadiness(
     for (const offer of activeOffers) {
       const evaluation = evaluateActiveOffer(
         offer,
-        offer._count.inventory,
+        availableByOffer.get(offer.id) ?? 0,
         hasActiveWebhook,
         isProviderConfigured,
       )

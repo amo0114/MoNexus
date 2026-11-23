@@ -203,6 +203,10 @@ const envSchema = z.object({
     if (value === undefined || value === '') return undefined
     return value
   }, z.enum(['nginx', 'caddy', 'cloudflare_openresty_nginx']).default('nginx')),
+  // all = HTTP + every cron/worker (single process); api = HTTP + realtime only;
+  // worker = cron/workers (HTTP stays up for health/metrics, not user traffic).
+  PROCESS_ROLE: z.preprocess(value => value === '' ? undefined : value,
+    z.enum(['all', 'api', 'worker']).default('all')),
 
   // --- Object storage (P0-C). All optional: when any are missing the
   // server falls back to an in-memory adapter that's only safe for dev
@@ -942,6 +946,7 @@ export const config = {
   apiRateLimitMax: env.API_RATE_LIMIT_MAX,
   trustProxy: env.TRUST_PROXY,
   deployTopology: env.DEPLOY_TOPOLOGY,
+  processRole: env.PROCESS_ROLE,
   jwtExpiresIn: '15m' as const,
   refreshTokenMaxAgeMs: 7 * 24 * 60 * 60 * 1000,
   checkinReward: 50,

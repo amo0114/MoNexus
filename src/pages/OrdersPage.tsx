@@ -18,7 +18,7 @@ import OrdersPagination from '../components/orders/OrdersPagination'
 import OrderDetailModal from '../components/OrderDetailModal'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
-import { TableSkeleton } from '../components/ui/Skeleton'
+import { OrderCardSkeletonGrid } from '../components/ui/Skeleton'
 import {
   ORDER_LIST_TABS,
   type OrderListTab,
@@ -369,7 +369,7 @@ export default function OrdersPage() {
       </div>
 
       {effectiveLoading ? (
-        <TableSkeleton rows={5} />
+        <OrderCardSkeletonGrid count={4} />
       ) : activeLoadError ? (
         <div className="card p-6">
           <ErrorState

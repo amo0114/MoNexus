@@ -24,9 +24,9 @@ describe('formatExpiryUnix', () => {
   it('shows long-term when null', () => {
     expect(formatExpiryUnix(null)).toContain('长期')
   })
-  it('formats seconds as local datetime', () => {
-    const s = formatExpiryUnix(1791244800)
-    expect(s).toMatch(/2026-/)
+  it('formats seconds as Asia/Shanghai wall time regardless of host TZ', () => {
+    // 2026-10-06T00:00:00Z
+    expect(formatExpiryUnix(1791244800)).toBe('2026-10-06 08:00')
   })
 })
 
