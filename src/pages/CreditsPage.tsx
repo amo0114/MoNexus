@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
+import { memo, useEffect, useRef, useState, type CSSProperties, type MouseEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ChevronLeft, ChevronRight, Flame, Sparkles } from 'lucide-react'
 import Logo from '../components/ui/Logo'
@@ -82,7 +82,7 @@ const COMPANION_PILLARS: CompanionPillar[] = [
   },
 ]
 
-function AstrolabeBackdrop() {
+const AstrolabeBackdrop = memo(function AstrolabeBackdrop() {
   const ticks = Array.from({ length: 36 }, (_, idx) => idx * 10)
   return (
     <svg
@@ -215,9 +215,9 @@ function AstrolabeBackdrop() {
       </g>
     </svg>
   )
-}
+})
 
-function SacredHalo({ accent }: { accent: string }) {
+const SacredHalo = memo(function SacredHalo({ accent }: { accent: string }) {
   return (
     <div className="sanctuary-halo-wrap pointer-events-none select-none absolute top-9 left-1/2 -translate-x-1/2">
       <svg
@@ -263,7 +263,7 @@ function SacredHalo({ accent }: { accent: string }) {
       </svg>
     </div>
   )
-}
+})
 
 function CornerOrnament({ className }: { className: string }) {
   return (
@@ -323,8 +323,15 @@ export default function CreditsPage() {
   const [ignitionBurst, setIgnitionBurst] = useState<IgnitionBurst | null>(null)
 
   const astrolabeWrapRef = useRef<HTMLDivElement | null>(null)
+  const tiltRafRef = useRef<number>(0)
   const lecternReveal = useScrollReveal()
   const monolithReveal = useScrollReveal()
+
+  useEffect(() => {
+    return () => {
+      if (tiltRafRef.current) window.cancelAnimationFrame(tiltRafRef.current)
+    }
+  }, [])
 
   const activeIndex = COMPANION_PILLARS.findIndex((c) => c.id === activeId)
   const activeCompanion = COMPANION_PILLARS[activeIndex] ?? COMPANION_PILLARS[0]
@@ -366,29 +373,36 @@ export default function CreditsPage() {
 
   const handlePillarMouseMove = (event: MouseEvent<HTMLButtonElement>) => {
     const el = event.currentTarget
-    const rect = el.getBoundingClientRect()
-    const nx = (event.clientX - rect.left) / rect.width
-    const ny = (event.clientY - rect.top) / rect.height
-    const px = (nx - 0.5) * 2
-    const py = (ny - 0.5) * 2
-    const tiltY = px * 5.2
-    const tiltX = -py * 4.2
-    el.style.setProperty('--px', px.toFixed(3))
-    el.style.setProperty('--py', py.toFixed(3))
-    el.style.setProperty('--tilt-x', `${tiltX.toFixed(2)}deg`)
-    el.style.setProperty('--tilt-y', `${tiltY.toFixed(2)}deg`)
-    el.style.setProperty('--spot-x', `${(nx * 100).toFixed(1)}%`)
-    el.style.setProperty('--spot-y', `${(ny * 100).toFixed(1)}%`)
+    const clientX = event.clientX
+    const clientY = event.clientY
+    if (tiltRafRef.current) window.cancelAnimationFrame(tiltRafRef.current)
+    tiltRafRef.current = window.requestAnimationFrame(() => {
+      tiltRafRef.current = 0
+      const rect = el.getBoundingClientRect()
+      if (rect.width === 0 || rect.height === 0) return
+      const nx = (clientX - rect.left) / rect.width
+      const ny = (clientY - rect.top) / rect.height
+      const px = (nx - 0.5) * 2
+      const py = (ny - 0.5) * 2
+      const tiltY = px * 5
+      const tiltX = -py * 4
+      el.style.setProperty('--px', px.toFixed(3))
+      el.style.setProperty('--py', py.toFixed(3))
+      el.style.setProperty('--tilt-x', `${tiltX.toFixed(2)}deg`)
+      el.style.setProperty('--tilt-y', `${tiltY.toFixed(2)}deg`)
+    })
   }
 
   const handlePillarMouseLeave = (event: MouseEvent<HTMLButtonElement>) => {
+    if (tiltRafRef.current) {
+      window.cancelAnimationFrame(tiltRafRef.current)
+      tiltRafRef.current = 0
+    }
     const el = event.currentTarget
     el.style.setProperty('--px', '0')
     el.style.setProperty('--py', '0')
     el.style.setProperty('--tilt-x', '0deg')
     el.style.setProperty('--tilt-y', '0deg')
-    el.style.setProperty('--spot-x', '50%')
-    el.style.setProperty('--spot-y', '32%')
     setHoveredId(null)
   }
 
@@ -424,13 +438,12 @@ export default function CreditsPage() {
         />
       ))}
 
-      {/* Classical Cathedral Vault Ribs & Side Fluted Colonnade filling widescreen margins */}
+      {/* Subtle Cathedral Vault Converging Arch Lines */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
-        {/* Cathedral vault converging arch lines */}
         <svg
           viewBox="0 0 1600 900"
           preserveAspectRatio="xMidYMin slice"
-          className="h-full w-full opacity-45"
+          className="h-full w-full opacity-40"
         >
           <path
             d="M 80 900 Q 80 180 800 40 Q 1520 180 1520 900"
@@ -438,74 +451,27 @@ export default function CreditsPage() {
             stroke={atmosphereCompanion.accent}
             strokeOpacity="0.22"
             strokeWidth="1.2"
-            style={{ transition: 'stroke 1s ease' }}
+            style={{ transition: 'stroke 0.9s ease' }}
           />
           <path
             d="M 210 900 Q 220 260 800 110 Q 1380 260 1390 900"
             fill="none"
             stroke="var(--sanc-gold)"
-            strokeOpacity="0.2"
+            strokeOpacity="0.18"
             strokeWidth="0.9"
           />
           <path
             d="M 0 380 Q 420 260 800 280 Q 1180 260 1600 380"
             fill="none"
             stroke="var(--sanc-gold)"
-            strokeOpacity="0.14"
+            strokeOpacity="0.12"
             strokeWidth="0.8"
           />
-          <line x1="800" y1="0" x2="800" y2="900" stroke="var(--sanc-gold)" strokeOpacity="0.08" strokeWidth="1" />
         </svg>
-
-        {/* Left Classical Fluted Column */}
-        <div
-          className="sanctuary-colonnade-pillar hidden xl:block fixed top-14 bottom-0 left-0 w-24 border-r opacity-75"
-          style={{
-            borderColor: `color-mix(in srgb, ${atmosphereCompanion.accent} 34%, var(--sanc-gold-line))`,
-            boxShadow: `inset -18px 0 34px -18px color-mix(in srgb, ${atmosphereCompanion.accent} 38%, transparent)`,
-          }}
-        />
-
-        {/* Right Classical Fluted Column */}
-        <div
-          className="sanctuary-colonnade-pillar hidden xl:block fixed top-14 bottom-0 right-0 w-24 border-l opacity-75"
-          style={{
-            borderColor: `color-mix(in srgb, ${atmosphereCompanion.accent} 34%, var(--sanc-gold-line))`,
-            boxShadow: `inset 18px 0 34px -18px color-mix(in srgb, ${atmosphereCompanion.accent} 38%, transparent)`,
-          }}
-        />
-
-        {/* Subtle Roman numeral & motto side watermark reflecting current AI */}
-        <div className="sanctuary-watermark-crest hidden 2xl:flex fixed left-7 top-1/2 -translate-y-1/2 flex-col items-center gap-3 select-none">
-          <span
-            className="sanctuary-roman text-3xl font-semibold tracking-[0.2em]"
-            style={{ color: atmosphereCompanion.accent, opacity: 0.42, transition: 'color 0.8s ease' }}
-          >
-            {atmosphereCompanion.roman}
-          </span>
-          <span className="h-16 w-px bg-gradient-to-b from-transparent via-[var(--sanc-gold-line)] to-transparent" />
-          <span className="sanctuary-roman text-[10px] tracking-[0.34em] uppercase [writing-mode:vertical-rl] text-[var(--sanc-gold)] opacity-60">
-            {atmosphereCompanion.name}
-          </span>
-        </div>
-
-        <div className="sanctuary-watermark-crest hidden 2xl:flex fixed right-7 top-1/2 -translate-y-1/2 flex-col items-center gap-3 select-none">
-          <span className="sanctuary-roman text-[10px] tracking-[0.3em] uppercase [writing-mode:vertical-rl] text-[var(--sanc-gold)] opacity-60">
-            {atmosphereCompanion.latinMotto}
-          </span>
-          <span className="h-16 w-px bg-gradient-to-b from-transparent via-[var(--sanc-gold-line)] to-transparent" />
-          <span
-            className="h-2 w-2 rotate-45 border"
-            style={{ borderColor: atmosphereCompanion.accent, opacity: 0.65, transition: 'border-color 0.8s ease' }}
-          />
-        </div>
       </div>
 
       {/* 60fps Ambient Sanctuary Dust & Converging Four-Star Flame Canvas */}
       <SanctuaryParticles burst={ignitionBurst} accentHex={atmosphereCompanion.accent} />
-
-      {/* Subtle architectural floor/ceiling fine grid */}
-      <div className="sanctuary-marble-grain pointer-events-none fixed inset-0 z-0 opacity-45" aria-hidden="true" />
 
       {/* Theater ambient vignette that dims the surroundings when spotlighting a companion */}
       <div
@@ -670,10 +636,12 @@ export default function CreditsPage() {
                     style={{ '--pillar-accent': pillar.accent } as CSSProperties}
                     className="sanctuary-niche group flex flex-col items-center overflow-hidden pt-6 pb-5 px-4 text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sanc-gold)]"
                   >
-                    {/* Overhead Stage Spotlight Optics: Lamp Flare + Dual Volumetric Cones */}
+                    {/* Overhead Stage Spotlight Optics: Zero-blur GPU Conical Beams */}
                     <span aria-hidden="true" className="sanctuary-lamp-source" />
                     <span aria-hidden="true" className="sanctuary-spotlight-cone" />
                     <span aria-hidden="true" className="sanctuary-spotlight-core" />
+                    <span aria-hidden="true" className="sanctuary-subject-glow" />
+                    <span aria-hidden="true" className="sanctuary-niche-veil" />
 
                     {/* Layer 3 (Top): Roman numeral + Pure Transparent Official SVG Crest */}
                     <div className="sanctuary-keystone relative z-10 flex flex-col items-center gap-2">

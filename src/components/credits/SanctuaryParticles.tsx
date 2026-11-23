@@ -153,13 +153,14 @@ export default function SanctuaryParticles({ burst, accentHex }: SanctuaryPartic
 
     let width = window.innerWidth
     let height = window.innerHeight
-    let dpr = Math.min(window.devicePixelRatio || 1, 2)
+    let dpr = Math.min(window.devicePixelRatio || 1, 1.5)
     let rafId = 0
+    let paused = document.hidden
 
     const resize = () => {
       width = window.innerWidth
       height = window.innerHeight
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5)
       canvas.width = Math.floor(width * dpr)
       canvas.height = Math.floor(height * dpr)
       canvas.style.width = `${width}px`
@@ -168,8 +169,8 @@ export default function SanctuaryParticles({ burst, accentHex }: SanctuaryPartic
     }
     resize()
 
-    // Calibrated ambient golden dust density (lightweight & calm)
-    const moteCount = Math.max(28, Math.min(54, Math.floor((width * height) / 28000)))
+    // Calibrated ambient golden dust density (lightweight & silky 60-120fps)
+    const moteCount = Math.max(20, Math.min(36, Math.floor((width * height) / 42000)))
     const motes: DustMote[] = Array.from({ length: moteCount }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
@@ -191,14 +192,26 @@ export default function SanctuaryParticles({ burst, accentHex }: SanctuaryPartic
       pointerRef.current.active = false
     }
 
+    const onVisibilityChange = () => {
+      paused = document.hidden
+      if (!paused && !rafId) {
+        rafId = window.requestAnimationFrame(render)
+      }
+    }
+
     window.addEventListener('resize', resize, { passive: true })
     window.addEventListener('pointermove', onPointerMove, { passive: true })
     window.addEventListener('pointerleave', onPointerLeave, { passive: true })
+    document.addEventListener('visibilitychange', onVisibilityChange)
 
     let tick = 0
     let goldRgb = readGoldRgb()
 
     const render = () => {
+      if (paused) {
+        rafId = 0
+        return
+      }
       tick += 1
       if (tick % 45 === 0) {
         goldRgb = readGoldRgb()
@@ -360,10 +373,11 @@ export default function SanctuaryParticles({ burst, accentHex }: SanctuaryPartic
     rafId = window.requestAnimationFrame(render)
 
     return () => {
-      window.cancelAnimationFrame(rafId)
+      if (rafId) window.cancelAnimationFrame(rafId)
       window.removeEventListener('resize', resize)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerleave', onPointerLeave)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [])
 
