@@ -25,3 +25,4 @@ scrape_configs:
     static_configs:
       - targets:
           - server:3000
+          - server-worker:3000
