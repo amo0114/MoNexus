@@ -96,9 +96,9 @@ export function normalizeProductListParams(params: ProductListCacheParams) {
   return normalized
 }
 
-// Bumped when the cached public product/card shape changes, so entries written by
-// the previous deploy are never served with missing fields; old keys just expire.
-const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v2'
+// The previous projection could contain guest eligibility and revision fields.
+// Use a new namespace so instances cannot serve those cached responses.
+const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v3'
 const projectionVersion = () => config.xboardAccounts.paidResetEnabled ? `${PUBLIC_PROJECTION_VERSION}-paid-reset` : PUBLIC_PROJECTION_VERSION
 
 export async function buildProductListCacheKey(params: ProductListCacheParams) {
