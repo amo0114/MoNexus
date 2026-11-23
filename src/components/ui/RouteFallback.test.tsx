@@ -76,10 +76,50 @@ describe('RouteFallback', () => {
     expect(screen.getByTestId('product-detail-skeleton')).toBeInTheDocument()
   })
 
-  it('keeps a grid for the shop page', () => {
+  it('keeps a grid for the shop page aligned with ShopPage breakpoints', () => {
     const { container } = renderAt('/shops/7')
-    expect(screen.getByTestId('route-fallback-grid')).toBeInTheDocument()
+    const grid = screen.getByTestId('route-fallback-grid')
+    expect(grid).toBeInTheDocument()
+    expect(grid.className).toContain('xl:grid-cols-4')
+    expect(grid.className).not.toContain('lg:grid-cols-4')
     expect(cardGrids(container)).toHaveLength(1)
+  })
+
+  it('aligns orders fallback to the two-column order card grid', () => {
+    renderAt('/orders')
+    const grid = screen.getByTestId('order-card-skeleton-grid')
+    expect(grid.className).toContain('md:grid-cols-2')
+    expect(screen.getAllByTestId('route-fallback-row')).toHaveLength(4)
+  })
+
+  it('aligns notifications fallback to the centered max-w-3xl message list', () => {
+    renderAt('/notifications')
+    const container = screen.getByTestId('notifications-fallback')
+    expect(container.className).toContain('max-w-3xl')
+    expect(container.className).toContain('mx-auto')
+    expect(screen.getAllByTestId('route-fallback-row')).toHaveLength(4)
+  })
+
+  it('aligns workspace sidebar breakpoints for admin (xl/w-56) vs merchant (md/w-64)', () => {
+    const admin = renderAt('/admin')
+    const adminNav = screen.getByTestId('route-fallback-nav')
+    expect(adminNav.className).toContain('xl:block')
+    expect(adminNav.className).toContain('w-56')
+    admin.unmount()
+
+    renderAt('/merchant/dashboard')
+    const merchantNav = screen.getByTestId('route-fallback-nav')
+    expect(merchantNav.className).toContain('md:block')
+    expect(merchantNav.className).toContain('w-64')
+  })
+
+  it('aligns product detail offers skeleton to 2-col mid / 3-col xl grid', () => {
+    const { container } = renderAt('/product/42')
+    const offers = container.querySelector('[data-skeleton-part="offers"]')
+    expect(offers).not.toBeNull()
+    expect(offers?.className).toContain('grid-cols-2')
+    expect(offers?.className).toContain('xl:grid-cols-3')
+    expect(offers?.children).toHaveLength(3)
   })
 
   it.each(['/product/42', '/shops/7', '/orders', '/admin', '/recharge', '/profile'])(

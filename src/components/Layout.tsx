@@ -1,12 +1,12 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, Package, Wallet, ArrowLeft, ChevronRight } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, Package, Wallet, CalendarCheck, ArrowLeft, ChevronRight } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
 import PointCoin from './ui/PointCoin'
 import { formatBadgeCount } from '../utils/orderAttention'
 import { subscribeReadInvalidation } from '../realtime/readSyncBroadcast'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -36,6 +36,10 @@ import {
 } from '../api/legal'
 import type { PublicAnnouncement } from '../types/admin'
 import { hasMerchantCapability } from '../auth/merchantAccess'
+import { hasStreakDetails } from '../api/checkin'
+import { useCheckin } from '../hooks/useCheckin'
+
+const CheckinModal = lazy(() => import('./checkin/CheckinModal'))
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -57,6 +61,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const refreshOrderAttentionIfStale = useAppStore((s) => s.refreshOrderAttentionIfStale)
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
+  const checkinModalOpen = useAppStore((s) => s.checkinModalOpen)
+  const setCheckinModalOpen = useAppStore((s) => s.setCheckinModalOpen)
+  const showCheckinEntry = Boolean(user && user.role !== 'admin')
+  const checkinState = useCheckin({ enabled: showCheckinEntry })
+  const checkinClaimableCount = hasStreakDetails(checkinState.status) ? checkinState.status.claimable.length : 0
+  const checkinPending = Boolean(checkinState.status && !checkinState.status.hasCheckedIn)
+  const checkinNeedsAction = checkinPending || checkinClaimableCount > 0
+  const checkinStreak = hasStreakDetails(checkinState.status) ? checkinState.status.streak : 0
   const announcements = useAnnouncements()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
   const [forcedAnnouncementTab, setForcedAnnouncementTab] = useState(false)
@@ -561,6 +573,54 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <ThemeMenu />
                 </div>
 
+                {showCheckinEntry && (
+                  <button
+                    type="button"
+                    onClick={() => setCheckinModalOpen(true)}
+                    title={
+                      checkinClaimableCount > 0
+                        ? `每日签到（有 ${checkinClaimableCount} 个奖励待领取）`
+                        : checkinState.status?.hasCheckedIn
+                          ? checkinStreak > 0 ? `今日已签到（已连签 ${checkinStreak} 天）` : '今日已签到'
+                          : '每日签到领积分'
+                    }
+                    aria-label={
+                      checkinClaimableCount > 0
+                        ? `每日签到，有 ${checkinClaimableCount} 个奖励待领取`
+                        : checkinState.status?.hasCheckedIn
+                          ? '今日已签到'
+                          : '每日签到'
+                    }
+                    aria-haspopup="dialog"
+                    aria-expanded={checkinModalOpen}
+                    data-testid="nav-checkin"
+                    data-checkin-state={
+                      checkinClaimableCount > 0
+                        ? 'claimable'
+                        : checkinState.status?.hasCheckedIn
+                          ? 'done'
+                          : 'pending'
+                    }
+                    className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                      checkinNeedsAction
+                        ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)] hover:bg-[color-mix(in_srgb,var(--color-primary)_14%,transparent)]'
+                        : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+                    }`}
+                  >
+                    <CalendarCheck className="w-4 h-4 shrink-0" />
+                    <span className="hidden lg:inline font-bold text-xs">
+                      {checkinClaimableCount > 0 ? '领奖' : checkinState.status?.hasCheckedIn ? '已签' : '签到'}
+                    </span>
+                    {checkinNeedsAction && (
+                      <span
+                        aria-hidden="true"
+                        data-testid="nav-checkin-dot"
+                        className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[var(--color-cta)] ring-2 ring-[var(--color-background)]"
+                      />
+                    )}
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => navigate('/recharge')}
@@ -713,6 +773,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         onAcknowledge={announcements.acknowledge}
         forceAnnouncementTab={hasPendingRequiredAnnouncement || forcedAnnouncementTab}
       />
+
+      {showCheckinEntry && checkinModalOpen && (
+        <Suspense fallback={null}>
+          <CheckinModal
+            open={checkinModalOpen}
+            onOpenChange={setCheckinModalOpen}
+            state={checkinState}
+          />
+        </Suspense>
+      )}
 
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，
           把页面内 fixed 弹窗（z-50）整体压到 footer（z-10）之下，导致长页面

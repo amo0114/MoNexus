@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CheckinCard, { CheckinCompact } from './CheckinCard'
+import CheckinModal from './CheckinModal'
 import { useCheckin } from '../../hooks/useCheckin'
 import { claimCheckinReward, getCheckinStatus, postCheckin, postMakeup, type CheckinStatus } from '../../api/checkin'
 import { celebrate } from '../../lib/celebrate'
@@ -120,5 +121,35 @@ describe('CheckinCard', () => {
 
     expect(await screen.findByTestId('checkin-button')).toBeEnabled()
     expect(screen.queryByTestId('checkin-card')).not.toBeInTheDocument()
+  })
+
+  it('syncs check-in state across CheckinModal and other consumers', async () => {
+    vi.mocked(getCheckinStatus)
+      .mockResolvedValueOnce(status())
+      .mockResolvedValueOnce(status({ hasCheckedIn: true, streak: 3, streakState: 'done' }))
+    vi.mocked(postCheckin).mockResolvedValue({
+      baseReward: 5, bonusReward: 0, totalReward: 5, balanceAfter: 105, streak: 3, newRewards: [],
+    })
+
+    function ModalHost() {
+      const state = useCheckin()
+      return (
+        <>
+          <span data-testid="nav-state">{state.status?.hasCheckedIn ? 'done' : 'pending'}</span>
+          <CheckinModal open onOpenChange={() => {}} state={state} />
+        </>
+      )
+    }
+
+    render(<MemoryRouter initialEntries={['/']}><ModalHost /></MemoryRouter>)
+
+    const modal = await screen.findByTestId('checkin-modal')
+    expect(modal.className).toContain('bottom-0')
+    expect(modal.className).toContain('sm:left-1/2')
+    expect(screen.getByTestId('nav-state')).toHaveTextContent('pending')
+
+    fireEvent.click(await screen.findByTestId('checkin-button'))
+    await waitFor(() => expect(screen.getByTestId('nav-state')).toHaveTextContent('done'))
+    expect(screen.getByTestId('checkin-button')).toBeDisabled()
   })
 })

@@ -5,7 +5,6 @@ import { listStoreProducts, loadStoreCandidates, type StoreProductQuery } from '
 import { getApiErrorCode } from '../api/error'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
-import TodayPanel from '../components/home/TodayPanel'
 import { usePageView } from '../hooks/usePageView'
 import {
   getStorePageCache,
@@ -120,7 +119,6 @@ export default function StorePage() {
   }, [category, storedCategory, setStoreCategory, urlCategory, urlCategoryChanged, setParams])
   const { theme } = useTheme()
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
-  const showTodayPanel = useAuthStore((s) => s.isLoggedIn && s.user != null && s.user.role !== 'admin')
   const audience: 'guest' | 'member' = isLoggedIn ? 'member' : 'guest'
   const identityKey = useAuthStore(storeIdentityKey)
   const categoryCode = category === '全部' ? undefined
@@ -754,11 +752,8 @@ export default function StorePage() {
 
   return (
     <div className="space-y-8">
-      {/* Header — compacted on mobile (V2-M2), explanatory subtitle preserved.
-          登录用户换成今日面板（SPEC-ENGAGE-001 HM-01）。 */}
-      {showTodayPanel ? (
-        <TodayPanel />
-      ) : (
+      {/* Guest welcome hero — signed-in users go straight to search & catalog; check-in lives in navbar / drawer */}
+      {!isLoggedIn && (
         <div className="flex flex-col items-center justify-center text-center max-md:pt-0 max-md:pb-1 pt-2 pb-2 relative">
           <div className="mb-2">
             <FluidOrb

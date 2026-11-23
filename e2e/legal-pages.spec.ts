@@ -70,7 +70,7 @@ test.describe('registration consent gate', () => {
 
     const email = `legal-e2e-${Date.now()}@test.local`
     await page.getByPlaceholder('邮箱地址').fill(email)
-    await page.getByPlaceholder('密码（至少 8 位）').fill('Reg1ster#Flow-2026')
+    await page.getByPlaceholder('密码').fill('Reg1ster#Flow-2026')
 
     const submit = page.getByRole('button', { name: '创建账号' })
     await expect(submit).toBeDisabled()
