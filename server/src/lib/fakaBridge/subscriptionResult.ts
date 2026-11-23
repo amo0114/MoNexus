@@ -11,6 +11,7 @@ import type {
 } from './types.js'
 import { parseFakaExpiredAt } from './expiredAt.js'
 import { DELIVERY_FIELDS_MAX } from '../deliveryFields.js'
+import { BUSINESS_TIME_ZONE } from '../businessTime.js'
 
 /** Subscription URLs are bearer credentials; accept only copyable HTTPS URLs. */
 function subscriptionUrl(value: unknown): string | null {
@@ -96,12 +97,17 @@ export function formatTrafficBytes(bytes: number | null | undefined): string {
   return `${trimmed} ${units[i]}`
 }
 
+const expiryFormat = new Intl.DateTimeFormat('en-CA', {
+  timeZone: BUSINESS_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
+
 export function formatExpiryUnix(sec: number | null | undefined): string {
   if (sec == null || sec <= 0) return '长期 / 无时间限制'
   const d = new Date(sec * 1000)
   if (Number.isNaN(d.getTime())) return '—'
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  // Buyer-facing wall time; production containers do not set TZ.
+  const parts = Object.fromEntries(expiryFormat.formatToParts(d).map(part => [part.type, part.value]))
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
 }
 
 export function actionLabel(action: FakaSubscriptionAction | null | undefined): string {
