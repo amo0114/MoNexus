@@ -174,11 +174,32 @@ if awk '
   fail 'Prometheus and Alertmanager must not publish host ports.'
 fi
 
+# api/worker split: same environment, explicit roles, worker never reachable
+# from the host (nginx routes users to server only).
+for required_fragment in \
+  'environment: &server-env' \
+  '<<: *server-env' \
+  'container_name: monexus-server-worker-prod' \
+  'PROCESS_ROLE: api' \
+  'PROCESS_ROLE: worker'; do
+  grep -Fq "$required_fragment" "${ROOT_DIR}/docker-compose.prod.yml" || \
+    fail "Compose is missing the api/worker split contract: ${required_fragment}"
+done
+if awk '
+  /^  server-worker:$/ { in_worker = 1; next }
+  in_worker && /^  [A-Za-z0-9_-]+:$/ { in_worker = 0 }
+  in_worker && /^[[:space:]]+ports:/ { found = 1 }
+  END { exit found ? 0 : 1 }
+' "${ROOT_DIR}/docker-compose.prod.yml"; then
+  fail 'server-worker must not publish host ports.'
+fi
+
 prometheus_config="${ROOT_DIR}/deploy/monitoring/prometheus.yml"
 [[ -f "$prometheus_config" ]] || fail 'Prometheus production configuration is missing.'
 for required_fragment in \
   'bearer_token_file: /run/secrets/metrics_token' \
   'server:3000' \
+  'server-worker:3000' \
   'alertmanager:9093' \
   '/etc/prometheus/rules/*.rules.yml'; do
   grep -Fq "$required_fragment" "$prometheus_config" || \
@@ -213,6 +234,10 @@ for required_fragment in \
   'smtp_auth_password_file: /run/secrets/alertmanager_smtp_password' \
   'MoNexusPaidRechargeNotCredited' \
   'MoNexusSimulatorConfiguredOnProductionDeploy' \
+  'up -d --no-deps --force-recreate server-worker' \
+  'Release has no server-worker; removing the previous worker container.' \
+  'wait_for_healthy monexus-server-worker-prod' \
+  'assert_running_target monexus-server-worker-prod' \
   'assert_monitoring_contract' \
   'run_alert_rehearsal'; do
   grep -Fq "$required_fragment" "$entrypoint" || \

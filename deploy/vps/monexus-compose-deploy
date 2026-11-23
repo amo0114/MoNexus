@@ -46,7 +46,8 @@ Usage:
 
 dry-run validates the request and prints its immutable image tag without
 changing the host. deploy verifies the master ancestry and image labels,
-updates only MONEXUS_IMAGE_TAG/MONEXUS_PULL_POLICY, recreates server then web,
+updates only MONEXUS_IMAGE_TAG/MONEXUS_PULL_POLICY, recreates server (api, runs
+migrations), then server-worker (cron/workers), then web,
 then recreates the private monitoring services and verifies their targets and
 rules. rehearse-alert sends fixed firing/resolved test alerts and requires two
 successful email notification attempts. No action performs automatic rollback.
@@ -322,6 +323,8 @@ record_deployment_state() {
     printf 'previous_env_pull_policy=%s\n' "$(read_env_value MONEXUS_PULL_POLICY)"
     printf 'previous_server_image=%s\n' "$(docker inspect --format '{{.Config.Image}}' monexus-server-prod)"
     printf 'previous_web_image=%s\n' "$(docker inspect --format '{{.Config.Image}}' monexus-web-prod)"
+    # Absent before the first api/worker split deployment.
+    printf 'previous_worker_image=%s\n' "$(docker inspect --format '{{.Config.Image}}' monexus-server-worker-prod 2>/dev/null || echo none)"
     printf 'recorded_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   } > "$state_file"
   chmod 0600 "$state_file"
@@ -424,7 +427,10 @@ monitoring_contract_ready() {
   targets="$(curl --noproxy '*' --fail --silent --show-error --max-time 15 \
     "http://${prometheus_address}:9090/api/v1/targets" 2>/dev/null)" || return 1
   grep -Fq '"job":"monexus"' <<< "$targets" || return 1
-  grep -Fq '"health":"up"' <<< "$targets" || return 1
+  # api (server) and, once split, worker (server-worker) must both be up.
+  local expected_targets=1
+  docker inspect monexus-server-worker-prod >/dev/null 2>&1 && expected_targets=2
+  (( $(grep -o '"health":"up"' <<< "$targets" | wc -l) >= expected_targets )) || return 1
 
   rules="$(curl --noproxy '*' --fail --silent --show-error --max-time 15 \
     "http://${prometheus_address}:9090/api/v1/rules" 2>/dev/null)" || return 1
@@ -537,7 +543,7 @@ run_dry_run() {
 
 run_deploy() {
   local commit="$1"
-  local tag release_path expected_architecture
+  local tag release_path expected_architecture services has_worker=false
   local -a compose
 
   tag="$(tag_for_commit "$commit")"
@@ -574,6 +580,11 @@ run_deploy() {
   compose+=(--profile selfhost-storage --profile production-monitoring)
 
   MONEXUS_IMAGE_TAG="$tag" MONEXUS_PULL_POLICY='missing' "${compose[@]}" config --quiet
+  # Releases before the api/worker split have no server-worker service.
+  services="$(MONEXUS_IMAGE_TAG="$tag" "${compose[@]}" config --services)"
+  if grep -qx server-worker <<< "$services"; then
+    has_worker=true
+  fi
   verify_target_image "ghcr.io/amo0114/monexus-server:${tag}" "$commit" "$expected_architecture"
   verify_target_image "ghcr.io/amo0114/monexus-web:${tag}" "$commit" "$expected_architecture"
   "${compose[@]}" pull --quiet prometheus alertmanager
@@ -587,6 +598,18 @@ run_deploy() {
   "${compose[@]}" up -d --no-deps --force-recreate server
   wait_for_healthy monexus-server-prod
 
+  # Background jobs pause from the server recreate until the worker is healthy;
+  # cron leases and state tables make the resumed batches safe.
+  if [[ "$has_worker" == true ]]; then
+    notice 'Recreating server-worker after server readiness (migrations applied).'
+    "${compose[@]}" up -d --no-deps --force-recreate server-worker
+    wait_for_healthy monexus-server-worker-prod
+  elif docker inspect monexus-server-worker-prod >/dev/null 2>&1; then
+    # Pre-split release: server runs every cron itself, so retire the old worker.
+    notice 'Release has no server-worker; removing the previous worker container.'
+    docker rm -f monexus-server-worker-prod >/dev/null
+  fi
+
   notice 'Recreating web only after server readiness passed.'
   "${compose[@]}" up -d --no-deps --force-recreate web
   wait_for_healthy monexus-web-prod
@@ -599,6 +622,9 @@ run_deploy() {
 
   assert_loopback_health
   assert_running_target monexus-server-prod "$commit"
+  if [[ "$has_worker" == true ]]; then
+    assert_running_target monexus-server-worker-prod "$commit"
+  fi
   assert_running_target monexus-web-prod "$commit"
   assert_monitoring_contract
 

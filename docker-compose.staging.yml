@@ -6,3 +6,6 @@ services:
   server:
     environment:
       MONEXUS_DEPLOY_ENV: staging
+  server-worker:
+    environment:
+      MONEXUS_DEPLOY_ENV: staging
