@@ -663,16 +663,20 @@ export default function CreditsPage() {
                     <div className="relative mt-2 flex h-[285px] sm:h-[305px] w-full items-end justify-center overflow-hidden">
                       <SacredHalo accent={pillar.accent} />
 
-                      <img
+                      <div
                         key={`${pillar.id}-${figureMode}`}
-                        src={figureSrc}
-                        alt={`${pillar.name} ${figureMode === 'portrait' ? '古典立绘' : 'Q 版灵姿'}`}
-                        className={`sanctuary-figure sanctuary-chronicle-enter relative z-10 w-auto object-contain select-none ${
-                          figureMode === 'portrait'
-                            ? 'h-[275px] sm:h-[296px]'
-                            : 'h-[212px] sm:h-[224px] mb-3'
-                        }`}
-                      />
+                        className="sanctuary-chronicle-enter relative z-10 flex items-end justify-center"
+                      >
+                        <img
+                          src={figureSrc}
+                          alt={`${pillar.name} ${figureMode === 'portrait' ? '古典立绘' : 'Q 版灵姿'}`}
+                          className={`sanctuary-figure w-auto object-contain select-none ${
+                            figureMode === 'portrait'
+                              ? 'h-[275px] sm:h-[296px]'
+                              : 'h-[212px] sm:h-[224px] mb-3'
+                          }`}
+                        />
+                      </div>
 
                       <span aria-hidden="true" className="sanctuary-floor-pool" />
 
