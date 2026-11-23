@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { usesStablePaidReset } from '../../lib/fakaBridge/paidResetSku.js'
 import { wrapCache } from '../../lib/cache.js'
+import { countAvailableByOfferId, countAvailableByProductId } from '../../lib/inventoryCounts.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
 import { projectPublicTemplateAttributes, serializePublicOffer } from '../../lib/offers.js'
 import { getProductTemplate } from '../../lib/productCatalog/templates/registry.js'
@@ -187,36 +188,10 @@ function computePublicAvailability(
 }
 
 /** 批量取即时库存规格的真实可用条目数（一次 groupBy 服务整页/单品）。 */
-async function countAvailableByOffer(offers: AvailabilityOffer[]): Promise<Map<number, number>> {
-  const instantOfferIds = offers
-    .filter(offer => offer.deliveryMode === 'instant_inventory')
-    .map(offer => offer.id)
-  const counts = new Map<number, number>()
-  if (instantOfferIds.length === 0) return counts
-  const grouped = await prisma.inventoryItem.groupBy({
-    by: ['offerId'],
-    where: { offerId: { in: instantOfferIds }, status: 'available' },
-    _count: { _all: true },
-  })
-  for (const row of grouped) counts.set(row.offerId, row._count._all)
-  return counts
-}
-
-/**
- * 无 active 规格的兜底路径按商品计数。不用关系 `_count` 带 where：Prisma 会
- * 生成对全表 GROUP BY 的子查询（Seq Scan 全部 InventoryItem），列表成本随
- * 全站库存线性增长；显式 groupBy 带 productId IN 才能走 (productId, status) 索引。
- */
-async function countAvailableByProduct(productIds: number[]): Promise<Map<number, number>> {
-  const counts = new Map<number, number>()
-  if (productIds.length === 0) return counts
-  const grouped = await prisma.inventoryItem.groupBy({
-    by: ['productId'],
-    where: { productId: { in: productIds }, status: 'available' },
-    _count: { _all: true },
-  })
-  for (const row of grouped) counts.set(row.productId, row._count._all)
-  return counts
+function countAvailableByOffer(offers: AvailabilityOffer[]): Promise<Map<number, number>> {
+  return countAvailableByOfferId(
+    offers.filter(offer => offer.deliveryMode === 'instant_inventory').map(offer => offer.id),
+  )
 }
 
 type AvailabilityBatchFacts = {
@@ -246,7 +221,7 @@ async function loadAvailabilityBatchFacts(
   ]
   const [offerAvailableCounts, productAvailableCounts, webhooks] = await Promise.all([
     countAvailableByOffer(products.flatMap(product => product.offers)),
-    countAvailableByProduct(
+    countAvailableByProductId(
       products
         .filter(product => product.offers.length === 0 && product.deliveryMode === 'instant_inventory')
         .map(product => product.id),

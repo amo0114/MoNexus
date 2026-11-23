@@ -97,6 +97,10 @@ function makeDb(row: ReturnType<typeof product> | null, webhookCount = 0) {
     merchantWebhookConfig: {
       count: vi.fn(async () => webhookCount),
     },
+    inventoryItem: {
+      // Fixture offers carry their available count as `_count.inventory`.
+      groupBy: vi.fn(async () => (row?.offers ?? []).map(offer => ({ offerId: offer.id, _count: { _all: offer._count.inventory } }))),
+    },
   }
 }
 
