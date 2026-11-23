@@ -8,13 +8,16 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Package, Search, ShoppingBag } from 'lucide-react'
 import { getOrderDetail, getOrdersPage } from '../api/orders'
 import { getApiErrorMessage } from '../api/error'
+import { getAuthSessionScopeKey } from '../auth/sessionContext'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
 import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import type { UserOrderDetail, UserOrderListItem } from '../types/order'
 import BuyerOrderCard from '../components/orders/BuyerOrderCard'
 import OrdersPagination from '../components/orders/OrdersPagination'
 import OrderDetailModal from '../components/OrderDetailModal'
 import EmptyState from '../components/ui/EmptyState'
+import ErrorState from '../components/ui/ErrorState'
 import { OrderCardSkeletonGrid } from '../components/ui/Skeleton'
 import {
   ORDER_LIST_TABS,
@@ -33,21 +36,40 @@ function parseFocusId(raw: string | null): number | null {
   return Number.isInteger(n) && n > 0 ? n : null
 }
 
+const EMPTY_ORDER_COUNTS = { all: 0, active: 0, delivered: 0, done: 0 }
+
 export default function OrdersPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const showToast = useAppStore((s) => s.showToast)
   const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
+  const currentSessionKey = useAuthStore(getAuthSessionScopeKey)
 
   const tab = parseTab(searchParams.get('tab'))
   const focusId = parseFocusId(searchParams.get('focus'))
-  const [orders, setOrders] = useState<UserOrderListItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selectedOrder, setSelectedOrder] = useState<UserOrderDetail | null>(null)
+  const [ordersState, setOrdersState] = useState<{
+    sessionKey: string
+    items: UserOrderListItem[]
+    total: number
+    counts: { all: number; active: number; delivered: number; done: number }
+  } | null>(null)
+  const [loadingState, setLoadingState] = useState<{
+    sessionKey: string | null
+    loading: boolean
+  }>(() => ({
+    sessionKey: currentSessionKey,
+    loading: currentSessionKey !== null,
+  }))
+  const [loadErrorState, setLoadErrorState] = useState<{
+    sessionKey: string
+    message: string
+  } | null>(null)
+  const [selectedOrderState, setSelectedOrderState] = useState<{
+    sessionKey: string
+    order: UserOrderDetail
+  } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [query, setQuery] = useState('')
-  const [total, setTotal] = useState(0)
-  const [counts, setCounts] = useState({ all: 0, active: 0, delivered: 0, done: 0 })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   useEffect(() => {
@@ -55,37 +77,114 @@ export default function OrdersPage() {
     const timer = setTimeout(() => { setQuery(searchQuery.trim()); setPage(1) }, 250)
     return () => clearTimeout(timer)
   }, [searchQuery, query])
-  const [loadingOrderId, setLoadingOrderId] = useState<number | null>(null)
+  const [loadingOrderState, setLoadingOrderState] = useState<{
+    sessionKey: string
+    orderId: number
+  } | null>(null)
   const reloadRequestRef = useRef(0)
   const detailRequestRef = useRef(0)
   const backgroundDetailRequestRef = useRef(0)
   const listCoordinatorRef = useRef(createLatestRequestCoordinator(true))
-  const selectedOrderRef = useRef<UserOrderDetail | null>(null)
-  selectedOrderRef.current = selectedOrder
+  const selectedOrderRef = useRef<{ sessionKey: string; order: UserOrderDetail } | null>(null)
+
+  // Render-time ownership gates: drop prior session's order list & detail on the first DOM commit.
+  const activeOrdersState =
+    currentSessionKey !== null && ordersState?.sessionKey === currentSessionKey ? ordersState : null
+  const orders = activeOrdersState?.items ?? []
+  const total = activeOrdersState?.total ?? 0
+  const counts = activeOrdersState?.counts ?? EMPTY_ORDER_COUNTS
+  const activeSelectedOrder =
+    currentSessionKey !== null && selectedOrderState?.sessionKey === currentSessionKey
+      ? selectedOrderState
+      : null
+  const loadingOrderId =
+    currentSessionKey !== null && loadingOrderState?.sessionKey === currentSessionKey
+      ? loadingOrderState.orderId
+      : null
+  const activeLoadError =
+    currentSessionKey !== null && loadErrorState?.sessionKey === currentSessionKey
+      ? loadErrorState.message
+      : null
+  const effectiveLoading =
+    currentSessionKey !== null
+    && (loadingState.sessionKey !== currentSessionKey || loadingState.loading)
+  selectedOrderRef.current = activeSelectedOrder
+
+  useEffect(() => {
+    detailRequestRef.current += 1
+    backgroundDetailRequestRef.current += 1
+    reloadRequestRef.current += 1
+    selectedOrderRef.current = null
+    setSelectedOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setLoadingOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setOrdersState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setLoadErrorState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setLoadingState((prev) =>
+      prev.sessionKey === currentSessionKey
+        ? prev
+        : { sessionKey: currentSessionKey, loading: currentSessionKey !== null },
+    )
+  }, [currentSessionKey])
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
+    const requestSessionKey = getAuthSessionScopeKey(useAuthStore.getState())
     const coordinator = listCoordinatorRef.current
     const request = coordinator.begin(opts?.background ? 'background' : 'foreground')
-    if (!opts?.background || coordinator.ownsLoading(request)) setLoading(true)
+    if (!requestSessionKey) {
+      setOrdersState(null)
+      setLoadErrorState(null)
+      if (coordinator.finish(request)) {
+        setLoadingState({ sessionKey: null, loading: false })
+      }
+      return
+    }
+    if (!opts?.background || coordinator.ownsLoading(request)) {
+      setLoadingState({ sessionKey: requestSessionKey, loading: true })
+      setLoadErrorState((prev) => (prev?.sessionKey === requestSessionKey ? null : prev))
+    }
     try {
       const list = await getOrdersPage({ page, pageSize, tab, q: query })
-      if (!coordinator.isLatest(request)) return
-      setOrders(list.items)
-      setTotal(list.total)
-      setCounts(list.counts)
+      if (
+        !coordinator.isLatest(request)
+        || getAuthSessionScopeKey(useAuthStore.getState()) !== requestSessionKey
+      ) {
+        return
+      }
+      setOrdersState({
+        sessionKey: requestSessionKey,
+        items: list.items,
+        total: list.total,
+        counts: list.counts,
+      })
+      setLoadErrorState(null)
       if (page > Math.max(1, Math.ceil(list.total / pageSize))) setPage(Math.max(1, Math.ceil(list.total / pageSize)))
       // PR-3：全局角标由权威计数接口负责，页面不再用首页 100 条覆盖它。
       // 前台加载后补拉一次（本地 dispute/close 动作在 SSE 缺席时的兜底）。
       if (!opts?.background) void refreshOrderAttention()
     } catch (err) {
       // Single background failure keeps old values and waits for the next tick.
-      if (coordinator.isLatest(request) && !opts?.background) showToast(getApiErrorMessage(err, '加载订单失败'), 'error')
+      const ownsLoading = coordinator.ownsLoading(request)
+      if (
+        coordinator.isLatest(request)
+        && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+      ) {
+        const message = getApiErrorMessage(err, '加载订单失败')
+        if (!opts?.background) {
+          showToast(message, 'error')
+          setLoadErrorState({ sessionKey: requestSessionKey, message })
+        } else if (ownsLoading) {
+          setLoadErrorState({ sessionKey: requestSessionKey, message })
+        }
+      }
     } finally {
-      if (coordinator.finish(request)) {
-        setLoading(false)
+      if (
+        coordinator.finish(request)
+        && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+      ) {
+        setLoadingState({ sessionKey: requestSessionKey, loading: false })
       }
     }
-  }, [showToast, refreshOrderAttention, page, pageSize, tab, query])
+  }, [showToast, refreshOrderAttention, page, pageSize, tab, query, currentSessionKey])
 
   useEffect(() => {
     void load()
@@ -94,8 +193,11 @@ export default function OrdersPage() {
   // SPEC-NOTIFY-RT-001 (T-FE-004): buyer.orders invalidation reloads the list +
   // attention in the background; if the current detail is the related order, reload it.
   const reloadBuyerState = useCallback(async () => {
+    const requestSessionKey = getAuthSessionScopeKey(useAuthStore.getState())
+    if (!requestSessionKey) return
     const request = ++reloadRequestRef.current
-    const currentId = selectedOrderRef.current?.id
+    const currentSelected = selectedOrderRef.current
+    const currentId = currentSelected?.sessionKey === requestSessionKey ? currentSelected.order.id : undefined
     const detailRequest = currentId == null ? null : ++backgroundDetailRequestRef.current
     const [, detailResult] = await Promise.allSettled([
       load({ background: true }),
@@ -105,12 +207,15 @@ export default function OrdersPage() {
       request === reloadRequestRef.current
       && detailRequest !== null
       && detailRequest === backgroundDetailRequestRef.current
+      && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
       && detailResult.status === 'fulfilled'
       && detailResult.value
-      && selectedOrderRef.current?.id === currentId
+      && selectedOrderRef.current?.sessionKey === requestSessionKey
+      && selectedOrderRef.current?.order.id === currentId
     ) {
-      selectedOrderRef.current = detailResult.value
-      setSelectedOrder(detailResult.value)
+      const nextSelected = { sessionKey: requestSessionKey, order: detailResult.value }
+      selectedOrderRef.current = nextSelected
+      setSelectedOrderState(nextSelected)
     }
   }, [load])
 
@@ -138,19 +243,32 @@ export default function OrdersPage() {
 
   const openOrder = useCallback(
     async (orderId: number) => {
+      const requestSessionKey = getAuthSessionScopeKey(useAuthStore.getState())
+      if (!requestSessionKey) return
       const request = ++detailRequestRef.current
       backgroundDetailRequestRef.current += 1
-      setLoadingOrderId(orderId)
+      setLoadingOrderState({ sessionKey: requestSessionKey, orderId })
       try {
         const detail = await getOrderDetail(orderId)
-        if (request === detailRequestRef.current) {
-          selectedOrderRef.current = detail
-          setSelectedOrder(detail)
+        if (
+          request === detailRequestRef.current
+          && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+        ) {
+          const nextSelected = { sessionKey: requestSessionKey, order: detail }
+          selectedOrderRef.current = nextSelected
+          setSelectedOrderState(nextSelected)
         }
       } catch (err) {
-        if (request === detailRequestRef.current) showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+        if (
+          request === detailRequestRef.current
+          && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+        ) {
+          showToast(getApiErrorMessage(err, '获取订单详情失败'), 'error')
+        }
       } finally {
-        if (request === detailRequestRef.current) setLoadingOrderId(null)
+        if (request === detailRequestRef.current) {
+          setLoadingOrderState((prev) => (prev?.sessionKey === requestSessionKey ? null : prev))
+        }
       }
     },
     [showToast],
@@ -158,9 +276,9 @@ export default function OrdersPage() {
 
   // Deep link from notification: open order detail once when focus is present.
   useEffect(() => {
-    if (focusId == null) return
+    if (focusId == null || currentSessionKey === null) return
     void openOrder(focusId)
-  }, [focusId, openOrder])
+  }, [focusId, openOrder, currentSessionKey])
 
   function clearFocus() {
     if (!searchParams.has('focus')) return
@@ -250,8 +368,17 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {loading ? (
+      {effectiveLoading ? (
         <OrderCardSkeletonGrid count={4} />
+      ) : activeLoadError ? (
+        <div className="card p-6">
+          <ErrorState
+            title="加载订单失败"
+            description={activeLoadError === '加载订单失败' ? '请检查网络后重试' : activeLoadError}
+            onRetry={() => void load()}
+            testId="orders-load-error"
+          />
+        </div>
       ) : orders.length === 0 ? (
         <div className="card p-6">
           <EmptyState
@@ -314,15 +441,17 @@ export default function OrdersPage() {
         </>
       )}
 
-      {selectedOrder && (
+      {activeSelectedOrder && (
         <OrderDetailModal
-          order={selectedOrder}
+          key={`${activeSelectedOrder.sessionKey}:${activeSelectedOrder.order.id}`}
+          ownerSessionKey={activeSelectedOrder.sessionKey}
+          order={activeSelectedOrder.order}
           onClose={() => {
             detailRequestRef.current += 1
             backgroundDetailRequestRef.current += 1
             selectedOrderRef.current = null
-            setLoadingOrderId(null)
-            setSelectedOrder(null)
+            setLoadingOrderState(null)
+            setSelectedOrderState(null)
             clearFocus()
           }}
           onUpdated={() => {

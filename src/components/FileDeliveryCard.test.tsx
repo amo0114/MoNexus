@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import FileDeliveryCard from './FileDeliveryCard'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
 
 const { issueOrderFileDownloadUrl } = vi.hoisted(() => ({
   issueOrderFileDownloadUrl: vi.fn(),
@@ -11,10 +12,29 @@ vi.mock('../api/orders', () => ({
   issueOrderFileDownloadUrl,
 }))
 
+function signInBuyer() {
+  const payload = btoa(JSON.stringify({ userId: 1, sid: 'file-card-sess', exp: 4102444800 })).replace(/=+$/, '')
+  useAuthStore.setState({
+    user: {
+      id: 1,
+      email: 'buyer@test.local',
+      role: 'user',
+      status: 'active',
+      points: 500,
+      merchant: null,
+    },
+    accessToken: `header.${payload}.sig`,
+    sessionId: 'file-card-sess',
+    isLoggedIn: true,
+    authEpoch: 1,
+  })
+}
+
 describe('FileDeliveryCard', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     useAppStore.setState({ toasts: [] })
+    signInBuyer()
   })
 
   it('renders normal file delivery with download button enabled', async () => {
