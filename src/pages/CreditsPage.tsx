@@ -328,6 +328,8 @@ export default function CreditsPage() {
 
   const activeIndex = COMPANION_PILLARS.findIndex((c) => c.id === activeId)
   const activeCompanion = COMPANION_PILLARS[activeIndex] ?? COMPANION_PILLARS[0]
+  const atmosphereCompanion =
+    COMPANION_PILLARS.find((c) => c.id === hoveredId) ?? activeCompanion
   const isIgnited = igniteCount > 0
 
   useEffect(() => {
@@ -410,12 +412,100 @@ export default function CreditsPage() {
     <div
       className="sanctuary-root relative min-h-screen overflow-x-clip fade-in"
       data-testid="credits-page"
+      data-atmosphere={atmosphereCompanion.id}
     >
+      {/* Full-bleed Reactive AI Atmosphere Layers (cross-fade on hover/select) */}
+      {COMPANION_PILLARS.map((pillar) => (
+        <div
+          key={`atmo-${pillar.id}`}
+          aria-hidden="true"
+          data-active={atmosphereCompanion.id === pillar.id ? 'true' : 'false'}
+          className={`sanctuary-atmosphere-layer sanctuary-atmo-${pillar.id}`}
+        />
+      ))}
+
+      {/* Classical Cathedral Vault Ribs & Side Fluted Colonnade filling widescreen margins */}
+      <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
+        {/* Cathedral vault converging arch lines */}
+        <svg
+          viewBox="0 0 1600 900"
+          preserveAspectRatio="xMidYMin slice"
+          className="h-full w-full opacity-45"
+        >
+          <path
+            d="M 80 900 Q 80 180 800 40 Q 1520 180 1520 900"
+            fill="none"
+            stroke={atmosphereCompanion.accent}
+            strokeOpacity="0.22"
+            strokeWidth="1.2"
+            style={{ transition: 'stroke 1s ease' }}
+          />
+          <path
+            d="M 210 900 Q 220 260 800 110 Q 1380 260 1390 900"
+            fill="none"
+            stroke="var(--sanc-gold)"
+            strokeOpacity="0.2"
+            strokeWidth="0.9"
+          />
+          <path
+            d="M 0 380 Q 420 260 800 280 Q 1180 260 1600 380"
+            fill="none"
+            stroke="var(--sanc-gold)"
+            strokeOpacity="0.14"
+            strokeWidth="0.8"
+          />
+          <line x1="800" y1="0" x2="800" y2="900" stroke="var(--sanc-gold)" strokeOpacity="0.08" strokeWidth="1" />
+        </svg>
+
+        {/* Left Classical Fluted Column */}
+        <div
+          className="sanctuary-colonnade-pillar hidden xl:block fixed top-14 bottom-0 left-0 w-24 border-r opacity-75"
+          style={{
+            borderColor: `color-mix(in srgb, ${atmosphereCompanion.accent} 34%, var(--sanc-gold-line))`,
+            boxShadow: `inset -18px 0 34px -18px color-mix(in srgb, ${atmosphereCompanion.accent} 38%, transparent)`,
+          }}
+        />
+
+        {/* Right Classical Fluted Column */}
+        <div
+          className="sanctuary-colonnade-pillar hidden xl:block fixed top-14 bottom-0 right-0 w-24 border-l opacity-75"
+          style={{
+            borderColor: `color-mix(in srgb, ${atmosphereCompanion.accent} 34%, var(--sanc-gold-line))`,
+            boxShadow: `inset 18px 0 34px -18px color-mix(in srgb, ${atmosphereCompanion.accent} 38%, transparent)`,
+          }}
+        />
+
+        {/* Subtle Roman numeral & motto side watermark reflecting current AI */}
+        <div className="sanctuary-watermark-crest hidden 2xl:flex fixed left-7 top-1/2 -translate-y-1/2 flex-col items-center gap-3 select-none">
+          <span
+            className="sanctuary-roman text-3xl font-semibold tracking-[0.2em]"
+            style={{ color: atmosphereCompanion.accent, opacity: 0.42, transition: 'color 0.8s ease' }}
+          >
+            {atmosphereCompanion.roman}
+          </span>
+          <span className="h-16 w-px bg-gradient-to-b from-transparent via-[var(--sanc-gold-line)] to-transparent" />
+          <span className="sanctuary-roman text-[10px] tracking-[0.34em] uppercase [writing-mode:vertical-rl] text-[var(--sanc-gold)] opacity-60">
+            {atmosphereCompanion.name}
+          </span>
+        </div>
+
+        <div className="sanctuary-watermark-crest hidden 2xl:flex fixed right-7 top-1/2 -translate-y-1/2 flex-col items-center gap-3 select-none">
+          <span className="sanctuary-roman text-[10px] tracking-[0.3em] uppercase [writing-mode:vertical-rl] text-[var(--sanc-gold)] opacity-60">
+            {atmosphereCompanion.latinMotto}
+          </span>
+          <span className="h-16 w-px bg-gradient-to-b from-transparent via-[var(--sanc-gold-line)] to-transparent" />
+          <span
+            className="h-2 w-2 rotate-45 border"
+            style={{ borderColor: atmosphereCompanion.accent, opacity: 0.65, transition: 'border-color 0.8s ease' }}
+          />
+        </div>
+      </div>
+
       {/* 60fps Ambient Sanctuary Dust & Converging Four-Star Flame Canvas */}
-      <SanctuaryParticles burst={ignitionBurst} />
+      <SanctuaryParticles burst={ignitionBurst} accentHex={atmosphereCompanion.accent} />
 
       {/* Subtle architectural floor/ceiling fine grid */}
-      <div className="sanctuary-marble-grain pointer-events-none fixed inset-0 z-0 opacity-55" aria-hidden="true" />
+      <div className="sanctuary-marble-grain pointer-events-none fixed inset-0 z-0 opacity-45" aria-hidden="true" />
 
       {/* Theater ambient vignette that dims the surroundings when spotlighting a companion */}
       <div
@@ -425,8 +515,8 @@ export default function CreditsPage() {
       />
 
       {/* Minimal sanctuary header */}
-      <header className="sticky top-0 z-30 border-b border-[var(--sanc-gold-line-soft)] bg-[color-mix(in_srgb,var(--sanc-bg)_82%,transparent)] backdrop-blur-md">
-        <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-[var(--sanc-gold-line-soft)] bg-[color-mix(in_srgb,var(--sanc-bg)_76%,transparent)] backdrop-blur-md">
+        <div className="mx-auto flex h-14 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link
             to="/"
             className="inline-flex min-h-10 items-center gap-2.5 text-[var(--sanc-ink)] transition-colors hover:text-[var(--sanc-gold)]"
@@ -453,11 +543,11 @@ export default function CreditsPage() {
         </div>
       </header>
 
-      <main className="relative z-10 mx-auto w-full max-w-6xl px-4 sm:px-6 pb-[max(3.5rem,env(safe-area-inset-bottom))]">
+      <main className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-10 pb-[max(3rem,env(safe-area-inset-bottom))]">
         {/* =======================================================
             ACT I: THE ROTUNDA — Celestial Astrolabe & Choreographed Opening
             ======================================================= */}
-        <section className="relative pt-12 pb-10 sm:pt-16 sm:pb-14 text-center overflow-hidden">
+        <section className="relative pt-8 pb-6 sm:pt-11 sm:pb-9 text-center overflow-hidden">
           {/* Descending celestial light beam */}
           <div
             aria-hidden="true"
@@ -666,7 +756,7 @@ export default function CreditsPage() {
               key={activeCompanion.id}
               data-testid="credits-chronicle-lectern"
               aria-live="polite"
-              className="sanctuary-chronicle-enter relative mx-auto max-w-4xl rounded-2xl border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface-elevated)] px-6 py-7 sm:px-10 sm:py-9 shadow-sm"
+              className="sanctuary-chronicle-enter relative mx-auto max-w-5xl rounded-2xl border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface-elevated)]/92 backdrop-blur-sm px-6 py-7 sm:px-10 sm:py-8 shadow-sm"
             >
               <CornerOrnament className="absolute top-2.5 left-2.5" />
               <CornerOrnament className="absolute top-2.5 right-2.5 -scale-x-100" />
@@ -751,12 +841,12 @@ export default function CreditsPage() {
             ======================================================= */}
         <section
           aria-labelledby="inscription-heading"
-          className="mt-14 sm:mt-20"
+          className="mt-12 sm:mt-16"
         >
           <div
             ref={monolithReveal.ref}
             data-visible={monolithReveal.visible ? 'true' : 'false'}
-            className="sanctuary-reveal mx-auto max-w-4xl"
+            className="sanctuary-reveal mx-auto max-w-5xl"
           >
             <div
               data-testid="credits-monolith"

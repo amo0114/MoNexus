@@ -18,9 +18,11 @@ describe('CreditsPage', () => {
     expect(screen.getByTestId('companion-card-chatgpt')).toHaveTextContent('ChatGPT')
     expect(screen.getByTestId('companion-card-deepseek')).toHaveTextContent('DeepSeek')
 
-    // Selecting another pillar updates the chronicle lectern
+    // Selecting another pillar updates the chronicle lectern & reactive page atmosphere
+    expect(screen.getByTestId('credits-page')).toHaveAttribute('data-atmosphere', 'claude')
     expect(screen.getByTestId('credits-chronicle-lectern')).toHaveTextContent('典籍与秩序之座')
     fireEvent.click(screen.getByTestId('companion-card-deepseek'))
+    expect(screen.getByTestId('credits-page')).toHaveAttribute('data-atmosphere', 'deepseek')
     expect(screen.getByTestId('credits-chronicle-lectern')).toHaveTextContent('沧溟与洞察之座')
 
     // Switching between full classical portrait and chibi form

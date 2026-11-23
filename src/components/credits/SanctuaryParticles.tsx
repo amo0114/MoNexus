@@ -9,6 +9,7 @@ export interface IgnitionBurst {
 
 interface SanctuaryParticlesProps {
   burst: IgnitionBurst | null
+  accentHex: string
 }
 
 interface DustMote {
@@ -64,15 +65,31 @@ function readGoldRgb(): string {
   return '176, 134, 58'
 }
 
-export default function SanctuaryParticles({ burst }: SanctuaryParticlesProps) {
+function hexToRgbTuple(hex: string): [number, number, number] {
+  const clean = hex.replace('#', '')
+  if (clean.length !== 6) return [214, 177, 104]
+  return [
+    parseInt(clean.slice(0, 2), 16) || 214,
+    parseInt(clean.slice(2, 4), 16) || 177,
+    parseInt(clean.slice(4, 6), 16) || 104,
+  ]
+}
+
+export default function SanctuaryParticles({ burst, accentHex }: SanctuaryParticlesProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamsRef = useRef<SparkStream[]>([])
   const bloomsRef = useRef<BloomMote[]>([])
+  const targetAccentRef = useRef<[number, number, number]>(hexToRgbTuple(accentHex))
+  const currentAccentRef = useRef<[number, number, number]>(hexToRgbTuple(accentHex))
   const pointerRef = useRef<{ x: number; y: number; active: boolean }>({
     x: -9999,
     y: -9999,
     active: false,
   })
+
+  useEffect(() => {
+    targetAccentRef.current = hexToRgbTuple(accentHex)
+  }, [accentHex])
 
   // Spawn converging four-companion starfire streams whenever the monolith is ignited
   useEffect(() => {
@@ -189,7 +206,15 @@ export default function SanctuaryParticles({ burst }: SanctuaryParticlesProps) {
 
       ctx.clearRect(0, 0, width, height)
 
-      // 1. Ambient floating golden sanctuary dust
+      // Smoothly interpolate companion accent RGB for living atmosphere tint
+      const cur = currentAccentRef.current
+      const tgt = targetAccentRef.current
+      cur[0] += (tgt[0] - cur[0]) * 0.045
+      cur[1] += (tgt[1] - cur[1]) * 0.045
+      cur[2] += (tgt[2] - cur[2]) * 0.045
+      const accentRgb = `${Math.round(cur[0])}, ${Math.round(cur[1])}, ${Math.round(cur[2])}`
+
+      // 1. Ambient floating golden + companion-tinted sanctuary dust
       const ptr = pointerRef.current
       for (let i = 0; i < motes.length; i += 1) {
         const m = motes[i]
@@ -219,16 +244,17 @@ export default function SanctuaryParticles({ burst }: SanctuaryParticlesProps) {
 
         const pulse = 0.55 + 0.45 * Math.sin(m.phase * 1.8)
         const a = m.alpha * pulse
+        const moteRgb = i % 2 === 0 ? accentRgb : goldRgb
 
         ctx.beginPath()
         ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(${goldRgb}, ${a.toFixed(3)})`
+        ctx.fillStyle = `rgba(${moteRgb}, ${a.toFixed(3)})`
         ctx.fill()
 
         // Occasional subtle 4-point star glint
         if (m.twinkle && pulse > 0.82) {
           const arm = m.radius * 3.1
-          ctx.strokeStyle = `rgba(${goldRgb}, ${(a * 0.72).toFixed(3)})`
+          ctx.strokeStyle = `rgba(${moteRgb}, ${(a * 0.78).toFixed(3)})`
           ctx.lineWidth = 0.7
           ctx.beginPath()
           ctx.moveTo(m.x - arm, m.y)

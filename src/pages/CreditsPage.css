@@ -105,7 +105,111 @@
     linear-gradient(to right, var(--sanc-gold-line-soft) 1px, transparent 1px),
     linear-gradient(to bottom, var(--sanc-gold-line-soft) 1px, transparent 1px);
   background-size: 96px 96px;
-  mask-image: radial-gradient(ellipse 72% 58% at 50% 18%, black 15%, transparent 78%);
+  mask-image: radial-gradient(ellipse 84% 72% at 50% 34%, black 22%, transparent 86%);
+}
+
+/* ================= FULL-BLEED REACTIVE AI ATMOSPHERE ================= */
+
+.sanctuary-atmosphere-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 1.15s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity;
+}
+
+.sanctuary-atmosphere-layer[data-active='true'] {
+  opacity: 1;
+}
+
+/* Light-mode rich translucent mineral washes so background visibly shifts per AI */
+.sanctuary-atmo-claude {
+  background:
+    radial-gradient(ellipse 76% 52% at 50% 6%, rgba(217, 119, 87, 0.28) 0%, transparent 66%),
+    radial-gradient(ellipse 46% 62% at 8% 54%, rgba(196, 116, 62, 0.22) 0%, transparent 72%),
+    radial-gradient(ellipse 46% 62% at 92% 54%, rgba(217, 146, 82, 0.18) 0%, transparent 72%),
+    radial-gradient(ellipse 68% 40% at 50% 96%, rgba(180, 92, 54, 0.18) 0%, transparent 75%);
+}
+
+.sanctuary-atmo-gemini {
+  background:
+    radial-gradient(ellipse 78% 54% at 50% 6%, rgba(124, 108, 246, 0.3) 0%, transparent 66%),
+    radial-gradient(ellipse 48% 64% at 8% 52%, rgba(139, 92, 246, 0.24) 0%, transparent 72%),
+    radial-gradient(ellipse 48% 64% at 92% 52%, rgba(96, 138, 250, 0.22) 0%, transparent 72%),
+    radial-gradient(ellipse 68% 40% at 50% 96%, rgba(112, 86, 232, 0.2) 0%, transparent 75%);
+}
+
+.sanctuary-atmo-chatgpt {
+  background:
+    radial-gradient(ellipse 76% 52% at 50% 6%, rgba(16, 163, 127, 0.26) 0%, transparent 66%),
+    radial-gradient(ellipse 46% 62% at 8% 52%, rgba(20, 184, 146, 0.2) 0%, transparent 72%),
+    radial-gradient(ellipse 46% 62% at 92% 52%, rgba(182, 214, 206, 0.22) 0%, transparent 72%),
+    radial-gradient(ellipse 68% 40% at 50% 96%, rgba(16, 148, 118, 0.18) 0%, transparent 75%);
+}
+
+.sanctuary-atmo-deepseek {
+  background:
+    radial-gradient(ellipse 78% 54% at 50% 6%, rgba(77, 107, 254, 0.3) 0%, transparent 66%),
+    radial-gradient(ellipse 48% 64% at 8% 54%, rgba(37, 99, 235, 0.24) 0%, transparent 72%),
+    radial-gradient(ellipse 48% 64% at 92% 54%, rgba(56, 152, 248, 0.22) 0%, transparent 72%),
+    radial-gradient(ellipse 68% 40% at 50% 96%, rgba(46, 82, 214, 0.2) 0%, transparent 75%);
+}
+
+/* Dark-mode deeper dramatic theater washes */
+.dark .sanctuary-atmo-claude,
+:root[data-theme='dark'] .sanctuary-atmo-claude {
+  background:
+    radial-gradient(ellipse 76% 52% at 50% 4%, rgba(217, 119, 87, 0.32) 0%, transparent 66%),
+    radial-gradient(ellipse 46% 66% at 6% 52%, rgba(188, 92, 48, 0.26) 0%, transparent 72%),
+    radial-gradient(ellipse 46% 66% at 94% 52%, rgba(214, 144, 72, 0.22) 0%, transparent 72%),
+    radial-gradient(ellipse 70% 42% at 50% 100%, rgba(164, 76, 40, 0.22) 0%, transparent 76%);
+}
+
+.dark .sanctuary-atmo-gemini,
+:root[data-theme='dark'] .sanctuary-atmo-gemini {
+  background:
+    radial-gradient(ellipse 78% 54% at 50% 4%, rgba(124, 108, 246, 0.36) 0%, transparent 66%),
+    radial-gradient(ellipse 48% 66% at 6% 52%, rgba(139, 92, 246, 0.28) 0%, transparent 72%),
+    radial-gradient(ellipse 48% 66% at 94% 52%, rgba(88, 128, 255, 0.26) 0%, transparent 72%),
+    radial-gradient(ellipse 70% 42% at 50% 100%, rgba(96, 68, 218, 0.24) 0%, transparent 76%);
+}
+
+.dark .sanctuary-atmo-chatgpt,
+:root[data-theme='dark'] .sanctuary-atmo-chatgpt {
+  background:
+    radial-gradient(ellipse 76% 52% at 50% 4%, rgba(16, 163, 127, 0.3) 0%, transparent 66%),
+    radial-gradient(ellipse 46% 66% at 6% 52%, rgba(16, 185, 142, 0.24) 0%, transparent 72%),
+    radial-gradient(ellipse 46% 66% at 94% 52%, rgba(148, 224, 206, 0.2) 0%, transparent 72%),
+    radial-gradient(ellipse 70% 42% at 50% 100%, rgba(14, 134, 106, 0.22) 0%, transparent 76%);
+}
+
+.dark .sanctuary-atmo-deepseek,
+:root[data-theme='dark'] .sanctuary-atmo-deepseek {
+  background:
+    radial-gradient(ellipse 78% 54% at 50% 4%, rgba(77, 107, 254, 0.36) 0%, transparent 66%),
+    radial-gradient(ellipse 48% 66% at 6% 52%, rgba(37, 99, 235, 0.28) 0%, transparent 72%),
+    radial-gradient(ellipse 48% 66% at 94% 52%, rgba(44, 146, 248, 0.24) 0%, transparent 72%),
+    radial-gradient(ellipse 70% 42% at 50% 100%, rgba(36, 74, 210, 0.24) 0%, transparent 76%);
+}
+
+/* Classical side colonnade pillars & cathedral vault ribs filling widescreen margins */
+.sanctuary-colonnade-pillar {
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px,
+    transparent 7px,
+    var(--sanc-gold-line-soft) 7px,
+    var(--sanc-gold-line-soft) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  transition: border-color 0.9s ease, box-shadow 0.9s ease;
+}
+
+.sanctuary-watermark-crest {
+  transition: opacity 0.9s ease, transform 1.1s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ================= KEYFRAMES ================= */
