@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import CheckinCard, { CheckinCompact } from './CheckinCard'
 import CheckinModal from './CheckinModal'
 import { useCheckin } from '../../hooks/useCheckin'
-import { claimCheckinReward, getCheckinStatus, postCheckin, postMakeup, type CheckinStatus } from '../../api/checkin'
+import { claimCheckinReward, getCheckinHeatmap, getCheckinStatus, postCheckin, postMakeup, type CheckinStatus } from '../../api/checkin'
 import { celebrate } from '../../lib/celebrate'
 import { useAppStore } from '../../stores/appStore'
 import { useAuthStore } from '../../stores/authStore'
@@ -12,6 +12,7 @@ import { useAuthStore } from '../../stores/authStore'
 vi.mock('../../api/checkin', async importOriginal => ({
   ...await importOriginal<typeof import('../../api/checkin')>(),
   getCheckinStatus: vi.fn(),
+  getCheckinHeatmap: vi.fn(),
   postCheckin: vi.fn(),
   postMakeup: vi.fn(),
   claimCheckinReward: vi.fn(),
@@ -44,6 +45,18 @@ const renderCard = () => render(<MemoryRouter><Host /></MemoryRouter>)
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.mocked(getCheckinHeatmap).mockResolvedValue({
+    today: '2026-11-09',
+    startDate: '2026-06-01',
+    weeks: 24,
+    summary: { checkinDays: 3, activeDays: 4, longestStreak: 3 },
+    days: [
+      { date: '2026-11-05', level: 1, active: true, checkedIn: false, makeup: false, streak: 0 },
+      { date: '2026-11-07', level: 2, active: true, checkedIn: true, makeup: true, streak: 1 },
+      { date: '2026-11-08', level: 3, active: true, checkedIn: true, makeup: false, streak: 2 },
+      { date: '2026-11-09', level: 4, active: true, checkedIn: true, makeup: false, streak: 3 },
+    ],
+  })
   useAppStore.setState({ toasts: [], islandNotice: null, islandQueue: [], islandNoticeAvailable: false, modalDepth: 0 })
   useAuthStore.setState({
     user: { id: 1, email: 'checkin@test.local', role: 'user', status: 'active', points: 100, merchant: null },
@@ -151,5 +164,29 @@ describe('CheckinCard', () => {
     fireEvent.click(await screen.findByTestId('checkin-button'))
     await waitFor(() => expect(screen.getByTestId('nav-state')).toHaveTextContent('done'))
     expect(screen.getByTestId('checkin-button')).toBeDisabled()
+    expect(screen.queryByTestId('checkin-heatmap')).not.toBeInTheDocument()
+  })
+
+  it('renders the GitHub-style check-in heatmap in Profile CheckinCard and updates cell detail on click', async () => {
+    vi.mocked(getCheckinStatus).mockResolvedValue(status())
+    renderCard()
+
+    const wall = await screen.findByTestId('checkin-heatmap')
+    expect(wall).toBeInTheDocument()
+    expect(screen.getByTestId('checkin-heatmap-summary')).toHaveTextContent('签到 3 天')
+    expect(screen.getByTestId('checkin-heatmap-summary')).toHaveTextContent('活跃 4 天')
+    expect(screen.getByTestId('checkin-heatmap-summary')).toHaveTextContent('最长连签 3 天')
+
+    expect(screen.getByTestId('heatmap-cell-2026-11-05')).toHaveAttribute('data-level', '1')
+    expect(screen.getByTestId('heatmap-cell-2026-11-07')).toHaveAttribute('data-level', '2')
+    expect(screen.getByTestId('heatmap-cell-2026-11-08')).toHaveAttribute('data-level', '3')
+    expect(screen.getByTestId('heatmap-cell-2026-11-09')).toHaveAttribute('data-level', '4')
+
+    fireEvent.click(screen.getByTestId('heatmap-cell-2026-11-05'))
+    expect(screen.getByTestId('checkin-heatmap-detail')).toHaveTextContent('2026-11-05')
+    expect(screen.getByTestId('checkin-heatmap-detail')).toHaveTextContent('当日登录活跃')
+
+    fireEvent.click(screen.getByTestId('heatmap-cell-2026-11-07'))
+    expect(screen.getByTestId('checkin-heatmap-detail')).toHaveTextContent('补签')
   })
 })

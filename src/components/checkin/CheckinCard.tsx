@@ -4,6 +4,7 @@ import { hasStreakDetails, type CheckinStatus } from '../../api/checkin'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import PointCoin from '../ui/PointCoin'
 import type { useCheckin } from '../../hooks/useCheckin'
+import CheckinHeatmapWall from './CheckinHeatmap'
 
 type CheckinState = ReturnType<typeof useCheckin>
 
@@ -442,6 +443,12 @@ export default function CheckinCard({ state, embedded = false }: { state: Checki
           点击带 <span className="font-semibold text-[var(--color-text)]">+</span> 日期可补签（{makeup.price} 积分/次，本月剩余 {makeupLeft} 次，补签仅恢复连签）
           {embedded ? ' · QQ 签到同步计入' : ''}
         </p>
+      )}
+
+      {!embedded && (
+        <CheckinHeatmapWall
+          refreshKey={`${status.today}:${status.hasCheckedIn ? 1 : 0}:${status.streak}:${status.month.checked.length}:${makeup.usedThisMonth}`}
+        />
       )}
 
       <ConfirmDialog

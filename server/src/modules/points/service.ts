@@ -284,6 +284,95 @@ export async function getCheckinStatus(userId: number) {
   }
 }
 
+export interface CheckinHeatmapDay {
+  date: string
+  level: 1 | 2 | 3 | 4
+  active: boolean
+  checkedIn: boolean
+  makeup: boolean
+  streak: number
+}
+
+export interface CheckinHeatmapResponse {
+  today: string
+  startDate: string
+  weeks: number
+  summary: {
+    checkinDays: number
+    activeDays: number
+    longestStreak: number
+  }
+  days: CheckinHeatmapDay[]
+}
+
+const DEFAULT_HEATMAP_WEEKS = 24
+
+function weekdayMondayIndex(date: string): number {
+  return (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7
+}
+
+function resolveHeatmapLevel(checkedIn: boolean, makeup: boolean, streak: number): 1 | 2 | 3 | 4 {
+  if (!checkedIn) return 1
+  if (makeup) return 2
+  const isMilestone = streak >= 7 || (STREAK_MILESTONES as readonly number[]).includes(streak)
+  return isMilestone ? 4 : 3
+}
+
+export async function getCheckinHeatmap(userId: number, requestedWeeks = DEFAULT_HEATMAP_WEEKS): Promise<CheckinHeatmapResponse> {
+  const weeks = Math.max(4, Math.min(52, Math.trunc(requestedWeeks)))
+  const today = getShanghaiDateString()
+  const thisWeekMonday = addCalendarDays(today, -weekdayMondayIndex(today))
+  const startDate = addCalendarDays(thisWeekMonday, -(weeks - 1) * 7)
+
+  const [checkins, activeDays] = await Promise.all([
+    prisma.checkinRecord.findMany({
+      where: { userId, date: { gte: startDate, lte: today } },
+      orderBy: { date: 'asc' },
+      select: { date: true, source: true, streak: true },
+    }),
+    prisma.userActiveDay.findMany({
+      where: { userId, day: { gte: startDate, lte: today } },
+      orderBy: { day: 'asc' },
+      select: { day: true },
+    }),
+  ])
+
+  const checkinByDate = new Map(checkins.map(row => [row.date, row]))
+  const activeSet = new Set(activeDays.map(row => row.day))
+  const allDates = new Set<string>([...activeSet, ...checkinByDate.keys()])
+
+  let longestStreak = 0
+  const days: CheckinHeatmapDay[] = [...allDates]
+    .sort()
+    .map(date => {
+      const record = checkinByDate.get(date)
+      const checkedIn = Boolean(record)
+      const makeup = record?.source === 'makeup'
+      const streak = record?.streak ?? 0
+      if (streak > longestStreak) longestStreak = streak
+      return {
+        date,
+        level: resolveHeatmapLevel(checkedIn, makeup, streak),
+        active: activeSet.has(date) || checkedIn,
+        checkedIn,
+        makeup,
+        streak,
+      }
+    })
+
+  return {
+    today,
+    startDate,
+    weeks,
+    summary: {
+      checkinDays: checkins.length,
+      activeDays: allDates.size,
+      longestStreak,
+    },
+    days,
+  }
+}
+
 export async function getHistory(userId: number) {
   return prisma.pointLog.findMany({
     where: { userId },
