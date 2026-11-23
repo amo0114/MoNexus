@@ -4,7 +4,7 @@ import { getConfigRegistry } from '../api/registry'
 import { getOrderAttentionCount } from '../api/orders'
 import { getUnreadCount as fetchNotificationUnreadCount } from '../api/notifications'
 import { registerIdentityScopedMetadataCleanup, useAuthStore } from './authStore'
-import { readAccessTokenIdentity } from '../auth/sessionContext'
+import { getAuthSessionScopeKey, readAccessTokenIdentity } from '../auth/sessionContext'
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning'
 
@@ -50,6 +50,8 @@ export interface IslandNotice {
   priority?: 'completion' | 'reminder'
   /** Queue deadline on islandQueueNow's clock (hidden time is excluded). */
   expiresAt?: number
+  /** Owning auth session scope key for session-bound activities (e.g. orders). */
+  sessionKey?: string
 }
 
 export type IslandActivity = Omit<IslandNotice, 'id' | 'message' | 'type'> & {
@@ -104,6 +106,8 @@ interface AppState {
   storeCategory: string
   /** 积分流水 Sheet（V3 角色化 Tab Bar）：Tab Bar「积分」与 Profile 按钮共用 */
   pointsHistoryOpen: boolean
+  /** 全局签到弹窗：顶栏签到胶囊与移动抽屉入口共用 */
+  checkinModalOpen: boolean
   /** BottomTabBar 下滑自动隐藏状态：吸底浮层（如排行榜 MyRankBar）随之联动 */
   tabbarHidden: boolean
   /**
@@ -116,6 +120,7 @@ interface AppState {
   submitStoreSearch: () => void
   setStoreCategory: (c: string) => void
   setPointsHistoryOpen: (open: boolean) => void
+  setCheckinModalOpen: (open: boolean) => void
   setTabbarHidden: (hidden: boolean) => void
   setOrderAttentionCount: (n: number) => void
   /**
@@ -174,6 +179,7 @@ let registryRequestSeq = 0
 let previousAuthUserId = useAuthStore.getState().user?.id ?? null
 let previousAuthSessionId = getCurrentSessionId(useAuthStore.getState())
 let previousAuthEpoch = useAuthStore.getState().authEpoch
+let previousAuthSessionScopeKey = getAuthSessionScopeKey(useAuthStore.getState())
 /** 补拉性质刷新的最小间隔：合并首次挂载时「登录初始化」与「stream ready」
     的双重触发；事件驱动（buyer.orders / 下单成功）永不节流。 */
 const ORDER_ATTENTION_IF_STALE_MIN_INTERVAL_MS = 1_000
@@ -205,6 +211,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   storeSearchSubmission: 0,
   storeCategory: '全部',
   pointsHistoryOpen: false,
+  checkinModalOpen: false,
   tabbarHidden: false,
   orderAttentionCount: -1,
   notificationUnreadCount: 0,
@@ -216,6 +223,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   submitStoreSearch: () => set((state) => ({ storeSearchSubmission: state.storeSearchSubmission + 1 })),
   setStoreCategory: (c) => set({ storeCategory: c }),
   setPointsHistoryOpen: (open) => set({ pointsHistoryOpen: open }),
+  setCheckinModalOpen: (open) => set({ checkinModalOpen: open }),
   setTabbarHidden: (hidden) => set({ tabbarHidden: hidden }),
   setOrderAttentionCount: (n) => set({ orderAttentionCount: Math.max(0, n) }),
   refreshOrderAttention: async () => {
@@ -304,6 +312,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   triggerIslandActivity: (activity) => {
+    if (
+      activity.sessionKey !== undefined
+      && getAuthSessionScopeKey(useAuthStore.getState()) !== activity.sessionKey
+    ) {
+      return undefined
+    }
     if (isActionableActivity(activity.kind)) {
       const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
       if (!mobile || !get().islandNoticeAvailable || activity.type === 'error' || activity.type === 'warning') {
@@ -360,6 +374,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         onAction: activity.onAction,
         payload: activity.payload,
         durationMs: activity.durationMs ?? (activity.kind === 'order_success' ? 7000 : 3000),
+        sessionKey: activity.sessionKey,
       },
     }))
     return id
@@ -463,15 +478,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
 useAuthStore.subscribe((authState) => {
   const nextAuthUserId = authState.user?.id ?? null
   const nextAuthSessionId = getCurrentSessionId(authState)
+  const nextAuthSessionScopeKey = getAuthSessionScopeKey(authState)
   const sameIdentity = previousAuthEpoch === authState.authEpoch
     && previousAuthUserId === nextAuthUserId
     && previousAuthSessionId === nextAuthSessionId
+    && previousAuthSessionScopeKey === nextAuthSessionScopeKey
 
   if (sameIdentity) return
 
   previousAuthUserId = nextAuthUserId
   previousAuthSessionId = nextAuthSessionId
   previousAuthEpoch = authState.authEpoch
+  previousAuthSessionScopeKey = nextAuthSessionScopeKey
   orderAttentionRequestSeq++
   orderAttentionTrailing = false
   orderAttentionLastFetchAt = 0
@@ -481,6 +499,7 @@ useAuthStore.subscribe((authState) => {
     notificationUnreadCount: 0,
     notificationUnreadStatus: 'unknown',
     notificationStreamState: 'disabled',
+    checkinModalOpen: false,
     toasts: [],
     islandNotice: null,
     islandQueue: [],

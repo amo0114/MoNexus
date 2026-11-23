@@ -1,0 +1,47 @@
+/* =========================================================
+   Product detail shell (.product-layout, set by Layout on /product/:id).
+   These rules size the app shell, not the page, so they live in the main
+   bundle: Vite only runs the lazy detail chunk after its CSS loads, and the
+   route placeholder is painted before that. Keeping them in the chunk made
+   the header, banners, main and footer jump when that CSS arrived. Page
+   styles (.pd-*) stay in the chunk; do not add shell rules there.
+   Order matters: the 1024–1279px overrides must follow the >=1024px rules.
+   ========================================================= */
+
+@media (min-width: 1024px) {
+  /* The product page uses the screen on large displays; the header, banners
+     and footer (.chrome-bound) widen with it so all edges stay aligned. */
+  .product-layout > main {
+    max-width: 2064px;
+    padding: 0 32px 48px;
+  }
+  .product-layout .chrome-bound {
+    max-width: 2064px;
+    padding-inline: 32px;
+  }
+  /* The navbar shell already sits inside the nav's 24px gutter. */
+  .product-layout .navbar-shell.chrome-bound {
+    max-width: 2016px;
+    padding-inline: 8px;
+  }
+  .product-layout.bg-grid-pattern {
+    background-color: var(--color-background);
+  }
+}
+
+@media (min-width: 1024px) {
+  .dark .product-layout.bg-grid-pattern,
+  [data-theme='dark'] .product-layout.bg-grid-pattern {
+    background-image: none;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .product-layout > main,
+  .product-layout .chrome-bound {
+    padding-inline: 24px;
+  }
+  .product-layout .navbar-shell.chrome-bound {
+    padding-inline: 0;
+  }
+}

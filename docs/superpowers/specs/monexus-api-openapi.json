@@ -377,7 +377,6 @@
           "email",
           "role",
           "status",
-          "inviteCode",
           "points"
         ],
         "properties": {
@@ -393,9 +392,6 @@
           },
           "status": {
             "$ref": "#/components/schemas/UserStatus"
-          },
-          "inviteCode": {
-            "type": "string"
           },
           "points": {
             "type": "integer",
@@ -5366,8 +5362,7 @@
           "purchasable",
           "purchaseForm",
           "purchaseFormVersion",
-          "checkoutVersion",
-          "requiresProvisionEmailProof"
+          "checkoutVersion"
         ],
         "properties": {
           "productId": {
@@ -9164,6 +9159,337 @@
           }
         },
         "description": "不包含明文凭据或密文。enabled 只控制新请求；历史处理保留。"
+      },
+      "PublicProductPage": {
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor",
+          "hasMore"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicProductListItem"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PublicProductDetail": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "price",
+          "availability",
+          "offers",
+          "contentVersion"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "stockMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sales": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ratingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "originalPrice": {
+            "type": "integer",
+            "nullable": true
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ratingAvg": {
+            "type": "number"
+          },
+          "merchant": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "category": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "code": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          },
+          "availability": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "unavailable",
+                  "unknown"
+                ]
+              }
+            }
+          },
+          "fakaCapacity": {
+            "type": "object",
+            "nullable": true
+          },
+          "merchandising": {
+            "type": "object",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "deliveryMode": {
+            "type": "string"
+          },
+          "templateKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "templateVersion": {
+            "type": "integer",
+            "nullable": true
+          },
+          "assurance": {
+            "type": "object",
+            "nullable": true
+          },
+          "richDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "contentVersion": {
+            "type": "integer"
+          },
+          "purchaseForm": {
+            "type": "array",
+            "nullable": true,
+            "items": {
+              "type": "object"
+            }
+          },
+          "offers": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "attributes": {
+            "type": "object"
+          },
+          "details": {
+            "type": "object"
+          },
+          "promoVideo": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      },
+      "PublicProductListItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "price",
+          "availability"
+        ],
+        "properties": {
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "type": {
+            "type": "string",
+            "nullable": true
+          },
+          "icon": {
+            "type": "string",
+            "nullable": true
+          },
+          "imageUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "stockMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "price": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stock": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sales": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "ratingCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string"
+          },
+          "originalPrice": {
+            "type": "integer",
+            "nullable": true
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ratingAvg": {
+            "type": "number"
+          },
+          "merchant": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "category": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "code": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            }
+          },
+          "availability": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "available",
+                  "unavailable",
+                  "unknown"
+                ]
+              }
+            }
+          },
+          "fakaCapacity": {
+            "type": "object",
+            "nullable": true
+          },
+          "merchandising": {
+            "type": "object",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "visibility": {
+            "type": "string"
+          },
+          "deliveryMode": {
+            "type": "string"
+          },
+          "templateKey": {
+            "type": "string",
+            "nullable": true
+          },
+          "templateVersion": {
+            "type": "integer",
+            "nullable": true
+          },
+          "assurance": {
+            "type": "object",
+            "nullable": true
+          }
+        }
       }
     },
     "responses": {
@@ -10175,10 +10501,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/MerchantProduct"
-                  }
+                  "$ref": "#/components/schemas/PublicProductPage"
                 }
               }
             }
@@ -10208,7 +10531,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MerchantProduct"
+                  "$ref": "#/components/schemas/PublicProductDetail"
                 }
               }
             }

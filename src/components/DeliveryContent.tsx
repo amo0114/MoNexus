@@ -7,6 +7,8 @@ import type { StructuredDeliveryContent } from '../types/merchant'
 import { formatBookingDay } from '../utils/formatLocalDate'
 import { copyToClipboard } from '../utils/clipboard'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionScopeKey } from '../auth/sessionContext'
 
 export interface DeliveryProgressEvent {
   publicNote?: string | null
@@ -48,6 +50,8 @@ export interface DeliveryContentProps {
    * purchase success dialog; order detail keeps showing content directly.
    */
   reveal?: { revealed: boolean; onReveal: () => void }
+  /** Owning auth session scope key forwarded to sensitive delivery actions (e.g. file downloads). */
+  ownerSessionKey?: string | null
 }
 
 function hasStructuredFields(
@@ -100,6 +104,7 @@ export default function DeliveryContent({
   urlTestId = 'delivery-link',
   emptyLabel = null,
   reveal,
+  ownerSessionKey,
 }: DeliveryContentProps) {
   const showToast = useAppStore((s) => s.showToast)
   const structured = hasStructuredFields(structuredContent) ? structuredContent : null
@@ -125,9 +130,14 @@ export default function DeliveryContent({
     }
   }, [])
 
+  const isActionSessionAllowed = () =>
+    ownerSessionKey === undefined
+    || (ownerSessionKey !== null && getAuthSessionScopeKey(useAuthStore.getState()) === ownerSessionKey)
+
   async function handleCopyUrl() {
-    if (!trimmed) return
+    if (!trimmed || !isActionSessionAllowed()) return
     const success = await copyToClipboard(trimmed)
+    if (!isActionSessionAllowed()) return
     if (success) {
       if (urlTimerRef.current) clearTimeout(urlTimerRef.current)
       setCopiedUrl(true)
@@ -139,9 +149,10 @@ export default function DeliveryContent({
   }
 
   async function handleCopyText() {
-    if (!content) return
+    if (!content || !isActionSessionAllowed()) return
     reveal?.onReveal()
     const success = await copyToClipboard(content)
+    if (!isActionSessionAllowed()) return
     if (success) {
       if (textTimerRef.current) clearTimeout(textTimerRef.current)
       setCopiedText(true)
@@ -255,6 +266,7 @@ export default function DeliveryContent({
                 size={file.size}
                 orderStatus={orderStatus}
                 fileStatus={file.status}
+                ownerSessionKey={ownerSessionKey}
               />
             )}
 

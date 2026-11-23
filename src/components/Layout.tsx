@@ -1,12 +1,12 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, Package, Wallet, ArrowLeft, ChevronRight } from 'lucide-react'
+import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, Package, Wallet, CalendarCheck, ArrowLeft, ChevronRight } from 'lucide-react'
 import CountBadge from './ui/CountBadge'
 import PointCoin from './ui/PointCoin'
 import { formatBadgeCount } from '../utils/orderAttention'
 import { subscribeReadInvalidation } from '../realtime/readSyncBroadcast'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -36,6 +36,10 @@ import {
 } from '../api/legal'
 import type { PublicAnnouncement } from '../types/admin'
 import { hasMerchantCapability } from '../auth/merchantAccess'
+import { hasStreakDetails } from '../api/checkin'
+import { useCheckin } from '../hooks/useCheckin'
+
+const CheckinModal = lazy(() => import('./checkin/CheckinModal'))
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
@@ -57,6 +61,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const refreshOrderAttentionIfStale = useAppStore((s) => s.refreshOrderAttentionIfStale)
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
   const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
+  const checkinModalOpen = useAppStore((s) => s.checkinModalOpen)
+  const setCheckinModalOpen = useAppStore((s) => s.setCheckinModalOpen)
+  const showCheckinEntry = Boolean(user && user.role !== 'admin')
+  const checkinState = useCheckin({ enabled: showCheckinEntry })
+  const checkinClaimableCount = hasStreakDetails(checkinState.status) ? checkinState.status.claimable.length : 0
+  const checkinPending = Boolean(checkinState.status && !checkinState.status.hasCheckedIn)
+  const checkinNeedsAction = checkinPending || checkinClaimableCount > 0
+  const checkinStreak = hasStreakDetails(checkinState.status) ? checkinState.status.streak : 0
   const announcements = useAnnouncements()
   const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
   const [forcedAnnouncementTab, setForcedAnnouncementTab] = useState(false)
@@ -561,6 +573,54 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <ThemeMenu />
                 </div>
 
+                {showCheckinEntry && (
+                  <button
+                    type="button"
+                    onClick={() => setCheckinModalOpen(true)}
+                    title={
+                      checkinClaimableCount > 0
+                        ? `每日签到（有 ${checkinClaimableCount} 个奖励待领取）`
+                        : checkinState.status?.hasCheckedIn
+                          ? checkinStreak > 0 ? `今日已签到（已连签 ${checkinStreak} 天）` : '今日已签到'
+                          : '每日签到领积分'
+                    }
+                    aria-label={
+                      checkinClaimableCount > 0
+                        ? `每日签到，有 ${checkinClaimableCount} 个奖励待领取`
+                        : checkinState.status?.hasCheckedIn
+                          ? '今日已签到'
+                          : '每日签到'
+                    }
+                    aria-haspopup="dialog"
+                    aria-expanded={checkinModalOpen}
+                    data-testid="nav-checkin"
+                    data-checkin-state={
+                      checkinClaimableCount > 0
+                        ? 'claimable'
+                        : checkinState.status?.hasCheckedIn
+                          ? 'done'
+                          : 'pending'
+                    }
+                    className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+                      checkinNeedsAction
+                        ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)] hover:bg-[color-mix(in_srgb,var(--color-primary)_14%,transparent)]'
+                        : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
+                    }`}
+                  >
+                    <CalendarCheck className="w-4 h-4 shrink-0" />
+                    <span className="hidden lg:inline font-bold text-xs">
+                      {checkinClaimableCount > 0 ? '领奖' : checkinState.status?.hasCheckedIn ? '已签' : '签到'}
+                    </span>
+                    {checkinNeedsAction && (
+                      <span
+                        aria-hidden="true"
+                        data-testid="nav-checkin-dot"
+                        className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[var(--color-cta)] ring-2 ring-[var(--color-background)]"
+                      />
+                    )}
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => navigate('/recharge')}
@@ -714,6 +774,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         forceAnnouncementTab={hasPendingRequiredAnnouncement || forcedAnnouncementTab}
       />
 
+      {showCheckinEntry && checkinModalOpen && (
+        <Suspense fallback={null}>
+          <CheckinModal
+            open={checkinModalOpen}
+            onOpenChange={setCheckinModalOpen}
+            state={checkinState}
+          />
+        </Suspense>
+      )}
+
       {/* Content. 注意不要给 main 加 z-index：z-0 会创建 stacking context，
           把页面内 fixed 弹窗（z-50）整体压到 footer（z-10）之下，导致长页面
           滚动到底部时 footer 截获弹窗底部按钮的点击。
@@ -734,40 +804,92 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Footer */}
-      <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_50%,transparent)] backdrop-blur-md relative overflow-hidden z-10 shrink-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[color-mix(in_srgb,var(--color-primary)_5%,transparent)] pointer-events-none" />
-        <div className="chrome-bound max-w-7xl mx-auto px-4 sm:px-6 py-6 relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2 opacity-80">
-            <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-            <span className="font-display text-sm font-bold text-[var(--color-text-muted)] tracking-[0.15em]">MONEXUS</span>
+      <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_65%,transparent)] backdrop-blur-md relative overflow-hidden z-10 shrink-0">
+        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[color-mix(in_srgb,var(--color-primary)_4%,transparent)] pointer-events-none" />
+        <div className="chrome-bound max-w-7xl mx-auto px-4 sm:px-6 relative z-10">
+          {/* Upper row: Brand + Grouped navigation */}
+          <div className="py-5 flex flex-col md:flex-row items-center justify-between gap-4">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 opacity-85 hover:opacity-100 transition-opacity"
+            >
+              <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
+              <span className="font-display text-sm font-bold text-[var(--color-text)] tracking-[0.16em]">
+                MONEXUS
+              </span>
+            </Link>
+
+            {legalLinks && legalLinks.length > 0 && (
+              <nav
+                aria-label="法律与协议"
+                className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-medium text-[var(--color-text-muted)]"
+                data-testid="footer-legal-links"
+              >
+                <span className="flex items-center gap-3.5">
+                  <span className="text-[color-mix(in_srgb,var(--color-text-muted)_55%,transparent)]">协议</span>
+                  {legalLinks
+                    .filter((link) => ['terms', 'privacy', 'refund'].includes(link.slug))
+                    .map((link) => (
+                      <Link
+                        key={link.slug}
+                        to={LEGAL_PAGE_PATHS[link.slug]}
+                        className="hover:text-[var(--color-primary)] transition-colors"
+                      >
+                        {link.title}
+                      </Link>
+                    ))}
+                </span>
+                <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" aria-hidden="true" />
+                <span className="flex items-center gap-3.5">
+                  <span className="text-[color-mix(in_srgb,var(--color-text-muted)_55%,transparent)]">支持</span>
+                  {legalLinks
+                    .filter((link) => ['points-rules', 'about'].includes(link.slug))
+                    .map((link) => (
+                      <Link
+                        key={link.slug}
+                        to={LEGAL_PAGE_PATHS[link.slug]}
+                        className="hover:text-[var(--color-primary)] transition-colors"
+                      >
+                        {link.title}
+                      </Link>
+                    ))}
+                  <Link
+                    to="/credits"
+                    className="hover:text-[var(--color-primary)] transition-colors"
+                    data-testid="footer-credits-link"
+                  >
+                    群星圣殿
+                  </Link>
+                </span>
+              </nav>
+            )}
           </div>
-          {legalLinks && legalLinks.length > 0 && (
-            <nav aria-label="法律与协议" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-medium text-[var(--color-text-muted)]" data-testid="footer-legal-links">
-              <span className="flex items-center gap-4">
-                <span className="text-[color-mix(in_srgb,var(--color-text-muted)_60%,transparent)]">协议</span>
-                {legalLinks
-                  .filter((link) => ['terms', 'privacy', 'refund'].includes(link.slug))
-                  .map((link) => (
-                    <Link key={link.slug} to={LEGAL_PAGE_PATHS[link.slug]} className="hover:text-[var(--color-primary)] transition-colors">
-                      {link.title}
-                    </Link>
-                  ))}
+
+          {/* Lower row: Quiet copyright + Four-AI Sanctuary badge */}
+          <div className="border-t border-[color-mix(in_srgb,var(--color-border)_68%,transparent)] py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
+            <div className="text-[11px] tracking-wide text-[color-mix(in_srgb,var(--color-text-muted)_86%,transparent)]">
+              © {new Date().getFullYear()} MoNexus · MoYuan
+            </div>
+
+            <Link
+              to="/credits"
+              data-testid="footer-credits-colophon"
+              className="group inline-flex items-center gap-2.5 rounded-full border border-[color-mix(in_srgb,var(--color-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--color-surface)_75%,transparent)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-muted)] transition-all duration-300 hover:border-[var(--color-primary-border-subtle)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] hover:shadow-xs"
+            >
+              <span className="inline-flex items-center gap-1.5 opacity-80 transition-opacity duration-300 group-hover:opacity-100" aria-hidden="true">
+                <img src="/credits/icons/claude-color.svg" alt="" className="h-3.5 w-3.5 object-contain" loading="lazy" />
+                <img src="/credits/icons/gemini-color.svg" alt="" className="h-3.5 w-3.5 object-contain" loading="lazy" />
+                <img src="/credits/icons/openai.svg" alt="" className="h-3.5 w-3.5 object-contain dark:invert" loading="lazy" />
+                <img src="/credits/icons/deepseek-color.svg" alt="" className="h-3.5 w-3.5 object-contain" loading="lazy" />
               </span>
-              <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" aria-hidden="true" />
-              <span className="flex items-center gap-4">
-                <span className="text-[color-mix(in_srgb,var(--color-text-muted)_60%,transparent)]">支持</span>
-                {legalLinks
-                  .filter((link) => ['points-rules', 'about'].includes(link.slug))
-                  .map((link) => (
-                    <Link key={link.slug} to={LEGAL_PAGE_PATHS[link.slug]} className="hover:text-[var(--color-primary)] transition-colors">
-                      {link.title}
-                    </Link>
-                  ))}
-              </span>
-            </nav>
-          )}
-          <div className="text-xs text-[var(--color-text-muted)]">
-            © {new Date().getFullYear()} MoNexus. All rights reserved.
+              <span className="h-3 w-px bg-[var(--color-border)]" aria-hidden="true" />
+              <span className="hidden sm:inline">与 Claude · Gemini · ChatGPT · DeepSeek 共建</span>
+              <span className="sm:hidden">与四位 AI 同行者共建</span>
+              <ChevronRight
+                className="h-3.5 w-3.5 text-[color-mix(in_srgb,var(--color-text-muted)_70%,transparent)] transition-transform duration-300 group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)]"
+                aria-hidden="true"
+              />
+            </Link>
           </div>
         </div>
       </footer>

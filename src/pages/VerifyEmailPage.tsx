@@ -107,8 +107,8 @@ export default function VerifyEmailPage() {
   }, [isLoggedIn, navigate, setUser])
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--color-background)] px-4 fade-in">
-      <div className="card w-full max-w-md text-center backdrop-blur-xl">
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-x-hidden overflow-y-auto overscroll-y-contain bg-[var(--color-background)] px-4 py-6 pt-[max(1.5rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] fade-in sm:items-center">
+      <div className="card my-auto w-full max-w-md shrink-0 text-center backdrop-blur-xl">
         {status === 'checking' && (
           <>
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]">

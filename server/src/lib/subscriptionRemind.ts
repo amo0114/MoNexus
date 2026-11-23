@@ -207,6 +207,7 @@ export async function runSubscriptionRemindBatch(now = new Date()) {
       }
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'subscription remind batch failed')
   } finally {
     lease?.release()

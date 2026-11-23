@@ -44,6 +44,7 @@ async function runDisputeTimerBatch(now = new Date()): Promise<Record<string, nu
     }
     if (candidates.length > 0) logger.info({ counts }, 'dispute timers applied')
   } catch (err) {
+    lease?.markFailed()
     recordLifecycle('dispute_timer', 'error')
     logger.error({ err }, 'dispute timer cron batch failed')
   } finally {

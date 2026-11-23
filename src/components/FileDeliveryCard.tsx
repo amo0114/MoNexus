@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, Loader2, FileArchive, AlertCircle, Ban } from 'lucide-react'
 import { issueOrderFileDownloadUrl } from '../api/orders'
 import { getApiErrorCode, getApiErrorMessage } from '../api/error'
 import { useAppStore } from '../stores/appStore'
+import { useAuthStore } from '../stores/authStore'
+import { getAuthSessionScopeKey } from '../auth/sessionContext'
 import { formatFileSize } from '../utils/formatFileSize'
 
 interface Props {
@@ -12,6 +14,7 @@ interface Props {
   orderStatus?: string
   fileStatus?: string | null
   disabled?: boolean
+  ownerSessionKey?: string | null
 }
 
 /**
@@ -27,9 +30,18 @@ export default function FileDeliveryCard({
   orderStatus,
   fileStatus,
   disabled = false,
+  ownerSessionKey,
 }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const [downloading, setDownloading] = useState(false)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
 
   const isDisputed = orderStatus === 'disputed'
   const isRefunded = orderStatus === 'refunded'
@@ -46,12 +58,29 @@ export default function FileDeliveryCard({
 
   async function handleDownload() {
     if (isDownloadDisabled || downloading) return
+    const downloadSessionKey =
+      ownerSessionKey !== undefined
+        ? ownerSessionKey
+        : getAuthSessionScopeKey(useAuthStore.getState())
+    if (
+      !downloadSessionKey
+      || getAuthSessionScopeKey(useAuthStore.getState()) !== downloadSessionKey
+    ) {
+      return
+    }
+    const isSameSession = () =>
+      getAuthSessionScopeKey(useAuthStore.getState()) === downloadSessionKey
+
     setDownloading(true)
     try {
       const grant = await issueOrderFileDownloadUrl(orderId)
+      // Re-verify the originating login session right before consuming the signed URL,
+      // even if Axios already resolved before session invalidation / modal unmount.
+      if (!isSameSession()) return
       // 直接导航触发下载(签名头强制 attachment,不会离开页面)。
       window.location.assign(grant.url)
     } catch (err: any) {
+      if (!isSameSession()) return
       // P6a：订阅过期的发放拒绝给出续费指引；其余沿用服务端文案。
       if (getApiErrorCode(err) === 'FILE_SUBSCRIPTION_EXPIRED') {
         showToast('订阅已过期，续费后可在新订单中下载', 'error')
@@ -59,7 +88,7 @@ export default function FileDeliveryCard({
         showToast(getApiErrorMessage(err, '下载链接获取失败'), 'error')
       }
     } finally {
-      setDownloading(false)
+      if (mountedRef.current) setDownloading(false)
     }
   }
 

@@ -10,6 +10,7 @@ import {
 } from '../catalog/guestEligibility.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { createDefaultOffer, getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
+import { countAvailableByProductId } from '../../lib/inventoryCounts.js'
 import {
   fetchFakaCapacityForSku,
   getFakaCapacityForPublicRead,
@@ -404,9 +405,6 @@ export async function listAdminProducts(
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       include: {
         ...guestReviewInclude,
-        _count: {
-          select: { inventory: { where: { status: 'available' } } },
-        },
         // P4a F2：导入弹窗需要知道每个商品有哪些即时库存规格（含已下架——
         // 重新上架前备货是合理操作）；deliveryFields 用于前端提示模板规格
         // 不能走管理端纯文本导入。管理端上下文，不含 fixedContent。
@@ -432,6 +430,7 @@ export async function listAdminProducts(
       },
     }),
   ])
+  const availableByProduct = await countAvailableByProductId(products.map(p => p.id))
 
   // Attach Xboard capacity for Faka offers (admin-only read; not for merchants).
   const fakaSkus = [
@@ -470,6 +469,7 @@ export async function listAdminProducts(
     } = p
     return {
       ...productDto,
+      _count: { inventory: availableByProduct.get(p.id) ?? 0 },
       // Versions are returned so the review dialog can send both expected values (§4.5 CAS).
       guestReview: {
         state: guestReviewState({

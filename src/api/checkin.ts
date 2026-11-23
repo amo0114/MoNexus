@@ -42,8 +42,34 @@ export function hasStreakDetails(status: CheckinStatus | null): status is Checki
   return Array.isArray(status?.month?.checked) && Array.isArray(status?.claimable)
 }
 
+export interface CheckinHeatmapDay {
+  date: string
+  level: 1 | 2 | 3 | 4
+  active: boolean
+  checkedIn: boolean
+  makeup: boolean
+  streak: number
+}
+
+export interface CheckinHeatmap {
+  today: string
+  startDate: string
+  weeks: number
+  summary: {
+    checkinDays: number
+    activeDays: number
+    longestStreak: number
+  }
+  days: CheckinHeatmapDay[]
+}
+
 export async function getCheckinStatus(): Promise<CheckinStatus> {
   const res = await api.get<CheckinStatus>('/points/checkin/status')
+  return res.data
+}
+
+export async function getCheckinHeatmap(weeks = 52): Promise<CheckinHeatmap> {
+  const res = await api.get<CheckinHeatmap>('/points/checkin/heatmap', { params: { weeks } })
   return res.data
 }
 

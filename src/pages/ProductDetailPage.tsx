@@ -14,7 +14,7 @@ import { createOrder, type CheckoutPreview } from '../api/orders'
 import { productCheckoutReturn } from '../utils/productCheckoutReturn'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
-import { getAuthSessionContext } from '../auth/sessionContext'
+import { getAuthSessionContext, getAuthSessionScopeKey } from '../auth/sessionContext'
 import { usePageView } from '../hooks/usePageView'
 import { useProductFavorite } from '../hooks/useProductFavorite'
 import { useProductRecommendations } from '../hooks/useProductRecommendations'
@@ -40,6 +40,7 @@ import type { ProductTemplateDefinition } from '../types/catalog'
 import ProductDetailDesktop from '../components/catalog/ProductDetailDesktop'
 import ProductDetailMobile from '../components/catalog/ProductDetailMobile'
 import ProductDetailTablet from '../components/catalog/productDetail/ProductDetailTablet'
+import { ProductDetailSkeleton } from '../components/catalog/ProductDetailSkeleton'
 import RelatedProductsSection from '../components/catalog/productDetail/RelatedProductsSection'
 import { referenceProduct, referenceReviews } from '../components/catalog/productDetailMock'
 
@@ -58,6 +59,19 @@ function getNavbarHeight(): number {
   return 64
 }
 
+interface ScopedOrderSuccess {
+  sessionKey: string
+  productRouteId: string | undefined
+  modalOpen: boolean
+  orderId: number
+  deliveryContent: string
+  deliveryContentType: string | undefined
+  deliveryStructured: import('../types/merchant').StructuredDeliveryContent | null
+  deliveryFile: { fileName: string; size: number } | null
+  merchantName: string
+  provisionPending: boolean
+}
+
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
@@ -65,6 +79,7 @@ export default function ProductDetailPage() {
   const navigate = useNavigate()
   const showToast = useAppStore((s) => s.showToast)
   const isLoggedIn = useAuthStore((s) => s.isLoggedIn)
+  const currentOrderSessionKey = useAuthStore(getAuthSessionScopeKey)
   const userPoints = useAuthStore((s) => s.user?.points ?? 0)
   const isMobileViewport = useIsMobileViewport()
   const isDesktopViewport = useIsDesktopViewport()
@@ -90,22 +105,45 @@ export default function ProductDetailPage() {
   const recommendations = useProductRecommendations(routeProductId, !isReferencePreview)
   const recommendationTracker = useRecommendationTracking(recommendations.status === 'ready' ? recommendations.tracking?.listToken : undefined)
 
-  const [showPurchase, setShowPurchase] = useState(false)
-  const [purchasing, setPurchasing] = useState(false)
-  const [showSuccess, setShowSuccess] = useState(false)
-  const [deliveryContent, setDeliveryContent] = useState('')
-  const [deliveryContentType, setDeliveryContentType] = useState<string | undefined>(undefined)
-  const [deliveryStructured, setDeliveryStructured] = useState<
-    import('../types/merchant').StructuredDeliveryContent | null
-  >(null)
-  const [deliveryFile, setDeliveryFile] = useState<{ fileName: string; size: number } | null>(null)
-  const [successOrderId, setSuccessOrderId] = useState<number | null>(null)
+  const [purchaseModalScope, setPurchaseModalScope] = useState<{
+    sessionKey: string
+    productRouteId: string | undefined
+  } | null>(null)
+  const [purchasingAttempt, setPurchasingAttempt] = useState<{ id: number; sessionKey: string } | null>(null)
+  const purchaseAttemptSeqRef = useRef(0)
+  const [orderSuccess, setOrderSuccess] = useState<ScopedOrderSuccess | null>(null)
+
+  // Render-time ownership gates: a session or route transition hides prior order
+  // modals, delivery payloads, and recent-order links on the very first DOM commit.
+  const showPurchase =
+    currentOrderSessionKey !== null
+    && purchaseModalScope !== null
+    && purchaseModalScope.sessionKey === currentOrderSessionKey
+    && purchaseModalScope.productRouteId === id
+  const purchasing =
+    currentOrderSessionKey !== null
+    && purchasingAttempt !== null
+    && purchasingAttempt.sessionKey === currentOrderSessionKey
+  const activeOrderSuccess =
+    currentOrderSessionKey !== null
+    && orderSuccess !== null
+    && orderSuccess.sessionKey === currentOrderSessionKey
+    && orderSuccess.productRouteId === id
+      ? orderSuccess
+      : null
+
   useEffect(() => {
-    setSuccessOrderId(null)
-    setShowSuccess(false)
-  }, [id])
-  const [merchantName, setMerchantName] = useState('')
-  const [provisionPending, setProvisionPending] = useState(false)
+    setOrderSuccess((prev) =>
+      prev && prev.sessionKey === currentOrderSessionKey && prev.productRouteId === id
+        ? prev
+        : null,
+    )
+    setPurchaseModalScope((prev) =>
+      prev && prev.sessionKey === currentOrderSessionKey && prev.productRouteId === id
+        ? prev
+        : null,
+    )
+  }, [id, currentOrderSessionKey])
   const [activeImage, setActiveImage] = useState(0)
   // Layout branches remount the gallery on rotation / breakpoint changes.
   // Keep media selection here so choosing an image cannot restart the video.
@@ -284,16 +322,25 @@ export default function ProductDetailPage() {
     orderInput?: FulfillmentInput
   ): Promise<ConfirmOutcome> {
     if (!product || purchasing || isReferencePreview) return 'failed'
-    const purchaseAuthContext = getAuthSessionContext(useAuthStore.getState())
-    setPurchasing(true)
-    if (isMobileViewport) {
-      useAppStore.getState().triggerIslandActivity({
-        kind: 'order_processing',
-        title: '正在确认支付',
-        subtitle: product.name,
-        type: 'info',
-      })
-    }
+    const initialAuthState = useAuthStore.getState()
+    const purchaseSessionKey = getAuthSessionScopeKey(initialAuthState)
+    if (!purchaseSessionKey) return 'failed'
+    const purchaseAuthContext = getAuthSessionContext(initialAuthState)
+    const purchaseRouteId = id
+    const purchaseVisit = detailVisitRef.current
+    const attemptId = ++purchaseAttemptSeqRef.current
+    const isSameSession = () => getAuthSessionScopeKey(useAuthStore.getState()) === purchaseSessionKey
+
+    setPurchasingAttempt({ id: attemptId, sessionKey: purchaseSessionKey })
+    const processingNoticeId = isMobileViewport
+      ? useAppStore.getState().triggerIslandActivity({
+          kind: 'order_processing',
+          title: '正在确认支付',
+          subtitle: product.name,
+          type: 'info',
+          sessionKey: purchaseSessionKey,
+        })
+      : undefined
     try {
       const data = await createOrder(product.id, {
         expectedPrice: preview.price,
@@ -308,18 +355,28 @@ export default function ProductDetailPage() {
         verificationPassword: verificationPassword || undefined,
         agreementVersions,
       })
+      if (!isSameSession()) {
+        return 'failed'
+      }
       if (purchaseAuthContext) {
         useAuthStore.getState().updatePoints(data.balanceAfter, purchaseAuthContext)
       }
       void useAppStore.getState().refreshOrderAttention()
-      setDeliveryContent(data.deliveryContent ?? '')
-      setDeliveryContentType(data.deliveryContentType ?? '')
-      setDeliveryStructured(data.deliveryStructuredContent ?? null)
-      setDeliveryFile(data.deliveryFile ?? null)
-      setSuccessOrderId(data.orderId)
-      setMerchantName(data.merchantName || '')
-      setProvisionPending(Boolean(data.provisionPending))
-      setShowPurchase(false)
+      if (detailVisitRef.current === purchaseVisit) {
+        setOrderSuccess({
+          sessionKey: purchaseSessionKey,
+          productRouteId: purchaseRouteId,
+          modalOpen: !isMobileViewport,
+          orderId: data.orderId,
+          deliveryContent: data.deliveryContent ?? '',
+          deliveryContentType: data.deliveryContentType ?? '',
+          deliveryStructured: data.deliveryStructuredContent ?? null,
+          deliveryFile: data.deliveryFile ?? null,
+          merchantName: data.merchantName || '',
+          provisionPending: Boolean(data.provisionPending),
+        })
+      }
+      setPurchaseModalScope((prev) => (prev?.sessionKey === purchaseSessionKey ? null : prev))
       const successOfferName = selectedOffer?.name || activeOffer?.name || product.name
       if (isMobileViewport) {
         const hasDelivery = Boolean(
@@ -334,25 +391,34 @@ export default function ProductDetailPage() {
             ? product.name : `${product.name} · ${successOfferName}`,
           actionLabel: awaitingDelivery ? '查看订单' : '查看交付内容',
           durationMs: 7000,
-          onAction: () => navigate(`/orders?focus=${data.orderId}`),
+          sessionKey: purchaseSessionKey,
+          onAction: () => {
+            if (isSameSession()) navigate(`/orders?focus=${data.orderId}`)
+          },
         })
-      } else {
-        setShowSuccess(true)
       }
       // Availability is server-derived (inventory, local quota, Faka capacity), so reload the
       // public detail instead of guessing it from stock - 1. Order creation already invalidated
       // the detail cache. Non-blocking: a failed refresh keeps the old view and checkout still
       // re-validates on the next attempt.
-      const purchaseVisit = detailVisitRef.current
-      void api
-        .get(`/products/${product.id}`)
-        .then(({ data }) => {
-          if (detailVisitRef.current === purchaseVisit) setProduct(data)
-        })
-        .catch(() => {})
+      if (detailVisitRef.current === purchaseVisit) {
+        void api
+          .get(`/products/${product.id}`)
+          .then(({ data: refreshedProduct }) => {
+            if (detailVisitRef.current === purchaseVisit && isSameSession()) {
+              setProduct(refreshedProduct)
+            }
+          })
+          .catch(() => {})
+      }
       return 'success'
     } catch (err: any) {
-      if (useAppStore.getState().islandNotice?.kind === 'order_processing') {
+      if (!isSameSession()) {
+        return 'failed'
+      }
+      if (processingNoticeId !== undefined) {
+        useAppStore.getState().clearIslandNotice(processingNoticeId)
+      } else if (useAppStore.getState().islandNotice?.kind === 'order_processing') {
         useAppStore.getState().clearIslandNotice()
       }
       const code = getApiErrorCode(err)
@@ -375,7 +441,7 @@ export default function ProductDetailPage() {
       showToast(getApiErrorMessage(err, '兑换失败'), 'error')
       return 'failed'
     } finally {
-      setPurchasing(false)
+      setPurchasingAttempt((prev) => (prev?.id === attemptId ? null : prev))
     }
   }
 
@@ -407,23 +473,11 @@ export default function ProductDetailPage() {
   }
 
   if (loading) {
+    // Same structure as the route fallback for every visitor: the skeleton
+    // carries no product data, so guests learn nothing before access is known.
     return (
-      <div
-        className="max-w-6xl mx-auto px-4 lg:px-8 py-6 pb-8 fade-in relative animate-pulse"
-        data-testid="product-detail-loading"
-      >
-        {!isLoggedIn ? (
-          <div className="h-40 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]" />
-        ) : (
-          <div className="space-y-6">
-            <div className="w-24 h-6 bg-[var(--color-border)] rounded-lg"></div>
-            <div className="w-64 h-8 bg-[var(--color-border)] rounded-lg"></div>
-            <div className="flex flex-col lg:flex-row gap-8 items-start">
-              <div className="flex-1 w-full aspect-[4/3] bg-[var(--color-image-placeholder)] rounded-2xl border border-[var(--color-border)]"></div>
-              <div className="w-full lg:w-[368px] h-96 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)]"></div>
-            </div>
-          </div>
-        )}
+      <div role="status" aria-label="正在加载商品" data-testid="product-detail-loading">
+        <ProductDetailSkeleton />
       </div>
     )
   }
@@ -510,7 +564,12 @@ export default function ProductDetailPage() {
       navigate(`/recharge?returnTo=${encodeURIComponent(returnTo)}`)
       return
     }
-    setShowPurchase(true)
+    const sessionKey = getAuthSessionScopeKey(useAuthStore.getState())
+    if (!sessionKey) {
+      navigate(`/login?returnTo=${encodeURIComponent(loginReturnTo)}`)
+      return
+    }
+    setPurchaseModalScope({ sessionKey, productRouteId: id })
   }
 
   const redeemLabel = !isLoggedIn
@@ -629,7 +688,15 @@ export default function ProductDetailPage() {
       ) : isMobileViewport ? (
         <ProductDetailMobile
           key={`${product.id}:${isReferencePreview}`}
-          onViewRecentOrder={successOrderId == null ? undefined : () => navigate(`/orders?focus=${successOrderId}`)}
+          onViewRecentOrder={
+            activeOrderSuccess == null
+              ? undefined
+              : () => {
+                  if (getAuthSessionScopeKey(useAuthStore.getState()) === activeOrderSuccess.sessionKey) {
+                    navigate(`/orders?focus=${activeOrderSuccess.orderId}`)
+                  }
+                }
+          }
           product={product}
           preview={isReferencePreview}
           gallery={gallery}
@@ -765,6 +832,7 @@ export default function ProductDetailPage() {
       {/* Sole Purchase Modal / Drawer */}
       {showPurchase && (
         <PurchaseModal
+          key={`${currentOrderSessionKey}:${product.id}`}
           productId={product.id}
           offerId={selectedOfferId ?? undefined}
           initialPreviewQuery={paidAccountLinkId ? { xboardAccountLinkId: paidAccountLinkId } : undefined}
@@ -772,25 +840,57 @@ export default function ProductDetailPage() {
           validityDays={activeOffer?.validityDays ?? null}
           submitting={purchasing}
           hideWhileSubmitting={isMobileViewport}
-          onClose={() => setShowPurchase(false)}
+          onClose={() => setPurchaseModalScope(null)}
           onConfirm={handlePurchase}
         />
       )}
 
       {/* Success Modal */}
-      {showSuccess && (
+      {activeOrderSuccess && activeOrderSuccess.modalOpen && (
         <SuccessModal
-          structuredContent={deliveryStructured}
-          deliveryContent={deliveryContent}
-          deliveryContentType={deliveryContentType}
-          deliveryFile={deliveryFile}
-          orderId={successOrderId ?? undefined}
-          merchantName={merchantName}
-          provisionPending={provisionPending}
-          onClose={() => setShowSuccess(false)}
+          key={`${activeOrderSuccess.sessionKey}:${activeOrderSuccess.orderId}`}
+          ownerSessionKey={activeOrderSuccess.sessionKey}
+          structuredContent={activeOrderSuccess.deliveryStructured}
+          deliveryContent={activeOrderSuccess.deliveryContent}
+          deliveryContentType={activeOrderSuccess.deliveryContentType}
+          deliveryFile={activeOrderSuccess.deliveryFile}
+          orderId={activeOrderSuccess.orderId}
+          merchantName={activeOrderSuccess.merchantName}
+          provisionPending={activeOrderSuccess.provisionPending}
+          onClose={() =>
+            setOrderSuccess((prev) =>
+              prev && prev.sessionKey === activeOrderSuccess.sessionKey
+                ? {
+                    ...prev,
+                    modalOpen: false,
+                    deliveryContent: '',
+                    deliveryContentType: undefined,
+                    deliveryStructured: null,
+                    deliveryFile: null,
+                    merchantName: '',
+                    provisionPending: false,
+                  }
+                : null,
+            )
+          }
           onViewOrders={() => {
-            setShowSuccess(false)
-            navigate('/profile')
+            setOrderSuccess((prev) =>
+              prev && prev.sessionKey === activeOrderSuccess.sessionKey
+                ? {
+                    ...prev,
+                    modalOpen: false,
+                    deliveryContent: '',
+                    deliveryContentType: undefined,
+                    deliveryStructured: null,
+                    deliveryFile: null,
+                    merchantName: '',
+                    provisionPending: false,
+                  }
+                : null,
+            )
+            if (getAuthSessionScopeKey(useAuthStore.getState()) === activeOrderSuccess.sessionKey) {
+              navigate('/profile')
+            }
           }}
         />
       )}

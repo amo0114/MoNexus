@@ -32,6 +32,7 @@ export async function runGrowthRewardReleaseCronBatch() {
     }
     return outcomes
   } catch (err) {
+    lease?.markFailed()
     // The release service keeps the whole selected batch in one transaction;
     // catching here happens only after that transaction has rolled back.
     logger.error({ err }, 'growth reward cron batch failed')
@@ -55,6 +56,7 @@ export async function runAbuseEventRetentionCronBatch() {
     if (deleted > 0) logger.info({ deleted }, 'expired abuse events cleaned')
     return deleted
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'abuse event retention cleanup failed')
     return 0
   } finally {

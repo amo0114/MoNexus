@@ -12,7 +12,7 @@ import StorePage from './pages/StorePage'
 import LoginPage from './pages/LoginPage'
 import RoleGuard from './components/RoleGuard'
 import AdminAccessGate from './components/admin/AdminAccessGate'
-import RouteFallback from './components/ui/RouteFallback'
+import RouteFallback, { StandaloneRouteFallback } from './components/ui/RouteFallback'
 import MerchantShell from './components/merchant/MerchantShell'
 
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
@@ -34,6 +34,7 @@ const WorkbenchPage = lazy(() => import('./pages/merchant/WorkbenchPage'))
 const ProductCreatePage = lazy(() => import('./pages/admin/ProductCreatePage'))
 const PortableRestoreSetupPage = lazy(() => import('./pages/PortableRestoreSetupPage'))
 const LegalDocumentPage = lazy(() => import('./pages/legal/LegalDocumentPage'))
+const CreditsPage = lazy(() => import('./pages/CreditsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const OrdersPage = lazy(() => import('./pages/OrdersPage'))
 const RechargePage = lazy(() => import('./pages/RechargePage'))
@@ -99,7 +100,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Suspense fallback={<div role="status" aria-label="正在加载页面" className="min-h-screen" />}>
+      <Suspense fallback={<StandaloneRouteFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="/refund" element={<LegalDocumentPage slug="refund" />} />
           <Route path="/points-rules" element={<LegalDocumentPage slug="points-rules" />} />
           <Route path="/about" element={<LegalDocumentPage slug="about" />} />
+          <Route path="/credits" element={<CreditsPage />} />
           <Route
             path="/"
             element={(

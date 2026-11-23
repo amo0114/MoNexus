@@ -25,6 +25,15 @@ describe('public product endpoints with instant_fixed', () => {
 
     const list = await api.get('/api/products').expect(200)
     expect(JSON.stringify(list.body)).not.toContain('SECRET-PAID-CONTENT')
+
+    // Guest-visibility inputs are internal review state, not public data.
+    const listed = list.body.items.find((item: { id: number }) => item.id === product.id)
+    for (const body of [detail.body, listed]) {
+      expect(body).toBeDefined()
+      expect(body).not.toHaveProperty('guestEligibility')
+      expect(body).not.toHaveProperty('publicContentRevision')
+      expect(body).not.toHaveProperty('archivedAt')
+    }
   })
 
   it('derives instant inventory stock from available InventoryItem rows, not Product.stock', async () => {
@@ -47,6 +56,39 @@ describe('public product endpoints with instant_fixed', () => {
         { productId: product.id, offerId: offer.id, content: 'AVAILABLE-1', status: 'available' },
         { productId: product.id, offerId: offer.id, content: 'AVAILABLE-2', status: 'available' },
         { productId: product.id, offerId: offer.id, content: 'VOID-1', status: 'void' },
+      ],
+    })
+
+    const detail = await api.get(`/api/products/${product.id}`).expect(200)
+    expect(detail.body.stock).toBe(2)
+
+    const list = await api.get('/api/products').expect(200)
+    const listed = list.body.items.find((item: { id: number }) => item.id === product.id)
+    expect(listed?.stock).toBe(2)
+  })
+
+  // The fallback counts per product with an explicit groupBy (not a relation
+  // `_count`, which Prisma compiles into a whole-table aggregate).
+  it('counts available rows per product when no offer is active', async () => {
+    const categoryId = await getActiveCategoryIdByLabel('充值卡密')
+    const [product, other] = await Promise.all(['无在售规格商品', '旁路库存商品'].map(name => prisma.product.create({
+      data: {
+        name, type: '充值卡密', price: 100, stock: 99, status: 'active', visibility: 'public',
+        categoryId, deliveryMode: 'instant_inventory', stockMode: 'limited',
+      },
+    })))
+    await prisma.productGuestEligibility.createMany({
+      data: [product, other].map(p => ({ productId: p.id, decision: 'approved', reviewedRevision: 1 })),
+    })
+    const [offer, otherOffer] = await Promise.all([product, other].map(p => prisma.offer.create({
+      data: { productId: p.id, name: '默认规格', isDefault: true, price: 100, stock: 99, status: 'inactive' },
+    })))
+    await prisma.inventoryItem.createMany({
+      data: [
+        { productId: product.id, offerId: offer.id, content: 'FALLBACK-1', status: 'available' },
+        { productId: product.id, offerId: offer.id, content: 'FALLBACK-2', status: 'available' },
+        { productId: product.id, offerId: offer.id, content: 'FALLBACK-VOID', status: 'void' },
+        { productId: other.id, offerId: otherOffer.id, content: 'OTHER-1', status: 'available' },
       ],
     })
 

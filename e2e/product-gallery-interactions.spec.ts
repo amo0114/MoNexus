@@ -95,6 +95,8 @@ async function openGallery(page: Page, withVideo = false) {
       await route.fulfill({ json: [] })
     } else if (path === apiPath('/orders/attention-count')) {
       await route.fulfill({ json: { count: 0 } })
+    } else if (path === apiPath('/points/checkin/status')) {
+      await route.fulfill({ json: { hasCheckedIn: false, streak: 0, totalDays: 0, points: 10 } })
     } else if (path === apiPath('/products/4242/video-playback')) {
       await route.fulfill({ json: { videoAssetId: 'gallery-video', playbackUrl: '/gallery-fixture.mp4', posterUrl: images[0], expiresAt: new Date(Date.now() + 180_000).toISOString() } })
     } else if (path === apiPath('/products/4242')) {
