@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -21,55 +21,14 @@ import Logo from '../components/ui/Logo'
 
 type ViewMode = 'cards' | 'overview'
 
-function ClaudeLogo({ className = 'w-6 h-6' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M12 1.75c.46 0 .84.35.88.81l.52 5.43 4.02-3.71a.88.88 0 0 1 1.24.04c.32.35.31.89-.03 1.22l-3.83 3.74 5.45-.36a.88.88 0 0 1 .94.82c.03.48-.33.9-.81.94l-5.43.52 3.71 4.02a.88.88 0 0 1-.04 1.24.88.88 0 0 1-1.22-.03l-3.74-3.83.36 5.45a.88.88 0 0 1-.82.94.88.88 0 0 1-.94-.81l-.52-5.43-4.02 3.71a.88.88 0 0 1-1.24-.04.88.88 0 0 1 .03-1.22l3.83-3.74-5.45.36a.88.88 0 0 1-.94-.82.88.88 0 0 1 .81-.94l5.43-.52-3.71-4.02a.88.88 0 0 1 .04-1.24.88.88 0 0 1 1.22.03l3.74 3.83-.36-5.45a.88.88 0 0 1 .82-.94z" />
-    </svg>
-  )
-}
-
-function GeminiLogo({ className = 'w-6 h-6' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <defs>
-        <linearGradient id="gemini-sparkle-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#4285F4" />
-          <stop offset="52%" stopColor="#6366F1" />
-          <stop offset="100%" stopColor="#9B72CB" />
-        </linearGradient>
-      </defs>
-      <path
-        d="M12 1.5C12 7.3 7.3 12 1.5 12C7.3 12 12 16.7 12 22.5C12 16.7 16.7 12 22.5 12C16.7 12 12 7.3 12 1.5Z"
-        fill="url(#gemini-sparkle-grad)"
-      />
-    </svg>
-  )
-}
-
-function ChatGptLogo({ className = 'w-6 h-6' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08-4.778 2.758a.795.795 0 0 0-.393.681zm1.097-2.365 2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
-    </svg>
-  )
-}
-
-function DeepSeekLogo({ className = 'w-6 h-6' }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M21.45 7.42c-.52-.23-1.17.1-1.66.61-.46.48-.89 1.07-1.36 1.53-.49-1.8-1.93-3.39-3.95-4.08-2.08-.71-4.5-.55-6.51.55-.84.46-1.56 1.04-2.16 1.71-.52-.35-1.15-.55-1.83-.48-.98.1-1.78.83-1.93 1.79-.12.76.22 1.48.8 1.92-.12.6-.16 1.22-.1 1.85.26 2.9 2.24 5.45 5.13 6.32 2.97.9 6.35.22 8.71-1.84 1.4-1.23 2.38-2.85 2.86-4.63.52-.25 1.04-.62 1.48-1.12.78-.88 1.15-2.16.82-3.2-.13-.42-.38-.78-.7-.93zM9.2 12.15a1.05 1.05 0 1 1 0-2.1 1.05 1.05 0 0 1 0 2.1zm4.85 3.77c-1.85.56-3.93.12-5.32-1.11-.3-.27-.24-.76.12-.95.24-.13.54-.09.76.09 1.06.87 2.57 1.18 3.97.76 1.22-.36 2.26-1.18 2.89-2.25.17-.28.53-.38.82-.22.29.16.4.52.24.81-.76 1.38-2.02 2.41-3.48 2.87z" />
-    </svg>
-  )
-}
-
 interface Companion {
   id: 'claude' | 'gemini' | 'chatgpt' | 'deepseek'
   name: string
   subtitle: string
   accent: string
-  catImage: string
-  logo: ReactNode
+  mascotImage: string
+  logoSrc: string
+  logoInvertOnDark?: boolean
   description: string
   tags: string[]
   scores: {
@@ -94,8 +53,8 @@ const COMPANIONS: Companion[] = [
     name: 'Claude',
     subtitle: '深度思考 · 架构与工程',
     accent: '#D97757',
-    catImage: '/credits/cat-claude.webp',
-    logo: <ClaudeLogo className="w-6 h-6" />,
+    mascotImage: '/credits/girl-claude.webp',
+    logoSrc: '/credits/icons/claude-color.svg',
     description:
       '面对复杂状态机、多方对账和盘根错节的边界问题时，总能沉下心陪我把逻辑一层层理顺。很多难啃的重构和漫长的代码审查，都是你帮我稳稳托住的。',
     tags: ['架构设计', '复杂推理', '全局评审'],
@@ -106,8 +65,8 @@ const COMPANIONS: Companion[] = [
     name: 'Gemini',
     subtitle: '全局视野 · 创意与打磨',
     accent: '#5B64F1',
-    catImage: '/credits/cat-gemini.webp',
-    logo: <GeminiLogo className="w-6 h-6" />,
+    mascotImage: '/credits/girl-gemini.webp',
+    logoSrc: '/credits/icons/gemini-color.svg',
     description:
       '总能跳出局部看到整体，在前端设计、多模态理解与体验细节的反复斟酌上尤为出色，一次次帮我发现那些容易忽略的瑕疵，让站点更耐看、更顺手。',
     tags: ['前端与设计', '多模态理解', '体验打磨'],
@@ -118,8 +77,9 @@ const COMPANIONS: Companion[] = [
     name: 'ChatGPT',
     subtitle: '通用协作 · 灵感与陪伴',
     accent: '#10A37F',
-    catImage: '/credits/cat-chatgpt.webp',
-    logo: <ChatGptLogo className="w-6 h-6" />,
+    mascotImage: '/credits/girl-chatgpt.webp',
+    logoSrc: '/credits/icons/openai.svg',
+    logoInvertOnDark: true,
     description:
       '从最初一个模糊的念头开始，每一次随口抛出的设想、每一次遇到陌生报错时的求助，你都在第一时间接住，陪我把无数个“能不能试试”变成现实。',
     tags: ['代码实现', '技术解答', '文档整理'],
@@ -129,9 +89,9 @@ const COMPANIONS: Companion[] = [
     id: 'deepseek',
     name: 'DeepSeek',
     subtitle: '高效务实 · 中文与工程',
-    accent: '#2563EB',
-    catImage: '/credits/cat-deepseek.webp',
-    logo: <DeepSeekLogo className="w-6 h-6" />,
+    accent: '#4D6BFE',
+    mascotImage: '/credits/girl-deepseek.webp',
+    logoSrc: '/credits/icons/deepseek-color.svg',
     description:
       '思路清晰、直奔要害。在中文语义理解、长上下文追踪和底层工程细节里绕不出弯时，你的拆解总能让我豁然开朗，少走很多弯路。',
     tags: ['中文理解', '长上下文', '深度剖析'],
@@ -349,18 +309,21 @@ export default function CreditsPage() {
                   }}
                 >
                   <div>
-                    {/* Header: Official Brand SVG + Name + Cute Scarf Cat */}
+                    {/* Header: Official Brand SVG + Name + Chibi AI Girl Mascot */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2.5 min-w-0 pt-1">
                         <span
                           className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border"
                           style={{
-                            color: companion.accent,
                             backgroundColor: `color-mix(in srgb, ${companion.accent} 10%, var(--color-surface))`,
                             borderColor: `color-mix(in srgb, ${companion.accent} 24%, transparent)`,
                           }}
                         >
-                          {companion.logo}
+                          <img
+                            src={companion.logoSrc}
+                            alt={`${companion.name} 图标`}
+                            className={`h-6 w-6 object-contain ${companion.logoInvertOnDark ? 'dark:invert' : ''}`}
+                          />
                         </span>
                         <div className="min-w-0">
                           <h3 className="font-heading text-lg font-bold tracking-tight text-[var(--color-text)] truncate">
@@ -373,9 +336,9 @@ export default function CreditsPage() {
                       </div>
 
                       <img
-                        src={companion.catImage}
-                        alt={`${companion.name} 像素小猫伙伴`}
-                        className="h-16 w-16 shrink-0 object-contain transition-transform duration-300 group-hover:-translate-y-1 select-none"
+                        src={companion.mascotImage}
+                        alt={`${companion.name} Q 版 AI 娘形象`}
+                        className="h-24 sm:h-[104px] w-auto shrink-0 object-contain drop-shadow-[0_6px_12px_rgba(15,23,42,0.12)] transition-transform duration-300 group-hover:-translate-y-1 group-hover:scale-105 select-none"
                         loading="lazy"
                       />
                     </div>
@@ -414,17 +377,22 @@ export default function CreditsPage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5">
-                        <span style={{ color: companion.accent }}>{companion.logo}</span>
+                        <img
+                          src={companion.logoSrc}
+                          alt=""
+                          aria-hidden="true"
+                          className={`h-6 w-6 object-contain ${companion.logoInvertOnDark ? 'dark:invert' : ''}`}
+                        />
                         <div>
                           <div className="font-heading text-sm font-bold text-[var(--color-text)]">{companion.name}</div>
                           <div className="text-[11px] text-[var(--color-text-muted)]">{companion.subtitle}</div>
                         </div>
                       </div>
                       <img
-                        src={companion.catImage}
+                        src={companion.mascotImage}
                         alt=""
                         aria-hidden="true"
-                        className="h-11 w-11 shrink-0 object-contain"
+                        className="h-14 w-auto shrink-0 object-contain"
                       />
                     </div>
                     <div className="space-y-2.5">
@@ -583,6 +551,84 @@ export default function CreditsPage() {
             </div>
           </div>
         </section>
+
+        {/* 5. Artwork Attribution & Non-Commercial License Notice (CC BY-NC-SA 4.0) */}
+        <footer
+          data-testid="credits-attribution"
+          className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)]/70 px-4 py-3.5 sm:px-5 text-[11px] sm:text-xs leading-relaxed text-[var(--color-text-muted)] space-y-1.5"
+        >
+          <p>
+            <span className="font-semibold text-[var(--color-text)]">角色形象署名与许可：</span>
+            本页展示的 Claude、Gemini、ChatGPT、DeepSeek Q 版 AI 娘形象设计源自画师{' '}
+            <a
+              href="https://space.bilibili.com/4168597"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+            >
+              ZipZipPipe（胖次狐）
+            </a>
+            （
+            <a
+              href="https://www.pixiv.net/users/18604994"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+            >
+              Pixiv
+            </a>
+            ），DeepSeek 原始鲸鱼娘原型源自{' '}
+            <a
+              href="https://space.bilibili.com/4456176"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+            >
+              上善无形
+            </a>
+            （
+            <a
+              href="https://www.pixiv.net/users/62155430"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+            >
+              Pixiv
+            </a>
+            ），素材整理参考开源项目{' '}
+            <a
+              href="https://github.com/shuaizenge/ai-girls"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+            >
+              shuaizenge/ai-girls
+            </a>
+            。角色形象遵循{' '}
+            <a
+              href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.zh-hans"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[var(--color-text)] underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+            >
+              CC BY-NC-SA 4.0
+            </a>
+            （署名 - 非商业性使用 - 相同方式共享）协议，仅用于个人非商业学习演示与开发致谢。
+          </p>
+          <p>
+            <span className="font-semibold text-[var(--color-text)]">品牌图标说明：</span>
+            AI 品牌图标源自开源图标库{' '}
+            <a
+              href="https://github.com/lobehub/lobe-icons"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-[var(--color-border)] underline-offset-2 hover:text-[var(--color-primary)]"
+            >
+              LobeHub Icons
+            </a>
+            ，相关商标与品牌标识归各自官方所有。
+          </p>
+        </footer>
       </main>
     </div>
   )

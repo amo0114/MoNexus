@@ -19,6 +19,12 @@ describe('CreditsPage', () => {
     expect(screen.getByTestId('companion-card-deepseek')).toHaveTextContent('DeepSeek')
     expect(screen.getByTestId('credits-signature')).toHaveTextContent('MoYuan')
 
+    const attribution = screen.getByTestId('credits-attribution')
+    expect(attribution).toHaveTextContent('ZipZipPipe')
+    expect(attribution).toHaveTextContent('上善无形')
+    expect(attribution).toHaveTextContent('CC BY-NC-SA 4.0')
+    expect(attribution).toHaveTextContent('shuaizenge/ai-girls')
+
     fireEvent.click(screen.getByTestId('credits-view-overview'))
     expect(screen.getByTestId('credits-capability-overview')).toBeInTheDocument()
     expect(screen.queryByTestId('companion-card-claude')).not.toBeInTheDocument()
