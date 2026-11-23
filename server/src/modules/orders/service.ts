@@ -61,6 +61,12 @@ import {
   type OrderPricingDto,
 } from '../valuePolicy/service.js'
 
+// Prisma's implicit 5s interactive-transaction timeout is too close to real
+// queueing on the Product row lock (load test: p95 ≈ 4.7s with 100 buyers on
+// one product). Explicit budget, same as the payment transactions; a timeout
+// rolls back everything and the Idempotency-Key makes the retry safe.
+const CREATE_ORDER_TX = { timeout: 15_000, maxWait: 5_000 } as const
+
 /**
  * Deterministic seam for the Faka checkout race regression.  Production never
  * sets this hook; tests use it to mutate the Offer after checkout resolution
@@ -951,7 +957,7 @@ async function createOrderOnce(
       provisionPending: externalTaskKick != null || autoProvisionTaskCreated,
       ...(pricing ? { pricing } : {}),
     }
-    })
+    }, CREATE_ORDER_TX)
   } catch (err) {
     if (snapshotPersistedInTx) {
       recordOrderPricingSnapshotRolledBack()
