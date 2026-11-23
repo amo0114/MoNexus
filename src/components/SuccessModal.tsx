@@ -187,16 +187,34 @@ export default function SuccessModal({
           setRefunded(true)
           // The checkout debited the header balance; reflect the refund without a reload.
           // Decouple from polling `cancelled` (flipped when `awaitingProvision` becomes false),
-          // while still strictly binding the refresh to the originating auth session.
-          const authContext = getAuthSessionContext(useAuthStore.getState())
+          // keep strict session binding, and drop the result if a newer balance/user write
+          // occurred in this session while `/auth/me` was in flight.
+          const authStateAtRequest = useAuthStore.getState()
+          const authContext = getAuthSessionContext(authStateAtRequest)
           if (authContext && isSameSession()) {
+            let balanceSuperseded = false
+            let lastObservedPoints = authStateAtRequest.user?.points
+            let lastObservedUser = authStateAtRequest.user
+            const unsubscribe = useAuthStore.subscribe((nextState) => {
+              if (
+                nextState.user?.points !== lastObservedPoints
+                || (nextState.user !== lastObservedUser && nextState.user != null)
+              ) {
+                balanceSuperseded = true
+                lastObservedPoints = nextState.user?.points
+                lastObservedUser = nextState.user
+              }
+            })
             void getMe()
               .then((me) => {
-                if (isSameSession()) {
+                if (!balanceSuperseded && isSameSession()) {
                   useAuthStore.getState().updatePoints(me.points, authContext)
                 }
               })
               .catch(() => {})
+              .finally(() => {
+                unsubscribe()
+              })
           }
           return
         }

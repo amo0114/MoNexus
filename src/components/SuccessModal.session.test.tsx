@@ -265,6 +265,35 @@ describe('SuccessModal & renewal delivery session isolation', () => {
     expect(useAuthStore.getState().user?.points).toBe(500)
   })
 
+  it('does not overwrite a newer same-session balance write when refunded /auth/me resolves late', async () => {
+    vi.useFakeTimers()
+    signIn(101, 'sess-refund-newer-write', 1, 400)
+    const lateMe = deferred<{ id: number; points: number }>()
+    getOrderDetail.mockResolvedValueOnce({ status: 'refunded' })
+    getMe.mockReturnValueOnce(lateMe.promise)
+
+    render(<SuccessModal deliveryContent="" orderId={709} provisionPending onClose={() => {}} />)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800)
+    })
+    expect(screen.getByTestId('success-provision-refunded')).toBeInTheDocument()
+    expect(getMe).toHaveBeenCalledTimes(1)
+
+    // Another checkout in the SAME session updates balance to 300 while /auth/me is still in flight
+    const ctx = getAuthSessionContext(useAuthStore.getState())!
+    act(() => {
+      expect(useAuthStore.getState().updatePoints(300, ctx)).toBe(true)
+    })
+    expect(useAuthStore.getState().user?.points).toBe(300)
+
+    // Stale /auth/me from the refund poll finally resolves with 500: must NOT overwrite 300
+    await act(async () => {
+      lateMe.resolve({ id: 101, points: 500 })
+    })
+    expect(useAuthStore.getState().user?.points).toBe(300)
+  })
+
   it('drops late /auth/me balance refresh after refunded poll if session changed while /auth/me was in flight', async () => {
     vi.useFakeTimers()
     signIn(101, 'sess-refund-switch', 1, 400)

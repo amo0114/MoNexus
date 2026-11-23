@@ -52,7 +52,13 @@ export default function OrdersPage() {
     total: number
     counts: { all: number; active: number; delivered: number; done: number }
   } | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loadingState, setLoadingState] = useState<{
+    sessionKey: string | null
+    loading: boolean
+  }>(() => ({
+    sessionKey: currentSessionKey,
+    loading: currentSessionKey !== null,
+  }))
   const [selectedOrderState, setSelectedOrderState] = useState<{
     sessionKey: string
     order: UserOrderDetail
@@ -90,7 +96,9 @@ export default function OrdersPage() {
     currentSessionKey !== null && loadingOrderState?.sessionKey === currentSessionKey
       ? loadingOrderState.orderId
       : null
-  const effectiveLoading = loading || (currentSessionKey !== null && activeOrdersState === null)
+  const effectiveLoading =
+    currentSessionKey !== null
+    && (loadingState.sessionKey !== currentSessionKey || loadingState.loading)
   selectedOrderRef.current = activeSelectedOrder
 
   useEffect(() => {
@@ -101,6 +109,11 @@ export default function OrdersPage() {
     setSelectedOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
     setLoadingOrderState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
     setOrdersState((prev) => (prev?.sessionKey === currentSessionKey ? prev : null))
+    setLoadingState((prev) =>
+      prev.sessionKey === currentSessionKey
+        ? prev
+        : { sessionKey: currentSessionKey, loading: currentSessionKey !== null },
+    )
   }, [currentSessionKey])
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
@@ -109,10 +122,14 @@ export default function OrdersPage() {
     const request = coordinator.begin(opts?.background ? 'background' : 'foreground')
     if (!requestSessionKey) {
       setOrdersState(null)
-      if (coordinator.finish(request)) setLoading(false)
+      if (coordinator.finish(request)) {
+        setLoadingState({ sessionKey: null, loading: false })
+      }
       return
     }
-    if (!opts?.background || coordinator.ownsLoading(request)) setLoading(true)
+    if (!opts?.background || coordinator.ownsLoading(request)) {
+      setLoadingState({ sessionKey: requestSessionKey, loading: true })
+    }
     try {
       const list = await getOrdersPage({ page, pageSize, tab, q: query })
       if (
@@ -145,7 +162,7 @@ export default function OrdersPage() {
         coordinator.finish(request)
         && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
       ) {
-        setLoading(false)
+        setLoadingState({ sessionKey: requestSessionKey, loading: false })
       }
     }
   }, [showToast, refreshOrderAttention, page, pageSize, tab, query, currentSessionKey])

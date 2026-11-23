@@ -214,4 +214,53 @@ describe('OrdersPage session isolation for order detail & list', () => {
 
     expect(document.body.textContent).not.toContain('SYNTH-ORDERS-PAGE-SECRET-A')
   })
+
+  it('exits skeleton loading when the initial orders list load fails for the current session', async () => {
+    getOrdersPage.mockRejectedValueOnce(new Error('network error'))
+
+    const snapshots: Snapshot[] = []
+    render(
+      <MemoryRouter initialEntries={['/orders']}>
+        <Observer snapshots={snapshots}>
+          <Routes>
+            <Route path="/orders" element={<OrdersPage />} />
+          </Routes>
+        </Observer>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('还没有订单')).toBeInTheDocument()
+    expect(useAppStore.getState().toasts.some((t) => t.type === 'error')).toBe(true)
+    expect(document.body.querySelector('.animate-pulse')).toBeNull()
+  })
+
+  it('exits skeleton loading without leaking A orders when B first orders list load fails after A -> B switch', async () => {
+    const snapshots: Snapshot[] = []
+    render(
+      <MemoryRouter initialEntries={['/orders']}>
+        <Observer snapshots={snapshots}>
+          <Routes>
+            <Route path="/orders" element={<OrdersPage />} />
+          </Routes>
+        </Observer>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('用户A专属商品')).toBeInTheDocument()
+
+    getOrdersPage.mockRejectedValueOnce(new Error('network error for B'))
+
+    const beforeIdx = snapshots.length
+    act(() => {
+      signIn(202, 'sess-orders-b-fail', 2)
+    })
+
+    const firstBCommit = snapshots.slice(beforeIdx).find((s) => s.userId === 202)
+    expect(firstBCommit).toBeDefined()
+    expect(firstBCommit!.bodyText).not.toContain('用户A专属商品')
+
+    expect(await screen.findByText('还没有订单')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('用户A专属商品')
+    expect(document.body.querySelector('.animate-pulse')).toBeNull()
+  })
 })
