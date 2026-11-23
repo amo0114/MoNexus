@@ -113,22 +113,13 @@
    Scroll reveal (ui/Reveal) + reduced-motion floor
    ========================================================= */
 
-/* Content is visible by default. Where scroll-driven animations exist the
-   item eases in as it enters the viewport; elsewhere (and for anything
-   already on screen) it simply renders. Never gate visibility on JS. */
-@keyframes revealIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
-}
-
-@supports (animation-timeline: view()) {
-  @media (prefers-reduced-motion: no-preference) {
-    .reveal {
-      animation: revealIn linear both;
-      animation-timeline: view();
-      animation-range: entry 0% entry 60%;
-    }
-  }
+/* Content stays visible by default. Do not gate `.reveal` visibility on
+   `animation-timeline: view()` starting from `opacity: 0` with `fill-mode: both`:
+   on iOS Safari / WebKit, scroll-driven opacity animations on dynamically mounted
+   or virtualized cards can remain unpainted until touched, leaving only child
+   `backdrop-filter` layers visible. */
+.reveal {
+  opacity: 1;
 }
 
 /* Vestibular safety: users who prefer reduced motion get near-instant

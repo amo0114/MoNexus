@@ -13,7 +13,6 @@ import {
 } from './storePageCache'
 import { Skeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
-import Reveal from '../components/ui/Reveal'
 import StoreProductCard from '../components/store/StoreProductCard'
 import type { FeedDisclosure, Product } from '../components/store/types'
 import {
@@ -913,9 +912,7 @@ export default function StorePage() {
                         imageLoading={initialCard ? 'eager' : 'lazy'}
                         imageFetchPriority={visibleStartIndex + i === 0 ? 'high' : 'auto'}
                       />
-                  return initialCard ? <div key={item.productId}>{card}</div> : (
-                    <Reveal key={item.productId}>{card}</Reveal>
-                  )
+                  return <div key={item.productId}>{card}</div>
                 })}
               </div>
             </div>

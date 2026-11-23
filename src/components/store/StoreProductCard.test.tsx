@@ -117,4 +117,20 @@ describe('StoreProductCard', () => {
     expect(container.firstChild).toHaveClass('h-full')
     expect(container.firstChild).not.toHaveClass('h-[256px]')
   })
+
+  it('styles media chips via .store-card-chip without inline backdropFilter so mobile media queries can disable blur', () => {
+    render(
+      <StoreProductCard
+        product={makeProduct({ id: 31, type: '充值卡密', merchant: { id: 9, name: '自营店' } })}
+        onOpen={vi.fn()}
+      />,
+    )
+    const categoryChip = screen.getByText('充值卡密')
+    expect(categoryChip).toHaveClass('store-card-chip')
+    expect(categoryChip.getAttribute('style')).toBeNull()
+
+    const sellerChip = screen.getByText('自营店').parentElement
+    expect(sellerChip).toHaveClass('store-card-chip')
+    expect(sellerChip?.getAttribute('style')).toBeNull()
+  })
 })
