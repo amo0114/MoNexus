@@ -392,7 +392,7 @@ async function openDesktopCenter(page: Page) {
 
 async function submitPasswordLogin(page: Page, email: string, password: string) {
   await page.getByPlaceholder('邮箱地址').fill(email)
-  await page.getByPlaceholder('密码（至少 6 位）').fill(password)
+  await page.getByPlaceholder('密码').fill(password)
   const loginResponse = page.waitForResponse((response) => (
     response.url().includes('/api/auth/login') && response.request().method() === 'POST'
   ))

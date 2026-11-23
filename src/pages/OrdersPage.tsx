@@ -15,7 +15,7 @@ import BuyerOrderCard from '../components/orders/BuyerOrderCard'
 import OrdersPagination from '../components/orders/OrdersPagination'
 import OrderDetailModal from '../components/OrderDetailModal'
 import EmptyState from '../components/ui/EmptyState'
-import { TableSkeleton } from '../components/ui/Skeleton'
+import { OrderCardSkeletonGrid } from '../components/ui/Skeleton'
 import {
   ORDER_LIST_TABS,
   type OrderListTab,
@@ -251,7 +251,7 @@ export default function OrdersPage() {
       </div>
 
       {loading ? (
-        <TableSkeleton rows={5} />
+        <OrderCardSkeletonGrid count={4} />
       ) : orders.length === 0 ? (
         <div className="card p-6">
           <EmptyState
