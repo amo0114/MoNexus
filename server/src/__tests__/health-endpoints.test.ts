@@ -8,12 +8,7 @@ describe('Health endpoints', () => {
     it('always returns 200 with liveness payload', async () => {
       const res = await request(app).get('/api/health/live').expect(200)
 
-      expect(res.body).toEqual({
-        status: 'live',
-        uptime: expect.any(Number),
-        timestamp: expect.any(String),
-      })
-      expect(Date.parse(res.body.timestamp)).not.toBeNaN()
+      expect(res.body).toEqual({ status: 'live' })
     })
 
     it('does not hit the database', async () => {
@@ -75,12 +70,7 @@ describe('Health endpoints', () => {
     it('behaves as /live and returns 200', async () => {
       const res = await request(app).get('/api/health').expect(200)
 
-      expect(res.body).toEqual({
-        status: 'live',
-        uptime: expect.any(Number),
-        timestamp: expect.any(String),
-      })
-      expect(Date.parse(res.body.timestamp)).not.toBeNaN()
+      expect(res.body).toEqual({ status: 'live' })
     })
 
     it('does not hit the database', async () => {

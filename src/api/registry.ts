@@ -10,8 +10,6 @@ export interface MemberTierMeta {
 
 export interface RegistryResponse extends ConfigRegistry {
   memberTiers: MemberTierMeta[]
-  memberTierThresholds: { silver: number; gold: number; platinum: number }
-  memberTierBonusBps: { bronze: 0; silver: number; gold: number; platinum: number }
 }
 
 /**

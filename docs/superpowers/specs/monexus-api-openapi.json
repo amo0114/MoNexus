@@ -219,27 +219,18 @@
       "HealthLive": {
         "type": "object",
         "required": [
-          "status",
-          "uptime",
-          "timestamp"
+          "status"
         ],
-        "description": "`/api/health/live` 响应：进程存活快照，不查 DB。",
+        "description": "公开探针只报告进程存活状态。不会访问数据库。",
         "properties": {
           "status": {
             "type": "string",
             "enum": [
               "live"
             ]
-          },
-          "uptime": {
-            "type": "integer",
-            "description": "进程运行秒数（process.uptime() 取整）"
-          },
-          "timestamp": {
-            "type": "string",
-            "format": "date-time"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "HealthReady": {
         "type": "object",
@@ -476,7 +467,7 @@
           },
           "humanVerification": {
             "type": "object",
-            "description": "SEC-02：同一邮箱连续登录失败 5 次后必填（action=`login` 的人机验证证明），否则返回 400 HUMAN_VERIFICATION_REQUIRED；不存在的邮箱行为一致。",
+            "description": "同一邮箱连续失败达到门槛，或同一网络的普通登录配额用尽时，提交 action=login 的人机验证证明。",
             "required": [
               "provider",
               "payload"
@@ -2844,10 +2835,9 @@
           "deliveryModes",
           "orderStatuses",
           "settlementStatuses",
-          "pagination",
-          "inventory"
+          "pagination"
         ],
-        "description": "前端可消费的业务注册表。代码级 `businessRegistry` 提供枚举值 + 标签，`SystemConfig` 提供运营可调整值（分页 / 低库存阈值）。",
+        "description": "前端可消费的业务标签、分类、功能状态和公开分页配置。",
         "properties": {
           "productTypes": {
             "type": "array",
@@ -2887,18 +2877,6 @@
               "maxPageSize": {
                 "type": "integer",
                 "minimum": 1
-              }
-            }
-          },
-          "inventory": {
-            "type": "object",
-            "required": [
-              "lowStockThreshold"
-            ],
-            "properties": {
-              "lowStockThreshold": {
-                "type": "integer",
-                "minimum": 0
               }
             }
           }
@@ -4299,8 +4277,7 @@
             "nullable": true
           },
           "merchandising": {
-            "type": "object",
-            "nullable": true
+            "$ref": "#/components/schemas/PublicMerchandising"
           }
         }
       },
@@ -9176,7 +9153,9 @@
           },
           "nextCursor": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "不透明分页游标。列表快照、筛选条件或游标版本变化时，接口返回 PRODUCT_CURSOR_EXPIRED，客户端应从第一页重新读取。",
+            "maxLength": 512
           },
           "hasMore": {
             "type": "boolean"
@@ -9297,8 +9276,7 @@
             "nullable": true
           },
           "merchandising": {
-            "type": "object",
-            "nullable": true
+            "$ref": "#/components/schemas/PublicMerchandising"
           },
           "status": {
             "type": "string"
@@ -9465,8 +9443,7 @@
             "nullable": true
           },
           "merchandising": {
-            "type": "object",
-            "nullable": true
+            "$ref": "#/components/schemas/PublicMerchandising"
           },
           "status": {
             "type": "string"
@@ -9488,6 +9465,78 @@
           "assurance": {
             "type": "object",
             "nullable": true
+          }
+        }
+      },
+      "PublicMerchandising": {
+        "type": "object",
+        "nullable": true,
+        "additionalProperties": false,
+        "required": [
+          "hot",
+          "platformOwned",
+          "platformPick",
+          "merchantPartner"
+        ],
+        "properties": {
+          "hot": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": false,
+            "required": [
+              "label"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "enum": [
+                  "热卖"
+                ]
+              }
+            }
+          },
+          "platformOwned": {
+            "type": "boolean"
+          },
+          "platformPick": {
+            "type": "object",
+            "nullable": true,
+            "required": [
+              "label",
+              "publicReason"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "enum": [
+                  "平台精选"
+                ]
+              },
+              "publicReason": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          },
+          "merchantPartner": {
+            "type": "object",
+            "nullable": true,
+            "required": [
+              "label",
+              "validUntil"
+            ],
+            "properties": {
+              "label": {
+                "type": "string",
+                "enum": [
+                  "平台合作伙伴"
+                ]
+              },
+              "validUntil": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
           }
         }
       }
@@ -9767,13 +9816,89 @@
             }
           },
           "400": {
-            "$ref": "#/components/responses/ValidationError"
+            "description": "参数无效或 HUMAN_VERIFICATION_REQUIRED。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
           },
           "401": {
             "$ref": "#/components/responses/Unauthenticated"
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
+          },
+          "403": {
+            "description": "HUMAN_VERIFICATION_FAILED：登录证明无效或过期。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "人机验证或共享请求保护暂不可用。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login-verification": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "读取登录人机验证的公开配置",
+        "description": "登录页收到 HUMAN_VERIFICATION_REQUIRED 后可读取，不依赖注册开关。响应 Cache-Control 为 no-store。",
+        "responses": {
+          "200": {
+            "description": "登录验证的浏览器配置",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "challenge"
+                  ],
+                  "properties": {
+                    "challenge": {
+                      "type": "object",
+                      "nullable": true,
+                      "additionalProperties": false,
+                      "required": [
+                        "provider"
+                      ],
+                      "properties": {
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "altcha",
+                            "turnstile"
+                          ]
+                        },
+                        "siteKey": {
+                          "type": "string"
+                        },
+                        "challengeUrl": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -10502,6 +10627,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PublicProductPage"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "PRODUCT_CURSOR_EXPIRED：从第一页重新加载。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
                 }
               }
             }
@@ -13322,8 +13457,8 @@
         "tags": [
           "Config"
         ],
-        "summary": "业务 registry（标签 / tone / 分页默认值 / 低库存阈值）",
-        "description": "公开只读元数据。前端用来渲染商品类型选项、履约模式选项、订单 / 结算状态标签 + tone、分页默认 / 上限、低库存阈值。`businessRegistry` 提供枚举值 + 标签 + tone，`SystemConfig` 提供运营可调整的分页与低库存阈值（缺省回落 `pagination.defaultPageSize=20`、`maxPageSize=100`、`inventory.lowStockThreshold=5`）。",
+        "summary": "业务注册表（标签与分页）",
+        "description": "公开可读的分类、履约模式、订单与结算状态、会员等级及分页配置。登录状态影响可见分类。商品库存提醒来自商家商品接口。",
         "responses": {
           "200": {
             "description": "Registry payload",

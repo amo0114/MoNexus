@@ -6,7 +6,7 @@
 // 纯数据模块：不 import prisma，可在无 DB 环境单测。
 
 import type { MerchandisingProjection } from '../contracts.js'
-import type { OrganicCursorPayload } from '../publicProjection.js'
+import { PROJECTION_CURSOR_VERSION, type OrganicCursorPayload } from '../publicProjection.js'
 
 /** 钉住 run 的稳定 UUID（仅测试/文档；实际由 DB 生成）。 */
 export const FROZEN_RUN_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
@@ -20,37 +20,27 @@ export const FROZEN_FILTERS = {
 
 /** 冻结 cursor：hot 商品页（isHot=true, count=18, id=42，钉住 FROZEN_RUN_ID）。 */
 export const HOT_CURSOR_PAYLOAD: OrganicCursorPayload = {
-  v: 1,
+  v: PROJECTION_CURSOR_VERSION,
   runId: FROZEN_RUN_ID,
   isHot: true,
   effectiveOrderCount: 18,
   productId: 42,
   filterHash: FROZEN_FILTERS.CATEGORY_ONLY.hash,
 }
-export const HOT_CURSOR_ENCODED =
-  'eyJ2IjoxLCJydW5JZCI6ImFhYWFhYWFhLWJiYmItNGNjYy04ZGRkLWVlZWVlZWVlZWVlZSIsImlzSG90Ijp0cnVlLCJlZmZlY3RpdmVPcmRlckNvdW50IjoxOCwicHJvZHVjdElkIjo0MiwiZmlsdGVySGFzaCI6ImI5NTViMzk3YzNhMzdkMzZjNWVkNzg5MTQyNGZiOWY2MTE2YTRjZWMwMjUyMjM0YWUyMjNmMWFiNzdmNGVmMDQifQ'
 
 /** 冻结 cursor：no-run fallback 页（runId=null, hot=false, count=0, id=9）。 */
 export const NO_RUN_CURSOR_PAYLOAD: OrganicCursorPayload = {
-  v: 1,
+  v: PROJECTION_CURSOR_VERSION,
   runId: null,
   isHot: false,
   effectiveOrderCount: 0,
   productId: 9,
   filterHash: FROZEN_FILTERS.EMPTY.hash,
 }
-export const NO_RUN_CURSOR_ENCODED =
-  'eyJ2IjoxLCJydW5JZCI6bnVsbCwiaXNIb3QiOmZhbHNlLCJlZmZlY3RpdmVPcmRlckNvdW50IjowLCJwcm9kdWN0SWQiOjksImZpbHRlckhhc2giOiI0NDEzNmZhMzU1YjM2NzhhMTE0NmFkMTZmN2U4NjQ5ZTk0ZmI0ZmMyMWZlNzdlODMxMGMwNjBmNjFjYWFmZjhhIn0'
 
-/** 冻结 projection DTO：hot 商品（Spec §9 示例：effectiveOrders=18, rank=2, windowDays=30）。 */
+/** 冻结 projection DTO：hot 商品。 */
 export const HOT_PROJECTION_FIXTURE: MerchandisingProjection = {
-  rankingRunId: FROZEN_RUN_ID,
-  hot: {
-    effectiveOrders: 18,
-    rank: 2,
-    windowDays: 30,
-    computedAt: '2026-08-09T00:00:00.000Z',
-  },
+  hot: { label: '热卖' },
   platformOwned: false,
   platformPick: null,
   merchantPartner: null,
@@ -62,7 +52,6 @@ export const HOT_PROJECTION_FIXTURE: MerchandisingProjection = {
  * 「有快照」不能推出「热卖」。投影只对 isHot=true 返回 hot 块，非热商品的
  * hot 必须是 null，否则前端 badgeSpecsFromProjection 会给全站商品挂热卖徽章。 */
 export const NON_HOT_PROJECTION_FIXTURE: MerchandisingProjection = {
-  rankingRunId: FROZEN_RUN_ID,
   hot: null,
   platformOwned: false,
   platformPick: null,
@@ -73,15 +62,9 @@ export const NON_HOT_PROJECTION_FIXTURE: MerchandisingProjection = {
  *
  * 自营身份与热卖相互独立：本样例刻意让两者同时成立，防止后续把
  * platformOwned 误当作「不能热卖」。
- * 5 单 = hotMinSales 默认阈值（systemConfig.ts:127），恰好在门槛上。 */
+ */
 export const PLATFORM_OWNED_PROJECTION_FIXTURE: MerchandisingProjection = {
-  rankingRunId: FROZEN_RUN_ID,
-  hot: {
-    effectiveOrders: 5,
-    rank: 1,
-    windowDays: 30,
-    computedAt: '2026-08-09T00:00:00.000Z',
-  },
+  hot: { label: '热卖' },
   platformOwned: true,
   platformPick: null,
   merchantPartner: null,
@@ -89,7 +72,6 @@ export const PLATFORM_OWNED_PROJECTION_FIXTURE: MerchandisingProjection = {
 
 /** 冻结 projection DTO：无 completed run 的 no-run fallback（hot 块整体缺省，不读 legacy isHot）。 */
 export const NO_RUN_PROJECTION_FIXTURE: MerchandisingProjection = {
-  rankingRunId: null,
   hot: null,
   platformOwned: false,
   platformPick: null,

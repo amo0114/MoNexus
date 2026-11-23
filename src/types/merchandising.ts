@@ -27,14 +27,6 @@ export type SponsoredPlacement = 'store_home_sponsored' | 'category_sponsored'
 /** Editorial placements (constants.EDITORIAL_PLACEMENT). */
 export type EditorialPlacement = 'store_editorial' | 'category_editorial'
 
-/** Hot snapshot projection for a single product (SPEC-MERCH-001 §9). */
-export interface HotProjection {
-  effectiveOrders: number
-  rank: number
-  windowDays: number
-  computedAt: string
-}
-
 /** Platform pick (editorial) projection (SPEC-MERCH-001 §8.1 / §9). */
 export interface PlatformPickProjection {
   label: '平台精选'
@@ -50,14 +42,9 @@ export interface MerchantPartnerProjection {
   validUntil: string
 }
 
-/**
- * Public Product `merchandising` block (SPEC-MERCH-001 §9). `rankingRunId`
- * pins the completed run used for the cursor; when no completed run exists
- * the whole `hot` block is absent.
- */
+/** Public display fields for a product. */
 export interface MerchandisingProjection {
-  rankingRunId: string | null
-  hot: HotProjection | null
+  hot: { label: '热卖' } | null
   platformOwned: boolean
   platformPick: PlatformPickProjection | null
   merchantPartner: MerchantPartnerProjection | null

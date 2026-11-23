@@ -2,7 +2,9 @@ import { config } from '../../config/index.js'
 import { createAltchaHumanVerifier } from './humanVerification/altcha.js'
 import { createTurnstileHumanVerifier } from './humanVerification/turnstile.js'
 import {
+  ALTCHA_CHALLENGE_URL,
   UNAVAILABLE,
+  type HumanVerificationAction,
   type HumanVerifier,
   type HumanVerificationResult,
 } from './humanVerification/types.js'
@@ -30,6 +32,24 @@ export {
   TURNSTILE_TIMEOUT_MS,
   type TurnstileHumanVerifierOptions,
 } from './humanVerification/turnstile.js'
+
+export function publicChallengeDescriptor(action: HumanVerificationAction) {
+  if (config.humanVerificationProvider === 'altcha') {
+    if (!config.altcha.hmacKey) return null
+    return {
+      provider: 'altcha' as const,
+      challengeUrl: `${ALTCHA_CHALLENGE_URL}?action=${action}`,
+    }
+  }
+  if (config.humanVerificationProvider === 'turnstile') {
+    if (!config.turnstile.siteKey) return null
+    return {
+      provider: 'turnstile' as const,
+      siteKey: config.turnstile.siteKey,
+    }
+  }
+  return null
+}
 
 const failClosedVerifier: HumanVerifier = {
   async verify() {

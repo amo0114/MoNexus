@@ -76,7 +76,7 @@ describe('StoreProductCard', () => {
             id: 12,
             name: '推荐商品',
             merchandising: {
-              rankingRunId: null,
+
               hot: null,
               platformOwned: false,
               platformPick: null,

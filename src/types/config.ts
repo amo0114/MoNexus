@@ -27,7 +27,8 @@ export interface ConfigRegistry {
     defaultPageSize: number
     maxPageSize: number
   }
-  inventory: {
+  /** Compatibility fallback for older merchant/product registry responses. */
+  inventory?: {
     lowStockThreshold: number
   }
   capabilities?: {

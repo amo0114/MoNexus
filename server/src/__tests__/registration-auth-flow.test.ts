@@ -127,19 +127,46 @@ describe('SPEC-RAP-001 auth registration/mail integration', () => {
     __setMailerForTesting(null)
   })
 
-  it('uses the shared authentication bucket across login and MFA routes', async () => {
+  it('allows verified login from a saturated source and keeps MFA on its own budget', async () => {
+    const { user, password } = await createTestUser('shared-exit@test.local', 'Right#Pass-2026', 'admin')
     enableProtection()
     const redis = new CountingRedis()
     __setRedisForTests(redis)
-    // Distinct emails keep the per-email login lockout (SEC-02) out of the way.
-    for (let i = 0; i < 30; i++) {
-      await api.post('/api/auth/login').send({ email: `unknown-${i}@test.local`, password: 'pass12345' }).expect(401)
-    }
-    const blocked = await api.post('/api/auth/mfa/verify').send({}).expect(429)
-    expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0)
-    const authenticationKeys = [...redis.counts.keys()].filter(key => key.includes(':authentication:'))
-    expect(authenticationKeys).toHaveLength(1)
-    expect(authenticationKeys[0]).toContain(':authentication:ip:')
+    let verifications = 0
+    __setHumanVerifierForTesting({ verify: async () => {
+      verifications += 1
+      return { kind: 'verified' }
+    } })
+    const credentials = { email: user.email, password }
+
+    redis.forced.push([31, 900_000])
+    const required = await api.post('/api/auth/login').send(credentials).expect(400)
+    expect(required.body.error.code).toBe('HUMAN_VERIFICATION_REQUIRED')
+    expect(verifications).toBe(0)
+
+    const verification = await api.get('/api/auth/login-verification').expect(200)
+    expect(verification.headers['cache-control']).toBe('no-store')
+    expect(verification.body).toEqual({ challenge: { provider: 'turnstile', siteKey: 'public-test-site-key' } })
+
+    const humanVerification = { provider: 'turnstile', payload: 'test-proof' }
+    redis.forced.push([31, 900_000], [121, 60_000])
+    const proofLimited = await api.post('/api/auth/login').send({ ...credentials, humanVerification }).expect(429)
+    expect(proofLimited.headers['retry-after']).toBe('60')
+    expect(verifications).toBe(0)
+
+    redis.forced.push([31, 900_000], [1, 60_000], [31, 60_000])
+    const limited = await api.post('/api/auth/login').send({ ...credentials, humanVerification }).expect(429)
+    expect(limited.headers['retry-after']).toBe('60')
+    expect(verifications).toBe(1)
+
+    redis.forced.push([31, 900_000], [1, 60_000], [1, 900_000])
+    const admitted = await api.post('/api/auth/login').send({ ...credentials, humanVerification }).expect(202)
+    expect(admitted.body.challengeId).toEqual(expect.any(String))
+    expect(admitted.headers['set-cookie']).toBeUndefined()
+    expect(verifications).toBe(2)
+
+    await api.post('/api/auth/mfa/enrollment/start').send({ challengeId: admitted.body.challengeId }).expect(200)
+    expect([...redis.counts.keys()].some(key => key.includes(':authentication:ip:'))).toBe(true)
   })
 
   it('does not fall back to local login limits when shared protection is unavailable', async () => {

@@ -370,8 +370,14 @@ describe('ALTCHA human verification', () => {
       ['human-challenge', 'ip', 30, 60_000],
       ['human-challenge', 'ip', 120, 600_000],
     ])
-    const result = await consumeHumanChallengeIssue('203.0.113.41')
-    expect(result.allowed).toBe(true)
+    const redis = new NonceRedis()
+    __setRedisForTests(redis)
+    const ip = '203.0.113.41'
+    expect(await consumeHumanChallengeIssue('register', ip)).toMatchObject({ allowed: true })
+    expect(await consumeHumanChallengeIssue('login', ip)).toMatchObject({ allowed: true })
+    const keys = [...redis.counts.keys()]
+    expect(keys.filter(key => key.includes(':human-challenge:ip:'))).toHaveLength(2)
+    expect(keys.filter(key => key.includes(':login-human-challenge:ip:'))).toHaveLength(2)
   })
 
   it('redacts ALTCHA proof and HMAC key from structured logs', () => {

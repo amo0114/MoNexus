@@ -28,8 +28,8 @@ const badges: BadgeSpec[] = [
 ]
 
 const merchandising: MerchandisingProjection = {
-  rankingRunId: '00000000-0000-0000-0000-000000000000',
-  hot: { effectiveOrders: 18, rank: 2, windowDays: 30, computedAt: '2026-08-09T00:00:00.000Z' },
+
+  hot: { label: '热卖' },
   platformOwned: true,
   platformPick: { label: '平台精选', publicReason: '本周上新' },
   merchantPartner: { label: '平台合作伙伴', validUntil: '2026-09-08T00:00:00.000Z' },

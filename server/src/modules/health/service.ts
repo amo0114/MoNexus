@@ -7,8 +7,6 @@ const DB_PING_TIMEOUT_MS = 2_000
 
 export type LivenessResult = {
   status: 'live'
-  uptime: number
-  timestamp: string
 }
 
 export type ReadinessResult = {
@@ -24,11 +22,7 @@ export type ReadinessResult = {
 }
 
 export function checkLiveness(): LivenessResult {
-  return {
-    status: 'live',
-    uptime: Math.floor(process.uptime()),
-    timestamp: new Date().toISOString(),
-  }
+  return { status: 'live' }
 }
 
 async function pingDatabase() {

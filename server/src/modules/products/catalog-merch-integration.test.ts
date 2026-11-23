@@ -135,8 +135,11 @@ describe('Catalog/Merch public Product integration', () => {
 
     const page1 = await api.get('/api/products').query({ pageSize: 2 }).expect(200)
     expect(page1.body.items.map((item: { id: number }) => item.id)).toEqual([first.id, second.id])
-    expect(page1.body.items.map((item: { merchandising: { rankingRunId: string } }) => item.merchandising.rankingRunId))
-      .toEqual([oldRun.id, oldRun.id])
+    expect(page1.body.items.map((item: { merchandising: unknown }) => item.merchandising)).toEqual(
+      Array.from({ length: 2 }, () => ({
+        hot: { label: '热卖' }, platformOwned: true, platformPick: null, merchantPartner: null,
+      })),
+    )
     expect(page1.body.nextCursor).toEqual(expect.any(String))
 
     await createCompletedRun(new Date('2026-08-11T01:00:00.000Z'), [
@@ -149,7 +152,6 @@ describe('Catalog/Merch public Product integration', () => {
       .query({ pageSize: 2, cursor: page1.body.nextCursor })
       .expect(200)
     expect(page2.body.items.map((item: { id: number }) => item.id)).toEqual([third.id])
-    expect(page2.body.items[0].merchandising.rankingRunId).toBe(oldRun.id)
     expect(page2.body.items[0].merchandising.hot).toBeNull()
 
     const mismatch = await api.get('/api/products')

@@ -98,9 +98,7 @@ describe('GET /api/config/registry', () => {
       defaultPageSize: 20,
       maxPageSize: 100,
     })
-    expect(res.body.inventory).toEqual({
-      lowStockThreshold: 5,
-    })
+    expect(res.body).not.toHaveProperty('inventory')
   })
 
   it('should return current operational config values', async () => {
@@ -128,9 +126,7 @@ describe('GET /api/config/registry', () => {
       defaultPageSize: 12,
       maxPageSize: 60,
     })
-    expect(res.body.inventory).toEqual({
-      lowStockThreshold: 2,
-    })
+    expect(res.body).not.toHaveProperty('inventory')
   })
 })
 
@@ -155,44 +151,14 @@ describe('GET /api/config/registry — M7 member tiers', () => {
     ])
   })
 
-  it('exposes memberTierThresholds with default silver/gold/platinum values', async () => {
-    const res = await api.get('/api/config/registry').expect(200)
-
-    expect(res.body.memberTierThresholds).toEqual({
-      silver: 1000,
-      gold: 5000,
-      platinum: 20000,
-    })
-  })
-
-  it('exposes memberTierBonusBps with bronze:0 plus default silver/gold/platinum values', async () => {
-    const res = await api.get('/api/config/registry').expect(200)
-
-    expect(res.body.memberTierBonusBps).toEqual({
-      bronze: 0,
-      silver: 500,
-      gold: 1000,
-      platinum: 2000,
-    })
-  })
-
-  it('reflects updated tier thresholds and bps after admin writes', async () => {
+  it('keeps saved membership policy in administrator configuration only', async () => {
     const { accessToken } = await loginAdmin()
-
+    const member = await createTestUser('registry-member@test.local', 'member123')
+    const { accessToken: memberToken } = await loginAs(member.user.email, member.password)
     await api
       .put('/api/admin/config/memberTierSilverThreshold')
       .set(authHeader(accessToken))
       .send({ value: 800 })
-      .expect(200)
-    await api
-      .put('/api/admin/config/memberTierGoldThreshold')
-      .set(authHeader(accessToken))
-      .send({ value: 4000 })
-      .expect(200)
-    await api
-      .put('/api/admin/config/memberTierPlatinumThreshold')
-      .set(authHeader(accessToken))
-      .send({ value: 18000 })
       .expect(200)
     await api
       .put('/api/admin/config/memberTierSilverBonusBps')
@@ -200,25 +166,20 @@ describe('GET /api/config/registry — M7 member tiers', () => {
       .send({ value: 600 })
       .expect(200)
 
-    const res = await api.get('/api/config/registry').expect(200)
-
-    expect(res.body.memberTierThresholds).toEqual({
-      silver: 800,
-      gold: 4000,
-      platinum: 18000,
+    for (const request of [
+      api.get('/api/config/registry'),
+      api.get('/api/config/registry').set(authHeader(memberToken)),
+      api.get('/api/config/registry').set(authHeader(accessToken)),
+    ]) {
+      const res = await request.expect(200)
+      expect(res.body.memberTiers).toHaveLength(4)
+      expect(res.body).not.toHaveProperty('memberTierThresholds')
+      expect(res.body).not.toHaveProperty('memberTierBonusBps')
+      expect(res.body).not.toHaveProperty('inventory')
+    }
+    expect(await getSystemConfigValues(['memberTierSilverThreshold', 'memberTierSilverBonusBps'])).toEqual({
+      memberTierSilverThreshold: 800,
+      memberTierSilverBonusBps: 600,
     })
-    expect(res.body.memberTierBonusBps).toEqual({
-      bronze: 0,
-      silver: 600,
-      gold: 1000,
-      platinum: 2000,
-    })
-  })
-
-  it('remains public-read (no auth header required)', async () => {
-    const res = await api.get('/api/config/registry').expect(200)
-    expect(res.body.memberTiers).toBeDefined()
-    expect(res.body.memberTierThresholds).toBeDefined()
-    expect(res.body.memberTierBonusBps).toBeDefined()
   })
 })
