@@ -78,7 +78,6 @@ const productListSelect = {
   templateKey: true,
   templateVersion: true,
   visibility: true,
-  _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
   category: { select: { id: true, code: true, label: true, guestVisibility: true } },
   // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。必填，漏查会编译失败。
@@ -141,7 +140,6 @@ const productDetailSelect = {
     orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
     include: { fixedFile: { select: { size: true, status: true } } },
   },
-  _count: { select: { inventory: { where: { status: 'available' } } } },
   merchant: { select: { id: true, name: true, status: true } },
   category: { select: { id: true, code: true, label: true, guestVisibility: true } },
   // SPEC-CATALOG-VIS-001 §4.2（P1.5）：准入判定所需字段。必填，漏查会编译失败。
@@ -163,13 +161,14 @@ type AvailabilityOffer = { id: number; deliveryMode: string; stockMode: string; 
  * offers 为空（迁移前数据兜底）时退回投影语义。
  */
 function computePublicAvailability(
-  product: { deliveryMode: string; stockMode: string; stock: number; _count: { inventory: number } },
+  product: { id: number; deliveryMode: string; stockMode: string; stock: number },
   offers: AvailabilityOffer[],
-  offerAvailableCounts: Map<number, number>
+  offerAvailableCounts: Map<number, number>,
+  productAvailableCounts: Map<number, number>
 ): { stock: number; stockMode: string } {
   if (offers.length === 0) {
     return {
-      stock: product.deliveryMode === 'instant_inventory' ? product._count.inventory : product.stock,
+      stock: product.deliveryMode === 'instant_inventory' ? productAvailableCounts.get(product.id) ?? 0 : product.stock,
       stockMode: product.stockMode,
     }
   }
@@ -203,8 +202,26 @@ async function countAvailableByOffer(offers: AvailabilityOffer[]): Promise<Map<n
   return counts
 }
 
+/**
+ * 无 active 规格的兜底路径按商品计数。不用关系 `_count` 带 where：Prisma 会
+ * 生成对全表 GROUP BY 的子查询（Seq Scan 全部 InventoryItem），列表成本随
+ * 全站库存线性增长；显式 groupBy 带 productId IN 才能走 (productId, status) 索引。
+ */
+async function countAvailableByProduct(productIds: number[]): Promise<Map<number, number>> {
+  const counts = new Map<number, number>()
+  if (productIds.length === 0) return counts
+  const grouped = await prisma.inventoryItem.groupBy({
+    by: ['productId'],
+    where: { productId: { in: productIds }, status: 'available' },
+    _count: { _all: true },
+  })
+  for (const row of grouped) counts.set(row.productId, row._count._all)
+  return counts
+}
+
 type AvailabilityBatchFacts = {
   offerAvailableCounts: Map<number, number>
+  productAvailableCounts: Map<number, number>
   webhookMerchantIds: Set<number>
   providerConfigured: boolean
 }
@@ -214,6 +231,8 @@ type AvailabilityOfferInput = Parameters<typeof evaluatePublicOfferAvailability>
 /** One batch of local facts (inventory counts, webhook presence, provider config) per request. */
 async function loadAvailabilityBatchFacts(
   products: Array<{
+    id: number
+    deliveryMode: string
     merchant: { id: number } | null
     offers: Array<AvailabilityOffer & { autoProvision: boolean }>
   }>,
@@ -225,8 +244,13 @@ async function loadAvailabilityBatchFacts(
         .map(product => product.merchant!.id),
     ),
   ]
-  const [offerAvailableCounts, webhooks] = await Promise.all([
+  const [offerAvailableCounts, productAvailableCounts, webhooks] = await Promise.all([
     countAvailableByOffer(products.flatMap(product => product.offers)),
+    countAvailableByProduct(
+      products
+        .filter(product => product.offers.length === 0 && product.deliveryMode === 'instant_inventory')
+        .map(product => product.id),
+    ),
     autoProvisionMerchantIds.length === 0
       ? Promise.resolve([])
       : prisma.merchantWebhookConfig.findMany({
@@ -236,6 +260,7 @@ async function loadAvailabilityBatchFacts(
   ])
   return {
     offerAvailableCounts,
+    productAvailableCounts,
     webhookMerchantIds: new Set(webhooks.map(webhook => webhook.merchantId)),
     providerConfigured: isFakaBridgeConfigured(),
   }
@@ -318,11 +343,12 @@ function toPublicProductDetails(value: Prisma.JsonValue | null | undefined): Pro
 function serializePublicProductListItem(
   product: ProductListItem,
   offerAvailableCounts: Map<number, number>,
+  productAvailableCounts: Map<number, number>,
   fakaBySku: Map<string, FakaCapacitySnapshot>,
   availability: AvailabilityStatus,
 ) {
-  const { _count, offers, merchant, category, ...publicProduct } = product
-  const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
+  const { offers, merchant, category, ...publicProduct } = product
+  const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts, productAvailableCounts)
 
   const fakaCaps: FakaCapacitySnapshot[] = []
   for (const offer of offers) {
@@ -483,11 +509,11 @@ function pickProductFakaCapacity(caps: FakaCapacitySnapshot[]): FakaCapacitySnap
 function serializePublicProductDetail(
   product: ProductDetail,
   offerAvailableCounts: Map<number, number>,
+  productAvailableCounts: Map<number, number>,
   fakaByOfferId: Map<number, FakaCapacitySnapshot>,
   offerStatusById: Map<number, AvailabilityStatus>,
 ) {
   const {
-    _count,
     offers,
     promoVideoAsset,
     archivedAt: _archivedAt,
@@ -497,7 +523,7 @@ function serializePublicProductDetail(
     details: rawDetails,
     ...publicProduct
   } = product
-  const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts)
+  const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts, productAvailableCounts)
   const fakaCaps = [...fakaByOfferId.values()]
   const fakaAvailability = projectFakaAvailability(fakaCaps)
   const template = resolvePublicTemplate(product.templateKey, product.templateVersion)
@@ -767,6 +793,7 @@ async function hydratePublicListItems(orderedIds: number[], audience: ProductAud
     return serializePublicProductListItem(
       item,
       facts.offerAvailableCounts,
+      facts.productAvailableCounts,
       fakaBySku,
       aggregateOfferAvailability(statuses),
     )
@@ -880,7 +907,7 @@ async function getProductDetailFromDb(id: number, audience: ProductAudience = 'g
       publicOfferStatus(offer, product.merchant?.id ?? null, facts, fakaByOfferId.get(offer.id) ?? null),
     ]),
   )
-  return serializePublicProductDetail(product, facts.offerAvailableCounts, fakaByOfferId, offerStatusById)
+  return serializePublicProductDetail(product, facts.offerAvailableCounts, facts.productAvailableCounts, fakaByOfferId, offerStatusById)
 }
 
 const RECOMMENDATION_LIMIT = 6
