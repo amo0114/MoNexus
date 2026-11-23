@@ -132,6 +132,9 @@ export async function runResetBatch(limit = 20) {
     for (const row of rows) {
       try { await processResetOperation(row.id) } catch { logger.warn('xboard reset operation remains pending reconciliation') }
     }
+  } catch (err) {
+    lease.markFailed()
+    throw err
   } finally { lease.release() }
 }
 let timer: NodeJS.Timeout | null = null

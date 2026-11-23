@@ -21,6 +21,7 @@ export async function runEditorialLifecycleBatch() {
     }
     return result
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'editorial lifecycle batch failed')
     return null
   } finally {

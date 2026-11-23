@@ -180,6 +180,7 @@ export async function runLowStockNotifyBatch(now = new Date()) {
       }
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'low stock notify batch failed')
   } finally {
     lease?.release()

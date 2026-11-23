@@ -20,6 +20,7 @@ export async function runPartnerEntitlementBatch(): Promise<PartnerEntitlementJo
     logger.info({ ...result }, 'partner entitlement reconciliation completed')
     return result
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'partner entitlement reconciliation failed')
     return null
   } finally {

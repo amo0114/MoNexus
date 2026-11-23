@@ -322,7 +322,12 @@ function serializePublicProductListItem(
   fakaBySku: Map<string, FakaCapacitySnapshot>,
   availability: AvailabilityStatus,
 ) {
-  const { offers, merchant, category, ...publicProduct } = product
+  // Visibility inputs (SPEC-CATALOG-VIS-001 §4.2) are read for the access check only, never serialized.
+  const {
+    offers, merchant, category,
+    archivedAt: _archivedAt, guestEligibility: _guestEligibility, publicContentRevision: _publicContentRevision,
+    ...publicProduct
+  } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts, productAvailableCounts)
 
   const fakaCaps: FakaCapacitySnapshot[] = []
@@ -492,6 +497,8 @@ function serializePublicProductDetail(
     offers,
     promoVideoAsset,
     archivedAt: _archivedAt,
+    guestEligibility: _guestEligibility,
+    publicContentRevision: _publicContentRevision,
     merchant,
     category,
     attributes: rawAttributes,

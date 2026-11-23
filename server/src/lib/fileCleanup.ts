@@ -371,6 +371,7 @@ export async function runFileCleanupBatch() {
       logger.info({ orphans, tmp, refunded, unreferenced }, 'delivery file cleanup batch done')
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'delivery file cleanup batch failed')
   } finally {
     lease?.release()

@@ -148,6 +148,7 @@ export async function runBookingRemindBatch(now = new Date()) {
       }
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'booking remind batch failed')
   } finally {
     lease?.release()

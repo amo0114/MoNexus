@@ -5,13 +5,16 @@ import { accountSettings, unavailable } from './settings.js'
 import { recoverAccount, type RecoveryResult, type PreviewOwnership } from './recovery.js'
 import { requireReadCapabilities } from './bridgeQueries.js'
 
+/** The cron applies one batch per minute; the 1s lease is only the mutex window. */
+export const ACCOUNT_BACKFILL_SCHEDULE_MS = 60_000
+
 export async function runAccountBackfill(input: { apply?: boolean; limit?: number; afterUserId?: number; afterTaskId?: number } = {}) {
   const apply = input.apply ?? false, limit = input.limit ?? 50
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be 1..100')
   for (const value of [input.afterUserId, input.afterTaskId]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new Error('invalid cursor')
   if (apply && (input.afterUserId !== undefined || input.afterTaskId !== undefined)) throw new Error('apply resumes the persisted checkpoint; cursor override is preview-only')
   const { instanceId, origin } = accountSettings()
-  const lease = apply ? await acquireCronLeaseWithHeartbeat(`xboard-account-backfill:${instanceId}`, 1000) : null
+  const lease = apply ? await acquireCronLeaseWithHeartbeat(`xboard-account-backfill:${instanceId}`, 1000, { scheduleMs: ACCOUNT_BACKFILL_SCHEDULE_MS }) : null
   if (apply && !lease) return { skipped: true as const }
   try {
     const existing = await prisma.xboardInstance.findUnique({ where: { id: instanceId } })

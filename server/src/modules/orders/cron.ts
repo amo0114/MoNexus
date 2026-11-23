@@ -140,6 +140,7 @@ async function runAutoCloseBatch(hooks?: AutoCloseBatchHooks) {
       await autoCloseOrder(order, policy)
     }
   } catch (err) {
+    lease?.markFailed()
     recordLifecycle('auto_close', 'error')
     logger.error({ err }, 'auto-close cron batch failed')
   } finally {

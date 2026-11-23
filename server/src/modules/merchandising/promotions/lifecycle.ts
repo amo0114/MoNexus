@@ -79,6 +79,7 @@ export async function runCampaignLifecycleBatch(): Promise<CampaignLifecycleResu
     }
     return result
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'promotion campaign lifecycle batch failed')
     return null
   } finally {

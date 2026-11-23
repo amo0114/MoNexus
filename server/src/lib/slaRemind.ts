@@ -149,6 +149,7 @@ export async function runSlaRemindBatch(now = new Date()) {
       }
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'sla remind batch failed')
   } finally {
     lease?.release()

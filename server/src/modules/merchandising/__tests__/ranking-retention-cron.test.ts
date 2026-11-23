@@ -46,6 +46,7 @@ const EMPTY_STATS = {
 function stubHandle() {
   const calls = { release: 0, releaseForRetry: 0 }
   const handle: CronLeaseHandle = {
+    markFailed() {},
     release() {
       calls.release += 1
     },

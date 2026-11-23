@@ -180,6 +180,7 @@ async function runRetentionBatch() {
       logger.info({ payloadsCleared: cleared }, 'payment raw payloads cleared after retention window')
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'payment payload retention batch failed')
   } finally {
     lease?.release()
