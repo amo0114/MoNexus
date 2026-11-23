@@ -43,6 +43,7 @@ async function runAcceptTimeoutBatch(now = new Date()): Promise<number> {
     }
     if (cancelled > 0) logger.info({ count: cancelled }, 'unaccepted orders cancelled after accept timeout')
   } catch (err) {
+    lease?.markFailed()
     recordLifecycle('accept_timeout', 'error')
     logger.error({ err }, 'accept-timeout cron batch failed')
   } finally {

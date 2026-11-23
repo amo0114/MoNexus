@@ -51,6 +51,7 @@ async function runRetentionBatch() {
       )
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'legal evidence retention batch failed')
   } finally {
     lease?.release()

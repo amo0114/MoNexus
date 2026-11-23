@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { config } from '../config/index.js'
 import { logger } from './logger.js'
 import { prisma } from './prisma.js'
+import { cronIntervalSeconds, cronLastSuccessTimestamp, cronRunsTotal } from './metrics.js'
 
 /**
  * P7a：cron 舰队租约（设计 §2.1；PR #52 复审 P1 修订：调度周期与租约解耦）。
@@ -106,6 +107,12 @@ export async function rollbackCronLeaseForRetry(
 }
 
 export interface CronLeaseHandle {
+  /**
+   * 批次级失败时调用（catch 内、release 之前）；release 默认记为 success，
+   * releaseForRetry 一律记为 failure。monexus_cron_* 指标与 MoNexusCronStale
+   * 告警据此判断 cron 是否健康。
+   */
+  markFailed(): void
   /** 批次结束时调用（finally）：停心跳并释放互斥。窗口节流不受影响。 */
   release(): void
   /**
@@ -115,9 +122,43 @@ export interface CronLeaseHandle {
   releaseForRetry(): Promise<void>
 }
 
-const NOOP_HANDLE: CronLeaseHandle = {
+type LeaseRelease = Omit<CronLeaseHandle, 'markFailed'>
+
+const NOOP_RELEASE: LeaseRelease = {
   release() {},
   async releaseForRetry() {},
+}
+
+const startedJobs = new Set<string>()
+
+/** One outcome per acquired lease; the first release wins. */
+function instrumentLease(name: string, scheduleMs: number, inner: LeaseRelease): CronLeaseHandle {
+  cronIntervalSeconds.set({ job: name }, scheduleMs / 1000)
+  // Until the first success, staleness counts from the first acquisition.
+  if (!startedJobs.has(name)) {
+    startedJobs.add(name)
+    cronLastSuccessTimestamp.set({ job: name }, Date.now() / 1000)
+  }
+  let failed = false
+  let recorded = false
+  const record = () => {
+    if (recorded) return
+    recorded = true
+    cronRunsTotal.inc({ job: name, outcome: failed ? 'failure' : 'success' })
+    if (!failed) cronLastSuccessTimestamp.set({ job: name }, Date.now() / 1000)
+  }
+  return {
+    markFailed() { failed = true },
+    release() {
+      record()
+      inner.release()
+    },
+    async releaseForRetry() {
+      failed = true
+      record()
+      await inner.releaseForRetry()
+    },
+  }
 }
 
 /**
@@ -127,12 +168,16 @@ const NOOP_HANDLE: CronLeaseHandle = {
 export async function acquireCronLeaseWithHeartbeat(
   name: string,
   periodMs: number,
-  opts?: { force?: boolean }
+  // scheduleMs: how often the caller really runs the job, when the lease period is
+  // only a mutex window (MoNexusCronStale compares last success against it).
+  opts?: { force?: boolean; scheduleMs?: number }
 ): Promise<CronLeaseHandle | null> {
-  if (config.nodeEnv === 'test' && !opts?.force) return NOOP_HANDLE
+  const scheduleMs = opts?.scheduleMs ?? periodMs
+  if (config.nodeEnv === 'test' && !opts?.force) return instrumentLease(name, scheduleMs, NOOP_RELEASE)
 
   const token = await tryAcquireCronLease(name, periodMs)
   if (!token) {
+    cronRunsTotal.inc({ job: name, outcome: 'skipped' })
     logger.debug({ name }, 'cron lease window/mutex held, skipping tick')
     return null
   }
@@ -146,7 +191,7 @@ export async function acquireCronLeaseWithHeartbeat(
       .catch(err => logger.warn({ err, name }, 'cron lease renew failed'))
   }, HEARTBEAT_INTERVAL_MS)
   heartbeat.unref?.()
-  return {
+  return instrumentLease(name, scheduleMs, {
     release() {
       clearInterval(heartbeat)
       // 尽力释放：失败无碍（互斥 ≤ 90s 自然过期），不阻塞批次收尾。
@@ -163,5 +208,5 @@ export async function acquireCronLeaseWithHeartbeat(
         logger.debug({ name }, 'cron lease retry rollback matched no row')
       }
     },
-  }
+  })
 }

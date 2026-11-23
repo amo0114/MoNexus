@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { defineLeasedCron } from './leasedCron.js'
+import { acquireCronLeaseWithHeartbeat } from './cronLease.js'
 import { registry } from './metrics.js'
 
 // The test environment's cron lease is a pass-through handle, so each tick runs.
@@ -27,13 +28,17 @@ describe('defineLeasedCron', () => {
     expect(s.lastSuccess).toBeGreaterThanOrEqual(before)
   })
 
-  it('isolates a failing tick: no throw, failure counted, no success time', async () => {
+  it('isolates a failing tick: no throw, failure counted, success time not advanced', async () => {
     const cron = defineLeasedCron({ name: 'test-leased-fail', intervalMs: 60_000, run: async () => { throw new Error('boom') } })
     await expect(cron.tick()).resolves.toBeUndefined()
+    const first = await series('test-leased-fail')
+    await new Promise(resolve => setTimeout(resolve, 5))
+    await cron.tick()
     const s = await series('test-leased-fail')
-    expect(s.failure).toBe(1)
+    expect(s.failure).toBe(2)
     expect(s.success).toBe(0)
-    expect(s.lastSuccess).toBeUndefined()
+    // Staleness counts from the first acquisition until a tick succeeds.
+    expect(s.lastSuccess).toBe(first.lastSuccess)
   })
 
   it('does not re-enter while a tick is still running', async () => {
@@ -50,5 +55,18 @@ describe('defineLeasedCron', () => {
     release()
     await first
     expect(runs).toBe(1)
+  })
+
+  it('records a hand-written cron as failed when its catch marks the lease', async () => {
+    const lease = await acquireCronLeaseWithHeartbeat('test-hand-written', 60_000, { scheduleMs: 600_000 })
+    lease!.markFailed()
+    lease!.release()
+    lease!.release() // a second release must not record another outcome
+    const s = await series('test-hand-written')
+    expect(s.failure).toBe(1)
+    expect(s.success).toBe(0)
+    const interval = (await registry.getMetricsAsJSON()).find(m => m.name === 'monexus_cron_interval_seconds')
+      ?.values.find(v => v.labels.job === 'test-hand-written')?.value
+    expect(interval).toBe(600)
   })
 })

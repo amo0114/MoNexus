@@ -38,6 +38,7 @@ async function runExpiryBatch() {
       logger.info({ notificationsArchived: result.count }, 'expired notifications archived')
     }
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err }, 'notification expiry batch failed')
   } finally {
     lease?.release()

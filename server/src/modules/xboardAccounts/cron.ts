@@ -1,9 +1,9 @@
 import { withActiveFaka } from '../../lib/runtimeSettings/fakaBridge.js'
 import { config } from '../../config/index.js'
 import { logger } from '../../lib/logger.js'
-import { runAccountBackfill } from './backfill.js'
+import { ACCOUNT_BACKFILL_SCHEDULE_MS, runAccountBackfill } from './backfill.js'
 
-const INTERVAL_MS = 60_000
+const INTERVAL_MS = ACCOUNT_BACKFILL_SCHEDULE_MS
 let timer: NodeJS.Timeout | null = null
 let running: Promise<void> | null = null
 

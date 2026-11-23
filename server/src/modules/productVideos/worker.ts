@@ -87,6 +87,9 @@ export async function runVideoBatch(parentSignal: AbortSignal = new AbortControl
     } finally {
       videoProcessingDuration.observe({ outcome }, (performance.now() - startedAt) / 1000)
     }
+  } catch (err) {
+    lease.markFailed()
+    throw err
   } finally {
     if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {})
     lease.release()

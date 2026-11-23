@@ -85,6 +85,7 @@ async function runLeased(name: string, periodMs: number, job: () => Promise<numb
     const count = await job()
     if (count > 0) logger.info({ job: name, count }, 'push cron completed')
   } catch (err) {
+    lease?.markFailed()
     logger.error({ err, job: name }, 'push cron failed')
   } finally {
     lease?.release()

@@ -95,6 +95,12 @@ defineLeasedCron({ name, intervalMs, run }) => { start(), stop(), tick() }
 - 试点：`traffic/cron.ts`（`traffic-aggregation`）、`recommendationEvents/cron.ts`（`recommendation-event-retention`）。租约名与周期不变。
 - 不变量：租约名不变 → 多实例互斥与窗口节流不变；失败回拨语义不变；对外导出 `startXxxCron/stopXxxCron` 名称不变，`main.ts` 无需改动。
 
+**后续调整（2026-11-23，第二个 PR）**：其余 cron 的结构各不相同（15/16 失败时用 `release()` 而非 `releaseForRetry()`、批次函数带参数/返回值并被测试直接调用），整体迁移到 `leasedCron` 会改变控制流。改为把指标下沉到 `lib/cronLease.ts` 的租约句柄：
+- 领到租约即记录 `monexus_cron_interval_seconds`（默认取租约周期，`opts.scheduleMs` 可覆盖为真实调度周期）并初始化 last success；领不到记 `skipped`。
+- `release()` 默认记 success；批次级 `catch` 调 `lease.markFailed()` 记 failure；`releaseForRetry()` 一律记 failure；每个租约只记一次。
+- 全部 22 个使用租约的 cron 因此都有指标并受 `MoNexusCronStale` 覆盖，各自控制流、返回值、失败语义不变；`leasedCron` 复用同一套记录。
+- `xboardAccounts/backfill.ts` 的租约周期 1s 只是互斥窗口，实际每分钟调度，传 `scheduleMs` 避免误报。
+
 ### 2.4 G4 进程角色
 
 - `config/index.ts` 新增 `PROCESS_ROLE`（`all|api|worker`，默认 `all`），写入根目录与 `server/` 的 `.env.example`。
@@ -213,4 +219,4 @@ The six endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in b
 - compose 拆分 `server-api` / `server-worker`，nginx 只指向 api。
 - 为 monexus-server / monexus-db 设置内存预留与上限（生产机 40+ 容器共存、`RECHARGE_MODE=live`）。
 - 是否引入 `openapi-typescript` 生成前端类型。
-- 其余 cron 迁移到 `leasedCron` 的排期。
+- ~~其余 cron 迁移到 `leasedCron` 的排期~~：改为租约句柄统一记录指标（见 §2.3 后续调整），22 个 cron 已全部覆盖；`leasedCron` 仅用于新 cron。
