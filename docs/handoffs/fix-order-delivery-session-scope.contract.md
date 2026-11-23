@@ -13,10 +13,11 @@
 - 允许修改：
   - `src/auth/sessionContext.ts`（会话归属键工具）
   - `src/pages/ProductDetailPage.tsx`（购买流程、订单交付状态、成功弹窗、结算弹窗、移动端最近订单入口与岛提示的会话绑定）
-  - `src/components/SuccessModal.tsx`（弹窗渲染门禁与异步交付轮询的会话隔离）
+  - `src/components/SuccessModal.tsx`（弹窗渲染门禁、异步交付轮询隔离与退款后同会话余额刷新解耦）
+  - `src/components/DeliveryContent.tsx` 与 `src/components/FileDeliveryCard.tsx`（交付复制与文件下载授权消费前的会话复核）
   - `src/stores/appStore.ts` 与 `src/components/OrderSuccessIsland.tsx`（移动端订单提示的会话绑定与跨会话立即清除）
-  - `src/hooks/useOrderRenewal.ts` 与 `src/components/OrderDetailModal.tsx`（续费成功弹窗与移动端续费提示的会话隔离）
-  - 相关前端单元测试与新增回归测试（`src/pages/ProductDetailPage.order-delivery-session.test.tsx`、`src/components/SuccessModal.session.test.tsx`、`src/components/SuccessModal.test.tsx`）
+  - `src/hooks/useOrderRenewal.ts`、`src/components/OrderDetailModal.tsx`、`src/pages/OrdersPage.tsx` 与 `src/pages/ProfilePage.tsx`（订单详情、订单列表数据源与续费成功弹窗的会话隔离）
+  - 相关前端单元测试与新增回归测试（`src/pages/ProductDetailPage.order-delivery-session.test.tsx`、`src/components/SuccessModal.session.test.tsx`、`src/pages/OrdersPage.session.test.tsx`、`src/components/SuccessModal.test.tsx`、`src/components/FileDeliveryCard.test.tsx`）
   - 本契约与交接文档（`docs/handoffs/fix-order-delivery-session-scope.contract.md`、`docs/handoffs/fix-order-delivery-session-scope.md`）
 - 禁止修改：
   - 后端订单创建、扣款、幂等、库存、结算及所有权校验逻辑（`server/**`）
