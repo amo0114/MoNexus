@@ -47,8 +47,8 @@ beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(getCheckinHeatmap).mockResolvedValue({
     today: '2026-11-09',
-    startDate: '2026-06-01',
-    weeks: 24,
+    startDate: '2025-11-17',
+    weeks: 52,
     summary: { checkinDays: 3, activeDays: 4, longestStreak: 3 },
     days: [
       { date: '2026-11-05', level: 1, active: true, checkedIn: false, makeup: false, streak: 0 },

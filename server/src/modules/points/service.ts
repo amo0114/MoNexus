@@ -305,7 +305,7 @@ export interface CheckinHeatmapResponse {
   days: CheckinHeatmapDay[]
 }
 
-const DEFAULT_HEATMAP_WEEKS = 24
+const DEFAULT_HEATMAP_WEEKS = 52
 
 function weekdayMondayIndex(date: string): number {
   return (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7

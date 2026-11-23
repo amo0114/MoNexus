@@ -68,7 +68,7 @@ export async function getCheckinStatus(): Promise<CheckinStatus> {
   return res.data
 }
 
-export async function getCheckinHeatmap(weeks = 24): Promise<CheckinHeatmap> {
+export async function getCheckinHeatmap(weeks = 52): Promise<CheckinHeatmap> {
   const res = await api.get<CheckinHeatmap>('/points/checkin/heatmap', { params: { weeks } })
   return res.data
 }

@@ -6,7 +6,7 @@ const WEEKDAY_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六
 const ROW_LABELS = ['一', '', '三', '', '五', '', '']
 
 const LEVEL_CLASS: Record<0 | 1 | 2 | 3 | 4, string> = {
-  0: 'bg-[color-mix(in_srgb,var(--color-border)_42%,var(--color-background))]',
+  0: 'bg-[color-mix(in_srgb,var(--color-border)_45%,var(--color-background))]',
   1: 'bg-[color-mix(in_srgb,var(--color-primary)_22%,var(--color-background))]',
   2: 'bg-[color-mix(in_srgb,var(--color-primary)_44%,var(--color-background))] ring-1 ring-inset ring-[color-mix(in_srgb,var(--color-primary)_32%,transparent)]',
   3: 'bg-[color-mix(in_srgb,var(--color-primary)_74%,var(--color-background))]',
@@ -52,12 +52,12 @@ function describeCell(cell: GridCell, today: string): string {
 }
 
 /**
- * 个人中心 GitHub 风格签到与活跃贡献墙（默认近 24 周 / 半年）。
- * 桌面端自适应铺展填满卡片宽度，移动端支持横向流畅滑动并默认滚到右侧「今天」；
- * 悬浮、键盘聚焦或点按任意方块均在统一状态行展示当日详情。
+ * 个人中心 GitHub 风格签到与活跃贡献墙（默认近 52 周 / 一年）。
+ * 采用固定正方形格 + 横竖 1:1 等距间隙，保持 GitHub 经典紧凑点阵质感；
+ * 窄屏自动横向滚动并默认停在最右侧「今天」。
  */
 export default function CheckinHeatmapWall({
-  weeks = 24,
+  weeks = 52,
   refreshKey,
 }: {
   weeks?: number
@@ -104,6 +104,7 @@ export default function CheckinHeatmapWall({
     const labels: Array<string | null> = []
     const map = new Map<string, GridCell>()
 
+    let lastLabelCol = -10
     for (let w = 0; w < data.weeks; w++) {
       const col: GridCell[] = []
       let label: string | null = null
@@ -120,16 +121,17 @@ export default function CheckinHeatmapWall({
         col.push(cell)
         if (!future) map.set(date, cell)
         const [, m, day] = date.split('-').map(Number)
-        if (day === 1) {
+        if (day === 1 && w - lastLabelCol >= 3) {
           label = `${m}月`
+          lastLabelCol = w
         }
       }
       cols.push(col)
       labels.push(label)
     }
 
-    // 首列若本身不含 1 号且第 2 列也没有月份标，补一个首月标以便阅读
-    if (cols.length > 0 && !labels[0] && !labels[1]) {
+    // 若前 3 列均无跨月标签，在首列补齐起始月份，避免与第二个月份重叠
+    if (cols.length > 0 && !labels[0] && !labels[1] && !labels[2]) {
       const [, firstMonth] = cols[0][0].date.split('-').map(Number)
       labels[0] = `${firstMonth}月`
     }
@@ -137,7 +139,7 @@ export default function CheckinHeatmapWall({
     return { columns: cols, monthLabels: labels, cellMap: map }
   }, [data])
 
-  // 移动端横向容器默认滚到最右侧，优先展示最近几周与今天
+  // 窄屏横向容器默认滚到最右侧，优先展示最近几周与今天
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !data) return
@@ -156,7 +158,7 @@ export default function CheckinHeatmapWall({
           <div className="h-3.5 w-28 rounded bg-[var(--color-border)] animate-pulse" />
           <div className="h-3.5 w-36 rounded bg-[var(--color-border)] animate-pulse" />
         </div>
-        <div className="h-24 w-full rounded-lg bg-[color-mix(in_srgb,var(--color-border)_45%,transparent)] animate-pulse" />
+        <div className="h-28 w-full rounded-lg bg-[color-mix(in_srgb,var(--color-border)_45%,transparent)] animate-pulse" />
       </div>
     )
   }
@@ -173,9 +175,12 @@ export default function CheckinHeatmapWall({
       {/* Header & Summary */}
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <span className="text-xs font-semibold text-[var(--color-text)]">
-          近 {data.weeks} 周签到与活跃足迹
+          近一年签到与活跃足迹
         </span>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-muted)] tabular-nums" data-testid="checkin-heatmap-summary">
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-[var(--color-text-muted)] tabular-nums"
+          data-testid="checkin-heatmap-summary"
+        >
           <span>
             签到 <strong className="font-semibold text-[var(--color-text)]">{data.summary.checkinDays}</strong> 天
           </span>
@@ -188,34 +193,38 @@ export default function CheckinHeatmapWall({
         </div>
       </div>
 
-      {/* Scrollable Heatmap Grid (mobile horizontal scroll; md+ stretches cleanly across card) */}
+      {/* Equal-gap GitHub contribution grid: fills desktop card edge-to-edge, horizontal scroll on mobile */}
       <div
         ref={scrollRef}
         className="overflow-x-auto pb-1 hide-scrollbar"
         data-testid="checkin-heatmap-scroll"
       >
-        <div className="min-w-[460px] md:min-w-0 w-full">
-          {/* Month axis */}
-          <div className="flex items-center gap-1.5 mb-1.5">
+        <div className="min-w-[700px] md:min-w-0 w-full px-0.5 pt-0.5 pb-1">
+          {/* Month axis — shares exact 52-column track grid with squares below */}
+          <div className="flex items-end gap-2 mb-1.5">
             <span className="w-4 shrink-0" aria-hidden="true" />
             <div
-              className="grid flex-1 gap-[3px] sm:gap-1"
+              className="grid flex-1 gap-[3px] sm:gap-[4px]"
               style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
             >
               {monthLabels.map((label, idx) => (
-                <span
+                <div
                   key={idx}
-                  className="text-[10px] leading-none text-[var(--color-text-muted)] whitespace-nowrap overflow-visible"
+                  className="relative h-4 overflow-visible"
                 >
-                  {label ?? ''}
-                </span>
+                  {label && (
+                    <span className="absolute left-0 bottom-0 text-[11px] leading-none text-[var(--color-text-muted)] whitespace-nowrap select-none">
+                      {label}
+                    </span>
+                  )}
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Weekday axis + 7 rows × N week columns */}
-          <div className="flex items-stretch gap-1.5">
-            <div className="grid grid-rows-7 gap-[3px] sm:gap-1 w-4 shrink-0 text-[10px] leading-none text-[var(--color-text-muted)]">
+          {/* Weekday axis + 7 rows × N columns (strictly equal horizontal & vertical gaps) */}
+          <div className="flex items-stretch gap-2">
+            <div className="grid grid-rows-7 gap-[3px] sm:gap-[4px] w-4 shrink-0 text-[10px] leading-none text-[var(--color-text-muted)] select-none">
               {ROW_LABELS.map((label, idx) => (
                 <span key={idx} className="flex items-center justify-end pr-0.5">
                   {label}
@@ -224,16 +233,16 @@ export default function CheckinHeatmapWall({
             </div>
 
             <div
-              className="grid flex-1 gap-[3px] sm:gap-1"
+              className="grid flex-1 gap-[3px] sm:gap-[4px]"
               style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 1fr))` }}
               role="grid"
               aria-label={`近 ${data.weeks} 周签到与活跃贡献墙`}
             >
               {columns.map((col, colIdx) => (
-                <div key={colIdx} className="grid grid-rows-7 gap-[3px] sm:gap-1">
+                <div key={colIdx} className="grid grid-rows-7 gap-[3px] sm:gap-[4px]">
                   {col.map((cell) => {
                     if (cell.future) {
-                      return <span key={cell.date} className="aspect-square w-full max-w-[20px] mx-auto" aria-hidden="true" />
+                      return <span key={cell.date} className="aspect-square w-full" aria-hidden="true" />
                     }
                     const isToday = cell.date === data.today
                     const isSelected = cell.date === selectedDate
@@ -249,7 +258,7 @@ export default function CheckinHeatmapWall({
                         onMouseEnter={() => setSelectedDate(cell.date)}
                         onFocus={() => setSelectedDate(cell.date)}
                         onClick={() => setSelectedDate(cell.date)}
-                        className={`aspect-square w-full max-w-[20px] mx-auto rounded-[3px] sm:rounded-[4px] transition-transform cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
+                        className={`aspect-square w-full rounded-[2.5px] sm:rounded-[3px] transition-transform cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                           LEVEL_CLASS[cell.level]
                         } ${
                           isToday
@@ -284,7 +293,7 @@ export default function CheckinHeatmapWall({
               key={item.level}
               title={item.label}
               aria-label={item.label}
-              className={`inline-block h-3 w-3 rounded-[3px] ${LEVEL_CLASS[item.level]}`}
+              className={`inline-block h-3 w-3 rounded-[2.5px] ${LEVEL_CLASS[item.level]}`}
             />
           ))}
           <span>多</span>
