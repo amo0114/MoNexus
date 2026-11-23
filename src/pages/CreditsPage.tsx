@@ -417,6 +417,13 @@ export default function CreditsPage() {
       {/* Subtle architectural floor/ceiling fine grid */}
       <div className="sanctuary-marble-grain pointer-events-none fixed inset-0 z-0 opacity-55" aria-hidden="true" />
 
+      {/* Theater ambient vignette that dims the surroundings when spotlighting a companion */}
+      <div
+        aria-hidden="true"
+        className="sanctuary-stage-dimmer"
+        data-focused={hoveredId ? 'true' : 'false'}
+      />
+
       {/* Minimal sanctuary header */}
       <header className="sticky top-0 z-30 border-b border-[var(--sanc-gold-line-soft)] bg-[color-mix(in_srgb,var(--sanc-bg)_82%,transparent)] backdrop-blur-md">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
@@ -573,38 +580,28 @@ export default function CreditsPage() {
                     style={{ '--pillar-accent': pillar.accent } as CSSProperties}
                     className="sanctuary-niche group flex flex-col items-center overflow-hidden pt-6 pb-5 px-4 text-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--sanc-gold)]"
                   >
-                    {/* Silk diagonal gold foil sweep on hover */}
-                    <span aria-hidden="true" className="sanctuary-foil-sweep" />
+                    {/* Overhead Stage Spotlight Optics: Lamp Flare + Dual Volumetric Cones */}
+                    <span aria-hidden="true" className="sanctuary-lamp-source" />
+                    <span aria-hidden="true" className="sanctuary-spotlight-cone" />
+                    <span aria-hidden="true" className="sanctuary-spotlight-core" />
 
-                    {/* Descending pillar light shaft on active / hover */}
-                    <span
-                      aria-hidden="true"
-                      className="sanctuary-pillar-shaft pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-56 w-44"
-                      style={{
-                        background: `radial-gradient(ellipse 60% 80% at 50% 0%, color-mix(in srgb, ${pillar.accent} 28%, transparent) 0%, transparent 78%)`,
-                      }}
-                    />
-
-                    {/* Layer 3 (Top): Roman numeral + Official SVG Keystone Seal */}
+                    {/* Layer 3 (Top): Roman numeral + Pure Transparent Official SVG Crest */}
                     <div className="sanctuary-keystone relative z-10 flex flex-col items-center gap-2">
-                      <span className="sanctuary-roman text-[11px] font-semibold tracking-[0.28em] text-[var(--sanc-gold)]">
+                      <span className="sanctuary-roman text-[11px] font-semibold tracking-[0.28em] text-[var(--sanc-gold-bright)]">
                         {pillar.roman}
                       </span>
-                      <span
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-[var(--sanc-surface-elevated)] shadow-xs transition-transform duration-300 group-hover:scale-105"
-                        style={{
-                          borderColor: isActive ? pillar.accent : 'var(--sanc-gold-line)',
-                        }}
-                      >
+                      <span className="inline-flex h-10 w-10 items-center justify-center bg-transparent transition-transform duration-300 group-hover:scale-110">
                         <img
                           src={pillar.logoSrc}
                           alt={`${pillar.name} 官方徽印`}
-                          className={`h-5 w-5 object-contain ${pillar.logoInvertOnDark ? 'dark:invert' : ''}`}
+                          className={`h-6 w-6 object-contain drop-shadow-[0_0_10px_rgba(255,250,235,0.35)] ${
+                            pillar.logoInvertOnDark ? 'invert brightness-110' : ''
+                          }`}
                         />
                       </span>
                     </div>
 
-                    {/* Sacred Arch Stage: Back Halo (Layer 1) + Mid Figure (Layer 2) */}
+                    {/* Sacred Arch Stage: Back Halo + Mid Illuminated Figure + Floor Light Pool */}
                     <div className="relative mt-2 flex h-[285px] sm:h-[305px] w-full items-end justify-center overflow-hidden">
                       <SacredHalo accent={pillar.accent} />
 
@@ -614,28 +611,30 @@ export default function CreditsPage() {
                         alt={`${pillar.name} ${figureMode === 'portrait' ? '古典立绘' : 'Q 版灵姿'}`}
                         className={`sanctuary-figure sanctuary-chronicle-enter relative z-10 w-auto object-contain select-none ${
                           figureMode === 'portrait'
-                            ? 'h-[275px] sm:h-[296px] drop-shadow-[0_14px_24px_rgba(10,12,24,0.28)]'
-                            : 'h-[212px] sm:h-[224px] mb-3 drop-shadow-[0_12px_20px_rgba(10,12,24,0.24)]'
+                            ? 'h-[275px] sm:h-[296px]'
+                            : 'h-[212px] sm:h-[224px] mb-3'
                         }`}
                       />
 
+                      <span aria-hidden="true" className="sanctuary-floor-pool" />
+
                       <div
                         aria-hidden="true"
-                        className="sanctuary-figure-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16"
+                        className="sanctuary-figure-fade pointer-events-none absolute inset-x-0 bottom-0 z-10 h-14"
                       />
                     </div>
 
                     {/* Carved Plinth Nameplate */}
                     <div className="relative z-20 -mt-2 w-full border-t border-[var(--sanc-gold-line-soft)] pt-3.5 space-y-1">
-                      <h3 className="sanctuary-roman text-lg font-semibold tracking-[0.12em] text-[var(--sanc-ink)]">
+                      <h3 className="sanctuary-roman text-lg font-semibold tracking-[0.12em] text-[var(--sanc-niche-ink)]">
                         {pillar.name}
                       </h3>
-                      <p className="sanctuary-serif text-xs tracking-[0.12em] text-[var(--sanc-muted)]">
+                      <p className="sanctuary-serif text-xs tracking-[0.12em] text-[var(--sanc-niche-muted)]">
                         {pillar.sanctuaryTitle}
                       </p>
                       <p
                         className="sanctuary-roman text-[9px] tracking-[0.26em] uppercase pt-0.5 transition-colors"
-                        style={{ color: isActive ? pillar.accent : 'var(--sanc-gold)' }}
+                        style={{ color: isActive ? pillar.accent : 'var(--sanc-gold-bright)' }}
                       >
                         {pillar.latinMotto}
                       </p>

@@ -11,64 +11,84 @@
 }
 
 .sanctuary-root {
-  --sanc-bg: color-mix(in srgb, var(--color-background) 86%, #f4ede0);
-  --sanc-surface: color-mix(in srgb, var(--color-surface) 92%, #faf4e8);
-  --sanc-surface-elevated: color-mix(in srgb, var(--color-surface) 96%, #fffdf8);
+  --sanc-bg: color-mix(in srgb, var(--color-background) 76%, #ded6c8);
+  --sanc-surface: color-mix(in srgb, var(--color-surface) 84%, #ebe3d5);
+  --sanc-surface-elevated: color-mix(in srgb, var(--color-surface) 92%, #f5efe3);
+  --sanc-niche-bg: #222026;
+  --sanc-niche-bg-bottom: #16151b;
+  --sanc-niche-ink: #f7f2e8;
+  --sanc-niche-muted: rgba(236, 226, 206, 0.72);
   --sanc-gold: #9a7432;
-  --sanc-gold-bright: #c59b49;
-  --sanc-gold-line: rgba(154, 116, 50, 0.32);
-  --sanc-gold-line-soft: rgba(154, 116, 50, 0.16);
-  --sanc-gold-glow: rgba(197, 155, 73, 0.16);
-  --sanc-beam: rgba(212, 175, 95, 0.18);
+  --sanc-gold-bright: #dfb665;
+  --sanc-gold-line: rgba(186, 146, 74, 0.38);
+  --sanc-gold-line-soft: rgba(186, 146, 74, 0.18);
+  --sanc-gold-glow: rgba(214, 173, 92, 0.18);
+  --sanc-beam: rgba(235, 198, 120, 0.22);
+  --sanc-vignette: rgba(16, 14, 20, 0.18);
   --sanc-ink: var(--color-text);
   --sanc-muted: var(--color-text-muted);
-  --sanc-niche-shadow: 0 22px 48px -28px rgba(42, 31, 14, 0.28);
+  --sanc-niche-shadow: 0 26px 56px -22px rgba(15, 12, 18, 0.48);
   --sanc-serif: 'Noto Serif SC', 'Source Han Serif SC', 'Songti SC', 'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
   --sanc-roman: 'Cinzel', 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
 
   background-color: var(--sanc-bg);
   background-image:
-    radial-gradient(ellipse 75% 42% at 50% -6%, var(--sanc-beam), transparent 72%),
-    radial-gradient(ellipse 55% 32% at 50% 102%, var(--sanc-gold-glow), transparent 75%);
+    radial-gradient(ellipse 68% 36% at 50% 42%, var(--sanc-beam), transparent 72%),
+    radial-gradient(ellipse 100% 100% at 50% 50%, transparent 46%, var(--sanc-vignette) 100%);
   color: var(--sanc-ink);
 }
 
 .dark .sanctuary-root,
 :root[data-theme='dark'] .sanctuary-root {
-  --sanc-bg: #070811;
-  --sanc-surface: #0f1221;
-  --sanc-surface-elevated: #13172a;
+  --sanc-bg: #05060d;
+  --sanc-surface: #0b0d19;
+  --sanc-surface-elevated: #101324;
+  --sanc-niche-bg: #0c0e1c;
+  --sanc-niche-bg-bottom: #060710;
+  --sanc-niche-ink: #f6f1e6;
+  --sanc-niche-muted: rgba(214, 208, 198, 0.7);
   --sanc-gold: #d6b168;
-  --sanc-gold-bright: #f4d897;
+  --sanc-gold-bright: #f7dea2;
   --sanc-gold-line: rgba(214, 177, 104, 0.34);
-  --sanc-gold-line-soft: rgba(214, 177, 104, 0.15);
-  --sanc-gold-glow: rgba(214, 177, 104, 0.16);
-  --sanc-beam: rgba(214, 177, 104, 0.16);
-  --sanc-niche-shadow: 0 28px 64px -24px rgba(0, 0, 0, 0.78);
+  --sanc-gold-line-soft: rgba(214, 177, 104, 0.16);
+  --sanc-gold-glow: rgba(214, 177, 104, 0.18);
+  --sanc-beam: rgba(226, 188, 112, 0.16);
+  --sanc-vignette: rgba(0, 0, 0, 0.65);
+  --sanc-niche-shadow: 0 30px 68px -20px rgba(0, 0, 0, 0.86);
 }
 
 :root[data-theme='soft'] .sanctuary-root {
-  --sanc-bg: #fcf4e4;
-  --sanc-surface: #fffaf0;
-  --sanc-surface-elevated: #fffdf8;
+  --sanc-bg: #f0e4d0;
+  --sanc-surface: #f8efe0;
+  --sanc-surface-elevated: #fdf7ec;
+  --sanc-niche-bg: #2a211b;
+  --sanc-niche-bg-bottom: #1b1511;
+  --sanc-niche-ink: #fbf2e3;
+  --sanc-niche-muted: rgba(244, 224, 196, 0.74);
   --sanc-gold: #a6692b;
-  --sanc-gold-bright: #d48b3c;
-  --sanc-gold-line: rgba(166, 105, 43, 0.3);
-  --sanc-gold-line-soft: rgba(166, 105, 43, 0.15);
-  --sanc-gold-glow: rgba(212, 139, 60, 0.15);
-  --sanc-beam: rgba(235, 168, 84, 0.18);
+  --sanc-gold-bright: #e6a856;
+  --sanc-gold-line: rgba(196, 134, 68, 0.36);
+  --sanc-gold-line-soft: rgba(196, 134, 68, 0.18);
+  --sanc-gold-glow: rgba(218, 148, 68, 0.18);
+  --sanc-beam: rgba(238, 176, 94, 0.2);
+  --sanc-vignette: rgba(48, 28, 12, 0.18);
 }
 
 :root[data-theme='ink'] .sanctuary-root {
-  --sanc-bg: #ebeeeb;
-  --sanc-surface: #f5f7f4;
-  --sanc-surface-elevated: #fafbf9;
+  --sanc-bg: #dde2de;
+  --sanc-surface: #eaeeea;
+  --sanc-surface-elevated: #f3f5f3;
+  --sanc-niche-bg: #18202b;
+  --sanc-niche-bg-bottom: #10161e;
+  --sanc-niche-ink: #eef2f5;
+  --sanc-niche-muted: rgba(206, 218, 228, 0.72);
   --sanc-gold: #50657d;
-  --sanc-gold-bright: #34507a;
-  --sanc-gold-line: rgba(52, 80, 122, 0.28);
-  --sanc-gold-line-soft: rgba(52, 80, 122, 0.14);
-  --sanc-gold-glow: rgba(52, 80, 122, 0.11);
-  --sanc-beam: rgba(80, 101, 125, 0.12);
+  --sanc-gold-bright: #8aa7c9;
+  --sanc-gold-line: rgba(114, 142, 174, 0.36);
+  --sanc-gold-line-soft: rgba(114, 142, 174, 0.18);
+  --sanc-gold-glow: rgba(96, 126, 162, 0.16);
+  --sanc-beam: rgba(118, 148, 182, 0.18);
+  --sanc-vignette: rgba(16, 22, 30, 0.2);
 }
 
 .sanctuary-serif {
@@ -242,17 +262,15 @@
   }
 }
 
-@keyframes sanctuary-foil-pass {
-  0% {
-    transform: translateX(-140%) skewX(-24deg);
-    opacity: 0;
-  }
-  30% {
-    opacity: 0.85;
-  }
+@keyframes sanctuary-spotlight-sway {
+  0%,
   100% {
-    transform: translateX(240%) skewX(-24deg);
-    opacity: 0;
+    opacity: 0.78;
+    transform: translateX(-50%) scaleX(1);
+  }
+  50% {
+    opacity: 0.96;
+    transform: translateX(-50%) scaleX(1.04);
   }
 }
 
@@ -316,7 +334,26 @@
   transform: translateY(0);
 }
 
-/* ================= ARCH NICHE (MULTI-LAYER 3D DEPTH) ================= */
+/* ================= ARCH NICHE (STAGE SPOTLIGHT & DEPTH) ================= */
+
+/* Subtle theater ambient dimmer behind the four niches */
+.sanctuary-stage-dimmer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+  background: radial-gradient(
+    ellipse 86% 62% at 50% 48%,
+    transparent 28%,
+    rgba(4, 5, 12, 0.36) 100%
+  );
+  opacity: 0;
+  transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.sanctuary-stage-dimmer[data-focused='true'] {
+  opacity: 1;
+}
 
 .sanctuary-niche {
   --tilt-x: 0deg;
@@ -324,7 +361,7 @@
   --px: 0;
   --py: 0;
   --spot-x: 50%;
-  --spot-y: 32%;
+  --spot-y: 26%;
   --pillar-accent: var(--sanc-gold);
 
   position: relative;
@@ -333,24 +370,24 @@
   border: 1px solid var(--sanc-gold-line);
   background:
     radial-gradient(
-      circle at var(--spot-x) var(--spot-y),
-      color-mix(in srgb, var(--pillar-accent) 20%, transparent) 0%,
-      transparent 56%
+      ellipse 88% 58% at 50% 10%,
+      color-mix(in srgb, var(--pillar-accent) 18%, rgba(255, 246, 224, 0.08)) 0%,
+      transparent 66%
     ),
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--pillar-accent) 10%, var(--sanc-surface)) 0%,
-      var(--sanc-surface) 48%,
-      color-mix(in srgb, var(--sanc-surface) 90%, var(--sanc-bg)) 100%
+      var(--sanc-niche-bg) 0%,
+      color-mix(in srgb, var(--sanc-niche-bg) 82%, var(--sanc-niche-bg-bottom)) 56%,
+      var(--sanc-niche-bg-bottom) 100%
     );
   box-shadow: var(--sanc-niche-shadow);
   transform: perspective(1050px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(0);
   transition:
-    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1),
-    border-color 0.35s ease,
-    box-shadow 0.45s ease,
-    opacity 0.4s ease,
-    filter 0.4s ease;
+    transform 0.36s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.4s ease,
+    box-shadow 0.5s ease,
+    opacity 0.45s ease,
+    filter 0.45s ease;
   will-change: transform;
 }
 
@@ -361,96 +398,174 @@
   border-radius: 999px 999px 13px 13px;
   border: 1px solid var(--sanc-gold-line-soft);
   pointer-events: none;
-  transition: border-color 0.35s ease;
+  z-index: 22;
+  transition: border-color 0.4s ease;
 }
 
-/* Silk diagonal gold foil sweep across the arch on hover */
-.sanctuary-foil-sweep {
+/* Stage Overhead Lamp Flare */
+.sanctuary-lamp-source {
   position: absolute;
-  inset: 0;
+  top: -14px;
+  left: 50%;
+  width: 118px;
+  height: 44px;
+  transform: translateX(-50%);
+  border-radius: 999px;
   pointer-events: none;
-  overflow: hidden;
-  border-radius: inherit;
-  z-index: 25;
+  z-index: 4;
+  background: radial-gradient(
+    ellipse at 50% 30%,
+    rgba(255, 250, 236, 0.92) 0%,
+    color-mix(in srgb, var(--pillar-accent) 68%, rgba(255, 242, 206, 0.7)) 38%,
+    transparent 76%
+  );
+  filter: blur(8px);
+  opacity: 0.48;
+  transition: opacity 0.45s ease, transform 0.5s ease;
 }
 
-.sanctuary-foil-sweep::after {
-  content: '';
+/* Volumetric Conical Stage Spotlight — Outer Atmosphere Cone */
+.sanctuary-spotlight-cone {
   position: absolute;
-  top: -15%;
-  bottom: -15%;
-  left: 0;
-  width: 46%;
+  top: 0;
+  left: 50%;
+  width: 128%;
+  height: 86%;
+  pointer-events: none;
+  z-index: 3;
+  clip-path: polygon(41% 0%, 59% 0%, 100% 100%, 0% 100%);
   background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 245, 214, 0.14) 45%,
-    color-mix(in srgb, var(--pillar-accent) 22%, rgba(255, 248, 224, 0.28)) 50%,
-    rgba(255, 245, 214, 0.14) 55%,
+    180deg,
+    color-mix(in srgb, var(--pillar-accent) 44%, rgba(255, 248, 228, 0.42)) 0%,
+    color-mix(in srgb, var(--pillar-accent) 22%, rgba(255, 244, 214, 0.18)) 38%,
+    color-mix(in srgb, var(--pillar-accent) 8%, transparent) 78%,
     transparent 100%
   );
-  transform: translateX(-140%) skewX(-24deg);
-  opacity: 0;
+  filter: blur(14px);
+  transform: translateX(-50%) rotate(calc(var(--px, 0) * -4.5deg));
+  transform-origin: 50% 0%;
+  opacity: 0.54;
+  transition: opacity 0.48s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: sanctuary-spotlight-sway 8s ease-in-out infinite;
 }
 
-.sanctuary-niche:hover .sanctuary-foil-sweep::after {
-  animation: sanctuary-foil-pass 0.95s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+/* Volumetric Conical Stage Spotlight — Focused Warm Core Beam */
+.sanctuary-spotlight-core {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 74%;
+  height: 78%;
+  pointer-events: none;
+  z-index: 4;
+  clip-path: polygon(43% 0%, 57% 0%, 100% 100%, 0% 100%);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 252, 242, 0.52) 0%,
+    color-mix(in srgb, var(--pillar-accent) 28%, rgba(255, 246, 222, 0.24)) 42%,
+    transparent 92%
+  );
+  filter: blur(10px);
+  transform: translateX(-50%) rotate(calc(var(--px, 0) * -6deg));
+  transform-origin: 50% 0%;
+  opacity: 0.42;
+  transition: opacity 0.45s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Descending subtle aura column inside active pillar */
-.sanctuary-pillar-shaft {
-  opacity: 0;
-  transition: opacity 0.65s ease;
+/* Stage Floor Elliptical Light Pool under the AI companion's feet */
+.sanctuary-floor-pool {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  width: 82%;
+  height: 46px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  pointer-events: none;
+  z-index: 8;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(255, 250, 236, 0.42) 0%,
+    color-mix(in srgb, var(--pillar-accent) 44%, rgba(255, 242, 206, 0.2)) 42%,
+    transparent 74%
+  );
+  filter: blur(8px);
+  opacity: 0.46;
+  transition: opacity 0.48s ease, transform 0.48s ease;
 }
 
-.sanctuary-niche:hover .sanctuary-pillar-shaft,
-.sanctuary-niche[data-active='true'] .sanctuary-pillar-shaft {
-  opacity: 1;
-}
-
+/* Lit & Focused Stage State */
 .sanctuary-niche:hover,
 .sanctuary-niche[data-active='true'] {
-  border-color: color-mix(in srgb, var(--pillar-accent) 64%, var(--sanc-gold));
+  border-color: color-mix(in srgb, var(--pillar-accent) 68%, var(--sanc-gold-bright));
   box-shadow:
-    0 26px 58px -20px color-mix(in srgb, var(--pillar-accent) 40%, rgba(0, 0, 0, 0.45)),
-    0 0 0 1px color-mix(in srgb, var(--pillar-accent) 30%, transparent);
+    0 30px 68px -18px color-mix(in srgb, var(--pillar-accent) 46%, rgba(0, 0, 0, 0.72)),
+    0 0 28px -6px color-mix(in srgb, var(--pillar-accent) 34%, transparent);
 }
 
 .sanctuary-niche:hover::before,
 .sanctuary-niche[data-active='true']::before {
-  border-color: color-mix(in srgb, var(--pillar-accent) 44%, var(--sanc-gold-line));
+  border-color: color-mix(in srgb, var(--pillar-accent) 48%, var(--sanc-gold-line));
 }
 
 .sanctuary-niche:hover {
   transform: perspective(1050px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-6px);
 }
 
-/* Theater spotlight dimming on sibling niches when hovering one */
+.sanctuary-niche:hover .sanctuary-lamp-source,
+.sanctuary-niche[data-active='true'] .sanctuary-lamp-source {
+  opacity: 1;
+  transform: translateX(-50%) scale(1.16);
+}
+
+.sanctuary-niche:hover .sanctuary-spotlight-cone,
+.sanctuary-niche[data-active='true'] .sanctuary-spotlight-cone {
+  opacity: 0.96;
+}
+
+.sanctuary-niche:hover .sanctuary-spotlight-core,
+.sanctuary-niche[data-active='true'] .sanctuary-spotlight-core {
+  opacity: 0.92;
+}
+
+.sanctuary-niche:hover .sanctuary-floor-pool,
+.sanctuary-niche[data-active='true'] .sanctuary-floor-pool {
+  opacity: 0.98;
+  transform: translateX(-50%) scale(1.12);
+}
+
+/* Strong theater dimming on non-focused niches so spotlighted AI shines */
 .sanctuary-pillars[data-has-hover='true'] .sanctuary-niche:not([data-hovered='true']) {
-  opacity: 0.68;
-  filter: saturate(0.8);
+  opacity: 0.56;
+  filter: brightness(0.62) saturate(0.72);
+}
+
+.sanctuary-pillars[data-has-hover='true'] .sanctuary-niche:not([data-hovered='true']) .sanctuary-spotlight-cone,
+.sanctuary-pillars[data-has-hover='true'] .sanctuary-niche:not([data-hovered='true']) .sanctuary-spotlight-core,
+.sanctuary-pillars[data-has-hover='true'] .sanctuary-niche:not([data-hovered='true']) .sanctuary-lamp-source {
+  opacity: 0.16;
 }
 
 /* Depth Layer 1 (Back): Sacred halo shifts opposite to pointer */
 .sanctuary-halo-wrap {
   transform: translate3d(
-    calc(var(--px, 0) * -12px),
-    calc(var(--py, 0) * -9px),
+    calc(var(--px, 0) * -10px),
+    calc(var(--py, 0) * -8px),
     0
   );
   transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sanctuary-halo {
-  opacity: 0.24;
+  opacity: 0.22;
   transform: scale(0.86);
   transition: opacity 0.55s ease, transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sanctuary-niche:hover .sanctuary-halo,
 .sanctuary-niche[data-active='true'] .sanctuary-halo {
-  opacity: 0.96;
-  transform: scale(1.05);
+  opacity: 0.95;
+  transform: scale(1.04);
 }
 
 .sanctuary-halo-ring {
@@ -463,8 +578,9 @@
   animation: sanctuary-spin-ccw 26s linear infinite;
 }
 
-/* Depth Layer 2 (Mid): Character figure shifts forward with pointer */
+/* Depth Layer 2 (Mid): Character figure illuminated by overhead stage key-light */
 .sanctuary-figure {
+  filter: brightness(0.88) contrast(1.01) drop-shadow(0 16px 26px rgba(0, 0, 0, 0.52));
   transform: translate3d(
       calc(var(--px, 0) * 10px),
       calc(var(--py, 0) * 6px),
@@ -472,6 +588,15 @@
     )
     scale(1);
   transition: transform 0.42s cubic-bezier(0.22, 1, 0.36, 1), filter 0.45s ease;
+}
+
+.sanctuary-niche:hover .sanctuary-figure,
+.sanctuary-niche[data-active='true'] .sanctuary-figure {
+  filter:
+    brightness(1.08)
+    contrast(1.04)
+    drop-shadow(0 -6px 20px color-mix(in srgb, var(--pillar-accent) 42%, rgba(255, 248, 224, 0.32)))
+    drop-shadow(0 18px 28px rgba(0, 0, 0, 0.55));
 }
 
 .sanctuary-niche:hover .sanctuary-figure {
@@ -487,7 +612,7 @@
   animation: sanctuary-figure-breathe 5.8s ease-in-out infinite;
 }
 
-/* Depth Layer 3 (Top): Keystone emblem gentle micro-parallax */
+/* Depth Layer 3 (Top): Pure transparent official SVG crest */
 .sanctuary-keystone {
   transform: translate3d(
     calc(var(--px, 0) * 5px),
@@ -497,12 +622,12 @@
   transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Bottom soft mist fade inside arch so figure merges gracefully into plinth */
+/* Bottom soft dark-stage mist fade inside arch so figure merges cleanly into plinth */
 .sanctuary-figure-fade {
   background: linear-gradient(
     to top,
-    var(--sanc-surface) 0%,
-    color-mix(in srgb, var(--sanc-surface) 84%, transparent) 24%,
+    var(--sanc-niche-bg-bottom) 0%,
+    color-mix(in srgb, var(--sanc-niche-bg-bottom) 78%, transparent) 24%,
     transparent 62%
   );
 }
@@ -621,7 +746,7 @@
   .sanctuary-quote-ignited,
   .sanctuary-monolith-shell[data-ignited='true'],
   .sanctuary-niche[data-active='true']:not(:hover) .sanctuary-figure,
-  .sanctuary-niche:hover .sanctuary-foil-sweep::after {
+  .sanctuary-spotlight-cone {
     animation: none !important;
   }
 
