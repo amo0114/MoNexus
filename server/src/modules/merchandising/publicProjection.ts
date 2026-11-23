@@ -14,14 +14,11 @@
 //   - 无 completed run → hot block 为 null、排序退化为 id DESC，绝不读 legacy
 //     isHot（D-MERCH-01 / AC-MERCH-008 / CHK-HOT-009）；
 //   - decorate 批量、有界（≤1000 商品，单条 IN 查询，无 N+1；CHK-PERF-003）；
-//   - public DTO 只暴露 Spec §9 字段：hot 只含本商品 effectiveOrders/rank/windowDays/
-//     computedAt，且仅当该快照 isHot=true 时才存在（compute 对每个 active 商品都写
-//     快照，快照存在 ≠ 热卖）；platformOwned 由 merchantId=null 派生；platformPick/
-//     merchantPartner 由 BE-005 增量填充（当前恒 null）。绝不泄露内部字段
-//     （MERCH-015 / CHK-SEC-001）。
+//   - 公开 DTO 只包含徽章展示信息；排序数据保留在服务端及认证加密的游标内。
 
 import { Buffer } from 'node:buffer'
-import { createHash } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } from 'node:crypto'
+import { config } from '../../config/index.js'
 import { Prisma } from '@prisma/client'
 import { HttpError } from '../../lib/httpError.js'
 import type { ErrorCode } from '../../lib/httpError.js'
@@ -31,11 +28,16 @@ import { findLatestCompletedRun, type AnyDb } from './ranking/repository.js'
 import type { MerchandisingProjection } from './contracts.js'
 
 /** cursor 版本。契约变更（字段/排序）必须 bump 并使旧 cursor 一律 409。 */
-export const PROJECTION_CURSOR_VERSION = 1
+export const PROJECTION_CURSOR_VERSION = 2
+export const MAX_ORGANIC_CURSOR_LENGTH = 512
+const CURSOR_NONCE_BYTES = 12
+const CURSOR_TAG_BYTES = 16
+const cursorKey = Buffer.from(hkdfSync('sha256', config.jwtSecret, '', 'monexus:product-cursor:v2', 32))
+const base64Url = /^[A-Za-z0-9_-]+$/u
 
 /** 冻结的 organic cursor 字段（D-MERCH-07：v/runId/isHot/effectiveOrderCount/productId/filterHash）。 */
 export interface OrganicCursorPayload {
-  v: 1
+  v: typeof PROJECTION_CURSOR_VERSION
   /** 钉住的 completed run；null = 无 completed run 的 no-run fallback 状态。 */
   runId: string | null
   isHot: boolean
@@ -136,7 +138,13 @@ export function assertCursorFilterMatches(
 }
 
 export function encodeOrganicCursor(payload: OrganicCursorPayload): string {
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
+  const nonce = randomBytes(CURSOR_NONCE_BYTES)
+  const cipher = createCipheriv('aes-256-gcm', cursorKey, nonce)
+  const ciphertext = Buffer.concat([cipher.update(JSON.stringify(payload), 'utf8'), cipher.final()])
+  const token = Buffer.concat([nonce, cipher.getAuthTag(), ciphertext]).toString('base64url')
+  // A visible version lets both readers recognize an incompatible cursor
+  // during rollout or rollback and recover via the existing 409 contract.
+  return Buffer.from(JSON.stringify({ v: PROJECTION_CURSOR_VERSION, token })).toString('base64url')
 }
 
 function isValidCursorPayload(value: unknown): value is OrganicCursorPayload {
@@ -162,19 +170,34 @@ function isValidCursorPayload(value: unknown): value is OrganicCursorPayload {
  * 前端必须清页重启分页而非混用新旧页（D-MERCH-07 / SPEC-MERCH-001 §6.3）。
  */
 export function decodeOrganicCursor(raw: string): OrganicCursorPayload {
-  let parsed: unknown
+  if (raw.length > MAX_ORGANIC_CURSOR_LENGTH || !base64Url.test(raw)) throw cursorInvalid()
+  let envelope: Record<string, unknown>
   try {
-    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as unknown
+    const decoded: unknown = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'))
+    if (decoded === null || typeof decoded !== 'object' || Array.isArray(decoded)) throw cursorInvalid()
+    envelope = decoded as Record<string, unknown>
   } catch {
     throw cursorInvalid()
   }
-  if (parsed === null || typeof parsed !== 'object') throw cursorInvalid()
-  const version = (parsed as Record<string, unknown>).v
-  if (version !== undefined && typeof version === 'number' && version !== PROJECTION_CURSOR_VERSION) {
+  if (typeof envelope.v === 'number' && envelope.v !== PROJECTION_CURSOR_VERSION) throw cursorExpired()
+  if (envelope.v !== PROJECTION_CURSOR_VERSION || typeof envelope.token !== 'string'
+    || !base64Url.test(envelope.token)) throw cursorInvalid()
+
+  const data = Buffer.from(envelope.token, 'base64url')
+  const payloadOffset = CURSOR_NONCE_BYTES + CURSOR_TAG_BYTES
+  if (data.length <= payloadOffset || data.toString('base64url') !== envelope.token) throw cursorInvalid()
+
+  let payload: unknown
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', cursorKey, data.subarray(0, CURSOR_NONCE_BYTES))
+    decipher.setAuthTag(data.subarray(CURSOR_NONCE_BYTES, payloadOffset))
+    payload = JSON.parse(Buffer.concat([decipher.update(data.subarray(payloadOffset)), decipher.final()]).toString('utf8'))
+  } catch {
+    // Includes cursors issued before a signing-secret rotation.
     throw cursorExpired()
   }
-  if (!isValidCursorPayload(parsed)) throw cursorInvalid()
-  return parsed
+  if (!isValidCursorPayload(payload)) throw cursorInvalid()
+  return payload
 }
 
 /**
@@ -285,10 +308,10 @@ async function loadSnapshotsBounded(
   runId: string,
   productIds: number[],
   db: AnyDb,
-): Promise<Array<{ productId: number; isHot: boolean; effectiveOrderCount: number; categoryRank: number; computedAt: Date }>> {
+): Promise<Array<{ productId: number; isHot: boolean }>> {
   return db.productMerchandisingSnapshot.findMany({
     where: { runId, productId: { in: productIds } },
-    select: { productId: true, isHot: true, effectiveOrderCount: true, categoryRank: true, computedAt: true },
+    select: { productId: true, isHot: true },
   })
 }
 
@@ -361,39 +384,13 @@ async function loadIdentityProjectionBounded(
   }]))
 }
 
-/** no-run fallback projection：hot 块整体缺省，绝不读 legacy isHot（AC-MERCH-008）。 */
-function buildNoRunProjection(product: ProjectionInputProduct, identity: IdentityProjection): MerchandisingProjection {
-  return {
-    rankingRunId: null,
-    hot: null,
-    platformOwned: product.merchantId === null,
-    platformPick: identity.platformPick,
-    merchantPartner: identity.merchantPartner,
-  }
-}
-
-/** 钉住 run 的 projection：hot 只含本商品指标（Spec §9，CHK-SEC-001）。
- *
- * hot 块只在 `snapshot.isHot === true` 时返回。compute 为每个 active 商品都
- * 写快照（零订单也有 0 计数行），若改用「快照存在」判定，所有在售商品都会
- * 得到热卖徽章，热卖标签彻底失去区分度（D-MERCH-05 / D-MERCH-20）。
- */
-function buildRunProjection(
+function buildMerchandisingProjection(
   product: ProjectionInputProduct,
-  run: ProjectionRun,
-  snapshot: { isHot: boolean; effectiveOrderCount: number; categoryRank: number; computedAt: Date } | null,
+  isHot: boolean,
   identity: IdentityProjection,
 ): MerchandisingProjection {
   return {
-    rankingRunId: run.id,
-    hot: snapshot?.isHot
-      ? {
-          effectiveOrders: snapshot.effectiveOrderCount,
-          rank: snapshot.categoryRank,
-          windowDays: run.windowDays,
-          computedAt: snapshot.computedAt.toISOString(),
-        }
-      : null,
+    hot: isHot ? { label: '热卖' } : null,
     platformOwned: product.merchantId === null,
     platformPick: identity.platformPick,
     merchantPartner: identity.merchantPartner,
@@ -417,24 +414,13 @@ export async function decorateProducts(
     )
   }
   const identityByProduct = await loadIdentityProjectionBounded(products, db)
-  if (run === null) {
-    return products.map(product => ({
-      id: product.id,
-      merchandising: buildNoRunProjection(product, identityByProduct.get(product.id)!),
-    }))
-  }
-  const snapshots = await loadSnapshotsBounded(
-    run.id,
-    products.map(product => product.id),
-    db,
-  )
+  const snapshots = run ? await loadSnapshotsBounded(run.id, products.map(product => product.id), db) : []
   const byProduct = new Map(snapshots.map(snapshot => [snapshot.productId, snapshot]))
   return products.map(product => ({
     id: product.id,
-    merchandising: buildRunProjection(
+    merchandising: buildMerchandisingProjection(
       product,
-      run,
-      byProduct.get(product.id) ?? null,
+      byProduct.get(product.id)?.isHot ?? false,
       identityByProduct.get(product.id)!,
     ),
   }))

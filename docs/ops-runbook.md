@@ -17,6 +17,12 @@
 
 **共同语义**：邮件发送失败一律 `logger.warn` 并保持状态可重试；单条失败不中断整批。
 
+**进程角色（`PROCESS_ROLE`）**：生产 compose 固定 `server` = `api`（HTTP + 实时通知，不跑任何 cron/worker，启动时执行迁移），`server-worker` = `worker`（全部 cron/worker 含视频转码；HTTP 只供 `/api/health` 与 Prometheus 抓取，nginx 不路由用户流量；不执行迁移，等 `server` 健康后启动）。两者共用 `environment: &server-env`，只有 `PROCESS_ROLE` 不同。部署入口按 server → server-worker → web 重建；两次重建之间 cron 暂停（约一个健康检查周期），租约与状态表保证顺延安全。
+- 排障：cron 没跑 → 先看 `monexus-server-worker-prod` 健康与日志，再看 Prometheus `monexus_cron_runs_total{job=…}`、`MoNexusCronStale`；接口异常 → 看 `monexus-server-prod`。
+- **上线顺序（首次拆分）**：生产执行的是已安装在 `/usr/local/sbin/monexus-compose-deploy` 的入口，不是 release 里的副本。必须**先**用 `deploy/vps/install-compose-production-deploy.sh` 安装新入口，**再**部署含 `server-worker` 的 release；否则旧入口只重建 `server`（已是 `api`），worker 不会启动，所有 cron 停摆。新入口兼容拆分前的 release（按 release 的 compose 是否定义 `server-worker` 分支）。
+- 回滚到单容器：部署状态文件记录 `previous_worker_image`（首次拆分前为 `none`）。部署拆分前的 release 时，入口检测到 compose 无 `server-worker`，会自动移除残留的 `monexus-server-worker-prod`，由旧 `server`（`all`）独自跑 cron。
+- 资源上限：`server` 1g、`server-worker` 1.5g、`postgres` 2g（`oom_score_adj: -500`）、`redis` 256m。部署入口不重建 postgres/redis，其上限需在维护窗口显式重建后生效，或用 `docker update --memory … --memory-reservation …` 在线生效（`oom_score_adj` 无法在线修改）。
+
 **多实例已知限界**（P7a 留档）：`express-rate-limit`（API 层限流）为进程内存计数，多实例下每实例独立限额——总上限 = N×配置值,有界不阻断;切 Redis 存储沿 2026-06-13 Redis 计划既定边界另议。业务级限流（进度更新、文件发放）已是 DB 计数 + 锁串行,跨实例精确。
 
 ### 1.1 自动开通外呼 worker(P7b,`modules/orders/provisionCron.ts`)

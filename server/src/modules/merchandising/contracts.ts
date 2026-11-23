@@ -14,14 +14,6 @@ import type {
   SponsoredPlacement,
 } from './constants.js'
 
-/** Hot snapshot projection for a single product (spec §9). */
-export interface HotProjection {
-  effectiveOrders: number
-  rank: number
-  windowDays: number
-  computedAt: string
-}
-
 /** Platform pick (editorial) projection (spec §8.1 / §9).
  * Label is the frozen display word 平台精选.
  */
@@ -39,15 +31,9 @@ export interface MerchantPartnerProjection {
   validUntil: string
 }
 
-/**
- * Public Product `merchandising` block (SPEC-MERCH-001 §9). `rankingRunId`
- * pins the completed run used for the cursor; when no completed run exists the
- * whole `hot` block is absent (fallback is hot=false, id DESC — never legacy
- * isHot).
- */
+/** Public display fields for a product. */
 export interface MerchandisingProjection {
-  rankingRunId: string | null
-  hot: HotProjection | null
+  hot: { label: '热卖' } | null
   platformOwned: boolean
   platformPick: PlatformPickProjection | null
   merchantPartner: MerchantPartnerProjection | null

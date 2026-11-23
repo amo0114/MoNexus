@@ -26,10 +26,25 @@ export function missingComposeEnvironment(configSource, providerSources, compose
   }
   // Test-only simulator authentication must never enter production containers.
   required.delete('PAYMENT_SIMULATOR_TEST_TOKEN')
-  const server = composeSource.split(/^  server:\s*$/m)[1]?.split(/^  [a-z][a-z0-9_-]*:\s*$/m)[0]
+  const server = serviceEnvironment(composeSource, 'server')
   if (!server) throw new Error('Could not locate the production server service')
-  const mapped = new Set([...server.matchAll(/^      ([A-Z][A-Z0-9_]*):/gm)].map(match => match[1]))
-  return [...required].filter(key => !mapped.has(key)).sort()
+  const missing = [...required].filter(key => !server.has(key)).sort()
+  // The background role runs the same code, so it needs the same environment.
+  const worker = serviceEnvironment(composeSource, 'server-worker')
+  if (worker) missing.push(...[...required].filter(key => !worker.has(key)).sort().map(key => `server-worker:${key}`))
+  return missing
+}
+
+/** Keys a service maps directly or through a `<<: *anchor` merge of another service's `environment: &anchor`. */
+function serviceEnvironment(composeSource, name) {
+  const block = composeSource.split(new RegExp(`^  ${name}:\\s*$`, 'm'))[1]?.split(/^  [a-z][a-z0-9_-]*:\s*$/m)[0]
+  if (!block) return null
+  const keys = new Set([...block.matchAll(/^      ([A-Z][A-Z0-9_]*):/gm)].map(match => match[1]))
+  for (const [, anchor] of block.matchAll(/^      <<: \*([\w-]+)\s*$/gm)) {
+    const shared = composeSource.split(new RegExp(`^    environment: &${anchor}\\s*$`, 'm'))[1]?.split(/^ {0,4}\S/m)[0] ?? ''
+    for (const [, key] of shared.matchAll(/^      ([A-Z][A-Z0-9_]*):/gm)) keys.add(key)
+  }
+  return keys
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

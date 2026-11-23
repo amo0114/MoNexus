@@ -32,8 +32,6 @@ function registryPayload(codes: string[]) {
       })),
       productTypes: codes.map(code => ({ value: code, label: code, deprecated: true })),
       memberTiers: [],
-      memberTierThresholds: { silver: 0, gold: 0, platinum: 0 },
-      memberTierBonusBps: { bronze: 0, silver: 0, gold: 0, platinum: 0 },
     },
   }
 }

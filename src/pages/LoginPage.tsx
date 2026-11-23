@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/authStore'
 import { useAppStore } from '../stores/appStore'
 import {
   getMeWithAccessToken,
+  getLoginVerification,
   getRegistrationStatus,
   finalizePendingAuthSession,
   isMfaLoginChallenge,
@@ -119,7 +120,7 @@ export default function LoginPage() {
     getRegistrationStatus()
       .then((status) => {
         if (!active) return
-        setLoginChallenge(status.challenge)
+        if (status.challenge) setLoginChallenge(status.challenge)
         if (!status.registrationEnabled) {
           setRegistrationState({ kind: 'disabled' })
         } else if (!status.registrationAvailable) {
@@ -285,13 +286,15 @@ export default function LoginPage() {
     showToast(getApiErrorMessage(error, '操作失败'), 'error')
   }
 
-  function handleLoginError(error: unknown) {
+  async function handleLoginError(error: unknown) {
     // A proof is single-use whether or not the password was right.
     humanVerificationRef.current?.reset()
     const code = getApiErrorCode(error)
     if (code === 'HUMAN_VERIFICATION_REQUIRED') {
       setLoginVerificationRequired(true)
-      showToast(loginChallenge ? '登录失败次数较多，请完成安全验证后重试' : '安全验证暂不可用，请稍后重试', 'error')
+      const challenge = loginChallenge ?? await getLoginVerification().catch(() => null)
+      if (challenge) setLoginChallenge(challenge)
+      showToast(challenge ? '请完成安全验证后继续登录' : '安全验证暂不可用，请稍后重试', 'error')
       return
     }
     if (code === 'HUMAN_VERIFICATION_FAILED') {
@@ -401,7 +404,7 @@ export default function LoginPage() {
       if (pendingAuthEpochRef.current === requestAuthEpoch) pendingAuthEpochRef.current = null
       if (requestStillOwnsAuthState) {
         if (isRegister) handleRegistrationError(error)
-        else handleLoginError(error)
+        else await handleLoginError(error)
       }
     } finally {
       setLoading(false)

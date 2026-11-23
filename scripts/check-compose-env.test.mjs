@@ -12,3 +12,19 @@ test('checks both schema fields and adapter-owned credentials in the server serv
   assert.deepEqual(missingComposeEnvironment(config, [provider], compose.replace('      DATABASE_URL: value',
     '      DATABASE_URL: value\n      MAIL_CREDENTIALS_ENC_KEY: value\n      PAYPAL_CLIENT_SECRET: value\n      ALIPAY_APP_CERT: value')), [])
 })
+
+test('follows the server environment anchor and requires the worker to receive the same environment', () => {
+  const config = 'const envSchema = z.object({ DATABASE_URL: z.string(), JWT_SECRET: z.string() });'
+  const compose = [
+    'services:',
+    '  server:', '    environment: &server-env', '      DATABASE_URL: value', '      JWT_SECRET: value',
+    '      PROCESS_ROLE: api', '    networks:', '      - monexus',
+    '  server-worker:', '    environment:', '      <<: *server-env', '      PROCESS_ROLE: worker',
+    '  postgres:', '    image: postgres', '',
+  ].join('\n')
+  assert.deepEqual(missingComposeEnvironment(config, [], compose), [])
+  assert.deepEqual(missingComposeEnvironment(config, [], compose.replace(
+    '  server-worker:\n    environment:\n      <<: *server-env', '  server-worker:\n    environment:\n      DATABASE_URL: value')), [
+    'server-worker:JWT_SECRET',
+  ])
+})
