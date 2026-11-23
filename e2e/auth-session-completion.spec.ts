@@ -214,7 +214,7 @@ async function installMockApi(context: BrowserContext, options: { mfaUserId?: nu
 async function submitLogin(page: Page, user: TestUser): Promise<void> {
   if (!new URL(page.url()).pathname.endsWith('/login')) await page.goto('/login')
   await page.getByLabel('邮箱地址').fill(user.email)
-  await page.getByLabel('密码').fill('correct-test-password')
+  await page.getByLabel('密码', { exact: true }).fill('correct-test-password')
   await page.getByRole('button', { name: '登录' }).click()
 }
 

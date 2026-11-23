@@ -500,7 +500,7 @@ export default function CreditsPage() {
             </Link>
             <Link
               to="/"
-              className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface)]/80 px-3.5 text-xs font-medium text-[var(--sanc-ink)] transition-colors hover:border-[var(--sanc-gold)] hover:text-[var(--sanc-gold)]"
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[var(--sanc-gold-line)] bg-[color-mix(in_srgb,var(--sanc-surface)_80%,transparent)] px-3.5 text-xs font-medium text-[var(--sanc-ink)] transition-colors hover:border-[var(--sanc-gold)] hover:text-[var(--sanc-gold)]"
             >
               <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
               返回商城
@@ -575,7 +575,7 @@ export default function CreditsPage() {
             <div
               role="group"
               aria-label="立绘形态切换"
-              className="inline-flex items-center rounded-full border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface)]/90 p-1 shadow-xs"
+              className="inline-flex items-center rounded-full border border-[var(--sanc-gold-line)] bg-[color-mix(in_srgb,var(--sanc-surface)_90%,transparent)] p-1 shadow-xs"
             >
               <button
                 type="button"
@@ -728,7 +728,7 @@ export default function CreditsPage() {
               key={activeCompanion.id}
               data-testid="credits-chronicle-lectern"
               aria-live="polite"
-              className="sanctuary-chronicle-enter relative mx-auto max-w-5xl rounded-2xl border border-[var(--sanc-gold-line)] bg-[var(--sanc-surface-elevated)]/92 backdrop-blur-sm px-6 py-7 sm:px-10 sm:py-8 shadow-sm"
+              className="sanctuary-chronicle-enter relative mx-auto max-w-5xl rounded-2xl border border-[var(--sanc-gold-line)] bg-[color-mix(in_srgb,var(--sanc-surface-elevated)_92%,transparent)] backdrop-blur-sm px-6 py-7 sm:px-10 sm:py-8 shadow-sm"
             >
               <CornerOrnament className="absolute top-2.5 left-2.5" />
               <CornerOrnament className="absolute top-2.5 right-2.5 -scale-x-100" />

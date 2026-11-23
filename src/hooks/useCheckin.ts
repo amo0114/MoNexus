@@ -67,9 +67,13 @@ registerIdentityScopedMetadataCleanup(() => {
   resetSharedCheckin()
 })
 
-let lastIdentityKey = ''
+function getIdentityKey(authState = useAuthStore.getState()): string {
+  return `${authState.authEpoch}:${authState.user?.id ?? 'guest'}`
+}
+
+let lastIdentityKey = getIdentityKey()
 useAuthStore.subscribe((authState) => {
-  const nextKey = `${authState.authEpoch}:${authState.user?.id ?? 'guest'}`
+  const nextKey = getIdentityKey(authState)
   if (nextKey !== lastIdentityKey) {
     lastIdentityKey = nextKey
     resetSharedCheckin()

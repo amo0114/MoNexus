@@ -248,16 +248,24 @@ export default function CheckinHeatmapWall({
                     const isSelected = cell.date === selectedDate
                     const desc = describeCell(cell, data.today)
                     return (
-                      <button
+                      <div
                         key={cell.date}
-                        type="button"
+                        role="gridcell"
+                        tabIndex={isToday || isSelected ? 0 : -1}
                         aria-label={desc}
+                        aria-selected={isSelected}
                         title={desc}
                         data-testid={`heatmap-cell-${cell.date}`}
                         data-level={cell.level}
                         onMouseEnter={() => setSelectedDate(cell.date)}
                         onFocus={() => setSelectedDate(cell.date)}
                         onClick={() => setSelectedDate(cell.date)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            setSelectedDate(cell.date)
+                          }
+                        }}
                         className={`aspect-square w-full rounded-[2.5px] sm:rounded-[3px] transition-transform cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)] ${
                           LEVEL_CLASS[cell.level]
                         } ${

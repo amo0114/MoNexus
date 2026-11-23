@@ -50,7 +50,7 @@ function totpOutsideAcceptedWindow(manualKey: string, now = Date.now()) {
 async function submitPassword(page: Page, fixture: M3IshAdminFixture) {
   await page.goto('/login')
   await page.getByLabel('邮箱地址').fill(fixture.email)
-  await page.getByLabel('密码').fill(fixture.password)
+  await page.getByLabel('密码', { exact: true }).fill(fixture.password)
   await page.getByRole('button', { name: '登录' }).click()
 }
 
