@@ -10,20 +10,9 @@ export async function getConfigRegistry(
   const [{
     defaultPageSize,
     maxPageSize,
-    lowStockThreshold,
     notificationEnabled,
-    memberTierSilverThreshold: silverThreshold,
-    memberTierGoldThreshold: goldThreshold,
-    memberTierPlatinumThreshold: platinumThreshold,
-    memberTierSilverBonusBps: silverBonusBps,
-    memberTierGoldBonusBps: goldBonusBps,
-    memberTierPlatinumBonusBps: platinumBonusBps,
   }, catalog] = await Promise.all([
-    getSystemConfigValues([
-      'defaultPageSize', 'maxPageSize', 'lowStockThreshold', 'notificationEnabled',
-      'memberTierSilverThreshold', 'memberTierGoldThreshold', 'memberTierPlatinumThreshold',
-      'memberTierSilverBonusBps', 'memberTierGoldBonusBps', 'memberTierPlatinumBonusBps',
-    ]),
+    getSystemConfigValues(['defaultPageSize', 'maxPageSize', 'notificationEnabled']),
     getPublicCategoryRegistry(audience),
   ])
 
@@ -37,23 +26,9 @@ export async function getConfigRegistry(
     orderStatuses: businessRegistry.orderStatuses,
     settlementStatuses: businessRegistry.settlementStatuses,
     memberTiers: businessRegistry.memberTiers,
-    memberTierThresholds: {
-      silver: silverThreshold,
-      gold: goldThreshold,
-      platinum: platinumThreshold,
-    },
-    memberTierBonusBps: {
-      bronze: 0,
-      silver: silverBonusBps,
-      gold: goldBonusBps,
-      platinum: platinumBonusBps,
-    },
     pagination: {
       defaultPageSize,
       maxPageSize,
-    },
-    inventory: {
-      lowStockThreshold,
     },
     capabilities: {
       notifications: notificationEnabled === 1,

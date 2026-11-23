@@ -324,7 +324,6 @@ realPg('partner entitlement governance (REAL-PG)', () => {
     })
     const [decorated] = await decorateProducts([{ id: fx.productId, merchantId: fx.merchant.id }], null)
     expect(decorated.merchandising).toMatchObject({
-      rankingRunId: null,
       hot: null,
       platformOwned: false,
       platformPick: { label: '平台精选', publicReason: '本周上新' },

@@ -33,6 +33,7 @@ import {
   decodeOrganicCursor,
   decorateProducts,
   encodeOrganicCursor,
+  PROJECTION_CURSOR_VERSION,
   resolveCursorForRequest,
   type OrganicCursorPayload,
   type ProjectionRun,
@@ -801,7 +802,7 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
       items,
       nextCursor: hasMore && lastRow
         ? encodeOrganicCursor({
-            v: 1,
+            v: PROJECTION_CURSOR_VERSION,
             runId: context.run?.id ?? null,
             isHot: lastRow.isHot,
             effectiveOrderCount: lastRow.effectiveOrderCount,

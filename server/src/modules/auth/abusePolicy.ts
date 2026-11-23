@@ -5,6 +5,7 @@ import {
   type AbuseLimiterBucket,
   type AbuseLimiterResult,
 } from '../../lib/abuseLimiter.js'
+import type { HumanVerificationAction } from './humanVerification.js'
 
 const SECOND_MS = 1_000
 const MINUTE_MS = 60 * SECOND_MS
@@ -29,6 +30,18 @@ export const HUMAN_CHALLENGE_ISSUE_BUCKETS = [
   { flow: 'human-challenge', dimension: 'ip', limit: 30, windowMs: MINUTE_MS },
   { flow: 'human-challenge', dimension: 'ip', limit: 120, windowMs: 10 * MINUTE_MS },
 ] as const satisfies readonly AbuseLimiterBucket[]
+
+// Retain the existing budget for unverified bcrypt work. A spent budget
+// requires proof; successful verification admits work to a second bounded pool.
+export const LOGIN_IP_BUCKET = {
+  flow: 'login', dimension: 'ip', limit: 30, windowMs: 15 * MINUTE_MS,
+} as const satisfies AbuseLimiterBucket
+export const VERIFIED_LOGIN_IP_BUCKET = {
+  flow: 'login-verified', dimension: 'ip', limit: 30, windowMs: 15 * MINUTE_MS,
+} as const satisfies AbuseLimiterBucket
+export const LOGIN_PROOF_IP_BUCKET = {
+  flow: 'login-proof', dimension: 'ip', limit: 120, windowMs: MINUTE_MS,
+} as const satisfies AbuseLimiterBucket
 
 export const REGISTRATION_ATTEMPT_BUCKETS = [
   { flow: 'registration', dimension: 'ip', limit: 5, windowMs: HOUR_MS },
@@ -91,8 +104,11 @@ export function consumeRegistrationProviderPreflight(ip: string, limiter?: Abuse
   return consumeAbusePolicy(withSubject(REGISTRATION_PROVIDER_PREFLIGHT_BUCKETS, ip), limiter)
 }
 
-export function consumeHumanChallengeIssue(ip: string, limiter?: AbuseLimiter) {
-  return consumeAbusePolicy(withSubject(HUMAN_CHALLENGE_ISSUE_BUCKETS, ip), limiter)
+export function consumeHumanChallengeIssue(action: HumanVerificationAction, ip: string) {
+  const buckets = action === 'login'
+    ? HUMAN_CHALLENGE_ISSUE_BUCKETS.map(bucket => ({ ...bucket, flow: 'login-human-challenge' }))
+    : HUMAN_CHALLENGE_ISSUE_BUCKETS
+  return consumeAbusePolicy(withSubject(buckets, ip))
 }
 
 /** Call only after Turnstile succeeds and before bcrypt or any DB write. */

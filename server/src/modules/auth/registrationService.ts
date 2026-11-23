@@ -11,7 +11,7 @@ import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, conflict, notFound, registrationDisabled } from '../../lib/httpError.js'
 import { consumeRegistrationAttempt, consumeRegistrationProviderPreflight } from './abusePolicy.js'
-import { ALTCHA_CHALLENGE_URL, type HumanVerificationRequest } from './humanVerification.js'
+import { publicChallengeDescriptor, type HumanVerificationRequest } from './humanVerification.js'
 import { normalizeInviteCode } from '../../lib/inviteCode.js'
 import { claimInviteCodeForRegistration } from '../invite/service.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
@@ -64,24 +64,6 @@ async function enforceRegistrationProtection(input: {
     ip: input.ip ?? '',
     email: input.email,
   }))
-}
-
-function publicChallengeDescriptor() {
-  if (config.humanVerificationProvider === 'altcha') {
-    if (!config.altcha.hmacKey) return null
-    return {
-      provider: 'altcha' as const,
-      challengeUrl: `${ALTCHA_CHALLENGE_URL}?action=register`,
-    }
-  }
-  if (config.humanVerificationProvider === 'turnstile') {
-    if (!config.turnstile.siteKey) return null
-    return {
-      provider: 'turnstile' as const,
-      siteKey: config.turnstile.siteKey,
-    }
-  }
-  return null
 }
 
 function humanVerificationIsConfigured() {
@@ -143,7 +125,7 @@ export async function getPublicRegistrationStatus() {
     registrationEnabled,
     registrationAvailable: registrationEnabled,
     inviteRequired,
-    challenge: publicChallengeDescriptor(),
+    challenge: publicChallengeDescriptor('register'),
     legalRequirement,
   }
 }

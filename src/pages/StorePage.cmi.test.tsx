@@ -130,8 +130,8 @@ const LEGACY_DTO = {
  * is stable regardless of wall-clock drift.
  */
 const ORGANIC_MERCHANDISING = {
-  rankingRunId: 'run-2026-01-01',
-  hot: { effectiveOrders: 99, rank: 1, windowDays: 30, computedAt: '2026-01-01T00:00:00.000Z' },
+
+  hot: { label: '热卖' },
   platformOwned: true,
   platformPick: { label: '平台精选', publicReason: '平台精选理由' },
   merchantPartner: { label: '平台合作伙伴', validUntil: '2999-01-01T00:00:00.000Z' },

@@ -63,7 +63,7 @@ describe('normalizeBadges (fixed order / max 3 / unknown ignored)', () => {
 
 describe('badgeSpecsFromProjection (AC-MERCH-020 / 023 / 024)', () => {
   const baseProjection: MerchandisingProjection = {
-    rankingRunId: null,
+
     hot: null,
     platformOwned: false,
     platformPick: null,
@@ -83,7 +83,7 @@ describe('badgeSpecsFromProjection (AC-MERCH-020 / 023 / 024)', () => {
   it('maps platformPick → 平台精选 and hot → 热卖', () => {
     const result = badgeSpecsFromProjection({
       ...baseProjection,
-      hot: { effectiveOrders: 18, rank: 2, windowDays: 30, computedAt: '2026-08-09T00:00:00.000Z' },
+      hot: { label: '热卖' },
       platformPick: { label: '平台精选', publicReason: '本周上新' },
     })
     expect(result).toEqual([
@@ -96,7 +96,7 @@ describe('badgeSpecsFromProjection (AC-MERCH-020 / 023 / 024)', () => {
     const result = badgeSpecsFromProjection({
       ...baseProjection,
       platformOwned: true,
-      hot: { effectiveOrders: 18, rank: 2, windowDays: 30, computedAt: '2026-08-09T00:00:00.000Z' },
+      hot: { label: '热卖' },
       platformPick: { label: '平台精选', publicReason: null },
     })
     expect(result.map((b) => b.code)).toEqual(['platform_owned', 'platform_pick', 'hot'])

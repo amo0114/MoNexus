@@ -96,9 +96,8 @@ export function normalizeProductListParams(params: ProductListCacheParams) {
   return normalized
 }
 
-// The previous projection could contain guest eligibility and revision fields.
-// Use a new namespace so instances cannot serve those cached responses.
-const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v3'
+// Cache entries from older releases may carry review fields or legacy cursors.
+const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v4'
 const projectionVersion = () => config.xboardAccounts.paidResetEnabled ? `${PUBLIC_PROJECTION_VERSION}-paid-reset` : PUBLIC_PROJECTION_VERSION
 
 export async function buildProductListCacheKey(params: ProductListCacheParams) {
