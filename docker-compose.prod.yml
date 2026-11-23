@@ -58,6 +58,7 @@ services:
       # DEPLOY_TOPOLOGY (nginx=1, caddy=2, cloudflare_openresty_nginx=2).
       TRUST_PROXY: ${TRUST_PROXY:-1}
       API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-1500}
+      PROCESS_ROLE: ${PROCESS_ROLE:-all}
       STORAGE_ENDPOINT: ${STORAGE_ENDPOINT:?STORAGE_ENDPOINT is required}
       STORAGE_REGION: ${STORAGE_REGION:-us-east-1}
       STORAGE_BUCKET: ${STORAGE_BUCKET:?STORAGE_BUCKET is required}

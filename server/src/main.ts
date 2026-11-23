@@ -42,36 +42,40 @@ const server = app.listen(config.port, () => {
     {
       deployTopology: config.deployTopology,
       trustProxy: config.trustProxy,
+      processRole: config.processRole,
     },
     `MoNexus API running at http://localhost:${config.port}`,
   )
-  startOrderCron()
-  startFileCleanupCron()
-  startLowStockNotifyCron()
-  startSubscriptionRemindCron()
-  startSlaRemindCron()
-  startBookingRemindCron()
-  startProvisionCron()
-  startAcceptTimeoutCron()
-  startDisputeTimerCron()
-  startFulfillmentBackgroundJobs()
-  startGrowthRewardCron()
-  startPushCron()
-  startLeaderboardCron()
-  startLegalRetentionCron()
-  startNotificationExpiryCron()
-  startRankingCron()
-  startCampaignLifecycleCron()
-  startEditorialLifecycleCron()
-  startPartnerEntitlementCron()
-  startGovernanceWorker()
-  startPaymentWorkers()
-  startPaymentPayloadRetentionCron()
-  startVideoWorker()
-  startTrafficCron()
-  startRecommendationEventsCron()
-  if (config.notificationRealtime.enabled) {
-    // Start the dedicated LISTEN listener once realtime is enabled.
+  // PROCESS_ROLE=api serves requests only; another process (worker) owns the background jobs.
+  if (config.processRole !== 'api') {
+    startOrderCron()
+    startFileCleanupCron()
+    startLowStockNotifyCron()
+    startSubscriptionRemindCron()
+    startSlaRemindCron()
+    startBookingRemindCron()
+    startProvisionCron()
+    startAcceptTimeoutCron()
+    startDisputeTimerCron()
+    startFulfillmentBackgroundJobs()
+    startGrowthRewardCron()
+    startPushCron()
+    startLeaderboardCron()
+    startLegalRetentionCron()
+    startNotificationExpiryCron()
+    startRankingCron()
+    startCampaignLifecycleCron()
+    startEditorialLifecycleCron()
+    startPartnerEntitlementCron()
+    startGovernanceWorker()
+    startPaymentWorkers()
+    startPaymentPayloadRetentionCron()
+    startVideoWorker()
+    startTrafficCron()
+    startRecommendationEventsCron()
+  }
+  if (config.notificationRealtime.enabled && config.processRole !== 'worker') {
+    // Start the dedicated LISTEN listener once realtime is enabled; SSE clients only reach API processes.
     void getNotificationRealtimeLifecycle().start()
   }
 })

@@ -97,7 +97,8 @@ defineLeasedCron({ name, intervalMs, run }) => { start(), stop(), tick() }
 
 ### 2.4 G4 进程角色
 
-- `config/index.ts` 新增 `PROCESS_ROLE`（`all|api|worker`，默认 `all`），写入 `.env.example`。
+- `config/index.ts` 新增 `PROCESS_ROLE`（`all|api|worker`，默认 `all`），写入根目录与 `server/` 的 `.env.example`。
+- `scripts/check-compose-env.mjs` 要求每个配置变量都透传给生产 `server` 容器，因此 `docker-compose.prod.yml` 增加一行 `PROCESS_ROLE: ${PROCESS_ROLE:-all}`（默认值保持现状，不拆分服务）。
 - `main.ts`：
   - `all`：现状。
   - `api`：照常监听 HTTP、启动实时通知 LISTEN；**不**启动任何 cron/worker。
