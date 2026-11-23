@@ -89,3 +89,56 @@ test('only wallet writes point balances and ledger rows', () => {
     ['server/src/modules/wallet/commands.ts', 'await tx.pointLog.create({ data })'],
   ])), [])
 })
+
+const check = (file, source) => checkBoundaries(new Map([[file, source]])).join('\n')
+
+test('AG-01 rejects filtered relation counts but allows plain counts and groupBy', () => {
+  const file = 'server/src/modules/products/service.ts'
+  assert.match(check(file, "select: { _count: {\n  select: { inventory: { where: { status: 'available' } } },\n} }"), /AG-01/)
+  assert.doesNotMatch(check(file, 'select: { _count: { select: { inventory: true } } }'), /AG-01/)
+  assert.doesNotMatch(check(file, "prisma.inventoryItem.groupBy({ by: ['offerId'], _count: { _all: true } })"), /AG-01/)
+})
+
+test('AG-02 rejects host-local date APIs unless a timeZone is given', () => {
+  const file = 'server/src/lib/report.ts'
+  assert.match(check(file, 'const h = new Date().getHours()'), /AG-02 host-local date API getHours/)
+  assert.match(check(file, "d.toLocaleString('zh-CN')"), /AG-02/)
+  assert.doesNotMatch(check(file, "d.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })"), /AG-02/)
+  assert.doesNotMatch(check(file, 'const ms = d.getTime() + d.getUTCHours()'), /AG-02/)
+  assert.doesNotMatch(check('server/src/lib/businessTime.ts', 'd.getHours()'), /AG-02/)
+})
+
+test('AG-03 requires a lease for interval loops outside reviewed row-claim workers', () => {
+  const loop = 'timer = setInterval(() => void tick(), 60_000)'
+  assert.match(check('server/src/modules/reports/cron.ts', loop), /AG-03/)
+  assert.doesNotMatch(check('server/src/modules/reports/cron.ts', `import { defineLeasedCron } from '../../lib/leasedCron.js'\n${loop}`), /AG-03/)
+  assert.doesNotMatch(check('server/src/lib/reportCron.ts', `import { acquireCronLeaseWithHeartbeat } from './cronLease.js'\n${loop}`), /AG-03/)
+  assert.doesNotMatch(check('server/src/modules/orders/provisionCron.ts', loop), /AG-03/)
+})
+
+test('AG-04 requires awaits in async controllers to be inside try/catch', () => {
+  const file = 'server/src/modules/orders/controller.ts'
+  assert.match(check(file, 'export async function list(req, res, next) {\n  res.json(await load())\n}'), /AG-04/)
+  assert.match(check(file, 'export const list = async (req, res, next) => { try { await a() } finally { await b() } }'), /AG-04/)
+  assert.deepEqual(checkBoundaries(new Map([[file, [
+    'export async function list(req, res, next) {',
+    '  try { res.json(await load()) } catch (err) { await cleanup(); next(err) }',
+    '  const later = async () => { await ignoredBecauseNested() }',
+    '}',
+  ].join('\n')]])), [])
+})
+
+test('AG-05 rejects a module joining a cycle but tolerates baseline cycles', () => {
+  const grown = checkBoundaries(new Map([
+    ['server/src/modules/shops/service.ts', "import { a } from '../storefront/service.js'"],
+    ['server/src/modules/storefront/service.ts', "import { b } from '../shops/helpers.js'"],
+    ['server/src/modules/shops/helpers.ts', 'export const b = 1'],
+  ]))
+  assert.match(grown.join('\n'), /AG-05 module dependency cycle grew: shops, storefront/)
+  const baseline = checkBoundaries(new Map([
+    ['server/src/modules/payment/service.ts', "import { a } from '../recharge/service.js'"],
+    ['server/src/modules/recharge/service.ts', "import { b } from '../payment/helpers.js'"],
+    ['server/src/modules/payment/helpers.ts', 'export const b = 1'],
+  ]))
+  assert.doesNotMatch(baseline.join('\n'), /AG-05/)
+})
