@@ -809,21 +809,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="chrome-bound max-w-7xl mx-auto px-4 sm:px-6 relative z-10">
           {/* Upper row: Brand + Grouped navigation */}
           <div className="py-5 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <Link
-                to="/"
-                className="inline-flex items-center gap-2 opacity-85 hover:opacity-100 transition-opacity"
-              >
-                <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-                <span className="font-display text-sm font-bold text-[var(--color-text)] tracking-[0.16em]">
-                  MONEXUS
-                </span>
-              </Link>
-              <span className="hidden sm:inline-block h-3.5 w-px bg-[var(--color-border)]" aria-hidden="true" />
-              <span className="hidden sm:inline text-xs text-[var(--color-text-muted)]">
-                精选数字好物与创意协作平台
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 opacity-85 hover:opacity-100 transition-opacity"
+            >
+              <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
+              <span className="font-display text-sm font-bold text-[var(--color-text)] tracking-[0.16em]">
+                MONEXUS
               </span>
-            </div>
+            </Link>
 
             {legalLinks && legalLinks.length > 0 && (
               <nav
