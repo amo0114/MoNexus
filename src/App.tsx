@@ -34,6 +34,7 @@ const WorkbenchPage = lazy(() => import('./pages/merchant/WorkbenchPage'))
 const ProductCreatePage = lazy(() => import('./pages/admin/ProductCreatePage'))
 const PortableRestoreSetupPage = lazy(() => import('./pages/PortableRestoreSetupPage'))
 const LegalDocumentPage = lazy(() => import('./pages/legal/LegalDocumentPage'))
+const CreditsPage = lazy(() => import('./pages/CreditsPage'))
 const NotificationsPage = lazy(() => import('./pages/NotificationsPage'))
 const OrdersPage = lazy(() => import('./pages/OrdersPage'))
 const RechargePage = lazy(() => import('./pages/RechargePage'))
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="/refund" element={<LegalDocumentPage slug="refund" />} />
           <Route path="/points-rules" element={<LegalDocumentPage slug="points-rules" />} />
           <Route path="/about" element={<LegalDocumentPage slug="about" />} />
+          <Route path="/credits" element={<CreditsPage />} />
           <Route
             path="/"
             element={(

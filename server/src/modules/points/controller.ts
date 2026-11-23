@@ -27,6 +27,16 @@ export async function checkinStatus(req: Request, res: Response, next: NextFunct
   }
 }
 
+export async function checkinHeatmap(req: Request, res: Response, next: NextFunction) {
+  try {
+    const rawWeeks = req.query.weeks
+    const weeks = rawWeeks !== undefined ? Number(rawWeeks) : undefined
+    res.json(await pointService.getCheckinHeatmap(req.user!.userId, weeks))
+  } catch (err) {
+    next(err)
+  }
+}
+
 export async function makeup(req: Request, res: Response, next: NextFunction) {
   try {
     const { date, expectedPrice } = req.body as { date: string; expectedPrice: number }

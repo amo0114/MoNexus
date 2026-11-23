@@ -216,7 +216,7 @@ export async function loginAs(page: Page, account: SeedAccount) {
     await emailInput.waitFor({ state: 'visible', timeout: 10000 })
   }
   await emailInput.fill(account.email)
-  await page.getByPlaceholder('密码（至少 6 位）').fill(account.password)
+  await page.getByPlaceholder('密码').fill(account.password)
   const loginResponse = page.waitForResponse((response) =>
     response.url().includes('/api/auth/login') && response.request().method() === 'POST'
   )

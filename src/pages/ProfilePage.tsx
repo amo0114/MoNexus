@@ -385,7 +385,7 @@ export default function ProfilePage() {
 
       {/* TAB 2: 资产权益 (Assets & Benefits) */}
       {activeTab === 'assets' && (
-        <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+        <div className="grid gap-5 lg:grid-cols-2">
           {/* 会员等级卡片 */}
           <MemberTierCard tierData={tierData} registry={registry} loading={tierLoading} />
 
@@ -548,20 +548,22 @@ export default function ProfilePage() {
 
       {/* TAB 3: 账号设置 (Account Settings & Security) */}
       {activeTab === 'settings' && (
-        <div className="space-y-5 pb-24 sm:pb-12">
+        <div className="space-y-5">
           <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
             {/* 个人资料与安全凭证（头像、昵称、邮箱、密码） */}
             <ProfileIdentityCard />
 
-            {/* 第三方消息通知绑定（QQ 机器人） */}
-            <ChatBindCard />
+            <div className="space-y-5 min-w-0">
+              {/* 第三方消息通知绑定（QQ 机器人） */}
+              <ChatBindCard />
 
-            {/* 浏览器推送（SPEC-ENGAGE-001） */}
-            <PushToggle />
+              {/* 浏览器推送（SPEC-ENGAGE-001） */}
+              <PushToggle />
+
+              {/* 登录设备管理 */}
+              <SessionManager />
+            </div>
           </div>
-
-          {/* 登录设备管理 */}
-          <SessionManager />
 
           {/* 退出账号按钮 */}
           <div className="pt-2 flex justify-center">
