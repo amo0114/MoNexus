@@ -112,7 +112,7 @@ defineLeasedCron({ name, intervalMs, run }) => { start(), stop(), tick() }
 - `server/src/__tests__/openapi-contract.test.ts` 覆盖：`GET /api/products`、`GET /api/products/{id}`、`GET /api/checkout/preview`、`POST /api/orders`、`GET /api/orders/{id}`、`GET /api/auth/me`。
 - 发现文档与实现不一致时，按 AGENTS.md §1 **停止并报告 Owner**，不自行改动任一侧。
 
-**实施结果（2026-11-23）**：`POST /api/orders`、`GET /api/orders/{id}` 与文档一致，已纳入测试。其余 4 个接口与文档不一致，**待 Owner 裁定**以哪一侧为准后再纳入：
+**实施结果（2026-11-23）**：`POST /api/orders`、`GET /api/orders/{id}` 与文档一致。其余 4 个接口与文档不一致，Owner 裁定**以代码为准**，已更新 OpenAPI（新增 `PublicProductPage`、`PublicProductListItem`、`PublicProductDetail`；`CheckoutPreview.requiresProvisionEmailProof` 改为可选；`AuthUser` 删除 `inviteCode`；`PublicProductCard` 作为 `/api/products/summaries` 的严格契约保持不变），6 个接口全部纳入测试：
 
 | 接口 | 文档 → 实际 | 线索 |
 |---|---|---|
@@ -158,7 +158,7 @@ Crons defined through `defineLeasedCron` MUST keep lease name and period, MUST i
 With `PROCESS_ROLE` unset the server MUST behave exactly as before; `api` MUST start no cron/worker; `worker` MUST start all cron/workers and no realtime LISTEN.
 
 ### Requirement: OpenAPI response contract
-The endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in backend tests; an endpoint whose document and implementation disagree MUST be reported to the Owner and stays out of the test until resolved.
+The six endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in backend tests; a future disagreement MUST be reported to the Owner before either side changes.
 
 ### Requirement: Business-time delivery labels
 `formatExpiryUnix` MUST render Asia/Shanghai wall time regardless of host TZ.
@@ -189,7 +189,7 @@ The endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in backe
 - [x] 4. AG-06 路由挂载顺序测试
 - [x] 5. AG-07 `leasedCron` + 指标 + `MoNexusCronStale`；迁移 traffic、recommendationEvents 两个 cron
 - [x] 6. AG-08 `PROCESS_ROLE`（config、`.env.example`、`main.ts`）
-- [x] 7. AG-09 OpenAPI 契约测试（2 个接口已纳入；4 个漂移待 Owner 裁定，见 §2.5）
+- [x] 7. AG-09 OpenAPI 契约测试（6 个接口；4 处漂移经 Owner 裁定以代码为准，见 §2.5）
 - [x] 8. 验证（每个任务各自提交前执行）：
   - `npm run test:architecture`、`npm run check:architecture`（node:test，静态层）
   - `npm --prefix server run build`（后端类型检查）
@@ -206,7 +206,8 @@ The endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in backe
 
 ## 7. Owner 操作项（本变更不执行）
 
-- 裁定 §2.5 的 4 处 OpenAPI 漂移以哪一侧为准。
+- ~~裁定 §2.5 的 4 处 OpenAPI 漂移~~：已裁定以代码为准并更新文档。
+- 公开商品列表/详情经 `...publicProduct` 透出 `guestEligibility`（含 `reviewedRevision`）、`publicContentRevision`、`archivedAt` 等准入内部字段；文档已如实记录，是否应剥离待 Owner 决定。
 - 实施中由 AG-01/AG-02 发现并已修复：`admin/productAdmin.ts` 全表计数、`formatExpiryUnix` 本地时区（各自独立提交）。
 
 - compose 拆分 `server-api` / `server-worker`，nginx 只指向 api。
