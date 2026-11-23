@@ -190,7 +190,7 @@ The endpoints in §2.5 MUST validate against `monexus-api-openapi.json` in backe
 - [x] 5. AG-07 `leasedCron` + 指标 + `MoNexusCronStale`；迁移 traffic、recommendationEvents 两个 cron
 - [x] 6. AG-08 `PROCESS_ROLE`（config、`.env.example`、`main.ts`）
 - [x] 7. AG-09 OpenAPI 契约测试（2 个接口已纳入；4 个漂移待 Owner 裁定，见 §2.5）
-- [ ] 8. 验证（每个任务各自提交前执行）：
+- [x] 8. 验证（每个任务各自提交前执行）：
   - `npm run test:architecture`、`npm run check:architecture`（node:test，静态层）
   - `npm --prefix server run build`（后端类型检查）
   - 后端集成测试（server 层，可丢弃测试库，`TZ=UTC`）：`faka-subscription-result.test.ts`、`app-mount-order.test.ts`、`leasedCron` 相关测试、`openapi-contract.test.ts`、受影响模块既有测试
