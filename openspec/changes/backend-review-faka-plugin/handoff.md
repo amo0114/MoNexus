@@ -38,3 +38,9 @@ Node 22.23.1、npm 10.9.8。主要运行代码快照为 `2434092`。随后补充
 | 两种迁移入口分别指向另一种历史 | 均按预期退出 1，在迁移前拒绝混用 |
 
 生产数据库会话时区、真实上游及站点出站政策仍需现场验证。全量浏览器旅程由 `run-e2e` 门禁运行。 [PR #378](https://github.com/amo0114/MoNexus/pull/378)
+
+## PR 回归修复
+
+- 分片 3 的 AC-20 和 AC-10 在 PostgreSQL 16 上复现。独立治理 OpenAPI 中的 `GVCapabilities` 补齐可选的 `optionalFulfillment`，与全站规范一致。治理、插件运行时和 OpenAPI 定向测试 24 项通过，退出码 0。
+- 分片 6 的 R2-07 在 PostgreSQL 16 上复现。测试在结账前绑定模拟供应商，校验订单与履约任务的供应商一致。履约审核、取消和任务引擎定向测试 22 项通过，退出码 0。
+- `npm --prefix server run build`、`npm run test:architecture`、`npm run check:architecture` 退出码均为 0。
