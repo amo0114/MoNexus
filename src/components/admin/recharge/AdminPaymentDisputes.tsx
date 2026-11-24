@@ -8,8 +8,8 @@ import AdminPagination from '../AdminPagination'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../ui/Dialog'
 import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
-import { formatCurrencyAmount, formatPoints } from '../../../pages/recharge/money'
-import { DISPUTE_STATUS_LABEL, PAYMENT_DISPUTE_STATUSES, providerLabel } from '../../../pages/recharge/status'
+import { formatCurrencyAmount, formatPoints } from '../../../domain/recharge/money'
+import { DISPUTE_STATUS_LABEL, PAYMENT_DISPUTE_STATUSES, providerLabel } from '../../../domain/recharge/status'
 
 const PAGE_SIZE = 20
 

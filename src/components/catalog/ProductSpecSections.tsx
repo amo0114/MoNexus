@@ -5,6 +5,7 @@ import {
   type ProductTemplateDefinition,
   type TemplateAttributes,
 } from '../../types/catalog'
+import { formatDate } from '../../utils/datetime'
 
 export type SpecAttributeValue = string | number | boolean | string[]
 export type SpecAttributes = Record<string, SpecAttributeValue>
@@ -287,7 +288,7 @@ export default function ProductSpecSections({
                 </p>
                 <p className="mt-2 text-[var(--color-text)] whitespace-pre-wrap break-words leading-relaxed">{assurance.policyText}</p>
                 <p className="mt-3 text-xs text-[var(--color-text-muted)] font-mono">
-                  保障有效期至：{new Date(assurance.validUntil).toLocaleDateString()}
+                  保障有效期至：{formatDate(assurance.validUntil)}
                 </p>
               </div>
             ) : null}

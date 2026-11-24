@@ -1,4 +1,4 @@
-import { formatCurrencyAmount } from './money'
+import { formatCurrencyAmount } from '../../domain/recharge/money'
 
 export type PayableRecognitionNotice = {
   headline: string

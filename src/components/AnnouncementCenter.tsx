@@ -12,6 +12,7 @@ import { formatBadgeCount } from '../utils/orderAttention'
 import { broadcastReadInvalidation } from '../realtime/readSyncBroadcast'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
+import { formatDateTime } from '../utils/datetime'
 
 interface AnnouncementCenterProps {
   open: boolean
@@ -43,7 +44,7 @@ const presentationMeta = {
 } as const
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString('zh-CN', {
+  return formatDateTime(value, {
     year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
   })
 }

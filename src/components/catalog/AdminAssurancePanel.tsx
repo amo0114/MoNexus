@@ -11,6 +11,7 @@ import {
 } from '../../api/assurance'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
+import { formatDateTime } from '../../utils/datetime'
 
 function defaultValidUntil() {
   return new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 16)
@@ -122,7 +123,7 @@ export default function AdminAssurancePanel({ productId }: { productId: number |
           )}
           {grant && (
             <span className="self-center text-xs text-[var(--color-text-muted)]">
-              当前授权 {grant.status}，至 {new Date(grant.validUntil).toLocaleString()}
+              当前授权 {grant.status}，至 {formatDateTime(grant.validUntil)}
             </span>
           )}
         </div>

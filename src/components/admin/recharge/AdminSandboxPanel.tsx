@@ -20,7 +20,7 @@ import {
   formatPoints,
   parseMajorInput,
   validateAmountBounds,
-} from '../../../pages/recharge/money'
+} from '../../../domain/recharge/money'
 import { useTabActions } from '../../../auth/adminAccess'
 
 type Step = 'config' | 'quote' | 'order' | 'confirm'

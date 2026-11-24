@@ -341,7 +341,7 @@ describe('AdminRechargePage', () => {
 
     // Test timeline
     expect(within(dialog).getByText('执行时间线')).toBeInTheDocument()
-    expect(within(dialog).getAllByText(/（本地时间）/).length).toBe(3)
+    expect(within(dialog).getAllByText(/（北京时间）/).length).toBe(3)
 
     // Test copy provider entry key
     const copyKeyBtn = within(dialog).getByRole('button', { name: '复制渠道凭据' })

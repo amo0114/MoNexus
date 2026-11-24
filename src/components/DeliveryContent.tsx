@@ -9,6 +9,7 @@ import { copyToClipboard } from '../utils/clipboard'
 import { useAppStore } from '../stores/appStore'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionScopeKey } from '../auth/sessionContext'
+import { formatDateTime } from '../utils/datetime'
 
 export interface DeliveryProgressEvent {
   publicNote?: string | null
@@ -369,7 +370,7 @@ export default function DeliveryContent({
               <div key={event.id ?? idx} className="relative pl-4 border-l-2 border-[var(--color-border)]">
                 <div className="absolute -left-1.5 top-0.5 w-2.5 h-2.5 rounded-full bg-[var(--color-primary)] ring-4 ring-[var(--color-background)]" />
                 <div className="text-xs text-[var(--color-text-muted)]">
-                  {event.createdAt ? new Date(event.createdAt).toLocaleString() : ''}
+                  {event.createdAt ? formatDateTime(event.createdAt) : ''}
                 </div>
                 {event.publicNote && (
                   <div className="mt-1 text-xs text-[var(--color-text)] bg-[var(--color-surface)] p-2 rounded border border-[var(--color-border)]">

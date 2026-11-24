@@ -24,6 +24,7 @@ import AdminPlatformFulfillmentActions from './AdminPlatformFulfillmentActions'
 import AdminFulfillmentReview from './AdminFulfillmentReview'
 import AdminOrderAfterSales from './AdminOrderAfterSales'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 export interface AdminOrderDetailDialogProps {
   order: AdminOrderDetail | null
@@ -165,7 +166,7 @@ export default function AdminOrderDetailDialog({
                     <Clock className="w-3.5 h-3.5" /> 下单时间
                   </div>
                   <div className="font-mono text-[var(--color-text)]">
-                    {new Date(order.createdAt).toLocaleString()}
+                    {formatDateTime(order.createdAt)}
                   </div>
                 </div>
 

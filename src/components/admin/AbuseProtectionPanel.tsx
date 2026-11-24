@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dia
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
 import AdminPagination from './AdminPagination'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 20
 const CASE_REF_PATTERN = /^[A-Z][A-Z0-9_]{1,15}-[0-9]{1,12}$/
@@ -28,7 +29,7 @@ type PendingAction =
   | { type: 'reward'; rewardId: number; amount: number; rewardKind: string }
 
 function dateLabel(value: string | null) {
-  return value ? new Date(value).toLocaleString() : '—'
+  return value ? formatDateTime(value) : '—'
 }
 
 const ABUSE_STATE_LABEL: Record<string, string> = {

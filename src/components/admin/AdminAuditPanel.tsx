@@ -19,6 +19,7 @@ import { useAdminCapabilities } from '../../stores/adminCapabilities'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 import { AuditDetailInline } from './governance/AuditDetail'
 import { formatDateTime } from '../../utils/governance'
+import {  } from '../../utils/datetime'
 
 interface AuditFetchFilters {
   adminId?: string
@@ -362,7 +363,7 @@ export default function AdminAuditPanel({ active = true }: AdminAuditPanelProps)
                         className="text-[var(--color-text-muted)] text-xs whitespace-nowrap"
                         data-label="时间"
                       >
-                        {new Date(l.createdAt).toLocaleString()}
+                        {formatDateTime(l.createdAt)}
                       </td>
                       <td
                         className="font-bold text-[var(--color-text)] text-sm"

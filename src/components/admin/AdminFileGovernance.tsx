@@ -15,6 +15,7 @@ import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import AdminPagination from './AdminPagination'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 20
 const GRANTS_PAGE_SIZE = 10
@@ -366,7 +367,7 @@ function FileRow({
         <td className="text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="引用情况">
           在售规格 {file.refCounts.offers} / 交付记录 {file.refCounts.deliveryRecords}
         </td>
-        <td className="text-[var(--color-text-muted)] text-xs whitespace-nowrap" data-label="创建时间">{new Date(file.createdAt).toLocaleString()}</td>
+        <td className="text-[var(--color-text-muted)] text-xs whitespace-nowrap" data-label="创建时间">{formatDateTime(file.createdAt)}</td>
         <td className="text-right space-x-3 whitespace-nowrap" data-label="操作">
           <button
             type="button"
@@ -406,11 +407,11 @@ function FileRow({
                       <span className="font-bold text-[var(--color-text)]">{grantRoleLabel(g.role)}</span>
                       <span className="text-[var(--color-text)]">订单 #{g.orderId}</span>
                       <span className="text-[var(--color-text)]">用户 U{g.userId}</span>
-                      <span className="text-[var(--color-text-muted)] ml-auto">{new Date(g.createdAt).toLocaleString()}</span>
+                      <span className="text-[var(--color-text-muted)] ml-auto">{formatDateTime(g.createdAt)}</span>
                     </div>
                     {g.expiresAt && (
                       <div className="text-xs text-[var(--color-text-muted)] mt-1">
-                        链接有效期至：{new Date(g.expiresAt).toLocaleString()}
+                        链接有效期至：{formatDateTime(g.expiresAt)}
                       </div>
                     )}
                     {(g.ipHash || g.userAgent) && (

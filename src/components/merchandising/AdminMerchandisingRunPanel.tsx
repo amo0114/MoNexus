@@ -15,6 +15,7 @@ import ConfirmDialog from '../ui/ConfirmDialog'
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 10
 
@@ -42,9 +43,7 @@ const FAILURE_LABEL: Record<AdminRunFailureCode, string> = {
 }
 
 function formatRunTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
+  return formatDateTime(iso)
 }
 
 function failureCodeLabel(code: string | null): string {

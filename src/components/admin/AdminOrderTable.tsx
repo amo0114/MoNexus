@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dia
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 20
 
@@ -297,7 +298,7 @@ export default function AdminOrderTable({ active = true }: Props) {
                   <td data-label="订单号 / 时间">
                     <div className="font-mono text-xs text-[var(--color-text-muted)]" title={`订单 ID ${o.id}`}>{o.orderNo || `ORD-${o.id}`}</div>
                     <div className="text-xs text-[var(--color-text-muted)] mt-1">
-                      {new Date(o.createdAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}
+                      {formatDateTime(o.createdAt)}
                     </div>
                   </td>
                   <td className="text-sm" data-label="买家">

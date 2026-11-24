@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/appStore'
 import { getMerchantInventoryLogs, InventoryLog } from '../../api/merchant'
 import type { MerchantProduct } from '../../types/merchant'
 import { createLatestRequestGuard } from '../../utils/latestRequest'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 10
 
@@ -104,7 +105,7 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product }: 
                 logs.map((log) => (
                   <tr key={log.id} className="border-b border-[var(--color-border)]">
                     <td className="py-2.5 px-2 text-xs text-[var(--color-text-muted)] whitespace-nowrap" data-label="时间">
-                      {new Date(log.createdAt).toLocaleString('zh-CN', { hour12: false })}
+                      {formatDateTime(log.createdAt)}
                     </td>
                     <td className="py-2.5 px-2 text-sm" data-label="动作">
                       {log.action === 'import' ? (

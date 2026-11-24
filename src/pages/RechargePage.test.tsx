@@ -48,8 +48,8 @@ vi.mock('../api/adminRecharge', () => ({
   confirmAdminSandboxOrder,
 }))
 
-vi.mock('./recharge/paymentActions', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./recharge/paymentActions')>()
+vi.mock('../domain/recharge/paymentActions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../domain/recharge/paymentActions')>()
   return { ...actual, submitFormPost, goToRedirect }
 })
 

@@ -9,6 +9,7 @@ import {
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import ConfirmDialog from '../ui/ConfirmDialog'
+import { formatDateTime } from '../../utils/datetime'
 
 type PendingAction =
   | { kind: 'single'; session: ActiveSessionSummary }
@@ -18,7 +19,7 @@ type PendingAction =
 function formatSessionTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '未知时间'
-  return date.toLocaleString('zh-CN', {
+  return formatDateTime(date, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

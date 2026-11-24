@@ -11,6 +11,7 @@ import type {
   LegacyCompleteness,
   MerchantLifecycleStatus,
 } from '../types/governance'
+import { formatDateTime as formatBusinessDateTime } from './datetime'
 
 // ── Error classification ────────────────────────────────────────────────
 
@@ -197,9 +198,8 @@ export function formatOrderRef(orderNo: string | null | undefined, id: number): 
 /** Timestamps from the contract; null means unknown, never "never". */
 export function formatDateTime(value: string | null | undefined, unknown = '未知'): string {
   if (!value) return unknown
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return unknown
-  return d.toLocaleString('zh-CN', { hour12: false })
+  if (Number.isNaN(new Date(value).getTime())) return unknown
+  return formatBusinessDateTime(value)
 }
 
 export function formatBytes(bytes: number | null | undefined): string {
