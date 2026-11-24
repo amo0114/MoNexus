@@ -252,6 +252,10 @@ git log --since=2026-05-24 --no-merges --name-only -- src   # 改动热点与共
 
 lint 棘轮从 71 降到 67。剩下的警告保留为 warn，不批量加 disable 注释：注释的维护成本高于收益，而棘轮已经能阻止新增。
 
+### 5.2 F-01 第一步：商品详情页下单流程
+
+下单流程（购买弹窗、会话与路由作用域、下单提交与错误分类、成功态、移动端灵动岛、下单后刷新详情）原样迁入 `src/pages/productDetail/useProductCheckout.ts`，沿用 `pages/merchant/productCreation/useProductCreation.ts` 的页面私有 hook 模式。`ProductDetailPage.tsx` 从 908 行降到 690 行。公开详情请求收进 `api/catalog.ts` 的 `getPublicProductDetail`，PDP 因此移出 FE-02 白名单。行为不变：PDP 现有 5 个测试文件、全量单测与移动端 E2E 均通过。`Layout` 拆分留待下一步。
+
 ## 6. 本轮没有覆盖的内容
 
 - 运行时性能（首屏、包体积、渲染）：之前的 P1/P2 骨架屏和外壳几何专项已经做过，本轮没有重新测量。
