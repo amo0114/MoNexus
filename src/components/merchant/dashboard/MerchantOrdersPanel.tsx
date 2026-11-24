@@ -10,6 +10,7 @@ import RegistryPill from '../../ui/RegistryPill'
 import { TableSkeleton } from '../../ui/Skeleton'
 import { PaginationControls, Th } from './MerchantPanelPrimitives'
 import { formatOrderRef } from '../../../utils/governance'
+import { formatDateTime } from '../../../utils/datetime'
 
 export type MerchantOrderAction =
   | 'start_fulfillment'
@@ -175,7 +176,7 @@ export default function MerchantOrdersPanel({
                     )}
                     {o.fulfillmentDeadline && (
                       <div className="text-xs text-[var(--color-text-muted)] mt-1">
-                        截止 {new Date(o.fulfillmentDeadline).toLocaleString()}
+                        截止 {formatDateTime(o.fulfillmentDeadline)}
                       </div>
                     )}
                     {o.provisionTask && (

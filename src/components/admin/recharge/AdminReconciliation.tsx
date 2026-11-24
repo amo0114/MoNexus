@@ -21,6 +21,7 @@ import { formatCurrencyAmount } from '../../../domain/recharge/money'
 import { PAYMENT_PROVIDERS, providerLabel, RECON_STATUS_LABEL } from '../../../domain/recharge/status'
 import { getAdminRechargeStatusConfig } from '../../../utils/adminRechargeDisplay'
 import { useTabActions } from '../../../auth/adminAccess'
+import { formatDateTime } from '../../../utils/datetime'
 
 const SCOPE_TYPE_LABELS: Record<string, string> = {
   statement: '渠道账单',
@@ -48,7 +49,7 @@ const STATEMENT_SOURCE_LABEL: Record<AdminReconCoverage['statementSource'], stri
 function coverageText(coverage: AdminReconCoverage | null | undefined) {
   if (!coverage) return null
   const period = coverage.periodStart || coverage.periodEnd
-    ? `${coverage.periodStart ? new Date(coverage.periodStart).toLocaleString() : '不限'} 至 ${coverage.periodEnd ? new Date(coverage.periodEnd).toLocaleString() : '不限'}`
+    ? `${coverage.periodStart ? formatDateTime(coverage.periodStart) : '不限'} 至 ${coverage.periodEnd ? formatDateTime(coverage.periodEnd) : '不限'}`
     : '不限时间'
   return `${STATEMENT_SOURCE_LABEL[coverage.statementSource]}；渠道条目 ${coverage.providerEntries}，本地扫描 ${coverage.localScanned}；${period}`
 }
@@ -230,7 +231,7 @@ export default function AdminReconciliation() {
                     </button>
                   </td>
                   <td data-label="发起时间" className="text-xs text-[var(--color-text-muted)]">
-                    {new Date(item.createdAt).toLocaleString()}
+                    {formatDateTime(item.createdAt)}
                   </td>
                   <td className="text-right whitespace-nowrap" data-label="操作">
                     <button
@@ -317,19 +318,19 @@ export default function AdminReconciliation() {
                   <div>
                     <span className="text-[var(--color-text-muted)] block">发起时间</span>
                     <span className="text-[var(--color-text)]">
-                      {selectedRun.createdAt ? `${new Date(selectedRun.createdAt).toLocaleString()}（本地时间）` : '—'}
+                      {selectedRun.createdAt ? `${formatDateTime(selectedRun.createdAt)}（北京时间）` : '—'}
                     </span>
                   </div>
                   <div>
                     <span className="text-[var(--color-text-muted)] block">执行开始</span>
                     <span className="text-[var(--color-text)]">
-                      {selectedRun.startedAt ? `${new Date(selectedRun.startedAt).toLocaleString()}（本地时间）` : '—'}
+                      {selectedRun.startedAt ? `${formatDateTime(selectedRun.startedAt)}（北京时间）` : '—'}
                     </span>
                   </div>
                   <div>
                     <span className="text-[var(--color-text-muted)] block">执行完成</span>
                     <span className="text-[var(--color-text)]">
-                      {selectedRun.completedAt ? `${new Date(selectedRun.completedAt).toLocaleString()}（本地时间）` : '—'}
+                      {selectedRun.completedAt ? `${formatDateTime(selectedRun.completedAt)}（北京时间）` : '—'}
                     </span>
                   </div>
                 </div>

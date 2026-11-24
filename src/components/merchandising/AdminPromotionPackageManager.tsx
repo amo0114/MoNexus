@@ -54,6 +54,7 @@ import EditPackageDialog, {
 } from './packageManager/EditPackageDialog'
 import { PLACEMENT_LABEL } from './promotionCopy'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 /**
  * Real adapter — passthrough to the frozen admin promotion package API.
  * `updatePackage` backs the per-row edit dialog.
@@ -81,12 +82,6 @@ const PACKAGE_STATUS_LABEL: Record<PackageStatus, string> = {
   inactive: '停用',
 }
 
-/** Safe date formatting: unparseable input is shown verbatim. */
-function formatDateTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
-}
 export default function AdminPromotionPackageManager({
   adapter = DEFAULT_ADAPTER,
   className = '',

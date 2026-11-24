@@ -12,6 +12,7 @@ import EmptyState from '../ui/EmptyState'
 import ErrorState from '../ui/ErrorState'
 import { TableSkeleton } from '../ui/Skeleton'
 import { pointLogVisual, formatPointLogAmount } from '../../utils/pointLogDisplay'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 20
 
@@ -429,7 +430,7 @@ export default function AdminPointLogPanel({ active = true }: AdminPointLogPanel
                   return (
                     <tr key={l.id} data-testid="admin-point-log-row">
                       <td className="text-[var(--color-text-muted)] text-xs" data-label="时间">
-                        {new Date(l.createdAt).toLocaleString()}
+                        {formatDateTime(l.createdAt)}
                       </td>
                       <td className="text-sm" data-label="关联用户">
                         <div className="font-bold text-[var(--color-text)]">

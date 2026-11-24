@@ -16,6 +16,7 @@ import { providerLabel } from '../../domain/recharge/status'
 import { getAdminRechargeStatusConfig } from '../../utils/adminRechargeDisplay'
 import { useAdminCapabilities } from '../../stores/adminCapabilities'
 import RefundReviewSheet from './governance/RefundReviewSheet'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 20
 
@@ -512,7 +513,7 @@ export default function AdminRefundAuditPanel({ active = true }: AdminRefundAudi
                   </td>
                   <td data-label="申请时间 / 申请人">
                     <div className="text-xs whitespace-nowrap">
-                      {new Date(item.createdAt).toLocaleString('zh-CN')}
+                      {formatDateTime(item.createdAt)}
                     </div>
                     <div className="text-[11px] text-[var(--color-text-muted)] mt-0.5">
                       申请人: #{item.requesterUserId ?? item.createdByUserId}

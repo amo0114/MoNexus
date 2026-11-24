@@ -11,6 +11,7 @@ import { TableSkeleton } from '../../ui/Skeleton'
 import { EVENT_STATUS_LABEL, PAYMENT_EVENT_STATUSES, PAYMENT_PROVIDERS, providerLabel } from '../../../domain/recharge/status'
 import { PAYMENT_EVENT_SOURCE_LABEL } from '../../../utils/adminRechargeDisplay'
 import { useTabActions } from '../../../auth/adminAccess'
+import { formatDateTime } from '../../../utils/datetime'
 
 const PAGE_SIZE = 50
 
@@ -117,7 +118,7 @@ export default function AdminPaymentEvents() {
               {items.map((item) => (
                 <tr key={item.id}>
                   <td data-label="接收时间" className="text-xs text-[var(--color-text-muted)]">
-                    {new Date(item.createdAt).toLocaleString()}
+                    {formatDateTime(item.createdAt)}
                   </td>
                   <td data-label="渠道" className="font-semibold text-xs text-[var(--color-text)]">
                     {providerLabel(item.provider)}
@@ -262,8 +263,8 @@ export default function AdminPaymentEvents() {
               </div>
 
               <div className="p-3 bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] space-y-1 text-[11px] text-[var(--color-text-muted)]">
-                <div>接收时间：{new Date(detailTarget.createdAt).toLocaleString()}</div>
-                <div>处理时间：{detailTarget.processedAt ? new Date(detailTarget.processedAt).toLocaleString() : '未完成处理'}</div>
+                <div>接收时间：{formatDateTime(detailTarget.createdAt)}</div>
+                <div>处理时间：{detailTarget.processedAt ? formatDateTime(detailTarget.processedAt) : '未完成处理'}</div>
                 <div>
                   处理耗时：
                   {detailTarget.processedAt

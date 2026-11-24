@@ -2,6 +2,7 @@ import { Star } from 'lucide-react'
 import type { ReviewItem } from '../../../api/reviews'
 import StarRating from '../../ui/StarRating'
 import EmptyState from '../../ui/EmptyState'
+import { formatDate } from '../../../utils/datetime'
 
 interface ProductReviewListProps {
   reviews: ReviewItem[]
@@ -49,7 +50,7 @@ export default function ProductReviewList({
             </p>
           )}
           <div className="mt-2 text-[11px] text-[var(--color-text-muted)]">
-            {new Date(r.createdAt).toLocaleDateString()}
+            {formatDate(r.createdAt)}
             {r.editedAt ? '（已修改）' : ''}
           </div>
         </div>

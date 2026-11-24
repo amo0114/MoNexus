@@ -11,6 +11,7 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '../ui/Dialog'
 import ConfirmDialog from '../ui/ConfirmDialog'
+import { formatDateTime } from '../../utils/datetime'
 
 /**
  * P7b：商家自动开通 webhook 配置（商家资料页内嵌）。
@@ -155,7 +156,7 @@ export default function MerchantWebhookConfigSection({ onChanged }: { onChanged?
               <span>
                 密钥：<code className="font-mono text-[var(--color-text)]">****{config.secretLast4}</code>
               </span>
-              <span>配置于 {new Date(config.createdAt).toLocaleString()}</span>
+              <span>配置于 {formatDateTime(config.createdAt)}</span>
             </div>
           )}
 

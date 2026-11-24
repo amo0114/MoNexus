@@ -27,6 +27,7 @@ import {
   ATTEMPT_STATUS_LABEL,
 } from '../../../utils/adminRechargeDisplay'
 import { useTabActions } from '../../../auth/adminAccess'
+import { formatDateTime } from '../../../utils/datetime'
 
 const PAGE_SIZE = 20
 
@@ -140,7 +141,7 @@ export default function AdminRechargeOrders() {
                       <button type="button" className="font-mono text-xs text-[var(--color-primary)] hover:underline cursor-pointer" onClick={() => void openDetail(item.orderId)}>
                         {item.orderId.slice(0, 8)}…
                       </button>
-                      <div className="text-xs text-[var(--color-text-muted)]">{new Date(item.createdAt).toLocaleString()}</div>
+                      <div className="text-xs text-[var(--color-text-muted)]">{formatDateTime(item.createdAt)}</div>
                     </td>
                     <td data-label="用户">#{item.userId}</td>
                     <td data-label="充值金额 / 积分">
@@ -243,10 +244,10 @@ export default function AdminRechargeOrders() {
               </div>
 
               <div className="text-[11px] text-[var(--color-text-muted)] space-y-1">
-                <div>创建时间：{new Date(detail.createdAt).toLocaleString()}</div>
-                {detail.paidAt && <div>支付时间：{new Date(detail.paidAt).toLocaleString()}</div>}
-                {detail.creditedAt && <div>入账时间：{new Date(detail.creditedAt).toLocaleString()}</div>}
-                {detail.cancelledAt && <div>取消时间：{new Date(detail.cancelledAt).toLocaleString()}</div>}
+                <div>创建时间：{formatDateTime(detail.createdAt)}</div>
+                {detail.paidAt && <div>支付时间：{formatDateTime(detail.paidAt)}</div>}
+                {detail.creditedAt && <div>入账时间：{formatDateTime(detail.creditedAt)}</div>}
+                {detail.cancelledAt && <div>取消时间：{formatDateTime(detail.cancelledAt)}</div>}
               </div>
 
               {detail.paymentIntent && (

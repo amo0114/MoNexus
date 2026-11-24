@@ -15,11 +15,12 @@ import { useNotificationInvalidation } from '../hooks/useNotificationInvalidatio
 import { broadcastReadInvalidation } from '../realtime/readSyncBroadcast'
 import type { Notification, NotificationCategory } from '../types/notification'
 import { appendUniqueNotifications, mergeNotificationFirstPage } from '../utils/notificationMerge'
+import { formatDateTime } from '../utils/datetime'
 
 type FilterTab = 'all' | 'order' | 'system'
 
 function formatDate(value: string) {
-  return new Date(value).toLocaleString('zh-CN', {
+  return formatDateTime(value, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
