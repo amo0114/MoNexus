@@ -1,5 +1,5 @@
 import { withFakaTask, withFakaTaskInBatch } from '../../lib/runtimeSettings/fakaBridge.js'
-import { fakaBridgeConfig } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig, fakaMountedInTx, requireFakaMountedInTx } from '../../lib/runtimeSettings/fakaBridge.js'
 import { grantForOrderInTx } from '../trafficReset/benefits.js'
 /**
  * FakaBridge refund + revoke + reconcile hooks.
@@ -76,6 +76,7 @@ function hasClientCredentials(): boolean {
 export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<void> {
   const task = await tx.fakaBridgeTask.findUnique({ where: { orderId } })
   if (!task) return
+  await requireFakaMountedInTx(tx)
 
   const leaseExpired = await isLeaseExpiredUtc(tx, task.id)
   const inFlight = task.status === 'pending' && !leaseExpired
@@ -180,6 +181,7 @@ export async function onFakaOrderRefundedInTx(tx: Tx, orderId: number): Promise<
 export async function assessFakaCancellationInTx(tx: Tx, orderId: number): Promise<CancellationAssessment | null> {
   const task = await tx.fakaBridgeTask.findUnique({ where: { orderId } })
   if (!task) return null
+  if (!await fakaMountedInTx(tx)) return 'unsupported'
   if (task.status === 'succeeded') return 'already_executed'
   if (task.status === 'cancelled' || (task.status === 'failed' && task.revokeStatus === 'succeeded')) return 'safe_to_finalize'
   if (task.status === 'pending' && task.attempts === 0) {
@@ -237,6 +239,7 @@ async function processBoundFakaRevokeTask(taskId: number): Promise<'succeeded' |
     if (!peekSched?.leaseExpired || !peekSched.nextAttemptDue) return null
     // Order → Task lock order (matches refund path)
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${peek.orderId} FOR UPDATE`
+    if (!await fakaMountedInTx(tx)) return null
     const task = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
     if (!task || task.revokeStatus !== 'pending') return null
     const lockedSched = await readTaskScheduleUtc(tx, taskId)
@@ -640,6 +643,7 @@ async function updateReconcileTaskIfCurrent(
   return prisma.$transaction(async tx => {
     // The worker, revoke worker, and refund path all use Order → Task.
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${snapshot.orderId} FOR UPDATE`
+    if (!await fakaMountedInTx(tx)) return false
     const order = await tx.order.findUnique({
       where: { id: snapshot.orderId },
       select: { status: true },
@@ -1299,34 +1303,38 @@ async function tryAlignDeliveredExpiresAt(
   remoteExpiredAt: Date
 ): Promise<boolean> {
   try {
-    const order = await prisma.order.findUnique({
-      where: { id: orderId },
-      select: {
-        status: true,
-        delivery: { select: { expiresAt: true } },
-      },
+    return await prisma.$transaction(async tx => {
+      await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
+      if (!await fakaMountedInTx(tx)) return false
+      const order = await tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          status: true,
+          delivery: { select: { expiresAt: true } },
+        },
+      })
+      if (!order || order.status !== 'delivered' || !order.delivery) return false
+      const current = order.delivery.expiresAt
+      if (current && Math.abs(current.getTime() - remoteExpiredAt.getTime()) < 1000) {
+        return false
+      }
+      await tx.deliveryRecord.update({
+        where: { orderId },
+        data: { expiresAt: remoteExpiredAt },
+      })
+      // New expiry may reopen remind window — clear terminal reminder state.
+      await tx.subscriptionReminder.deleteMany({ where: { orderId } })
+      logger.info(
+        {
+          orderId,
+          from: current?.toISOString() ?? null,
+          to: remoteExpiredAt.toISOString(),
+          component: 'fakaBridge',
+        },
+        'Aligned DeliveryRecord.expiresAt to Xboard expired_at'
+      )
+      return true
     })
-    if (!order || order.status !== 'delivered' || !order.delivery) return false
-    const current = order.delivery.expiresAt
-    if (current && Math.abs(current.getTime() - remoteExpiredAt.getTime()) < 1000) {
-      return false
-    }
-    await prisma.deliveryRecord.update({
-      where: { orderId },
-      data: { expiresAt: remoteExpiredAt },
-    })
-    // New expiry may reopen remind window — clear terminal reminder state.
-    await prisma.subscriptionReminder.deleteMany({ where: { orderId } })
-    logger.info(
-      {
-        orderId,
-        from: current?.toISOString() ?? null,
-        to: remoteExpiredAt.toISOString(),
-        component: 'fakaBridge',
-      },
-      'Aligned DeliveryRecord.expiresAt to Xboard expired_at'
-    )
-    return true
   } catch (err) {
     logger.warn({ err, orderId }, 'FakaBridge expiresAt align failed')
     return false

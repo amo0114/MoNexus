@@ -17,7 +17,7 @@ import { evaluateActiveOffer } from './readinessOffer.js'
 import { prisma } from '../../lib/prisma.js'
 import { notFound } from '../../lib/httpError.js'
 import { countAvailableByOfferId } from '../../lib/inventoryCounts.js'
-import { isFakaBridgeConfigured } from '../../lib/fakaBridge/client.js'
+import { catalogForProvider } from '../fulfillment/offerBinding.js'
 import {
   CATEGORY_STATUS,
   READINESS_DETAIL_CODES,
@@ -180,7 +180,7 @@ export async function inspectProductReadiness(
   db: Client = prisma,
   options: CheckProductReadinessOptions = {},
 ): Promise<{ readiness: ProductReadinessResult; availabilityOfferIds: number[] }> {
-  const isProviderConfigured = options.isProviderConfigured ?? isFakaBridgeConfigured
+  const isProviderConfigured = options.isProviderConfigured ?? (() => catalogForProvider('faka_bridge')?.isConfigured() ?? false)
   const requireCurrentlySellable = options.requireCurrentlySellable ?? true
   const product = await db.product.findUnique({
     where: { id: productId },

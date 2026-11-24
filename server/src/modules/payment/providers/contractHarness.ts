@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import { PAYMENT_ACTION_TYPES, PAYMENT_ATTEMPT_STATUSES, PAYMENT_PROVIDER_NAMES } from '../../recharge/types.js'
+import { PAYMENT_ACTION_TYPES, PAYMENT_ATTEMPT_STATUSES, PAYMENT_PROVIDER_NAMES } from '../../../lib/paymentTypes.js'
 import type { PaymentProvider, ProviderCapabilities, ProviderPaymentAction } from './types.js'
 
 const ACTION_SET = new Set<string>(PAYMENT_ACTION_TYPES)

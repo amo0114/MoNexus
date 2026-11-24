@@ -10,9 +10,9 @@ import {
   reverseReservedInTx,
   type WalletContext,
 } from '../../wallet/index.js'
-import { rechargeCreditWalletKey } from '../../recharge/credit.js'
-import { serializeAmountMinor } from '../../recharge/money.js'
-import type { PaymentRecoveryCaseStatus, ReconciliationMismatchType } from '../../recharge/types.js'
+import { rechargeCreditWalletKey } from '../../../lib/paymentOperationKeys.js'
+import { serializeAmountMinor } from '../../../lib/minorAmounts.js'
+import type { PaymentRecoveryCaseStatus, ReconciliationMismatchType } from '../../../lib/paymentTypes.js'
 import { writeOpenReconItem } from '../events/applyConfirmedPayment.js'
 import { recordPaymentDispute, recordPaymentObservationMetric } from '../metrics.js'
 import { claimPaymentEvent, commitPaymentEvent } from '../workers/lease.js'

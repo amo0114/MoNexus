@@ -1,3 +1,4 @@
+import type { FulfillmentCatalog } from './fulfillmentCatalog.js'
 import type { Offer, Prisma } from '@prisma/client'
 import type { StructuredDeliveryContent } from '../lib/deliveryFields.js'
 import type { PurchaseFormField } from '../lib/purchaseForm.js'
@@ -66,6 +67,16 @@ export interface CheckoutExtension<Prepared = unknown, Target = unknown> {
  */
 export type CancellationAssessment = 'safe_to_finalize' | 'reconcile_required' | 'already_executed' | 'unsupported'
 
+export type FulfillmentDiagnostics = {
+  id: number
+  status: string
+  attempts: number
+  cancelRequested: boolean
+  leaseUntil: Date | null
+  revokeStatus?: string | null
+  revokedAt?: Date | null
+}
+
 /**
  * Plugs an external fulfillment system into the order core. Core owns order
  * status, points and settlement; a provider owns its task tables, remote
@@ -73,8 +84,8 @@ export type CancellationAssessment = 'safe_to_finalize' | 'reconcile_required' |
  * `modules/fulfillment/apply.ts`).
  *
  * Hooks run for every registered provider, so each must ignore orders it has
- * no task for. Providers are trusted in-process code registered at build time
- * in `bootstrap/extensions.ts`.
+ * no task for. Trusted in-process providers are registered by the composition
+ * root or by the optional fulfillment loader.
  */
 export interface FulfillmentProvider {
   /** Stable id; equals `Offer.externalIntegration` for offers it fulfills. */
@@ -89,6 +100,14 @@ export interface FulfillmentProvider {
   onOrderRefundedInTx(tx: Tx, orderId: number): Promise<void>
   /** After the refund commits: kick any remote cancellation queued above. */
   afterOrderRefunded?(orderId: number): Promise<void>
+  /** Return the reason a closed order cannot be refunded, or null if safe. Local evidence only. */
+  closedOrderRefundBlocker?(tx: Tx, orderId: number): Promise<string | null>
+  /** Read-only diagnostics for providers with a separate task model. */
+  orderDiagnostics?(tx: Tx, orderId: number): Promise<FulfillmentDiagnostics | null>
+  catalog?: FulfillmentCatalog
+  operatorReviewWhere?: Prisma.OrderWhereInput
+  orderBacklog?: ReadonlyArray<{ state: string; where: Prisma.OrderWhereInput }>
+  countOpenOfferTasks?(tx: Tx, offerIds: number[]): Promise<number>
   /**
    * Before the core decides to cancel an unfinished order, inside its
    * transaction with the Order locked. Local reads/writes only, never network.

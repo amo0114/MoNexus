@@ -1,4 +1,4 @@
-import { fakaRuntimeMiddleware } from './lib/runtimeSettings/fakaBridge.js'
+import { optionalFulfillmentHandler } from './bootstrap/optionalFulfillment.js'
 // Registers fulfillment providers before any route or job can use the registry.
 import './bootstrap/extensions.js'
 import { productVideoRoutes } from './modules/productVideos/routes.js'
@@ -39,7 +39,6 @@ import { announcementRoutes } from './modules/announcements/routes.js'
 import { notificationRoutes } from './modules/notifications/routes.js'
 import { pushRoutes } from './modules/push/routes.js'
 import { portableRestoreBootstrapRoutes } from './modules/portable-backups/bootstrap-routes.js'
-import { fakaBridgeRoutes } from './modules/fakaBridge/routes.js'
 import { legalRoutes } from './modules/legal/routes.js'
 import { publicSponsoredRouter } from './modules/merchandising/promotions/publicRoutes.js'
 import { publicEditorialRouter, adminEditorialRouter } from './modules/merchandising/editorial/routes.js'
@@ -49,7 +48,6 @@ import { merchandisingAdminRouter } from './integrations/cmi/merchandisingAdminR
 import { paymentWebhookRoutes } from './modules/payment/webhooks/routes.js'
 import { productTemplateRoutes } from './modules/catalog/templates/routes.js'
 import { chatBotRoutes } from './modules/chatbot/routes.js'
-import { xboardBotRoutes } from './modules/chatbot/xboard/routes.js'
 import { recommendationEventRoutes } from './modules/recommendationEvents/routes.js'
 import { shopRoutes } from './modules/shops/routes.js'
 import { storefrontRoutes } from './modules/storefront/routes.js'
@@ -129,7 +127,8 @@ app.use('/api/payment/webhooks', paymentWebhookLimiter, paymentWebhookRoutes)
 
 // v2 verifies the original wire bytes. Mount before the JSON parser and v1
 // bot signature middleware; its own host/user admission limits apply here.
-app.use('/api/bot/v2/xboard', xboardBotRoutes)
+export const externalBotWebhook = optionalFulfillmentHandler('rawBotRoutes')
+app.use('/api/bot/v2/xboard', externalBotWebhook)
 
 app.use(express.json({ limit: '1mb' }))
 app.use(metricsMiddleware)
@@ -175,7 +174,7 @@ app.get('/api/metrics', metricsAuthLimiter, async (req, res) => {
 })
 
 app.use('/api', apiLimiter)
-app.use('/api', fakaRuntimeMiddleware)
+app.use('/api', optionalFulfillmentHandler('runtimeContext'))
 
 app.use('/api/auth', authRoutes)
 app.use('/api/traffic', trafficRoutes)
@@ -201,7 +200,7 @@ app.use('/api/orders', orderRoutes)
 app.use('/api/checkout', checkoutRoutes)
 app.use('/api/value-policy', valuePolicyRoutes)
 app.use('/api/recharge', rechargeRoutes)
-app.use('/api/faka-bridge', fakaBridgeRoutes)
+app.use('/api/faka-bridge', optionalFulfillmentHandler('buyerRoutes'))
 // SPEC-CHAT-BOT-001: bot channel authenticates with HMAC, not user JWT, so it
 // mounts outside the authenticated user chain.
 app.use('/api/bot', chatBotRoutes)

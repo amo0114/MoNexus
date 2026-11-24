@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { badRequest, notFound, paymentMethodUnavailable, unauthenticated } from '../../../../lib/httpError.js'
-import { serializeAmountMinor } from '../../../recharge/money.js'
-import { getPlatformCurrencyLimits } from '../../../recharge/money.js'
-import type { PaymentAttemptStatus, RechargeCurrency } from '../../../recharge/types.js'
+import { serializeAmountMinor } from '../../../../lib/minorAmounts.js'
+import { getPlatformCurrencyLimits } from '../../../../lib/minorAmounts.js'
+import type { PaymentAttemptStatus, RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import { assertStructuredFormPost } from '../formPost.js'
 import type {
   CloseProviderPaymentInput,

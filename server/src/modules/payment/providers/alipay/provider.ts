@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { logger } from '../../../../lib/logger.js'
 import { paymentMethodUnavailable, paymentProviderUnavailable } from '../../../../lib/httpError.js'
-import { getIsoCurrencyMetadata, getPlatformCurrencyLimits, serializeAmountMinor } from '../../../recharge/money.js'
-import type { RechargeCurrency } from '../../../recharge/types.js'
+import { getIsoCurrencyMetadata, getPlatformCurrencyLimits, serializeAmountMinor } from '../../../../lib/minorAmounts.js'
+import type { RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import type {
   CloseProviderPaymentInput,
   CloseResult,

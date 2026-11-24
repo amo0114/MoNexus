@@ -1,4 +1,4 @@
-import { AmountParseError } from '../../../recharge/money.js'
+import { AmountParseError } from '../../../../lib/minorAmounts.js'
 
 /** VMQFox amounts are exact two-decimal CNY strings; never IEEE-754. */
 export const VMQFOX_YUAN_SCALE = 2

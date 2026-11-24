@@ -1,5 +1,5 @@
 import { historicalFakaSnapshot, withFakaSnapshot } from '../../lib/runtimeSettings/fakaBridge.js'
-import { fakaBridgeConfig, fakaInstanceId, fakaClientId } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig, fakaInstanceId, fakaClientId, fakaMountedInTx } from '../../lib/runtimeSettings/fakaBridge.js'
 import { isAccountBanned } from '../accountGovernance/status.js'
 import { randomUUID } from 'node:crypto'
 import type { XboardTrafficResetOperation } from '@prisma/client'
@@ -65,6 +65,7 @@ async function processBoundResetOperation(id: string) {
   const observed = await prisma.xboardTrafficResetOperation.findUnique({ where: { id } })
   if (!observed || !sameTarget(observed)) return
   const claimed = await prisma.$transaction(async tx => {
+    if (!await fakaMountedInTx(tx)) return null
     const grant = await refreshGrantInTx(tx, observed.userId)
     await tx.$queryRaw`SELECT "id" FROM "XboardTrafficResetOperation" WHERE "id" = ${id}::uuid FOR UPDATE`
     const op = await tx.xboardTrafficResetOperation.findUniqueOrThrow({ where: { id } })

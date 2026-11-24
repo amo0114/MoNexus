@@ -60,6 +60,7 @@ export type GovernanceFeature =
 
 export interface GVCapabilities {
   contractVersion: typeof GOVERNANCE_CONTRACT_VERSION
+  optionalFulfillment?: { installed: boolean; mounted: boolean }
   permissions: AdminPermission[]
   features: Record<GovernanceFeature, boolean>
   limits: { pageSize: number; exportRows: number; exportBytes: number; exportRetentionSeconds: number }

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { prisma } from '../lib/prisma.js'
 import { transitionOrderStatus } from '../modules/orders/fulfillment.js'
 import { resolveOrder } from '../modules/admin/service.js'
-import { reportPlatformUnfulfillable, startPlatformFulfillment } from '../modules/catalog/platformFulfillment.js'
+import { reportPlatformUnfulfillable, startPlatformFulfillment } from '../modules/orders/platformFulfillment.js'
 import { api, authHeader, createTestMerchant, createTestProduct, createTestUser, loginAs, loginAsMerchant, makeManualService } from './helpers.js'
 
 async function acceptedOrder(platform = false) {
