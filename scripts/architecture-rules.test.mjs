@@ -142,3 +142,36 @@ test('AG-05 rejects a module joining a cycle but tolerates baseline cycles', () 
   ]))
   assert.doesNotMatch(baseline.join('\n'), /AG-05/)
 })
+
+test('FE-01 only pages and the app root may import pages', () => {
+  const page = ['src/pages/storePageCache.ts', 'export const x = 1']
+  assert.match(checkBoundaries(new Map([page, ['src/stores/authStore.ts', "import { x } from '../pages/storePageCache'"]])).join('\n'), /FE-01/)
+  assert.match(checkBoundaries(new Map([page, ['src/api/recharge.ts', "import type { X } from '../pages/storePageCache'"]])).join('\n'), /FE-01/)
+  assert.deepEqual(checkBoundaries(new Map([page, ['src/App.tsx', "import { x } from './pages/storePageCache'"]])), [])
+  assert.deepEqual(checkBoundaries(new Map([page, ['src/pages/StorePage.tsx', "import { x } from './storePageCache'"]])), [])
+})
+
+test('FE-02 HTTP client is used through api modules', () => {
+  const client = ['src/api/client.ts', 'export default {}']
+  assert.match(checkBoundaries(new Map([client, ['src/components/NewPanel.tsx', "import api from '../api/client'"]])).join('\n'), /FE-02/)
+  assert.deepEqual(checkBoundaries(new Map([client, ['src/api/orders.ts', "import api from './client'"]])), [])
+  assert.deepEqual(checkBoundaries(new Map([client, ['src/lib/webPush.ts', "import api from '../api/client'"]])), [])
+})
+
+test('FE-03 dates render through utils/datetime', () => {
+  const file = 'src/components/OrderRow.tsx'
+  assert.match(check(file, 'new Date(o.createdAt).toLocaleString()'), /FE-03/)
+  assert.match(check(file, 'value.toLocaleDateString()'), /FE-03/)
+  assert.match(check(file, "new Intl.DateTimeFormat('zh-CN', { month: 'short' })"), /FE-03/)
+  assert.doesNotMatch(check(file, "points.toLocaleString('zh-CN')"), /FE-03/)
+  assert.doesNotMatch(check(file, "new Date(x).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })"), /FE-03/)
+  assert.doesNotMatch(check('src/utils/datetime.ts', "date.toLocaleDateString('zh-CN')"), /FE-03/)
+})
+
+test('frontend static cycles are rejected', () => {
+  const errors = checkBoundaries(new Map([
+    ['src/stores/authStore.ts', "import { a } from '../api/registry'"],
+    ['src/api/registry.ts', "import { b } from '../stores/authStore'"],
+  ]))
+  assert.match(errors.join('\n'), /Static runtime dependency cycle: src\/api\/registry.ts, src\/stores\/authStore.ts/)
+})
