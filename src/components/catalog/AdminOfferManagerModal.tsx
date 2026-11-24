@@ -20,6 +20,8 @@ import type { DeliveryMode, StockMode } from '../../types/merchant'
 import { formatFileSize } from '../../utils/formatFileSize'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dialog'
 
+const NO_OFFERS: NonNullable<AdminProductListItem>['offers'] = []
+
 interface Props {
   product: AdminProductListItem | null
   onClose: () => void
@@ -127,7 +129,7 @@ export default function AdminOfferManagerModal({ product, onClose, onChanged }: 
   const [uploadingFile, setUploadingFile] = useState(false)
   const [editorReady, setEditorReady] = useState(true)
 
-  const offers = product?.offers ?? []
+  const offers = product?.offers ?? NO_OFFERS
   const isPlatformOwned = product?.merchantId == null
   const current = useMemo(
     () => (typeof editing === 'number' ? offers.find((offer) => offer.id === editing) ?? null : null),

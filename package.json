@@ -37,7 +37,7 @@
     "build": "tsc -b && vite build",
     "check:bundle-budget": "npm run build && node scripts/check-frontend-bundle-budget.mjs",
     "preview": "vite preview",
-    "lint": "eslint src --max-warnings 71",
+    "lint": "eslint src --max-warnings 67",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:mobile-island": "vitest run src/stores/islandQueue.test.ts src/hooks/useIslandQueuePause.test.ts src/lib/completionFeedback.test.ts src/lib/productPublicationFeedback.test.ts src/realtime/__tests__/notificationIsland.test.ts src/components/ActionIslandNotice.test.tsx src/components/MobileSearchIsland.test.tsx src/components/StoreSearchPanel.test.tsx src/components/OrderSuccessIsland.test.tsx src/components/QuietIslandNotice.test.tsx src/components/AnnouncementBanner.test.tsx src/components/EmailVerificationBanner.test.tsx src/components/OrderDetailModal.test.tsx src/components/profile/InviteCard.test.tsx src/components/catalog/CategoryApplicationPanel.test.tsx src/components/merchant/MerchantAvailabilityModal.test.tsx src/components/merchandising/MerchantPromotionPage.test.tsx src/components/merchandising/promotionFeedback.test.ts src/pages/MerchantApplyPage.test.tsx src/pages/MerchantDashboardPage.test.tsx src/pages/recharge/islandFeedback.test.ts --maxWorkers=2",
