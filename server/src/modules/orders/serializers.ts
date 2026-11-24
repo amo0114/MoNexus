@@ -4,6 +4,7 @@ type OrderWithDelivery = {
   delivery?: ({ content?: unknown } & Record<string, unknown>) | null
   product?: ({ deliveryMode?: string | null } & Record<string, unknown>) | null
   deliveryModeSnapshot?: string | null
+  externalFulfillmentProvider?: string | null
   productNameSnapshot?: string | null
   productTypeSnapshot?: string | null
   productIconSnapshot?: string | null
@@ -89,7 +90,7 @@ function withUserOrderContract<T extends OrderWithDelivery>(order: T, includeTim
   // 复审补丁：买家契约只有 timeline——原始 statusEvents 必须剥离，否则
   // 到期遮蔽只盖 timeline 一份，交付附言仍从 statusEvents 泄漏（回归测试
   // 实测抓出）。商家/管理员序列化不走本函数，不受影响。
-  const { statusEvents: _rawEvents, ...buyerSafe } = normalized as typeof normalized & {
+  const { statusEvents: _rawEvents, externalFulfillmentProvider: _provider, ...buyerSafe } = normalized as typeof normalized & {
     statusEvents?: unknown
   }
   return {

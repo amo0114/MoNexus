@@ -4,10 +4,10 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, conflict, forbidden, HttpError } from '../../lib/httpError.js'
+import { badRequest, forbidden, HttpError } from '../../lib/httpError.js'
 import { decryptIntegrationCredentials, encryptIntegrationCredentials } from '../../lib/runtimeSettings/credentials.js'
 import { validate } from '../../middlewares/validate.js'
-import { integrationProbeLimiter } from './integrationSettings.js'
+import { integrationProbeLimiter, integrationVersion, requireIntegrationVersion, withIntegrationLock } from './integrationControls.js'
 
 type JsonObject = Record<string, unknown>
 type Tx = Prisma.TransactionClient
@@ -23,18 +23,9 @@ export interface ManagedIntegration<S extends JsonObject, C extends JsonObject> 
   accountIdForRevision?: (tx: Tx, settings: S) => Promise<string>
   beforeActivate?: (tx: Tx, row: IntegrationConfig, settings: S, actor: number, legacyConfirmed: boolean) => Promise<string | null>
 }
-const version = z.object({ expectedVersion: z.number().int().min(0).max(2147483646) }).strict()
+const version = z.object({ expectedVersion: integrationVersion }).strict()
 export function managedIntegration<S extends JsonObject, C extends JsonObject>(definition: ManagedIntegration<S, C>) {
   const { key } = definition
-  async function locked<T>(work: (tx: Tx, row: IntegrationConfig | null) => Promise<T>) {
-    return prisma.$transaction(async tx => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`monexus:integration:${key}`}))`
-      return work(tx, await tx.integrationConfig.findUnique({ where: { key } }))
-    })
-  }
-  function match(row: IntegrationConfig | null, expected: number) {
-    if ((row?.version ?? 0) !== expected) throw conflict('配置已被更新，请重新加载后操作')
-  }
   function requireRoot() { if (!config.integrationCredentialsEncKey) throw forbidden('服务器尚未配置当前集成凭据加密密钥') }
   function dto(row: IntegrationConfig | null) {
     const bootstrap = definition.bootstrap()
@@ -59,8 +50,8 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
   }
   const api = {
     get: async () => dto(await prisma.integrationConfig.findUnique({ where: { key } })),
-    save: async (actor: number, input: { expectedVersion: number; settings: S; credentials?: C }) => locked(async (tx, row) => {
-      match(row, input.expectedVersion); requireRoot()
+    save: async (actor: number, input: { expectedVersion: number; settings: S; credentials?: C }) => withIntegrationLock(key, async (tx, row) => {
+      requireIntegrationVersion(row, input.expectedVersion); requireRoot()
       const settings = definition.settings.parse(input.settings)
       const bootstrap = definition.bootstrap()
       const previous = row?.draft ? definition.settings.parse(row.draft) : bootstrap?.settings
@@ -74,17 +65,17 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
       await audit(tx, actor, 'draft.save', updated.version); return dto(updated)
     }),
     test: async (actor: number, expected: number) => {
-      const row = await prisma.integrationConfig.findUnique({ where: { key } }); match(row, expected)
+      const row = await prisma.integrationConfig.findUnique({ where: { key } }); requireIntegrationVersion(row, expected)
       if (!row?.draft) throw badRequest('请先保存配置草稿')
       const settings = definition.settings.parse(row.draft), credentials = decode(settings, row.draftRevisionId, row.draftCredentialsCiphertext)
       await audit(prisma, actor, 'draft.test', expected, 'attempt')
       try { await definition.test(settings, credentials) }
       catch { await audit(prisma, actor, 'draft.test', expected, 'failed'); throw new HttpError(502, 'INTERNAL_SERVER_ERROR', '配置校验或只读探测失败，请检查参数和凭据') }
       await audit(prisma, actor, 'draft.test', expected, definition.testKind)
-      return locked(async (tx, latest) => { match(latest, expected); return dto(await tx.integrationConfig.update({ where: { key }, data: { testedVersion: expected } })) })
+      return withIntegrationLock(key, async (tx, latest) => { requireIntegrationVersion(latest, expected); return dto(await tx.integrationConfig.update({ where: { key }, data: { testedVersion: expected } })) })
     },
-    activate: async (actor: number, expected: number, legacyConfirmed = false) => locked(async (tx, row) => {
-      match(row, expected); requireRoot()
+    activate: async (actor: number, expected: number, legacyConfirmed = false) => withIntegrationLock(key, async (tx, row) => {
+      requireIntegrationVersion(row, expected); requireRoot()
       if (!row?.draft || row.testedVersion !== row.version) throw badRequest('请先校验当前配置草稿')
       const settings = definition.settings.parse(row.draft), credentials = decode(settings, row.draftRevisionId, row.draftCredentialsCiphertext)
       const baseline = await definition.beforeActivate?.(tx, row, settings, actor, legacyConfirmed) ?? null
@@ -96,8 +87,8 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
         enabled: true, rollbackAvailable: true, testedVersion: null, version: { increment: 1 }, updatedBy: actor } })
       await audit(tx, actor, 'activate', updated.version); return dto(updated)
     }),
-    rollback: async (actor: number, expected: number) => locked(async (tx, row) => {
-      match(row, expected)
+    rollback: async (actor: number, expected: number) => withIntegrationLock(key, async (tx, row) => {
+      requireIntegrationVersion(row, expected)
       if (!row?.rollbackAvailable) throw badRequest('没有可回滚的配置')
       if (row.previousRevisionId) {
         const previous = await tx.integrationConfigRevision.findUniqueOrThrow({ where: { id: row.previousRevisionId } })
@@ -109,14 +100,14 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
         version: { increment: 1 }, testedVersion: null, updatedBy: actor } })
       await audit(tx, actor, 'rollback', updated.version); return dto(updated)
     }),
-    enabled: async (actor: number, expected: number, enabled: boolean) => locked(async (tx, row) => {
-      match(row, expected)
+    enabled: async (actor: number, expected: number, enabled: boolean) => withIntegrationLock(key, async (tx, row) => {
+      requireIntegrationVersion(row, expected)
       const updated = await tx.integrationConfig.upsert({ where: { key }, create: { key, version: 1, enabled, updatedBy: actor },
         update: { enabled, version: { increment: 1 }, testedVersion: null, updatedBy: actor } })
       await audit(tx, actor, enabled ? 'enable' : 'disable', updated.version); return dto(updated)
     }),
-    rewrap: async (actor: number, expected: number) => locked(async (tx, row) => {
-      match(row, expected); requireRoot()
+    rewrap: async (actor: number, expected: number) => withIntegrationLock(key, async (tx, row) => {
+      requireIntegrationVersion(row, expected); requireRoot()
       if (!row) throw badRequest('配置尚未保存')
       for (const revision of await tx.integrationConfigRevision.findMany({ where: { key } })) {
         const settings = definition.settings.parse(revision.settings), credentials = decode(settings, revision.id, revision.credentialsCiphertext)

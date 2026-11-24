@@ -89,7 +89,7 @@ export async function withFakaTaskInBatch<T>(taskId: number, work: () => Promise
     // Do not change bindings, business state or another worker's active lease.
     await prisma.$executeRaw`
       UPDATE "FakaBridgeTask"
-      SET "nextAttemptAt" = GREATEST("nextAttemptAt", ${retryAt}), "lastError" = 'CONFIG_UNAVAILABLE'
+      SET "nextAttemptAt" = GREATEST("nextAttemptAt", ${retryAt} AT TIME ZONE 'UTC'), "lastError" = 'CONFIG_UNAVAILABLE'
       WHERE "id" = ${taskId}
         AND ("leaseUntil" IS NULL OR ("leaseUntil" AT TIME ZONE 'UTC') <= ${now})`
     logger.warn({ taskId, code: 'CONFIG_UNAVAILABLE' }, 'FakaBridge historical configuration unavailable; task deferred')

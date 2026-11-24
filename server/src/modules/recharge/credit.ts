@@ -1,3 +1,6 @@
+import { rechargeCreditWalletKey } from '../../lib/paymentOperationKeys.js'
+export { rechargeCreditWalletKey } from '../../lib/paymentOperationKeys.js'
+export { parseNormalizedPaymentPayload } from '../payment/observations/normalizedPayload.js'
 import { Prisma } from '@prisma/client'
 import { HttpError, pointBalanceHardCap } from '../../lib/httpError.js'
 import { logger } from '../../lib/logger.js'
@@ -10,18 +13,11 @@ import { observeCreditLatency, recordRechargeCredit } from '../payment/metrics.j
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 export const CREDIT_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:credit:v1`
-export const rechargeCreditWalletKey = (orderId: string) => `recharge-credit:${orderId}`
 
 export type CreditApplyResult =
   | { kind: 'credited'; creditId: string; alreadyExisted: boolean }
   | { kind: 'skipped'; reason: string }
   | { kind: 'reconcile_required'; reason: string }
-
-function asJsonRecord(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
-}
 
 export function toSafeCreditPoints(points: bigint): number {
   if (points <= 0n) {
@@ -305,27 +301,4 @@ async function markCreditReconcileRequired(
     rechargeOrderId: orderId,
     reason,
   }, 'credit marked reconcile_required')
-}
-
-function parseOptionalAmountMinor(value: unknown): bigint | null | undefined {
-  if (value === undefined || value === null) return undefined
-  if (typeof value === 'string' && /^(0|[1-9]\d{0,18})$/.test(value)) return BigInt(value)
-  return null
-}
-
-export function parseNormalizedPaymentPayload(value: Prisma.JsonValue | null | undefined) {
-  const payload = asJsonRecord(value)
-  const amountRaw = payload.amountMinor
-  return {
-    status: typeof payload.status === 'string' ? payload.status : '',
-    providerPaymentId: typeof payload.providerPaymentId === 'string' ? payload.providerPaymentId : null,
-    providerCaptureId: typeof payload.providerCaptureId === 'string' ? payload.providerCaptureId : null,
-    providerRefundId: typeof payload.providerRefundId === 'string' ? payload.providerRefundId : null,
-    amountMinor: typeof amountRaw === 'string' ? BigInt(amountRaw) : null,
-    quotedAmountMinor: parseOptionalAmountMinor(payload.quotedAmountMinor),
-    quotedOrderId: typeof payload.quotedOrderId === 'string' ? payload.quotedOrderId : undefined,
-    quotedPaymentMethod: typeof payload.quotedPaymentMethod === 'string' ? payload.quotedPaymentMethod : undefined,
-    currency: typeof payload.currency === 'string' ? payload.currency : null,
-    immutableStateVersion: typeof payload.immutableStateVersion === 'string' ? payload.immutableStateVersion : null,
-  }
 }

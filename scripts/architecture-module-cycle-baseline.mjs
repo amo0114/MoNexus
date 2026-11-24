@@ -1,0 +1,25 @@
+// Unexpected edges inside a module cycle fail even if its members stay the same.
+// Remove a legacy edge from this baseline as soon as its dependency is removed.
+export const cycleEdges = {
+  'accountGovernance': ['adminAuthorization', 'auth', 'governance'],
+  'adminAuthorization': ['accountGovernance', 'governance'],
+  'adminExports': ['adminAuthorization', 'governance'],
+  'auth': ['accountGovernance', 'catalog', 'invite', 'merchantGovernance', 'wallet'],
+  'catalog': ['accountGovernance', 'adminAuthorization', 'fakaBridge', 'fulfillment', 'governance', 'merchant', 'merchantGovernance', 'productVideos'],
+  'checkout': ['catalog', 'fulfillment', 'orders', 'points', 'valuePolicy'],
+  'fakaBridge': ['accountGovernance', 'fulfillment', 'orders', 'trafficReset', 'xboardAccounts'],
+  'fulfillment': ['orders'],
+  'governance': ['accountGovernance', 'adminExports', 'wallet'],
+  'invite': ['accountGovernance'],
+  'merchant': ['accountGovernance', 'catalog', 'fulfillment', 'governance', 'merchantFinance', 'merchantGovernance', 'orders'],
+  'merchantFinance': ['orders', 'wallet'],
+  'merchantGovernance': ['accountGovernance', 'adminAuthorization', 'auth', 'governance'],
+  'orders': ['catalog', 'checkout', 'fulfillment', 'merchantFinance', 'points', 'valuePolicy', 'wallet'],
+  'points': ['wallet'],
+  'portable-backups': ['accountGovernance', 'productVideos'],
+  'productVideos': ['catalog', 'portable-backups'],
+  'trafficReset': ['accountGovernance', 'xboardAccounts'],
+  'valuePolicy': ['accountGovernance'],
+  'wallet': ['adminAuthorization', 'governance'],
+  'xboardAccounts': ['accountGovernance', 'fakaBridge', 'trafficReset'],
+}

@@ -26,6 +26,16 @@ export const xboardFulfillmentProvider: FulfillmentProvider = {
   },
   onOrderRefundedInTx: onFakaOrderRefundedInTx,
   afterOrderRefunded: kickPendingRevoke,
+  async closedOrderRefundBlocker(tx, orderId) {
+    const task = await tx.fakaBridgeTask.findUnique({
+      where: { orderId },
+      select: { status: true, revokeStatus: true },
+    })
+    if (!task) return '外部开通任务记录缺失，请先核对'
+    if (task.status === 'cancelled' || task.status === 'failed') return null
+    if (task.status !== 'succeeded') return '外部开通状态尚未确认，请先在开通任务中核对'
+    return task.revokeStatus === 'succeeded' ? null : '外部权益尚未撤销，请先完成开通任务撤销'
+  },
   assessCancellationInTx: assessFakaCancellationInTx,
   afterCancellationAssessed: kickPendingRevoke,
   async onOrderStatusChangedInTx(tx, orderId, toStatus) {

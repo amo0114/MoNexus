@@ -1,12 +1,13 @@
 import { Prisma } from '@prisma/client'
 import { logger } from '../../../lib/logger.js'
 import { prisma } from '../../../lib/prisma.js'
-import { executeRechargeCredit, parseNormalizedPaymentPayload } from '../../recharge/credit.js'
-import { consumeLimitReservations } from '../../recharge/limits.js'
+import { executeRechargeCredit } from '../../../bootstrap/rechargePayment.js'
+import { parseNormalizedPaymentPayload } from '../observations/normalizedPayload.js'
+import { consumeLimitReservations } from '../../../bootstrap/rechargePayment.js'
 import { paymentTestHooks, tripWriteHook } from './hooks.js'
 import { isPaymentDeadlock, newLeaseToken } from '../workers/lease.js'
-import { providerEnvironment } from '../../recharge/gates.js'
-import type { ReconciliationMismatchType } from '../../recharge/types.js'
+import { providerEnvironment } from '../environment.js'
+import type { ReconciliationMismatchType } from '../../../lib/paymentTypes.js'
 import { recordAmountMismatch, recordPaymentObservationMetric, recordReconciliationMismatch } from '../metrics.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const

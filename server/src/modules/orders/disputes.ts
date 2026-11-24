@@ -18,7 +18,7 @@ const DISPUTED_ORDER_SELECT = {
   fulfillmentDeadline: true, disputeRespondBy: true, remedyNote: true, remedyProposedAt: true,
   remedyRespondBy: true, disputeEscalatedAt: true,
   delivery: { select: { id: true } },
-  fakaBridgeTask: { select: { id: true } },
+  externalFulfillmentProvider: true,
   fulfillmentJob: { select: { id: true } },
 } satisfies Prisma.OrderSelect
 
@@ -38,7 +38,7 @@ export async function fileOverdueComplaint(orderId: number, userId: number): Pro
     if (!order || order.userId !== userId) throw notFound('订单不存在')
     if (normalizeOrderStatus(order.status) !== 'processing') throw conflict('只有履约中的订单可以投诉超时')
     if (order.deliveryModeSnapshot !== 'manual_service') throw conflict('只有人工服务订单可以投诉超时')
-    if (order.fakaBridgeTask || order.fulfillmentJob) throw conflict('自动开通订单请联系平台处理')
+    if (order.externalFulfillmentProvider || order.fulfillmentJob) throw conflict('自动开通订单请联系平台处理')
     if (!order.delivery && (!order.fulfillmentDeadline || order.fulfillmentDeadline > new Date())) throw conflict('尚未超过履约期限')
     await transitionOrderStatus({
       orderId,

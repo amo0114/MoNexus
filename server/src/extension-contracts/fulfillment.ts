@@ -89,6 +89,8 @@ export interface FulfillmentProvider {
   onOrderRefundedInTx(tx: Tx, orderId: number): Promise<void>
   /** After the refund commits: kick any remote cancellation queued above. */
   afterOrderRefunded?(orderId: number): Promise<void>
+  /** Return the reason a closed order cannot be refunded, or null if safe. Local evidence only. */
+  closedOrderRefundBlocker?(tx: Tx, orderId: number): Promise<string | null>
   /**
    * Before the core decides to cancel an unfinished order, inside its
    * transaction with the Order locked. Local reads/writes only, never network.

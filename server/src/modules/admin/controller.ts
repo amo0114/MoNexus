@@ -299,35 +299,35 @@ export async function deleteProduct(req: Request, res: Response, next: NextFunct
 
 export async function startPlatformFulfillment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { startPlatformFulfillment } = await import('../catalog/platformFulfillment.js')
+    const { startPlatformFulfillment } = await import('../orders/platformFulfillment.js')
     res.json(await startPlatformFulfillment(req.user!.userId, req.params.id as unknown as number))
   } catch (err) { next(err) }
 }
 
 export async function postPlatformProgress(req: Request, res: Response, next: NextFunction) {
   try {
-    const { postPlatformProgress } = await import('../catalog/platformFulfillment.js')
+    const { postPlatformProgress } = await import('../orders/platformFulfillment.js')
     res.json(await postPlatformProgress(req.user!.userId, req.params.id as unknown as number, req.body.publicNote))
   } catch (err) { next(err) }
 }
 
 export async function deliverPlatformOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    const { deliverPlatformOrder } = await import('../catalog/platformFulfillment.js')
+    const { deliverPlatformOrder } = await import('../orders/platformFulfillment.js')
     res.json(await deliverPlatformOrder(req.user!.userId, req.params.id as unknown as number, req.body))
   } catch (err) { next(err) }
 }
 
 export async function rejectPlatformOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    const { rejectPlatformOrder } = await import('../catalog/platformFulfillment.js')
+    const { rejectPlatformOrder } = await import('../orders/platformFulfillment.js')
     res.json(await rejectPlatformOrder(req.user!.userId, req.params.id as unknown as number, req.body.reason))
   } catch (err) { next(err) }
 }
 
 export async function reportPlatformUnfulfillable(req: Request, res: Response, next: NextFunction) {
   try {
-    const { reportPlatformUnfulfillable } = await import('../catalog/platformFulfillment.js')
+    const { reportPlatformUnfulfillable } = await import('../orders/platformFulfillment.js')
     res.json(await reportPlatformUnfulfillable(req.user!.userId, req.params.id as unknown as number, req.body.reason))
   } catch (err) { next(err) }
 }

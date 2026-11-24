@@ -3,6 +3,7 @@ import { badRequest, conflict, notFound } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import { lockAccountsInTx, orderPaymentComposition } from '../wallet/index.js'
 import { reverseForAfterSalesInTx, voidUnsettledInTx } from '../merchantFinance/index.js'
+import { getFulfillmentProvider } from '../fulfillment/registry.js'
 import { refundPaidOrder } from './accounting.js'
 import { createOrderStatusEvent } from './fulfillment.js'
 
@@ -20,8 +21,8 @@ const orderSelect = {
   status: true,
   merchantId: true,
   settlement: { select: { id: true, status: true, settlementAmount: true, commissionAmount: true, batchItem: { select: { batchId: true } } } },
-  fakaBridgeTask: { select: { status: true, revokeStatus: true } },
-  fulfillmentJob: { select: { status: true } },
+  externalFulfillmentProvider: true,
+  fulfillmentJob: { select: { status: true, providerId: true } },
   merchant: { select: { userId: true } },
 } satisfies Prisma.OrderSelect
 
@@ -32,11 +33,12 @@ type CaseOrder = Prisma.OrderGetPayload<{ select: typeof orderSelect }>
  * an operator note is not a revocation. Merchant webhooks are the merchant's
  * own systems and are reversed at the merchant's cost.
  */
-function externalBlocker(order: CaseOrder): string | null {
-  const faka = order.fakaBridgeTask
-  if (faka && faka.status !== 'cancelled' && faka.status !== 'failed') {
-    if (faka.status !== 'succeeded') return '外部开通状态尚未确认，请先在开通任务中核对'
-    if (faka.revokeStatus !== 'succeeded') return '外部权益尚未撤销，请先完成开通任务撤销'
+async function externalBlocker(db: Db, order: CaseOrder): Promise<string | null> {
+  if (order.externalFulfillmentProvider && order.externalFulfillmentProvider !== order.fulfillmentJob?.providerId) {
+    const provider = getFulfillmentProvider(order.externalFulfillmentProvider)
+    if (!provider?.closedOrderRefundBlocker) return '外部履约状态暂不可核验，不能售后退款'
+    const blocker = await provider.closedOrderRefundBlocker(db, order.id)
+    if (blocker) return blocker
   }
   const job = order.fulfillmentJob
   if (job && job.status !== 'cancelled' && job.status !== 'failed') {
@@ -64,7 +66,7 @@ export async function serializeAfterSalesCase(db: Db, caseId: number) {
   if (!row) throw notFound('售后案件不存在')
   const order = row.order
   const settlement = order.settlement
-  const blocker = order.status === 'closed' ? externalBlocker(order) : '订单不是已关闭状态'
+  const blocker = order.status === 'closed' ? await externalBlocker(db, order) : '订单不是已关闭状态'
   const settledNet = settlement?.status === 'settled' ? settlement.settlementAmount : 0
   const available = settledNet > 0 && order.merchant ? await merchantSettlementAvailable(db, order.merchant.userId) : 0
   return {
@@ -165,7 +167,7 @@ export async function executeAfterSalesCase(adminUserId: number, caseId: number,
 
     const order = await tx.order.findUniqueOrThrow({ where: { id: target.orderId }, select: orderSelect })
     if (order.status !== 'closed') throw conflict('订单不是已关闭状态')
-    const blocker = externalBlocker(order)
+    const blocker = await externalBlocker(tx, order)
     if (blocker) throw conflict(blocker)
 
     if (order.settlement) {
