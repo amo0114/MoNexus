@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { validate } from '../../middlewares/validate.js'
+import { passwordPolicyIssue } from '../../lib/passwordPolicy.js'
 import { getRestoreBootstrapStatus, createRestoreBootstrapAdmin } from './bootstrap.js'
 
 const router = Router()
@@ -9,7 +10,11 @@ const createBootstrapAdminSchema = z.object({
   token: z.string().min(1).max(512),
   email: z.string().trim().email(),
   password: z.string().min(12, '管理员密码至少 12 个字符').max(256),
-}).strict()
+}).strict().superRefine((body, ctx) => {
+  // Same policy as every other password write; the 12-character floor above stays stricter for admins.
+  const issue = passwordPolicyIssue(body.password, { email: body.email })
+  if (issue) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['password'], message: issue })
+})
 
 router.get('/status', async (_req, res, next) => {
   try {
