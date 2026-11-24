@@ -1,3 +1,6 @@
+import axios from 'axios'
+import { AuthSessionChangedError } from '../auth/sessionContext'
+
 type ApiErrorPayload =
   | string
   | {
@@ -38,4 +41,11 @@ export function getApiErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback
+}
+
+/** Expected client/session outcomes are not incidents; only server/network failures are reported. */
+export function isReportableRequestError(err: unknown): boolean {
+  if (err instanceof AuthSessionChangedError || axios.isCancel(err)) return false
+  if (axios.isAxiosError(err)) return !err.response || err.response.status >= 500
+  return true
 }

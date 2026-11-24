@@ -271,6 +271,16 @@ lint 棘轮从 71 降到 67。剩下的警告保留为 warn，不批量加 disab
 
 `Layout` 只保留外壳、搜索状态、chrome 模式推导与导航栏高度同步。DOM 结构和 class 不变；hook 依赖警告只是换了位置（总数不变）。验证：全量单测、构建、移动端 E2E 通过，主 E2E 交给 CI（`run-e2e`）。
 
+### 5.4 F-05：数据请求抽象（Owner 选方案 A，2026-11-24）
+
+新增 `src/hooks/useAsyncResource.ts`，不引入依赖，沿用 `useShopProducts` 已验证的模式：
+
+- key 自动并入登录会话，切换账号即重新加载；
+- 只渲染当前 key 对应的结果，被取代的请求不会在任何一帧显示，并且会被 abort；
+- `reload()` 重新请求；`onError` 只对当前 key 的失败调用，abort 和会话切换导致的失败不算错误。
+
+约定：**新的"加载一份数据并显示"场景使用 `useAsyncResource`**；存量手写加载逻辑改到时再迁移。本次迁移了 `AdminSystemInfoPanel`、`AdminMailPanel` 作为示范（lint 棘轮 67 → 65）。`useShopProducts`、`useProductRecommendations` 里两份相同的"是否上报"判断合并为 `api/error.ts` 的 `isReportableRequestError`。分页、无限滚动这类场景不在这个 hook 的范围内，仍用 `useCursorList` 等专用 hook。
+
 ## 6. 本轮没有覆盖的内容
 
 - 运行时性能（首屏、包体积、渲染）：之前的 P1/P2 骨架屏和外壳几何专项已经做过，本轮没有重新测量。
