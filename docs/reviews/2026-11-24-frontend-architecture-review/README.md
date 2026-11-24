@@ -238,6 +238,24 @@ git log --since=2026-05-24 --no-merges --name-only -- src   # 改动热点与共
 
 验证：`npm run lint`、`npm test`（240 个文件 / 1958 个用例）、`npm run build`、`npm run test:architecture`（18 项）、`npm run check:architecture`、`npm run e2e:mobile-island`（15 项）全部通过；另在 `TZ=America/Los_Angeles` 下跑了受影响的 70 个测试文件，全部通过。主 E2E 套件需要测试库，没有在本机跑，PR 需要带 `run-e2e`。
 
+### 5.1 hook 依赖警告排查（71 条）
+
+逐条看过，**没有发现会导致错误行为的遗漏依赖**：
+
+| 类别 | 条数 | 结论 |
+|---|---|---|
+| cleanup 中读取 `xxxRef.current`（请求序号计数器） | 18 | 误报：cleanup 本来就要读最新序号来作废在途请求；规则针对的是 DOM ref |
+| effect 调用组件内函数（`load` / `fetchX` / `reload`）而未列入依赖 | 32 | 安全：effect 闭包每次渲染重建，调用的是当次渲染的函数；不随这些函数重跑是有意设计 |
+| 以 `x?.id` 等原始值作依赖、在 effect 内读取对象本身 | 13 | 有意：按身份或主键触发，避免对象引用变化时重复执行（例如切换账号才重置表单） |
+| 每次渲染生成新的空数组或对象，使 memo 或 effect 依赖失效 | 6 | 4 条已修（改用模块级空数组常量，`useAnnouncements` 2 条、`ProductDetailDesktop`、`AdminOfferManagerModal`）；`RechargeCheckout` 的 `parsed` 2 条只造成多余执行，不改 |
+| 多余依赖（`location.key`、`currentSessionKey`） | 2 | 有意：用于在导航或会话变化时触发重新加载 |
+
+lint 棘轮从 71 降到 67。剩下的警告保留为 warn，不批量加 disable 注释：注释的维护成本高于收益，而棘轮已经能阻止新增。
+
+### 5.2 F-01 第一步：商品详情页下单流程
+
+下单流程（购买弹窗、会话与路由作用域、下单提交与错误分类、成功态、移动端灵动岛、下单后刷新详情）原样迁入 `src/pages/productDetail/useProductCheckout.ts`，沿用 `pages/merchant/productCreation/useProductCreation.ts` 的页面私有 hook 模式。`ProductDetailPage.tsx` 从 908 行降到 690 行。公开详情请求收进 `api/catalog.ts` 的 `getPublicProductDetail`，PDP 因此移出 FE-02 白名单。行为不变：PDP 现有 5 个测试文件、全量单测与移动端 E2E 均通过。`Layout` 拆分留待下一步。
+
 ## 6. 本轮没有覆盖的内容
 
 - 运行时性能（首屏、包体积、渲染）：之前的 P1/P2 骨架屏和外壳几何专项已经做过，本轮没有重新测量。

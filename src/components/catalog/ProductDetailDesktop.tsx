@@ -35,6 +35,8 @@ import DesktopDetailContent, {
 import DesktopPurchasePanel from './productDetail/desktop/DesktopPurchasePanel'
 import './ProductDetailDesktop.css'
 
+const NO_OFFERS: NonNullable<Product['offers']> = []
+
 interface Props {
   product: Product
   preview: boolean
@@ -219,7 +221,7 @@ export default function ProductDetailDesktop({
     }
   }, [])
 
-  const offers = product.offers ?? []
+  const offers = product.offers ?? NO_OFFERS
   const COLLAPSE_THRESHOLD = 4
   const visibleOffers = useMemo(() => {
     if (offers.length <= COLLAPSE_THRESHOLD || offersExpanded) {

@@ -108,7 +108,7 @@ const webClient = 'src/api/client.ts'
 const webClientOwners = new Set([
   'src/components/ChatBindCard.tsx', 'src/components/admin/AdminDashboardPanel.tsx',
   'src/components/merchandising/AdminProductSearchSelect.tsx', 'src/lib/webPush.ts',
-  'src/pages/ProductDetailPage.tsx', 'src/pages/ProfilePage.tsx',
+  'src/pages/ProfilePage.tsx',
 ])
 const webDateOwner = 'src/utils/datetime.ts'
 const webLocaleDateOnly = new Set(['toLocaleDateString', 'toLocaleTimeString'])
