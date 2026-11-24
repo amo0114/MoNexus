@@ -256,6 +256,21 @@ lint 棘轮从 71 降到 67。剩下的警告保留为 warn，不批量加 disab
 
 下单流程（购买弹窗、会话与路由作用域、下单提交与错误分类、成功态、移动端灵动岛、下单后刷新详情）原样迁入 `src/pages/productDetail/useProductCheckout.ts`，沿用 `pages/merchant/productCreation/useProductCreation.ts` 的页面私有 hook 模式。`ProductDetailPage.tsx` 从 908 行降到 690 行。公开详情请求收进 `api/catalog.ts` 的 `getPublicProductDetail`，PDP 因此移出 FE-02 白名单。行为不变：PDP 现有 5 个测试文件、全量单测与移动端 E2E 均通过。`Layout` 拆分留待下一步。
 
+### 5.3 F-01 第二步：`Layout` 拆分
+
+`Layout.tsx` 从 899 行降到 341 行，代码块原样迁出到 `src/components/layout/`：
+
+| 文件 | 职责 |
+|---|---|
+| `NavbarActions.tsx` | 导航栏右侧：角色入口、排行榜、订单角标、铃铛、主题、签到、充值、积分、头像、抽屉 |
+| `LayoutFooter.tsx` | 页脚与法律链接加载 |
+| `useLayoutIslands.ts` | 灵动岛通知分流、四种岛的可见性、降级与自动消退、队列暂停 |
+| `useAnnouncementCenter.ts` | 公告中心开关、强制公告页签、必读公告主动弹出 |
+| `useNavBadgeSync.ts` | 订单与通知角标的初始化和实时失效同步 |
+| `useNavbarScroll.ts` | 滚动收敛与移动端紧凑态 |
+
+`Layout` 只保留外壳、搜索状态、chrome 模式推导与导航栏高度同步。DOM 结构和 class 不变；hook 依赖警告只是换了位置（总数不变）。验证：全量单测、构建、移动端 E2E 通过，主 E2E 交给 CI（`run-e2e`）。
+
 ## 6. 本轮没有覆盖的内容
 
 - 运行时性能（首屏、包体积、渲染）：之前的 P1/P2 骨架屏和外壳几何专项已经做过，本轮没有重新测量。
