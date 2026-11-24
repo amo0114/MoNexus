@@ -5558,6 +5558,9 @@
               "governance-v1"
             ]
           },
+          "optionalFulfillment": {
+            "$ref": "#/components/schemas/FakaPluginStatus"
+          },
           "permissions": {
             "type": "array",
             "items": {

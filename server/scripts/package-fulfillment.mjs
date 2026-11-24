@@ -9,6 +9,8 @@ const destination = resolve(process.argv[2] ?? join(server, 'release'))
 const core = join(destination, 'core')
 const plugin = join(destination, 'faka-bridge')
 const optionalEntry = 'plugins/fakaBridge/entry.js'
+const optionalImplementation = /^(?:plugins\/fakaBridge\/|lib\/fakaBridge\/|lib\/runtimeSettings\/fakaBridge\.js|modules\/(?:fakaBridge\/|xboardAccounts\/|trafficReset\/|chatbot\/xboard\/|(?:admin|catalog)\/faka))/
+const optionalStorage = /\b(?:prisma|tx)\.(?:fakaBridgeTask|fakaProvisionEmail\w*|xboardInstance|xboardAccount\w*|xboardTrafficResetOperation|trafficReset\w*|externalCatalogSyncIdempotency)\b|"FakaBridgeTask"/
 const foundation = '20260729150000_faka_bridge_foundation'
 const sharedFoundation = '20260729150000_external_offer_binding'
 const optionalMigrations = new Set([
@@ -65,8 +67,10 @@ for (const location of [core, plugin]) await mkdir(location, { recursive: false 
 const coreFiles = await closure(['main.js', 'prisma/seed.js', 'scripts/governanceMigrate.js'])
 const pluginFiles = await closure([optionalEntry, 'scripts/backfillFakaPayments.js', 'scripts/backfillXboardAccounts.js', 'scripts/reconcileTrafficReset.js'])
 for (const path of coreFiles) {
-  if (/^(?:plugins\/fakaBridge\/|modules\/(?:fakaBridge|xboardAccounts|trafficReset)\/|lib\/fakaBridge\/)/.test(path)
-    || path === 'lib/runtimeSettings/fakaBridge.js') throw new Error(`Core still imports a plugin implementation: ${path}`)
+  if (optionalImplementation.test(path)) throw new Error(`Core still imports a plugin implementation: ${path}`)
+  if (path.endsWith('.js') && optionalStorage.test(await readFile(join(dist, path), 'utf8'))) {
+    throw new Error(`Core still accesses plugin storage: ${path}`)
+  }
   await copyFile(join(dist, path), join(core, 'dist', path))
 }
 for (const path of pluginFiles) {

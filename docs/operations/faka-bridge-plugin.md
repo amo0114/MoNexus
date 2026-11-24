@@ -22,8 +22,8 @@ node scripts/package-fulfillment-web.mjs "$RELEASE_DIR"
 
 ## 筹备并装载
 
-1. 在 API 和 worker 上准备同一构建的 `faka-bridge/dist/`。把插件文件合入各实例的 `core/dist/`，将 `plugins/fakaBridge/entry.js` 作为最后一步原子发布。
-2. 新核心库先将 `faka-bridge/prisma/faka-migrations/` 和 `faka-bridge/scripts/install-faka-schema.mjs` 分别放入 `core/prisma/` 和 `core/scripts/`，在 `core/` 执行 `node scripts/install-faka-schema.mjs`。该命令使用迁移数据库连接，记录校验和并可安全重试。老站的插件表由原 Prisma 迁移管理。
+1. 新核心库先将 `faka-bridge/prisma/faka-migrations/` 和 `faka-bridge/scripts/install-faka-schema.mjs` 分别放入 `core/prisma/` 和 `core/scripts/`，在 `core/` 执行 `node scripts/install-faka-schema.mjs`。该命令使用迁移数据库连接，记录校验和并可安全重试。老站的插件表由原 Prisma 迁移管理。
+2. 在 API 和 worker 上准备同一构建的 `faka-bridge/dist/`。把插件文件合入各实例的 `core/dist/`，将 `plugins/fakaBridge/entry.js` 作为最后一步原子发布。
 3. 把 `faka-bridge/web/manifest.json` 中列出的文件按原路径发布到静态根。当前构建的入口依赖这些带哈希的资源名。
 4. 用拥有设置管理权限且已完成 MFA 的管理员打开配置页，确认制品状态后点击「装载插件」。首次装载的独立核心站点在启用接单前配置和校验 FakaBridge。API 按请求刷新装载状态，worker 通过轮询应用共享状态。检查各实例均可读取相同的部署状态。
 

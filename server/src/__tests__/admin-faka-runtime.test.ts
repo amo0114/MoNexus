@@ -4,6 +4,7 @@ import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import * as client from '../lib/fakaBridge/client.js'
 import { api, authHeader, createTestUser, loginAs } from './helpers.js'
+import { expectOpenApiResponse } from './openapiContract.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 import { fakaSettings } from '../modules/admin/fakaSettings.js'
 import { createOrder } from '../modules/orders/service.js'
@@ -64,6 +65,7 @@ describe('version-bound FakaBridge runtime', () => {
     await api.put(path).set(auth).send({ mounted: false }).expect(409)
     await prisma.fakaBridgeTask.update({ where: { id: task.id }, data: { leaseUntil: null } })
     const detached = await api.put(path).set(auth).send({ mounted: false }).expect(200)
+    expectOpenApiResponse(detached, 'put', path)
     expect(detached.body).toMatchObject({ installed: true, mounted: false })
     expect(getFulfillmentProvider('faka_bridge')).toBeUndefined()
     await api.get('/api/admin/integrations/faka-bridge/config').set(auth).expect(404)
