@@ -8,7 +8,11 @@ export type PurchaseBoundaryProps = {
   children(state: PurchaseExtensionState): ReactNode
 }
 
-const unavailable: PurchaseExtensionState = { ready: false, busy: false }
+const unavailable: PurchaseExtensionState = {
+  ready: false,
+  busy: false,
+  summaryHint: '履约组件暂时无法加载，请刷新后重试。',
+}
 const loading: PurchaseExtensionState = { ready: false, busy: true }
 
 export function PurchaseExtensionBoundary(props: PurchaseBoundaryProps) {

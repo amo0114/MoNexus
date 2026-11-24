@@ -1,6 +1,6 @@
 # FakaBridge 可选插件设计
 
-基线 `4b098c8ff415b53dabb32758730cfb792b60cc9c`。设计草案，源于本轮后端架构评审后的需求补充。
+评审基线 `4b098c8ff415b53dabb32758730cfb792b60cc9c`。实施方案源于本轮后端架构评审后的需求补充。
 
 ## 目标
 
@@ -55,4 +55,4 @@
 3. **历史不漂移。** 暂停后旧任务仍以原供应商、协议、目标、操作键和配置版本处理。未确认的远端结果保持可追踪，原有退款与撤销条件保持生效。
 4. **卸载有证据。** 活动租约、未决退款、未知任务或仍依赖插件的有效服务与权益阻止注销。正常卸载后，请求和后台任务停止，旧订单及交付仍能读取。重新载入同一插件时，可按保留的原始标识恢复必要的历史操作。
 
-验证从 `npm run test:architecture` 与 `npm run check:architecture` 开始，并使用两套隔离数据库分别验证全新核心部署和现有部署升级。关联回归包括 `order-cancellation-bridge.test.ts`、`fulfillment-job-engine.test.ts`、`admin-faka-runtime.test.ts`、`runtime-settings-multi-process.test.ts`、结账幂等与前端插件入口可见性。本轮到设计草案为止。
+验证从 `npm run test:architecture` 与 `npm run check:architecture` 开始，并使用两套隔离数据库分别验证全新核心部署和现有部署升级。关联回归包括 `order-cancellation-bridge.test.ts`、`fulfillment-job-engine.test.ts`、`admin-faka-runtime.test.ts`、`runtime-settings-multi-process.test.ts`、结账幂等与前端插件入口可见性。制品安装与状态切换参见[运行手册](../../../docs/operations/faka-bridge-plugin.md)。

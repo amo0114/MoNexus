@@ -58,10 +58,12 @@ export function decodeFakaRevision(revision: IntegrationConfigRevision): FakaSna
   } catch { throw new FakaConfigurationUnavailableError() }
 }
 type Db = Pick<Prisma.TransactionClient, 'integrationConfig' | 'integrationConfigRevision'>
-export async function activeFakaSnapshot(db: Db = prisma): Promise<FakaSnapshot> {
+export async function activeFakaSnapshot(db: Db = prisma, purpose: 'intake' | 'existing' = 'intake'): Promise<FakaSnapshot> {
   const row = await db.integrationConfig.findUnique({ where: { key: FAKA_KEY }, include: { activeRevision: true } })
   const snapshot = row?.activeRevisionId ? decodeFakaRevision(row.activeRevision!) : fakaBootstrap()
-  return row && !row.enabled ? { ...snapshot, bridge: { ...snapshot.bridge, enabled: false, url: undefined, secret: undefined } as typeof config.fakaBridge } : snapshot
+  return row && !row.enabled && purpose === 'intake'
+    ? { ...snapshot, bridge: { ...snapshot.bridge, enabled: false, url: undefined, secret: undefined } as typeof config.fakaBridge }
+    : snapshot
 }
 export async function historicalFakaSnapshot(revisionId: string | null, db: Db = prisma): Promise<FakaSnapshot> {
   if (revisionId) return decodeFakaRevision(await db.integrationConfigRevision.findUniqueOrThrow({ where: { id: revisionId } }))
@@ -122,11 +124,14 @@ export async function pinFakaSnapshot(tx: Prisma.TransactionClient): Promise<str
   if (snapshot.revisionId !== active.revisionId || snapshot.bridge.url !== active.bridge.url || snapshot.bridge.secret !== active.bridge.secret) throw conflict('履约配置已变化，请重新确认')
   return snapshot.revisionId
 }
-export const fakaRuntimeMiddleware: RequestHandler = (req, _res, next) => {
+const bindIntake = bindActiveFaka()
+export const fakaRuntimeMiddleware: RequestHandler = (req, res, next) => {
   if (!/^\/(products|orders|checkout|faka-bridge|bot|shops|storefront|merchant)(\/|$)/.test(req.path)
     && !/^\/admin\/(faka|products|offers)/.test(req.path)) return next()
-  return bindActiveFaka(req, _res, next)
+  return bindIntake(req, res, next)
 }
-export const bindActiveFaka: RequestHandler = (_req, _res, next) => {
-  void withActiveFaka(async () => next()).catch(next)
+export function bindActiveFaka(purpose: 'intake' | 'existing' = 'intake'): RequestHandler {
+  return (_req, _res, next) => {
+    void activeFakaSnapshot(prisma, purpose).then(snapshot => withFakaSnapshot(snapshot, () => next())).catch(next)
+  }
 }

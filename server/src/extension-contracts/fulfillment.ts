@@ -84,8 +84,8 @@ export type FulfillmentDiagnostics = {
  * `modules/fulfillment/apply.ts`).
  *
  * Hooks run for every registered provider, so each must ignore orders it has
- * no task for. Providers are trusted in-process code registered at build time
- * in `bootstrap/extensions.ts`.
+ * no task for. Trusted in-process providers are registered by the composition
+ * root or by the optional fulfillment loader.
  */
 export interface FulfillmentProvider {
   /** Stable id; equals `Offer.externalIntegration` for offers it fulfills. */

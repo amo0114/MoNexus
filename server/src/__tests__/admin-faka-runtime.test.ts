@@ -8,9 +8,11 @@ import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 import { fakaSettings } from '../modules/admin/fakaSettings.js'
 import { createOrder } from '../modules/orders/service.js'
 import { getFulfillmentProvider } from '../modules/fulfillment/registry.js'
+import { onOrderRefundedInTx } from '../modules/fulfillment/coordination.js'
+import { retryFakaBridgeTask } from '../modules/admin/fakaTaskAdmin.js'
 import { __setFakaClientOverridesForTests, processFakaBridgeTask, runFakaBridgeBatch } from '../modules/fakaBridge/worker.js'
 import { onFakaOrderRefundedInTx, processFakaRevokeTask, runFakaRevokeBatch, runFakaReconcileBatch } from '../modules/fakaBridge/lifecycle.js'
-import { activeFakaSnapshot, withActiveFaka } from '../lib/runtimeSettings/fakaBridge.js'
+import { activeFakaSnapshot, pinFakaSnapshot, withActiveFaka, withFakaSnapshot } from '../lib/runtimeSettings/fakaBridge.js'
 import { __clearFakaCapacityCacheForTests, __setFakaCapacityProbeForTests, fetchFakaCapacityForSku } from '../lib/fakaBridge/capacity.js'
 
 const initial = { bridge: config.fakaBridge, key: config.integrationCredentialsEncKey, instanceId: config.xboardAccounts.instanceId }
@@ -43,26 +45,39 @@ describe('version-bound FakaBridge runtime', () => {
   it('retains historical work during pause and changes mounted routes without restarting', async () => {
     const current = await activate('https://a.example.com', 0)
     const task = await order()
+    const stale = await activeFakaSnapshot()
     const admin = await prisma.user.findUniqueOrThrow({ where: { id: actor } })
     const auth = authHeader((await loginAs(admin.email, 'pass123')).accessToken)
     const path = '/api/admin/integrations/faka-bridge/plugin'
     await api.put(path).set(auth).send({ mounted: false }).expect(409)
-    await fakaSettings.api.enabled(actor, current.version, false)
+    const paused = await fakaSettings.api.enabled(actor, current.version, false)
     await api.put(path).set(auth).send({ mounted: false }).expect(409)
     expect(getFulfillmentProvider('faka_bridge')).toBeDefined()
+    const before = await prisma.order.count()
+    await expect(order()).rejects.toMatchObject({ status: 400 })
+    await expect(withFakaSnapshot(stale, () => prisma.$transaction(pinFakaSnapshot))).rejects.toMatchObject({ status: 503 })
+    expect(await prisma.order.count()).toBe(before)
     expect(await prisma.fakaBridgeTask.findUnique({ where: { id: task.id } }))
       .toMatchObject({ configRevisionId: current.activeRevisionId, status: 'pending' })
 
-    await prisma.fakaBridgeTask.update({ where: { id: task.id }, data: { status: 'cancelled' } })
+    await prisma.fakaBridgeTask.update({ where: { id: task.id }, data: { status: 'failed', leaseUntil: new Date(Date.now() + 60_000) } })
+    await api.put(path).set(auth).send({ mounted: false }).expect(409)
+    await prisma.fakaBridgeTask.update({ where: { id: task.id }, data: { leaseUntil: null } })
     const detached = await api.put(path).set(auth).send({ mounted: false }).expect(200)
     expect(detached.body).toMatchObject({ installed: true, mounted: false })
     expect(getFulfillmentProvider('faka_bridge')).toBeUndefined()
     await api.get('/api/admin/integrations/faka-bridge/config').set(auth).expect(404)
+    await api.get(`/api/admin/orders/${task.orderId}`).set(auth).expect(200)
+    await expect(retryFakaBridgeTask(actor, task.id)).rejects.toMatchObject({ status: 409 })
+    await expect(fakaSettings.api.enabled(actor, paused.version, true)).rejects.toMatchObject({ status: 409 })
+    await expect(prisma.$transaction(tx => onOrderRefundedInTx(tx, task.orderId))).rejects.toMatchObject({ status: 409 })
 
     await api.put(path).set(auth).send({ mounted: true }).expect(200)
     expect(getFulfillmentProvider('faka_bridge')).toBeDefined()
     const state = await api.get('/api/admin/integrations/faka-bridge/config').set(auth).expect(200)
     expect(state.body).toMatchObject({ enabled: false, activeRevisionId: current.activeRevisionId })
+    await fakaSettings.api.enabled(actor, paused.version, true)
+    expect((await order()).configRevisionId).toBe(current.activeRevisionId)
   })
 
   it('does not let unreadable refunded tasks with future schedules or active leases fill later batches', async () => {

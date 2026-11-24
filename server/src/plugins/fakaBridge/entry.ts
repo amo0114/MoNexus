@@ -10,9 +10,13 @@ import { fakaBridgeRoutes } from '../../modules/fakaBridge/routes.js'
 
 async function assertReady() {
   const [schema] = await prisma.$queryRaw<Array<{ ready: boolean }>>`
-    SELECT to_regclass('"FakaBridgeTask"') IS NOT NULL
-       AND to_regclass('"XboardTrafficResetOperation"') IS NOT NULL
-       AND to_regclass('"TrafficResetBenefitGrant"') IS NOT NULL AS ready
+    SELECT bool_and(to_regclass(quote_ident(name)) IS NOT NULL) AS ready
+    FROM unnest(ARRAY[
+      'FakaBridgeTask', 'FakaProvisionEmailProof', 'FakaProvisionEmailSendBudget', 'ExternalCatalogSyncIdempotency',
+      'XboardInstance', 'XboardAccountLink', 'XboardAccountEvidence', 'XboardAccountPreference',
+      'XboardAccountSelection', 'XboardAccountBackfillState', 'XboardTrafficResetOperation',
+      'TrafficResetBenefitGrant', 'TrafficResetIntent', 'TrafficResetConfirmationRequest'
+    ]) AS required(name)
   `
   if (!schema?.ready) throw conflict('请先安装插件数据库迁移')
 }
@@ -25,8 +29,8 @@ async function assertDetachable(tx: Prisma.TransactionClient) {
       { revokeStatus: { in: ['pending', 'failed'] } },
       { leaseUntil: { gt: now } },
       { order: { OR: [{ status: 'disputed' }, { afterSalesCases: { some: { status: 'open' } } }] } },
-      { revokeStatus: null, order: { status: 'refunded' },
-        OR: [{ status: 'succeeded' }, { status: 'failed', xboardTradeNo: { not: null } }] },
+      { revokeStatus: null, status: 'failed', xboardTradeNo: { not: null } },
+      { revokeStatus: null, status: 'succeeded', order: { status: 'refunded' } },
       { status: 'succeeded', periodSnapshot: { not: 'reset_traffic' }, AND: [
         { OR: [{ revokeStatus: null }, { revokeStatus: { not: 'succeeded' } }] },
         { order: { OR: [{ delivery: null }, { delivery: { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }] } },
@@ -37,10 +41,15 @@ async function assertDetachable(tx: Prisma.TransactionClient) {
       { leaseUntil: { gt: now } },
     ] }, select: { id: true } }),
     tx.trafficResetBenefitGrant.findFirst({ where: {
-      status: 'active', consumed: { lt: tx.trafficResetBenefitGrant.fields.granted },
+      status: { in: ['active', 'pending_verification'] }, consumed: { lt: tx.trafficResetBenefitGrant.fields.granted },
     }, select: { id: true } }),
   ])
-  if (task || reset || benefit) throw conflict('仍有未处理的外部任务、售后或有效权益，不能注销插件')
+  const blockers = [
+    task ? '外部履约、撤销或售后' : null,
+    reset ? '流量重置操作' : null,
+    benefit ? '未消费或待核验的权益' : null,
+  ].filter(Boolean)
+  if (blockers.length) throw conflict(`仍有待处理的${blockers.join('、')}，不能注销插件`)
 }
 
 export const plugin = {

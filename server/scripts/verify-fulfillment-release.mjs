@@ -2,19 +2,29 @@ import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { randomUUID } from 'node:crypto'
-import { cp } from 'node:fs/promises'
+import { cp, readFile } from 'node:fs/promises'
+import { setTimeout as delay } from 'node:timers/promises'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import request from 'supertest'
+import express from 'express'
 
 const release = resolve(process.argv[2] ?? '')
 const core = join(release, 'core')
 const plugin = join(release, 'faka-bridge')
+const pluginAssets = JSON.parse(await readFile(join(plugin, 'web/manifest.json'), 'utf8'))
+assert.ok(pluginAssets.length > 0)
+const web = express()
+web.use(express.static(join(core, 'web')))
+await request(web).get('/').expect(200)
+for (const file of pluginAssets) await request(web).get(`/${file}`).expect(404)
 const url = process.env.TEST_DATABASE_URL
 if (!url || !new URL(url).pathname.includes('monexus_test')) {
-  throw new Error('Use a dedicated, already migrated monexus_test database')
+  throw new Error('Use an empty, dedicated monexus_test database')
 }
 process.env.DATABASE_URL = url
+process.env.DIRECT_URL = url
+execFileSync(process.execPath, [join(core, 'scripts/migrate-deploy.mjs')], { cwd: core, stdio: 'inherit' })
 const load = file => import(pathToFileURL(join(core, 'dist', file)).href)
 const { app } = await load('app.js')
 const { prisma } = await load('lib/prisma.js')
@@ -28,22 +38,25 @@ const { optionalFulfillmentStatus, refreshOptionalFulfillment, setOptionalFulfil
 const childCode = `
   import { createInterface } from 'node:readline';
   import { prisma } from './dist/lib/prisma.js';
-  import { optionalFulfillmentStatus, refreshOptionalFulfillment } from './dist/bootstrap/optionalFulfillment.js';
+  import { optionalFulfillmentStatus, startOptionalFulfillmentWorkers, stopOptionalFulfillmentWatcher } from './dist/bootstrap/optionalFulfillment.js';
+  import { stopFulfillmentBackgroundJobs } from './dist/modules/fulfillment/coordination.js';
+  startOptionalFulfillmentWorkers();
   for await (const line of createInterface({ input: process.stdin })) {
-    await refreshOptionalFulfillment(true);
     process.stdout.write('plugin-status:' + JSON.stringify(optionalFulfillmentStatus()) + '\\n');
   }
+  await stopOptionalFulfillmentWatcher();
+  await stopFulfillmentBackgroundJobs();
   await prisma.$disconnect();
 `
 
 let child
 try {
   assert.deepEqual(optionalFulfillmentStatus(), { id: 'faka_bridge', installed: false, mounted: false })
-  const [schema] = await prisma.$queryRaw`
-    SELECT to_regclass('"FakaBridgeTask"') IS NULL
-       AND to_regclass('"XboardTrafficResetOperation"') IS NULL AS clean
+  const stored = await prisma.$queryRaw`
+    SELECT relname FROM pg_class WHERE relnamespace = current_schema()::regnamespace AND relkind = 'r'
+      AND (relname ~ '^(Faka|Xboard|TrafficReset)' OR relname = 'ExternalCatalogSyncIdempotency')
   `
-  assert.equal(schema.clean, true)
+  assert.deepEqual(stored, [])
   await request(app).get('/api/faka-bridge/provision-email/bound').expect(404)
 
   const actor = await prisma.user.create({ data: { email: 'plugin-release-admin@example.test', password: 'fixture', role: 'admin' } })
@@ -91,26 +104,38 @@ try {
       if (line.value.startsWith('plugin-status:')) return JSON.parse(line.value.slice('plugin-status:'.length))
     }
   }
+  async function expectWorkerMounted(mounted) {
+    const deadline = Date.now() + 12_000
+    do {
+      if ((await statusOnWorker()).mounted === mounted) return
+      await delay(250)
+    } while (Date.now() < deadline)
+    assert.fail(`Worker did not reconcile mounted=${mounted}`)
+  }
   assert.equal((await statusOnWorker()).installed, false)
 
   // Install data and files separately while both core processes stay running.
-  await cp(join(plugin, 'prisma/faka-bridge.sql'), join(core, 'prisma/faka-bridge.sql'))
+  await cp(join(plugin, 'prisma/faka-migrations'), join(core, 'prisma/faka-migrations'), { recursive: true })
   const installer = join(core, 'scripts/install-faka-schema.mjs')
   await cp(join(plugin, 'scripts/install-faka-schema.mjs'), installer)
   for (let i = 0; i < 2; i++) execFileSync(process.execPath, [installer], { cwd: core, stdio: 'inherit' })
   await cp(join(plugin, 'dist'), join(core, 'dist'), { recursive: true })
+  for (const file of pluginAssets) {
+    await cp(join(plugin, 'web', file), join(core, 'web', file))
+    await request(web).get(`/${file}`).expect(200)
+  }
   await refreshOptionalFulfillment(true)
   assert.equal(optionalFulfillmentStatus().mounted, false)
 
   await setOptionalFulfillmentMounted(true, actor.id)
   assert.equal(optionalFulfillmentStatus().mounted, true)
-  assert.equal((await statusOnWorker()).mounted, true)
+  await expectWorkerMounted(true)
   await request(app).get('/api/faka-bridge/provision-email/bound').expect(401)
 
   await setOptionalFulfillmentMounted(false, actor.id)
-  assert.equal((await statusOnWorker()).mounted, false)
+  await expectWorkerMounted(false)
   await request(app).get('/api/faka-bridge/provision-email/bound').expect(404)
-  console.log('API and worker: independent runtime attach and safe detach passed.')
+  console.log('API and worker: runtime attach and safe detach passed. Optional web assets served after staging.')
 } finally {
   child?.stdin.end()
   await prisma.$disconnect()

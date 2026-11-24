@@ -273,7 +273,7 @@ export function fulfillmentReviewActions(order: {
   fulfillmentJob?: TaskDiagnosticsShape | null
   provisionTask?: { status?: string; leaseUntil?: Date | null } | null
 }): Array<'recheck_cancel' | 'confirm_cancelled'> {
-  if (!['pending', 'processing'].includes(String(order.status)) || order.delivery?.id) return []
+  if (!['pending', 'processing'].includes(String(order.status)) || order.delivery) return []
   if (!order.cancelRequestedAt && !order.externalFulfillmentProvider && !order.fakaBridgeTask && !order.fulfillmentJob && !order.provisionTask) return []
   const tasks = [order.fakaBridgeTask, order.fulfillmentJob, order.provisionTask]
   const canConfirm = Boolean(order.cancelRequestedAt) && !order.fakaBridgeTask
@@ -349,7 +349,7 @@ export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {
   // P7b：仲裁上下文透出任务态（同商家的安全投影，禁止整表透传）。
   // External executors are identified without exposing task payloads or credentials.
-  return withExternalFulfillmentForStaff(
-    withProvisionStatusForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))),
+  return withProvisionStatusForStaff(
+    withExternalFulfillmentForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))),
   )
 }
