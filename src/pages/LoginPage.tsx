@@ -17,7 +17,7 @@ import {
   type MfaVerifyResponse,
   type RegistrationChallenge,
 } from '../api/auth'
-import { getApiErrorCode, getApiErrorMessage } from '../api/error'
+import { getApiErrorCode, getApiErrorMessage, getApiFieldErrorMessage } from '../api/error'
 import { agreementVersionsOf, LEGAL_PAGE_PATHS, type LegalRequirement } from '../api/legal'
 import MfaEnrollment from '../components/auth/MfaEnrollment'
 import MfaVerification from '../components/auth/MfaVerification'
@@ -25,7 +25,7 @@ import RecoveryCodeConfirmation from '../components/auth/RecoveryCodeConfirmatio
 import HumanVerificationWidget from '../components/auth/HumanVerificationWidget'
 import type { HumanVerificationHandle } from '../components/auth/humanVerificationTypes'
 import Logo from '../components/ui/Logo'
-import { PASSWORD_MIN_LENGTH, PASSWORD_RULE_HINT, passwordPolicyIssue } from '../lib/passwordPolicy'
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULE_HINT, passwordLengthIssue } from '../lib/passwordPolicy'
 import { parseSafeProductReturnTo } from '../utils/returnTo'
 import type { PendingAuthSessionCommit } from '../auth/pendingAuthSession'
 import { AuthSessionChangedError } from '../auth/sessionContext'
@@ -283,7 +283,7 @@ export default function LoginPage() {
     }
 
     humanVerificationRef.current?.reset()
-    showToast(getApiErrorMessage(error, '操作失败'), 'error')
+    showToast(getApiFieldErrorMessage(error, 'body.password') ?? getApiErrorMessage(error, '操作失败'), 'error')
   }
 
   async function handleLoginError(error: unknown) {
@@ -324,10 +324,7 @@ export default function LoginPage() {
         }
 
         // Before the human-verification proof, so a rejected password does not consume it.
-        const passwordIssue = await passwordPolicyIssue(password, {
-          email: email.trim().toLowerCase(),
-          nickname: nickname.trim(),
-        })
+        const passwordIssue = passwordLengthIssue(password)
         if (passwordIssue) {
           showToast(passwordIssue, 'error')
           return

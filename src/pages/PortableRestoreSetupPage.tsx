@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ShieldCheck } from 'lucide-react'
-import { getApiErrorMessage } from '../api/error'
+import { getApiErrorMessage, getApiFieldErrorMessage } from '../api/error'
 import {
   createPortableRestoreBootstrapAdmin,
   getPortableRestoreBootstrapStatus,
@@ -35,7 +35,7 @@ export default function PortableRestoreSetupPage() {
       showToast('引导管理员已创建，请登录后进入数据备份与恢复')
       navigate('/login')
     } catch (err) {
-      showToast(getApiErrorMessage(err, '恢复引导失败'), 'error')
+      showToast(getApiFieldErrorMessage(err, 'body.password') ?? getApiErrorMessage(err, '恢复引导失败'), 'error')
     } finally {
       setLoading(false)
     }

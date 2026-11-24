@@ -4,13 +4,13 @@ import { useAuthStore } from '../../stores/authStore'
 import { useAppStore } from '../../stores/appStore'
 import { updateMe, changePassword, sendVerificationEmail } from '../../api/auth'
 import { uploadImage, UploadError } from '../../api/uploads'
-import { getApiErrorMessage } from '../../api/error'
+import { getApiErrorMessage, getApiFieldErrorMessage } from '../../api/error'
 import { getAuthSessionContext, matchesAuthSessionContext } from '../../auth/sessionContext'
 import AvatarPresetDialog from './AvatarPresetDialog'
 import UserAvatar from '../ui/UserAvatar'
 import AsyncButton from '../ui/AsyncButton'
 import { showCompletionToast } from '../../lib/completionFeedback'
-import { PASSWORD_MIN_LENGTH, passwordPolicyIssue } from '../../lib/passwordPolicy'
+import { PASSWORD_MIN_LENGTH, passwordLengthIssue } from '../../lib/passwordPolicy'
 
 /**
  * 个人资料与账号安全卡：
@@ -92,7 +92,7 @@ export default function ProfileIdentityCard() {
     if (!requestContext) return
     setSavingPwd(true)
     try {
-      const passwordIssue = await passwordPolicyIssue(newPassword, { email: user?.email, nickname: user?.nickname })
+      const passwordIssue = passwordLengthIssue(newPassword)
       if (passwordIssue) {
         setPwdError(passwordIssue)
         return
@@ -104,7 +104,7 @@ export default function ProfileIdentityCard() {
       window.location.href = '/login'
     } catch (err: unknown) {
       if (isRequestContextCurrent(requestContext)) {
-        setPwdError(getApiErrorMessage(err, '修改密码失败'))
+        setPwdError(getApiFieldErrorMessage(err, 'body.newPassword') ?? getApiErrorMessage(err, '修改密码失败'))
       }
     } finally {
       setSavingPwd(false)
