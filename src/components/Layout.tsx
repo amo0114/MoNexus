@@ -1,43 +1,29 @@
-import { useNavigate, useLocation, Link } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { getAuthSessionContext } from '../auth/sessionContext'
-import { Coins, User, ShieldCheck, Store, Clock, XCircle, AlertTriangle, Plus, Search, Bell, Trophy, Package, Wallet, CalendarCheck, ArrowLeft, ChevronRight } from 'lucide-react'
-import CountBadge from './ui/CountBadge'
-import PointCoin from './ui/PointCoin'
-import { formatBadgeCount } from '../utils/orderAttention'
-import { subscribeReadInvalidation } from '../realtime/readSyncBroadcast'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import EmailVerificationBanner from './EmailVerificationBanner'
 import VerifiedActionGate from './VerifiedActionGate'
 import AnnouncementBanner from './AnnouncementBanner'
-import AnnouncementCenter, { AnnouncementBellButton } from './AnnouncementCenter'
-import Logo from './ui/Logo'
+import AnnouncementCenter from './AnnouncementCenter'
 import KineticBrand from './ui/KineticBrand'
-import UserAvatar from './ui/UserAvatar'
-import { ThemeMenu } from './ThemeToggle'
-import MobileNavDrawer from './MobileNavDrawer'
 import BottomTabBar from './BottomTabBar'
 import MobileSearchIsland from './MobileSearchIsland'
-import OrderSuccessIsland, { type OrderIslandPhase } from './OrderSuccessIsland'
+import OrderSuccessIsland from './OrderSuccessIsland'
 import FavoriteIsland from './FavoriteIsland'
 import QuietIslandNotice from './QuietIslandNotice'
 import ActionIslandNotice from './ActionIslandNotice'
-import { useIslandQueuePause } from '../hooks/useIslandQueuePause'
 import { useIsMobileViewport } from '../hooks/useMediaQuery'
 import { useAnnouncements } from '../hooks/useAnnouncements'
-import { useNotificationInvalidation } from '../hooks/useNotificationInvalidation'
 import { NotificationRealtimeBridge } from './NotificationRealtimeBridge'
-import { isActionableActivity, isOrderActivity, useAppStore } from '../stores/appStore'
-import { getApiErrorMessage } from '../api/error'
-import {
-  getLegalDocumentSummaries,
-  LEGAL_PAGE_PATHS,
-  type LegalDocumentSlug,
-} from '../api/legal'
-import type { PublicAnnouncement } from '../types/admin'
-import { hasMerchantCapability } from '../auth/merchantAccess'
-import { hasStreakDetails } from '../api/checkin'
+import { useAppStore } from '../stores/appStore'
 import { useCheckin } from '../hooks/useCheckin'
+import LayoutFooter from './layout/LayoutFooter'
+import NavbarActions from './layout/NavbarActions'
+import { useAnnouncementCenter } from './layout/useAnnouncementCenter'
+import { useLayoutIslands } from './layout/useLayoutIslands'
+import { useNavBadgeSync } from './layout/useNavBadgeSync'
+import { useNavbarScroll } from './layout/useNavbarScroll'
 
 const CheckinModal = lazy(() => import('./checkin/CheckinModal'))
 
@@ -55,108 +41,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const authEpoch = useAuthStore((s) => s.authEpoch)
   const authContext = getAuthSessionContext({ userId: user?.id ?? null, accessToken, authEpoch })
   const sessionId = authContext?.sessionId ?? storedSessionId
-  const showToast = useAppStore((s) => s.showToast)
-  const orderAttentionCount = useAppStore((s) => s.orderAttentionCount)
-  const refreshOrderAttention = useAppStore((s) => s.refreshOrderAttention)
-  const refreshOrderAttentionIfStale = useAppStore((s) => s.refreshOrderAttentionIfStale)
   const notificationUnreadCount = useAppStore((s) => s.notificationUnreadCount)
-  const refreshNotificationUnread = useAppStore((s) => s.refreshNotificationUnread)
   const checkinModalOpen = useAppStore((s) => s.checkinModalOpen)
   const setCheckinModalOpen = useAppStore((s) => s.setCheckinModalOpen)
   const showCheckinEntry = Boolean(user && user.role !== 'admin')
   const checkinState = useCheckin({ enabled: showCheckinEntry })
-  const checkinClaimableCount = hasStreakDetails(checkinState.status) ? checkinState.status.claimable.length : 0
-  const checkinPending = Boolean(checkinState.status && !checkinState.status.hasCheckedIn)
-  const checkinNeedsAction = checkinPending || checkinClaimableCount > 0
-  const checkinStreak = hasStreakDetails(checkinState.status) ? checkinState.status.streak : 0
   const announcements = useAnnouncements()
-  const [announcementCenterOpen, setAnnouncementCenterOpen] = useState(false)
-  const [forcedAnnouncementTab, setForcedAnnouncementTab] = useState(false)
-  const surfacedRequiredAnnouncements = useRef(new Set<string>())
+  useNavBadgeSync(announcements)
+  const announcementCenter = useAnnouncementCenter({ announcements, userId: user?.id, sessionId, authEpoch })
   const totalBellUnread = announcements.unreadCount + notificationUnreadCount
-  const hasPendingRequiredAnnouncement = announcements.items.some(
-    (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
-  )
-
-  useEffect(() => {
-    surfacedRequiredAnnouncements.current.clear()
-  }, [user?.id, sessionId, authEpoch])
-
-  useEffect(() => {
-    if (announcementCenterOpen) void announcements.reload().catch(() => {})
-  }, [announcementCenterOpen, announcements.reload])
-
-  // PR-3：全局角标唯一初始化/清零点（顶栏与底栏共用 store 状态）。
-  // 用户变化即初始化两个角标；登出立即归零（store 内作废在途响应）。
-  // 首次挂载只会发出一笔订单计数请求——stream ready 的补拉由
-  // refreshOrderAttentionIfStale 的 1s 间隔合并。
-  useEffect(() => {
-    if (!user) return
-    void refreshOrderAttention()
-    void refreshNotificationUnread()
-  }, [user?.id, refreshOrderAttention, refreshNotificationUnread])
-
-  // SPEC-LEGAL-001：法律页脚分组（门禁感知——功能关闭/接口 404 时整组隐藏，
-  // 绝不渲染指向 404 的死链）。模块级缓存，全应用只请求一次。
-  const [legalLinks, setLegalLinks] = useState<Array<{ slug: LegalDocumentSlug; title: string }> | null>(null)
-  useEffect(() => {
-    let active = true
-    getLegalDocumentSummaries()
-      .then((summaries) => {
-        if (!active) return
-        setLegalLinks(summaries ? summaries.map(({ slug, title }) => ({ slug, title })) : null)
-      })
-      .catch(() => {
-        if (active) setLegalLinks(null)
-      })
-    return () => {
-      active = false
-    }
-  }, [])
-
-  // 顶部滚动感知（全视口）：下滑 >36px 触发收敛态（Anthropic 风格收敛为 M · X），
-  // 回顶 <16px 恢复展开态（滞回防抖）。
-  const [isScrolled, setIsScrolled] = useState(false)
-  const isScrolledRef = useRef(false)
-
-  // 灵动岛药丸（V3-T3，仅移动视口）：离开顶部 >48px 收缩为居中悬浮
-  // 胶囊，回顶 <32px 恢复全宽（滞回防抖）。桌面恒 false，零影响。
   const isMobileViewport = useIsMobileViewport()
-  const [navCompact, setNavCompact] = useState(false)
-  const navCompactRef = useRef(false)
-  useEffect(() => {
-    let ticking = false
-    const onScroll = () => {
-      if (ticking) return
-      ticking = true
-      window.requestAnimationFrame(() => {
-        const y = window.scrollY
-        // 1. 全局品牌收敛感知 (y > 36 收敛为 M · X, y < 16 恢复)
-        const nextScrolled = y > 36 ? true : y < 16 ? false : isScrolledRef.current
-        if (nextScrolled !== isScrolledRef.current) {
-          isScrolledRef.current = nextScrolled
-          setIsScrolled(nextScrolled)
-        }
-
-        // 2. 移动端灵动岛胶囊感知
-        if (isMobileViewport) {
-          const nextCompact = y > 48 ? true : y < 32 ? false : navCompactRef.current
-          if (nextCompact !== navCompactRef.current) {
-            navCompactRef.current = nextCompact
-            setNavCompact(nextCompact)
-          }
-        }
-        ticking = false
-      })
-    }
-    if (!isMobileViewport) {
-      navCompactRef.current = false
-      setNavCompact(false)
-    }
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [isMobileViewport])
+  const { isScrolled, navCompact } = useNavbarScroll(isMobileViewport)
 
   // 灵动岛搜索（V3）：商城页移动视口下，navbar 右侧出现搜索图标，
   // 点击后 navbar morph 为搜索卡片（input + 分类 chips + 遮罩聚焦）。
@@ -170,29 +65,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const islandSearch = searchOpen && isMobileViewport && location.pathname === '/'
   const searchBusy = searchEligible && (islandSearch || searchPresent)
 
-  // 灵动岛通知（V4）：移动端简短安静级消息（success/info ≤14 字）由 navbar
-  // 胶囊短暂承载——默认内容淡出、通知淡入，几何零重排；2.4s 自动消退，
-  // 点击即散；搜索卡片展开时让位（降级回横幅 toast）。iOS 灵动岛思路：
-  // 轻确认融入既有 chrome，不打断视线流；重要/长文仍走横幅（Toast.tsx）。
-  const islandNotice = useAppStore((s) => s.islandNotice)
-  const orderNotice = isOrderActivity(islandNotice?.kind) ? islandNotice : null
-  const favoriteNotice = islandNotice?.kind === 'favorite' ? islandNotice : null
-  const actionNotice = isActionableActivity(islandNotice?.kind) ? islandNotice : null
-  const quietNotice = islandNotice && !orderNotice && !favoriteNotice && !actionNotice ? islandNotice : null
-  const [actionIslandOpen, setActionIslandOpen] = useState(false)
-  const actionIslandVisible = isMobileViewport && actionIslandOpen && !searchBusy
-  const [favoriteIslandOpen, setFavoriteIslandOpen] = useState(false)
-  const favoriteIslandVisible = isMobileViewport && favoriteIslandOpen && !searchBusy
-  const [orderIslandOpen, setOrderIslandOpen] = useState(false)
-  const [orderIslandPhase, setOrderIslandPhase] = useState<OrderIslandPhase>('processing')
-  const [orderIslandHeight, setOrderIslandHeight] = useState(132)
-  const orderIslandVisible = isMobileViewport && orderIslandOpen && !searchBusy
-  const [quietIslandOpen, setQuietIslandOpen] = useState(false)
-  const quietIslandVisible = isMobileViewport && quietIslandOpen
-  const hideNavbarContent = Boolean(islandSearch || quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible || actionIslandVisible)
-  const clearIslandNotice = useAppStore((s) => s.clearIslandNotice)
-  const demoteIslandNotice = useAppStore((s) => s.demoteIslandNotice)
-  const setIslandNoticeAvailable = useAppStore((s) => s.setIslandNoticeAvailable)
   // 模态打开时 navbar 整体淡出：玻璃 chrome 在 overlay 的 backdrop-blur 下
   // 会变成半透隐约的脏条（用户反馈「背后的 navbar 被模糊了」）。淡出后
   // 视觉只剩统一压暗的内容 + 弹窗；灵动岛通知同期自动降级为横幅 toast
@@ -201,26 +73,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (modalOpen) setSearchOpen(false)
   }, [modalOpen])
-  useEffect(() => {
-    if (islandNotice && !isOrderActivity(islandNotice.kind) && !isActionableActivity(islandNotice.kind) && (searchBusy || modalOpen)) {
-      demoteIslandNotice()
-    }
-  }, [islandNotice, searchBusy, modalOpen, demoteIslandNotice])
-  useEffect(() => {
-    if (!islandNotice || isOrderActivity(islandNotice.kind) || isActionableActivity(islandNotice.kind)) return
-    const duration = islandNotice.durationMs ?? 2400
-    const t = setTimeout(() => clearIslandNotice(islandNotice.id), duration)
-    return () => clearTimeout(t)
-  }, [islandNotice, clearIslandNotice])
-  // Public/auth routes render Toast without Layout. Only advertise the island
-  // while this mobile navbar is actually mounted; leaving it demotes an
-  // in-flight quiet notification back to the universally visible banner.
-  useEffect(() => {
-    setIslandNoticeAvailable(isMobileViewport)
-    return () => setIslandNoticeAvailable(false)
-  }, [isMobileViewport, setIslandNoticeAvailable])
-  useIslandQueuePause(searchBusy || modalOpen, isMobileViewport)
-
+  const islands = useLayoutIslands({ isMobileViewport, searchBusy, modalOpen })
+  const {
+    orderNotice, favoriteNotice, actionNotice, quietNotice,
+    actionIslandVisible, favoriteIslandVisible, orderIslandVisible, quietIslandVisible,
+  } = islands
+  const hideNavbarContent = Boolean(islandSearch || quietNotice || quietIslandVisible || orderIslandVisible || favoriteIslandVisible || actionIslandVisible)
   type ChromeMode = 'expanded' | 'compact' | 'notice' | 'search'
   const chromeMode: ChromeMode = searchBusy
     ? 'search'
@@ -235,17 +93,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const chromeCompact = chromeMode !== 'expanded'
   const compactIsland = chromeMode === 'compact' || chromeMode === 'notice'
   const isBrandCondensed = isScrolled || compactIsland
-
-  useLayoutEffect(() => {
-    if (orderIslandVisible) {
-      document.documentElement.style.setProperty(
-        '--order-island-bottom', `calc(var(--safe-top) + ${12 + orderIslandHeight}px)`,
-      )
-    }
-    return () => {
-      document.documentElement.style.removeProperty('--order-island-bottom')
-    }
-  }, [orderIslandVisible, orderIslandHeight])
 
   // The navbar is the source of truth for all mobile chrome. A toast that
   // falls back to its own banner reads this variable, so it remains attached
@@ -286,56 +133,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     syncNavbarHeight()
   }, [chromeMode, syncNavbarHeight])
 
-  // Required acknowledgements are surfaced proactively once per active page
-  // session. Closing the dialog never acknowledges it; the banner and red dot
-  // remain until the explicit confirmation is stored server-side.
-  useEffect(() => {
-    const pending = announcements.items.find(
-      (announcement) => announcement.presentation === 'acknowledgement_required' && !announcement.acknowledgedAt,
-    )
-    if (!pending) return
-    const key = `${user?.id ?? 'visitor'}:${sessionId ?? 'unbound'}:${authEpoch}:${pending.id}:${pending.version}`
-    if (surfacedRequiredAnnouncements.current.has(key)) return
-    surfacedRequiredAnnouncements.current.add(key)
-    setAnnouncementCenterOpen(true)
-  }, [announcements.items, user?.id, sessionId, authEpoch])
-
-  // SPEC-NOTIFY-RT-001：实时失效驱动未读刷新。移除旧独立 30s 轮询 effect
-  // （CHK-FE-010）；notifications topic 覆盖实时事件，all.visible 覆盖
-  // ready / 回前台 / 降级 30s fallback / healthy 5min 校准。
-  useNotificationInvalidation('notifications', () => {
-    if (user) void refreshNotificationUnread()
-  })
-  // PR-3：订单红点接入实时失效总线——buyer.orders 覆盖全部状态迁移
-  // （交付/拒单/仲裁/自动开通），角标不再离开 /orders 页后冻结。
-  useNotificationInvalidation('buyer.orders', () => {
-    if (user) void refreshOrderAttention()
-  })
-  useNotificationInvalidation('all.visible', () => {
-    if (!user) return
-    void refreshNotificationUnread()
-    void announcements.reload().catch(() => {})
-    // 补拉性质（ready/回前台/校准）：走 1s 间隔去重，避免与登录初始化重复。
-    void refreshOrderAttentionIfStale()
-  })
-
-  // PR-5：实时关闭/降级时同浏览器多 Tab 的已读同步（BroadcastChannel 同源
-  // 广播）。只刷未读数，不带任何业务内容；实时在线时 SSE 的
-  // notification.read 控制事件已覆盖，这里的订阅是兜底，两者天然幂等。
-  useEffect(() => {
-    return subscribeReadInvalidation(() => {
-      if (user) void refreshNotificationUnread()
-    })
-  }, [user, refreshNotificationUnread])
-
-  const openAnnouncement = useCallback((announcement: PublicAnnouncement) => {
-    setForcedAnnouncementTab(true)
-    setAnnouncementCenterOpen(true)
-    if (announcement.presentation === 'acknowledgement_required' || announcement.readAt) return
-    void announcements.markRead(announcement).catch((err) => {
-      showToast(getApiErrorMessage(err, '打开公告失败，请稍后重试'), 'error')
-    })
-  }, [announcements, showToast])
   return (
     <div
       className={`md:bg-grid-pattern relative min-h-[100dvh] w-full flex flex-col overflow-x-clip ${isProductDetailPage ? 'product-layout' : ''}`}
@@ -385,7 +182,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           data-search-open={islandSearch}
           data-search-present={searchBusy}
           data-order-open={orderIslandVisible}
-          data-order-phase={orderIslandPhase}
+          data-order-phase={islands.orderIslandPhase}
           data-favorite-open={favoriteIslandVisible}
           data-action-open={Boolean(actionNotice) && !searchBusy && !modalOpen}
           className={`navbar-shell chrome-bound ${isMobileViewport ? 't-resize' : ''} pointer-events-auto ${
@@ -398,7 +195,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           }`}
           style={{
             transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)',
-            '--order-island-height': `${orderIslandHeight}px`,
+            '--order-island-height': `${islands.orderIslandHeight}px`,
           } as React.CSSProperties}
         >
         {/* 灵动岛通知激活时默认内容淡出（保留布局占位 → 几何零重排） */}
@@ -421,298 +218,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             onClick={() => navigate('/')}
           />
 
-          {/* Right Actions */}
-          <div className="flex items-center gap-1.5 lg:gap-3">
-            {isAdminPage ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => navigate('/')}
-                  aria-label="返回商城"
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-bold border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text)] hover:border-[var(--color-primary-tint-strong)] transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  <span className="hidden sm:inline">返回商城</span>
-                </button>
-
-                <AnnouncementBellButton
-                  unreadCount={totalBellUnread}
-                  onClick={() => setAnnouncementCenterOpen(true)}
-                />
-
-                <div className="hidden md:block">
-                  <ThemeMenu />
-                </div>
-              </>
-            ) : (
-              <>
-                {user ? (
-                <>
-                {/* Merchant Portal entry — depends on user.role × merchant.status */}
-                {user.role === 'user' && !user.merchant && (
-                  <button
-                    type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-                    onClick={() => navigate('/merchant/apply')}
-                    title="申请成为商家"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span className="hidden lg:inline font-bold text-xs">申请成为商家</span>
-                  </button>
-                )}
-                {user?.role === 'user' && user.merchant?.status === 'pending' && (
-                  <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] rounded-full border border-[var(--color-border)]"
-                    title="商家申请审核中"
-                  >
-                    <Clock className="w-4 h-4" />
-                    <span className="hidden lg:inline font-bold text-xs">商家申请审核中</span>
-                  </div>
-                )}
-                {user?.role === 'user' && user.merchant?.status === 'rejected' && (
-                  <button
-                    type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-text-muted)_10%,transparent)] text-[var(--color-text-muted)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-text-muted)_15%,transparent)] transition-colors border border-[var(--color-border)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-                    onClick={() => navigate('/merchant/apply')}
-                    title="申请被拒绝，可重新申请"
-                  >
-                    <XCircle className="w-4 h-4" />
-                    <span className="hidden lg:inline font-bold text-xs">申请被拒，重试</span>
-                  </button>
-                )}
-                {user?.role === 'user' && user.merchant?.status === 'suspended' && !hasMerchantCapability(user, 'history.read') && (
-                  <div
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] rounded-full border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)]"
-                    title="商家账号已被停用，请联系平台"
-                  >
-                    <AlertTriangle className="w-4 h-4" />
-                    <span className="hidden lg:inline font-bold text-xs">账号已停用</span>
-                  </div>
-                )}
-                {hasMerchantCapability(user, 'history.read') && (
-                  <button
-                    type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-                    onClick={() => navigate('/merchant')}
-                    title="商家后台"
-                  >
-                    <Store className="w-4 h-4" />
-                    <span className="hidden lg:inline font-bold text-xs">商家后台</span>
-                  </button>
-                )}
-                {/* Admin Portal */}
-                {user?.role === 'admin' && (
-                  <button
-                    type="button"
-                    className="hidden md:flex items-center gap-1.5 px-3 py-2 bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] rounded-full cursor-pointer hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-                    onClick={() => navigate('/admin')}
-                    title="管理后台"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span className="hidden lg:inline font-bold text-xs">管理后台</span>
-                  </button>
-                )}
-
-                {/* 积分排行榜 — 全角色可见。md 视口只留图标：桌面右侧已有
-                    工作台入口 + 铃铛 + 主题 + 积分 + 头像，加满词条会在 768px
-                    挤出横向溢出；lg 起补回文字。 */}
-                <button
-                  type="button"
-                  onClick={() => navigate('/leaderboard')}
-                  title="积分排行榜"
-                  aria-label="积分排行榜"
-                  aria-current={location.pathname.startsWith('/leaderboard') ? 'page' : undefined}
-                  className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                    location.pathname.startsWith('/leaderboard')
-                      ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
-                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-                  }`}
-                >
-                  <Trophy className="w-4 h-4" />
-                  <span className="hidden lg:inline font-bold text-xs">排行榜</span>
-                </button>
-
-                {/* 我的订单 — 桌面主入口；进行中订单数字角标 */}
-                <button
-                  type="button"
-                  onClick={() => navigate('/orders')}
-                  title="我的订单"
-                  aria-label={
-                    orderAttentionCount > 0
-                      ? `我的订单，有 ${formatBadgeCount(orderAttentionCount)} 个进行中`
-                      : '我的订单'
-                  }
-                  aria-current={location.pathname.startsWith('/orders') ? 'page' : undefined}
-                  data-testid="nav-orders"
-                  className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                    location.pathname.startsWith('/orders')
-                      ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
-                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-                  }`}
-                >
-                  <Package className="w-4 h-4" />
-                  <span className="hidden lg:inline font-bold text-xs">订单</span>
-                  {orderAttentionCount > 0 && (
-                    <CountBadge
-                      count={orderAttentionCount}
-                      className="absolute -right-1 -top-1 ring-[var(--color-background)]"
-                      testId="nav-orders-badge"
-                    />
-                  )}
-                </button>
-
-                <AnnouncementBellButton
-                  unreadCount={totalBellUnread}
-                  onClick={() => setAnnouncementCenterOpen(true)}
-                />
-
-                {/* Theme switcher lives in the drawer on small screens:
-                    brand + toggle + avatar + hamburger overflow 320-375px
-                    viewports and push the drawer trigger off-screen. */}
-                <div className="hidden md:block">
-                  <ThemeMenu />
-                </div>
-
-                {showCheckinEntry && (
-                  <button
-                    type="button"
-                    onClick={() => setCheckinModalOpen(true)}
-                    title={
-                      checkinClaimableCount > 0
-                        ? `每日签到（有 ${checkinClaimableCount} 个奖励待领取）`
-                        : checkinState.status?.hasCheckedIn
-                          ? checkinStreak > 0 ? `今日已签到（已连签 ${checkinStreak} 天）` : '今日已签到'
-                          : '每日签到领积分'
-                    }
-                    aria-label={
-                      checkinClaimableCount > 0
-                        ? `每日签到，有 ${checkinClaimableCount} 个奖励待领取`
-                        : checkinState.status?.hasCheckedIn
-                          ? '今日已签到'
-                          : '每日签到'
-                    }
-                    aria-haspopup="dialog"
-                    aria-expanded={checkinModalOpen}
-                    data-testid="nav-checkin"
-                    data-checkin-state={
-                      checkinClaimableCount > 0
-                        ? 'claimable'
-                        : checkinState.status?.hasCheckedIn
-                          ? 'done'
-                          : 'pending'
-                    }
-                    className={`hidden md:flex relative items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                      checkinNeedsAction
-                        ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)] hover:bg-[color-mix(in_srgb,var(--color-primary)_14%,transparent)]'
-                        : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-                    }`}
-                  >
-                    <CalendarCheck className="w-4 h-4 shrink-0" />
-                    <span className="hidden lg:inline font-bold text-xs">
-                      {checkinClaimableCount > 0 ? '领奖' : checkinState.status?.hasCheckedIn ? '已签' : '签到'}
-                    </span>
-                    {checkinNeedsAction && (
-                      <span
-                        aria-hidden="true"
-                        data-testid="nav-checkin-dot"
-                        className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[var(--color-cta)] ring-2 ring-[var(--color-background)]"
-                      />
-                    )}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => navigate('/recharge')}
-                  title="积分充值"
-                  aria-label="积分充值"
-                  aria-current={location.pathname.startsWith('/recharge') ? 'page' : undefined}
-                  data-testid="nav-recharge"
-                  className={`hidden md:flex items-center gap-1.5 px-3 py-2 rounded-full cursor-pointer transition-colors border focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
-                    location.pathname.startsWith('/recharge')
-                      ? 'bg-[var(--color-primary-tint)] text-[var(--color-primary)] border-[var(--color-primary-tint-strong)]'
-                      : 'bg-[var(--color-surface)] text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-primary-tint-strong)]'
-                  }`}
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span className="hidden lg:inline font-bold text-xs">充值</span>
-                </button>
-
-                {/* Points Badge — Coins icon in CTA green to match the buy-currency story */}
-                <button
-                  type="button"
-                  aria-label={`我的积分 ${user.points ?? ''}`}
-                  className="hidden md:flex items-center gap-1.5 px-2.5 lg:px-4 py-2 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-full cursor-pointer hover:border-[color-mix(in_srgb,var(--color-primary)_35%,transparent)] transition-colors group focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-                  onClick={() => navigate('/profile')}
-                >
-                  <PointCoin className="w-5 h-5 shrink-0" />
-                  <span className="font-bold text-[15px] text-[var(--color-text)]">
-                    {user.points != null ? user.points.toLocaleString('zh-CN') : '--'}
-                  </span>
-                </button>
-                </>
-                ) : (
-                <button
-                  type="button"
-                  onClick={() => navigate('/login')}
-                  data-testid="nav-login"
-                  className="hidden md:inline-flex items-center px-4 py-2 rounded-full text-sm font-bold border border-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-[var(--color-primary)] hover:bg-[color-mix(in_srgb,var(--color-primary)_12%,transparent)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-                >
-                  登录
-                </button>
-                )}
-              </>
-            )}
-
-            {/* 灵动岛搜索入口（商城页·移动视口）：点击后 navbar morph 为搜索卡片 */}
-            {isMobileViewport && location.pathname === '/' && (
-              <button
-                ref={searchTriggerRef}
-                type="button"
-                onClick={() => setSearchOpen(true)}
-                aria-label="搜索"
-                aria-expanded={islandSearch}
-                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-full text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)]"
-              >
-                <Search className="w-5 h-5" />
-              </button>
-            )}
-
-            {/* 公告铃铛（移动视口，V3：通知上移 navbar，继承移动端 testid 契约） */}
-            <button
-              type="button"
-              onClick={() => setAnnouncementCenterOpen(true)}
-              className="md:hidden icon-btn inline-flex relative rounded-full w-10 h-10 items-center justify-center text-[var(--color-text)] hover:bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] transition-colors focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] cursor-pointer"
-              aria-label={totalBellUnread > 0 ? `通知中心，有 ${totalBellUnread} 条未读` : '通知中心'}
-              data-testid="announcement-center-mobile-trigger"
-            >
-              <Bell className="w-5 h-5" />
-              {totalBellUnread > 0 && (
-                <span
-                  aria-hidden="true"
-                  data-testid="notification-bell-total-count"
-                  className="absolute right-0.5 top-0.5 min-w-4 h-4 px-1 rounded-full bg-[var(--color-danger)] text-[10px] leading-4 font-bold text-white text-center ring-2 ring-[var(--color-surface)]"
-                >
-                  {/* PR-5：全部数字角标统一 formatBadgeCount（1–99 / 99+）。 */}
-                  {formatBadgeCount(totalBellUnread)}
-                </span>
-              )}
-            </button>
-
-            {/* Avatar — 移动端入口由 Tab Bar「我的」承担（V3 去重），≥md 保留 */}
-            {user && (
-            <button
-              onClick={() => navigate('/profile')}
-              className="hidden md:flex items-center gap-2 ml-1 relative group cursor-pointer"
-              aria-label="个人中心"
-            >
-              <UserAvatar userId={user.id} url={user.avatarUrl} name={user.nickname || user.email} size={44} className="shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow duration-300 group-hover:shadow-lg" />
-            </button>
-            )}
-
-            {/* Mobile hamburger — drawer carries the entries hidden below md */}
-            <MobileNavDrawer />
-          </div>
+          <NavbarActions
+            isAdminPage={isAdminPage}
+            isMobileViewport={isMobileViewport}
+            totalBellUnread={totalBellUnread}
+            onOpenAnnouncements={() => announcementCenter.setOpen(true)}
+            showCheckinEntry={showCheckinEntry}
+            checkinState={checkinState}
+            searchTriggerRef={searchTriggerRef}
+            searchOpen={islandSearch}
+            onOpenSearch={() => setSearchOpen(true)}
+          />
         </div>
 
         {searchEligible && (
@@ -722,26 +238,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <QuietIslandNotice
           notice={quietNotice}
           suppressed={!isMobileViewport || searchBusy || modalOpen || Boolean(orderNotice || favoriteNotice || actionNotice)}
-          onDismiss={() => quietNotice && clearIslandNotice(quietNotice.id)}
-          onVisibleChange={setQuietIslandOpen}
+          onDismiss={() => quietNotice && islands.clearIslandNotice(quietNotice.id)}
+          onVisibleChange={islands.setQuietIslandOpen}
         />
         <FavoriteIsland
           notice={favoriteNotice}
           suppressed={searchBusy || modalOpen || Boolean(orderNotice || quietNotice || actionNotice)}
-          onOpenChange={setFavoriteIslandOpen}
+          onOpenChange={islands.setFavoriteIslandOpen}
         />
         <ActionIslandNotice
           notice={actionNotice}
           suppressed={!isMobileViewport || searchBusy || modalOpen || Boolean(orderNotice || favoriteNotice || quietNotice)}
-          onVisibleChange={setActionIslandOpen}
+          onVisibleChange={islands.setActionIslandOpen}
         />
         {isMobileViewport && (
           <OrderSuccessIsland
             notice={orderNotice}
             obscured={modalOpen || searchBusy}
-            onOpenChange={setOrderIslandOpen}
-            onHeightChange={setOrderIslandHeight}
-            onPhaseChange={setOrderIslandPhase}
+            onOpenChange={islands.setOrderIslandOpen}
+            onHeightChange={islands.setOrderIslandHeight}
+            onPhaseChange={islands.setOrderIslandPhase}
           />
         )}
         </div>
@@ -757,21 +273,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         shouldShowNotice={announcements.shouldShowNotice}
         recordNoticeImpression={announcements.recordNoticeImpression}
         dismissNotice={announcements.dismissNotice}
-        onOpen={openAnnouncement}
+        onOpen={announcementCenter.openAnnouncement}
       />
 
       <BottomTabBar />
       <AnnouncementCenter
-        open={announcementCenterOpen}
-        onOpenChange={(open) => {
-          setAnnouncementCenterOpen(open)
-          if (!open) setForcedAnnouncementTab(false)
-        }}
+        open={announcementCenter.open}
+        onOpenChange={announcementCenter.onOpenChange}
         items={announcements.items}
         unreadCount={announcements.unreadCount}
         onMarkRead={announcements.markRead}
         onAcknowledge={announcements.acknowledge}
-        forceAnnouncementTab={hasPendingRequiredAnnouncement || forcedAnnouncementTab}
+        forceAnnouncementTab={announcementCenter.forceAnnouncementTab}
       />
 
       {showCheckinEntry && checkinModalOpen && (
@@ -803,96 +316,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
 
-      {/* Footer */}
-      <footer className="w-full mt-auto border-t border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-surface)_65%,transparent)] backdrop-blur-md relative overflow-hidden z-10 shrink-0">
-        <div className="absolute inset-0 bg-gradient-to-b from-transparent to-[color-mix(in_srgb,var(--color-primary)_4%,transparent)] pointer-events-none" />
-        <div className="chrome-bound max-w-7xl mx-auto px-4 sm:px-6 relative z-10">
-          {/* Upper row: Brand + Grouped navigation */}
-          <div className="py-5 flex flex-col md:flex-row items-center justify-between gap-4">
-            <Link
-              to="/"
-              className="inline-flex items-center gap-2 opacity-85 hover:opacity-100 transition-opacity"
-            >
-              <Logo className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-              <span className="font-display text-sm font-bold text-[var(--color-text)] tracking-[0.16em]">
-                MONEXUS
-              </span>
-            </Link>
-
-            {legalLinks && legalLinks.length > 0 && (
-              <nav
-                aria-label="法律与协议"
-                className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs font-medium text-[var(--color-text-muted)]"
-                data-testid="footer-legal-links"
-              >
-                <span className="flex items-center gap-3.5">
-                  <span className="text-[color-mix(in_srgb,var(--color-text-muted)_55%,transparent)]">协议</span>
-                  {legalLinks
-                    .filter((link) => ['terms', 'privacy', 'refund'].includes(link.slug))
-                    .map((link) => (
-                      <Link
-                        key={link.slug}
-                        to={LEGAL_PAGE_PATHS[link.slug]}
-                        className="hover:text-[var(--color-primary)] transition-colors"
-                      >
-                        {link.title}
-                      </Link>
-                    ))}
-                </span>
-                <span className="hidden h-3 w-px bg-[var(--color-border)] sm:block" aria-hidden="true" />
-                <span className="flex items-center gap-3.5">
-                  <span className="text-[color-mix(in_srgb,var(--color-text-muted)_55%,transparent)]">支持</span>
-                  {legalLinks
-                    .filter((link) => ['points-rules', 'about'].includes(link.slug))
-                    .map((link) => (
-                      <Link
-                        key={link.slug}
-                        to={LEGAL_PAGE_PATHS[link.slug]}
-                        className="hover:text-[var(--color-primary)] transition-colors"
-                      >
-                        {link.title}
-                      </Link>
-                    ))}
-                  <Link
-                    to="/credits"
-                    className="hover:text-[var(--color-primary)] transition-colors"
-                    data-testid="footer-credits-link"
-                  >
-                    群星圣殿
-                  </Link>
-                </span>
-              </nav>
-            )}
-          </div>
-
-          {/* Lower row: Quiet copyright + Four-AI Sanctuary badge */}
-          <div className="border-t border-[color-mix(in_srgb,var(--color-border)_68%,transparent)] py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[var(--color-text-muted)]">
-            <div className="text-[11px] tracking-wide text-[color-mix(in_srgb,var(--color-text-muted)_86%,transparent)]">
-              © {new Date().getFullYear()} MoNexus · MoYuan
-            </div>
-
-            <Link
-              to="/credits"
-              data-testid="footer-credits-colophon"
-              className="group inline-flex items-center gap-2.5 rounded-full border border-[color-mix(in_srgb,var(--color-border)_85%,transparent)] bg-[color-mix(in_srgb,var(--color-surface)_75%,transparent)] px-3 py-1.5 text-[11px] font-medium text-[var(--color-text-muted)] transition-all duration-300 hover:border-[var(--color-primary-border-subtle)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)] hover:shadow-xs"
-            >
-              <span className="inline-flex items-center gap-1.5 opacity-80 transition-opacity duration-300 group-hover:opacity-100" aria-hidden="true">
-                <img src="/credits/icons/claude-color.svg" alt="" className="h-3.5 w-3.5 object-contain" loading="lazy" />
-                <img src="/credits/icons/gemini-color.svg" alt="" className="h-3.5 w-3.5 object-contain" loading="lazy" />
-                <img src="/credits/icons/openai.svg" alt="" className="h-3.5 w-3.5 object-contain dark:invert" loading="lazy" />
-                <img src="/credits/icons/deepseek-color.svg" alt="" className="h-3.5 w-3.5 object-contain" loading="lazy" />
-              </span>
-              <span className="h-3 w-px bg-[var(--color-border)]" aria-hidden="true" />
-              <span className="hidden sm:inline">与 Claude · Gemini · ChatGPT · DeepSeek 共建</span>
-              <span className="sm:hidden">与四位 AI 同行者共建</span>
-              <ChevronRight
-                className="h-3.5 w-3.5 text-[color-mix(in_srgb,var(--color-text-muted)_70%,transparent)] transition-transform duration-300 group-hover:translate-x-0.5 group-hover:text-[var(--color-primary)]"
-                aria-hidden="true"
-              />
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <LayoutFooter />
     </div>
   )
 }
