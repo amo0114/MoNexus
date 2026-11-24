@@ -133,4 +133,3 @@ export async function forceFakaRevoke(req: Request, res: Response, next: NextFun
     next(err)
   }
 }
-

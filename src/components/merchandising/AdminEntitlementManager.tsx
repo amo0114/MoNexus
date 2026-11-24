@@ -31,6 +31,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/Dia
 import EmptyState from '../ui/EmptyState'
 import { TableSkeleton } from '../ui/Skeleton'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 10
 const MAX_REASON_LENGTH = 500
@@ -81,13 +82,6 @@ const STATUS_OPTIONS: ReadonlyArray<{ value: EntitlementStatus | 'all'; label: s
   { value: 'expired', label: '已到期' },
   { value: 'revoked', label: '已撤销' },
 ]
-
-/** Safe date formatting: unparseable input is shown verbatim. */
-function formatDateTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
-}
 
 export interface AdminEntitlementManagerProps {
   adapter?: AdminEntitlementAdapter

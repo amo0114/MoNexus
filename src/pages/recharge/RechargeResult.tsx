@@ -9,14 +9,14 @@ import { useAuthStore } from '../../stores/authStore'
 import { getAuthSessionContext } from '../../auth/sessionContext'
 import { useAppStore } from '../../stores/appStore'
 import EmptyState from '../../components/ui/EmptyState'
-import { formatCurrencyAmount, formatPoints } from './money'
+import { formatCurrencyAmount, formatPoints } from '../../domain/recharge/money'
 import { buildPayableRecognitionNotice } from './payableCopy'
 import {
   isConfirmingOrderStatus,
   isTerminalOrderStatus,
   orderStatusLabel,
   paymentChannelLabel,
-} from './status'
+} from '../../domain/recharge/status'
 import { completeIdempotencyKey, peekPendingOrder, takePendingOrder } from './session'
 import BrandedPaymentQr from './BrandedPaymentQr'
 import { parseSafeProductReturnTo } from '../../utils/returnTo'

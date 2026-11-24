@@ -21,6 +21,7 @@ import ConfirmDialog from '../ui/ConfirmDialog'
 import { TableSkeleton } from '../ui/Skeleton'
 import EmptyState from '../ui/EmptyState'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 20
 
@@ -62,9 +63,9 @@ function toDateTimeLocalValue(iso: string): string {
 }
 
 function formatTimeWindow(a: AdminAnnouncement): string {
-  const start = new Date(a.startsAt).toLocaleString()
+  const start = formatDateTime(a.startsAt)
   if (!a.endsAt) return `${start} 起长期`
-  return `${start} ~ ${new Date(a.endsAt).toLocaleString()}`
+  return `${start} ~ ${formatDateTime(a.endsAt)}`
 }
 
 interface EditorState {

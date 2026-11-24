@@ -107,7 +107,6 @@ export default function MerchantProductFormModal({ isOpen, onClose, onSubmit, pr
         })
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, product])
 
   // categories 异步到达（首次打开）：只把解析出的 categoryId 补进表单，

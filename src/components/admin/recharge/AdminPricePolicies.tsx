@@ -18,13 +18,14 @@ import { TableSkeleton } from '../../ui/Skeleton'
 import {
   formatCurrencyAmount,
   parseMajorInput,
-} from '../../../pages/recharge/money'
+} from '../../../domain/recharge/money'
 import {
   formatFenPointRatio,
   previewTenYuanCredit,
   vmqfoxCnyExampleRateMismatch,
-} from '../../../pages/recharge/pricePolicyPreview'
+} from '../../../domain/recharge/pricePolicyPreview'
 import { useTabActions } from '../../../auth/adminAccess'
+import { formatDateTime } from '../../../utils/datetime'
 
 const PAGE_SIZE = 50
 const POLICY_STATUS_LABEL: Record<string, string> = {
@@ -563,11 +564,11 @@ export default function AdminPricePolicies() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[var(--color-text-muted)]">
                   <div>
                     <span>生效时间：</span>
-                    <span className="text-[var(--color-text)]">{detailPolicy.effectiveAt ? `${new Date(detailPolicy.effectiveAt).toLocaleString()}（本地时间）` : '—'}</span>
+                    <span className="text-[var(--color-text)]">{detailPolicy.effectiveAt ? `${formatDateTime(detailPolicy.effectiveAt)}（北京时间）` : '—'}</span>
                   </div>
                   <div>
                     <span>创建时间：</span>
-                    <span className="text-[var(--color-text)]">{detailPolicy.createdAt ? `${new Date(detailPolicy.createdAt).toLocaleString()}（本地时间）` : '—'}</span>
+                    <span className="text-[var(--color-text)]">{detailPolicy.createdAt ? `${formatDateTime(detailPolicy.createdAt)}（北京时间）` : '—'}</span>
                   </div>
                 </div>
               </div>

@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from './ui/Dial
 import EmptyState from './ui/EmptyState'
 import { Skeleton } from './ui/Skeleton'
 import { formatPointLogAmount, pointLogVisual, type PointLogType } from '../utils/pointLogDisplay'
+import { formatDateTime } from '../utils/datetime'
 
 const PAGE_SIZE = 30
 
@@ -150,7 +151,7 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
                             >
                               {visual.typeLabel}
                             </span>
-                            <span>{new Date(item.createdAt).toLocaleString()}</span>
+                            <span>{formatDateTime(item.createdAt)}</span>
                           </p>
                         </div>
                       </div>
@@ -229,7 +230,7 @@ export default function PointsHistorySheet({ open, onOpenChange, items, loading 
                   )}
                   <div className="flex justify-between gap-3 text-xs text-[var(--color-text-muted)]">
                     <span>时间</span>
-                    <span>{new Date(selected.createdAt).toLocaleString()}</span>
+                    <span>{formatDateTime(selected.createdAt)}</span>
                   </div>
                   {selected.orderId != null && (
                     <div className="flex justify-between gap-3 text-xs">

@@ -117,4 +117,3 @@ async function fetchNormalizedFakaSourceForOffer(externalSku: string | null) {
   if (!link) throw badRequest('无法从现有规格推断 Xboard planId')
   return fetchNormalizedFakaSource(Number(link.externalProductId))
 }
-

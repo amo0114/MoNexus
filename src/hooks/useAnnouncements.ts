@@ -21,6 +21,9 @@ type NoticeDisplayState = {
 const NOTICE_STORAGE_PREFIX = 'monexus:announcement:notice:'
 const MAX_BROWSER_TIMEOUT_MS = 2_147_000_000
 
+// Stable empty list so memo/effect dependencies on `items` do not change every render.
+const NO_ANNOUNCEMENTS: PublicAnnouncement[] = []
+
 function noticeKey(announcement: PublicAnnouncement) {
   return `${NOTICE_STORAGE_PREFIX}${announcement.id}:${announcement.version}`
 }
@@ -127,7 +130,7 @@ export function useAnnouncements() {
   }, [sessionOwnerKey])
   reloadRef.current = reload
 
-  const items = snapshot?.ownerKey === sessionOwnerKey ? snapshot.items : []
+  const items = snapshot?.ownerKey === sessionOwnerKey ? snapshot.items : NO_ANNOUNCEMENTS
   const loading = loadingOwnerKey === sessionOwnerKey
 
   useEffect(() => {

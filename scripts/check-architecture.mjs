@@ -15,7 +15,8 @@ function* sourceFiles(directory) {
   }
 }
 
-const sources = new Map([...sourceFiles(resolve(root, 'server/src'))].map(file => [
+const webSources = [...sourceFiles(resolve(root, 'src'))].filter(file => !relative(root, file).split(sep).join('/').startsWith('src/test/'))
+const sources = new Map([...sourceFiles(resolve(root, 'server/src')), ...webSources].map(file => [
   relative(root, file).split(sep).join('/'), readFileSync(file, 'utf8'),
 ]))
 failures.push(...checkBoundaries(sources))

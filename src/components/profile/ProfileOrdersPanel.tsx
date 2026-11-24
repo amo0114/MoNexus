@@ -9,6 +9,7 @@ import Reveal from '../ui/Reveal'
 import CoinIcon from '../ui/CoinIcon'
 import RegistryPill from '../ui/RegistryPill'
 import { formatBookingDay } from '../../utils/formatLocalDate'
+import { formatDateTime } from '../../utils/datetime'
 
 export type OrderFilter = 'all' | 'completed' | 'pending'
 
@@ -160,7 +161,7 @@ export default function ProfileOrdersPanel({
                         ) : null
                       })()}
                       <span className="text-xs text-[var(--color-text-muted)]">
-                        {new Date(order.createdAt).toLocaleString()}
+                        {formatDateTime(order.createdAt)}
                       </span>
                     </div>
                     <div className="flex items-center text-[var(--color-cta)] font-bold whitespace-nowrap text-sm sm:hidden">

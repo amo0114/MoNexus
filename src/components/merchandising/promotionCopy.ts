@@ -9,6 +9,7 @@ import type {
   PromotionCampaignDTO,
   SponsoredPlacement,
 } from '../../types/merchandising'
+import { formatDateTime } from '../../utils/datetime'
 
 /** Frozen no-guarantee disclosure (SPEC-MERCH-001 §7.5 / D-MERCH-09). */
 export const PROMOTION_NO_GUARANTEE =
@@ -87,9 +88,7 @@ export function campaignStatusTone(status: CampaignStatus): CampaignStatusTone {
 
 /** Human date for copy (deterministic in tests via the time element's dateTime). */
 export function formatDate(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString('zh-CN', { hour12: false })
+  return formatDateTime(iso)
 }
 
 /**

@@ -33,6 +33,7 @@ import SuccessModal from './SuccessModal'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from './ui/Dialog'
 import { copyToClipboard } from '../utils/clipboard'
 import { formatOrderRef } from '../utils/governance'
+import { formatDate } from '../utils/datetime'
 
 interface OrderDetailModalProps {
   order: UserOrderDetail
@@ -390,7 +391,7 @@ export default function OrderDetailModal({ order: initialOrder, ownerSessionKey,
               <>
                 <span className="text-[var(--color-border)] select-none">·</span>
                 <span className="hidden sm:inline">下单时间：{formatOrderDate(order.createdAt)}</span>
-                <span className="sm:hidden">{new Date(order.createdAt).toLocaleDateString()}</span>
+                <span className="sm:hidden">{formatDate(order.createdAt)}</span>
               </>
             )}
           </div>
@@ -622,7 +623,7 @@ export default function OrderDetailModal({ order: initialOrder, ownerSessionKey,
                       className="mt-2.5 text-xs text-[var(--color-primary)] hover:underline cursor-pointer"
                       data-testid="review-edit-button"
                     >
-                      修改评价（可修改至 {new Date(review.editableUntil).toLocaleDateString()}）
+                      修改评价（可修改至 {formatDate(review.editableUntil)}）
                     </button>
                   )}
                 </>

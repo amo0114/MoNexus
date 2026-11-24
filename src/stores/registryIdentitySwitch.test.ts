@@ -125,6 +125,19 @@ describe('SPEC-CATALOG-VIS-001 §3.5 身份切换后 registry 与身份一致', 
       .toContain('locked-cat')
   })
 
+  it('其他模块也注册身份清理时，registry 快照仍被清空', async () => {
+    const { auth, app } = await loadModules()
+    // useCheckin 在 appStore 之后加载并注册自己的清理；不得覆盖 appStore 的注册。
+    await import('../hooks/useCheckin')
+
+    getMock.mockResolvedValueOnce(registryPayload(['public-cat', 'locked-cat']))
+    await app.useAppStore.getState().loadRegistry()
+    expect(app.useAppStore.getState().registry).not.toBeNull()
+
+    auth.useAuthStore.getState().logout()
+    expect(app.useAppStore.getState().registry).toBeNull()
+  })
+
   it('beginIdentityTransition 同样清空快照', async () => {
     const { auth, app } = await loadModules()
 

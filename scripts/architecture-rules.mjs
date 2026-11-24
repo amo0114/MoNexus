@@ -91,6 +91,46 @@ const rowClaimIntervalOwners = new Set([
   `${modules}notifications/realtime/hub.ts`, // SSE heartbeat, no business writes
 ])
 
+// FE-01..03: frontend (src/) layering. Files directly under src/ (App, main) and
+// src/pages/ are composition roots; nothing below them may import a page.
+const web = 'src/'
+const webPages = 'src/pages/'
+const webClient = 'src/api/client.ts'
+// Direct HTTP client users outside src/api as of 2026-11-24; new calls go through an api module.
+const webClientOwners = new Set([
+  'src/components/ChatBindCard.tsx', 'src/components/admin/AdminDashboardPanel.tsx',
+  'src/components/merchandising/AdminProductSearchSelect.tsx', 'src/lib/webPush.ts',
+  'src/pages/ProfilePage.tsx',
+])
+const webDateOwner = 'src/utils/datetime.ts'
+const webLocaleDateOnly = new Set(['toLocaleDateString', 'toLocaleTimeString'])
+
+function hasTimeZoneOption(args) {
+  return args.some(arg => ts.isObjectLiteralExpression(arg)
+    && arg.properties.some(property => property.name && ts.isIdentifier(property.name) && property.name.text === 'timeZone'))
+}
+
+// FE-03: dates render in Asia/Shanghai through utils/datetime. Number.toLocaleString is
+// allowed, so toLocaleString is only flagged on an inline `new Date(...)` receiver.
+function checkWebDates(file, ast, failures) {
+  const visit = node => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text
+      const receiver = node.expression.expression
+      const dateReceiver = ts.isNewExpression(receiver) && ts.isIdentifier(receiver.expression) && receiver.expression.text === 'Date'
+      if ((webLocaleDateOnly.has(method) || (method === 'toLocaleString' && dateReceiver)) && !hasTimeZoneOption(node.arguments)) {
+        failures.push(`${file}:${lineOf(ast, node)} FE-03 date ${method}() without timeZone; use utils/datetime`)
+      }
+    }
+    if (ts.isNewExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.getText(ast) === 'Intl.DateTimeFormat' && !hasTimeZoneOption(node.arguments ?? [])) {
+      failures.push(`${file}:${lineOf(ast, node)} FE-03 Intl.DateTimeFormat without timeZone; use utils/datetime`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+}
+
 function lineOf(ast, node) {
   return ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1
 }
@@ -189,6 +229,9 @@ export function checkBoundaries(sources) {
       }
       if (/ontroller[^/]*\.ts$/.test(file)) checkControllerAwaits(file, ast, failures)
     }
+    if (file.startsWith(web) && file !== webDateOwner) {
+      checkWebDates(file, ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true), failures)
+    }
     const fromModule = moduleOf(file)
     if (fromModule && !moduleGraph.has(fromModule)) moduleGraph.set(fromModule, new Set())
     for (const dependency of readDependencies(source, file)) {
@@ -199,6 +242,10 @@ export function checkBoundaries(sources) {
         continue
       }
       if (file.startsWith(lib) && target.startsWith(modules)) fail('infrastructure must not import business modules')
+      if (file.startsWith(web) && file.includes('/', web.length) && !file.startsWith(webPages)
+        && target.startsWith(webPages)) fail('FE-01 only pages and the app root may import pages')
+      if (file.startsWith(web) && !file.startsWith('src/api/') && target === webClient
+        && !webClientOwners.has(file)) fail('FE-02 HTTP calls go through an api module, not api/client')
       if (file.startsWith(modules) && !file.startsWith(`${modules}admin/`) && target.startsWith(`${modules}admin/`)) fail('imports admin internals')
       if (file.startsWith(modules) && !file.startsWith(`${modules}merchant/`)
         && target.startsWith(`${modules}merchant/`) && target !== `${modules}merchant/identity.ts`) fail('imports merchant self-service internals')

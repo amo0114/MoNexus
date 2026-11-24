@@ -4,6 +4,7 @@ import { getApiErrorMessage } from '../../api/error'
 import type { BatchSettleResponse, SettlementBatchSummary } from '../../types/merchant'
 import { useAppStore } from '../../stores/appStore'
 import AdminPagination from './AdminPagination'
+import { formatDateTime } from '../../utils/datetime'
 
 /** Executed settlement batches with per-item wallet vouchers (read-only). */
 export default function AdminSettlementBatches({ active = true, version = 0 }: { active?: boolean; version?: number }) {
@@ -52,7 +53,7 @@ export default function AdminSettlementBatches({ active = true, version = 0 }: {
                 <td data-label="批次" className="font-mono text-xs">#{batch.id}</td>
                 <td data-label="笔数">{batch.itemCount}</td>
                 <td data-label="入账合计">{batch.totalPoints.toLocaleString()} 积分</td>
-                <td data-label="执行时间" className="text-xs">{new Date(batch.createdAt).toLocaleString()}</td>
+                <td data-label="执行时间" className="text-xs">{formatDateTime(batch.createdAt)}</td>
                 <td>
                   <button type="button" className="text-xs text-[var(--color-primary)] hover:underline" onClick={() => void toggle(batch.id)}>
                     {detail?.batchId === batch.id ? '收起' : '明细'}

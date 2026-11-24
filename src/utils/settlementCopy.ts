@@ -1,3 +1,4 @@
+import { formatDateTime } from './datetime'
 // settlementCopy.ts — frozen 资金/结算 copy projection
 // (SPEC-CMI-UX-001 §6.1; D-UX-18/19; AC-UX-020; T-UX-007 DoD).
 
@@ -40,7 +41,5 @@ export function blockReasonToUserMessage(reason: string | null | undefined): str
 /** Format a processing deadline for display; unparseable input is shown verbatim. */
 export function formatProcessingDeadline(iso: string | null | undefined): string | null {
   if (iso == null || iso === '') return null
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
+  return formatDateTime(iso)
 }

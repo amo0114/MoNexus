@@ -20,9 +20,9 @@ import {
   parseMajorInput,
   RECHARGE_CURRENCIES,
   validateAmountBounds,
-} from './money'
-import { paymentChannelLabel } from './status'
-import { goToRedirect, submitFormPost } from './paymentActions'
+} from '../../domain/recharge/money'
+import { paymentChannelLabel } from '../../domain/recharge/status'
+import { goToRedirect, submitFormPost } from '../../domain/recharge/paymentActions'
 import { newIdempotencyKey, rememberPendingOrder, rememberRechargeReturnTo } from './session'
 import { parseSafeProductReturnTo } from '../../utils/returnTo'
 
