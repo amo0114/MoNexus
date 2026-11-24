@@ -37,4 +37,4 @@ Node 22.23.1、npm 10.9.8。主要运行代码快照为 `2434092`。随后补充
 | `npm --prefix server run package:fulfillment`、`node scripts/package-fulfillment-web.mjs`、`node server/scripts/verify-fulfillment-release.mjs` | 退出码均为 0。纯核心新库通过交易，7 个可选 Web 资源独立交付，API 和 worker 在运行期间装载、注销 |
 | 两种迁移入口分别指向另一种历史 | 均按预期退出 1，在迁移前拒绝混用 |
 
-生产数据库会话时区、真实上游及站点出站政策仍需现场验证。全量浏览器旅程由 PR 的 `run-e2e` 门禁运行。
+生产数据库会话时区、真实上游及站点出站政策仍需现场验证。全量浏览器旅程由 `run-e2e` 门禁运行。 [PR #378](https://github.com/amo0114/MoNexus/pull/378)
