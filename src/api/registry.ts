@@ -1,5 +1,5 @@
 import api from './client'
-import { useAuthStore } from '../stores/authStore'
+import { registerIdentityScopedMetadataCleanup, useAuthStore } from '../stores/authStore'
 import { ConfigRegistry } from '../types/config'
 
 export interface MemberTierMeta {
@@ -158,3 +158,5 @@ export async function getConfigRegistry(): Promise<RegistryResponse> {
   slot.promise = pending
   return pending
 }
+
+registerIdentityScopedMetadataCleanup(invalidateRegistryCache)

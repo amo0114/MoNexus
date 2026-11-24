@@ -1,3 +1,5 @@
+import { registerIdentityScopedMetadataCleanup } from '../stores/authStore'
+
 export interface StorePageCache {
   feedItems: unknown[]
   seenIds: number[]
@@ -25,3 +27,5 @@ export function setStorePageCache(cache: StorePageCache | null) {
 export function clearStorePageCache() {
   storePageCache = null
 }
+
+registerIdentityScopedMetadataCleanup(clearStorePageCache)
