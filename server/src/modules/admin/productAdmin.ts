@@ -11,25 +11,8 @@ import {
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { createDefaultOffer, getDefaultOffer, syncProductProjection } from '../../lib/offers.js'
 import { countAvailableByProductId } from '../../lib/inventoryCounts.js'
-import {
-  fetchFakaCapacityForSku,
-  getFakaCapacityForPublicRead,
-  isFakaBridgeConfigured,
-  normalizeFakaOfferIntegration,
-  assertOfferProvisionMutex,
-} from '../../lib/fakaBridge/index.js'
-import { normalizeProviderOfferBinding } from '../fulfillment/offerBinding.js'
-
-/** FakaBridge keeps its own rules; any other registered provider uses the generic binding. */
-function normalizeOfferIntegration(
-  input: { externalIntegration?: string | null; externalSku?: string | null; deliveryMode?: string | null },
-  options?: { requireConfigured?: boolean },
-) {
-  const id = input.externalIntegration?.trim().toLowerCase()
-  return id && id !== 'faka_bridge'
-    ? normalizeProviderOfferBinding({ ...input, externalIntegration: id })
-    : normalizeFakaOfferIntegration(input, options)
-}
+import type { ExternalCapacitySnapshot } from '../../extension-contracts/fulfillmentCatalog.js'
+import { assertOfferProvisionMutex, catalogForProvider, normalizeExternalOfferBinding } from '../fulfillment/offerBinding.js'
 import {
   assertProductDeliveryConfiguration,
   normalizeProductImageFields,
@@ -102,7 +85,7 @@ export async function createProduct(adminUserId: number, data: CreateProductInpu
     fixedContentType,
   })
 
-  const faka = normalizeOfferIntegration({
+  const faka = normalizeExternalOfferBinding({
     externalIntegration: data.externalIntegration,
     externalSku: data.externalSku,
     deliveryMode,
@@ -259,7 +242,7 @@ export async function updateProduct(adminUserId: number, id: number, data: Updat
     const defaultOfferForFaka = await getDefaultOffer(tx, id)
     // SKU rebind is a separate dangerous op; ordinary PUT cannot change it.
     const fakaUpdate = defaultOfferForFaka.externalIntegration != null
-      ? normalizeOfferIntegration(
+      ? normalizeExternalOfferBinding(
           {
             externalIntegration: defaultOfferForFaka.externalIntegration,
             externalSku: defaultOfferForFaka.externalSku,
@@ -442,12 +425,13 @@ export async function listAdminProducts(
       )
     ),
   ]
-  const capBySku = new Map<string, Awaited<ReturnType<typeof fetchFakaCapacityForSku>>>()
-  if (isFakaBridgeConfigured() && fakaSkus.length > 0) {
+  const capBySku = new Map<string, ExternalCapacitySnapshot>()
+  const catalog = catalogForProvider('faka_bridge')
+  if (catalog?.isConfigured() && fakaSkus.length > 0) {
     // Inventory overview is read-only: return the local capacity projection
     // immediately and let its shared SWR refresh run in the background.
     for (const sku of fakaSkus) {
-      capBySku.set(sku, getFakaCapacityForPublicRead(sku))
+      capBySku.set(sku, catalog.capacityForPublicRead(sku))
     }
   }
 

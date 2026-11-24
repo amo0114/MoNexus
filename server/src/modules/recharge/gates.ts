@@ -30,9 +30,7 @@ export function assertProviderEnabled(name: PaymentProviderName) {
   }
 }
 
-export function providerEnvironment(): 'sandbox' | 'live' {
-  return config.recharge.mode === 'live' ? 'live' : 'sandbox'
-}
+export { providerEnvironment } from '../payment/environment.js'
 
 export async function assertRechargeNotRestricted(userId: number) {
   const restriction = await prisma.accountRestriction.findFirst({

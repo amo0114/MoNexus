@@ -42,3 +42,16 @@ export interface FakaSettings {
   timeoutMs: number; maxAttempts: number; instanceId: string | null; clientId: string
 }
 export const fakaIntegrationApi = integrationApi<FakaSettings, { secret: string }>('faka-bridge')
+
+export interface FakaPluginStatus {
+  installed: boolean
+  mounted: boolean
+}
+
+const pluginBase = '/admin/integrations/faka-bridge/plugin'
+export async function getFakaPluginStatus() {
+  return (await api.get<FakaPluginStatus>(pluginBase)).data
+}
+export async function setFakaPluginMounted(mounted: boolean) {
+  return (await api.put<FakaPluginStatus>(pluginBase, { mounted })).data
+}

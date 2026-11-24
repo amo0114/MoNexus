@@ -6,6 +6,8 @@ import request from 'supertest'
 import { app } from '../app.js'
 import { prisma } from '../lib/prisma.js'
 import { config } from '../config/index.js'
+import { encryptIntegrationCredentials } from '../lib/runtimeSettings/credentials.js'
+import { withActiveFaka } from '../lib/runtimeSettings/fakaBridge.js'
 import { __setRedisForTests, __resetRedisForTests, type RedisLike } from '../lib/redis.js'
 import { prepareSignedJsonV2, signProtocolV2 } from '../lib/signedProtocolV2.js'
 import * as bridge from '../lib/fakaBridge/accountV2.js'
@@ -219,13 +221,28 @@ describe('QQ Xboard v2 raw HTTP and authorization', () => {
     expect(await profile(a.actor)).toMatchObject({ subscription: null })
   })
 
-  it('submits a signed confirmation as 202 without executing a commercial order', async () => {
+  it('pins a signed confirmation to the database revision and keeps status readable after pause', async () => {
     const a = await linked(), saved = { ...config.trafficReset }
+    const previousKey = config.integrationCredentialsEncKey
     try {
+      config.integrationCredentialsEncKey = 'ac'.repeat(32)
+      const origin = 'https://xboard.test'
+      const instanceId = randomUUID(), revisionId = randomUUID()
+      await prisma.xboardInstance.create({ data: { id: instanceId, origin } })
+      await prisma.xboardAccountLink.update({ where: { id: a.link.id }, data: { instanceId } })
+      const key = 'faka_bridge'
+      const settings = {
+        url: `${origin}/plugin/faka-bridge/order-paid`, statusUrl: `${origin}/plugin/faka-bridge/order-status`,
+        revokeUrl: `${origin}/plugin/faka-bridge/order-revoke`, panelUrl: origin, timeoutMs: 3000,
+        maxAttempts: 3, instanceId, clientId: config.trafficReset.clientId,
+      }
+      const credentialsCiphertext = encryptIntegrationCredentials(key, revisionId, settings, { secret: 'fake-bot-revision-test-key' })
+      await prisma.integrationConfigRevision.create({ data: { id: revisionId, key, settings, credentialsCiphertext, createdBy: a.user.id } })
+      await prisma.integrationConfig.create({ data: { key, activeRevisionId: revisionId, enabled: true } })
       Object.assign(config.trafficReset, { grantsEnabled: true, requestsEnabled: true, dispatchEnabled: false, confirmSecret: 'test-confirmation-key-at-least-32-characters' })
       await prisma.xboardAccountEvidence.create({ data: { userId: a.user.id, sourceOrderId: a.order.id, accountLinkId: a.link.id,
         externalOrderNo: a.task.requestOrderNo, emailSnapshot: a.email, proofKind: 'email_proof', proofVerifiedAt: new Date('2026-01-01') } })
-      await prisma.$transaction(tx => grantForOrderInTx(tx, a.order.id))
+      await withActiveFaka(() => prisma.$transaction(tx => grantForOrderInTx(tx, a.order.id)))
       const caps = await bridge.callFakaV2Capabilities()
       if (!caps.ok) throw new Error('fixture capabilities')
       Object.assign(caps.body.capabilities, { reset_idempotency: true, reset_status: true, cancel_tombstone: true })
@@ -242,8 +259,11 @@ describe('QQ Xboard v2 raw HTTP and authorization', () => {
       const body = { ...identity(a.actor.platformId), intentId: intent.body.intentId, confirmationCode: intent.body.confirmationCode, requestId: randomUUID() }
       const first = await send('resets', body), replay = await send('resets', body)
       expect(first.status).toBe(202)
+      expect(await prisma.xboardTrafficResetOperation.findUnique({ where: { id: first.body.operationId } }))
+        .toMatchObject({ configRevisionId: revisionId })
       expect(replay.body.operationId).toBe(first.body.operationId)
       expect(replay.body.replayed).toBe(true)
+      await prisma.integrationConfig.update({ where: { key }, data: { enabled: false } })
       const status = await send('reset-status', { ...identity(a.actor.platformId), operationId: first.body.operationId })
       expect(status.body.status).toBe('queued')
       config.trafficReset.requestsEnabled = false
@@ -261,7 +281,10 @@ describe('QQ Xboard v2 raw HTTP and authorization', () => {
       expect((await send('reset-intent-status', { ...identity(a.actor.platformId), intentId: intent.body.intentId })).status).toBe(404)
       expect(await prisma.order.count()).toBe(1)
       expect(await prisma.xboardTrafficResetOperation.count()).toBe(1)
-    } finally { Object.assign(config.trafficReset, saved) }
+    } finally {
+      Object.assign(config.trafficReset, saved)
+      config.integrationCredentialsEncKey = previousKey
+    }
   })
 
 })

@@ -2,6 +2,7 @@ import client from 'prom-client'
 import { registry } from '../../lib/metrics.js'
 import { prisma } from '../../lib/prisma.js'
 import type { Prisma } from '@prisma/client'
+import { listFulfillmentProviders } from '../fulfillment/registry.js'
 
 const OUTCOMES = ['processed', 'error', 'refunded', 'delivered', 'retry', 'reconcile', 'skipped',
   'stale', 'failure_recorded', 'succeeded_after_refund', 'escalated', 'remedy_accepted'] as const
@@ -24,7 +25,9 @@ export async function refreshLifecycleMetrics(force = false) {
     const states: Array<{ state: string; where: Prisma.OrderWhereInput; clock: 'createdAt' | 'cancelRequestedAt' | 'acceptBy' | 'remedyRespondBy' }> = [
       { state: 'cancel_pending', where: { status: { in: ['pending', 'processing'] }, cancelRequestedAt: { not: null } }, clock: 'cancelRequestedAt' },
       { state: 'fulfillment_reconcile', where: { status: { in: ['pending', 'processing'] }, fulfillmentJob: { status: 'needs_reconcile' } }, clock: 'createdAt' },
-      { state: 'faka_revoke_failed', where: { fakaBridgeTask: { revokeStatus: 'failed' } }, clock: 'createdAt' },
+      ...listFulfillmentProviders().flatMap(provider => (provider.orderBacklog ?? []).map(entry => ({
+        ...entry, clock: 'createdAt' as const,
+      }))),
       { state: 'accept_due', where: { status: 'pending', acceptBy: { lte: now }, cancelRequestedAt: null }, clock: 'acceptBy' },
       { state: 'dispute_due', where: { status: 'disputed', disputeEscalatedAt: null, OR: [{ disputeRespondBy: { lte: now } }, { remedyRespondBy: { lte: now } }] }, clock: 'createdAt' },
       { state: 'legacy_pending', where: { status: 'pending', acceptBy: null }, clock: 'createdAt' },

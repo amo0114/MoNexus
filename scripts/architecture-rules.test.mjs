@@ -92,6 +92,13 @@ test('only wallet writes point balances and ledger rows', () => {
 
 const check = (file, source) => checkBoundaries(new Map([[file, source]])).join('\n')
 
+test('only wallet initializes point accounts', () => {
+  for (const method of ['create', 'createMany', 'createManyAndReturn']) {
+    assert.match(check('server/src/modules/auth/registrationService.ts', `tx.pointAccount.${method} ({ data })`), /outside wallet/)
+    assert.equal(check('server/src/modules/wallet/commands.ts', `tx.pointAccount.${method}({ data })`), '')
+  }
+})
+
 test('AG-01 rejects filtered relation counts but allows plain counts and groupBy', () => {
   const file = 'server/src/modules/products/service.ts'
   assert.match(check(file, "select: { _count: {\n  select: { inventory: { where: { status: 'available' } } },\n} }"), /AG-01/)
@@ -136,11 +143,35 @@ test('AG-05 rejects a module joining a cycle but tolerates baseline cycles', () 
   ]))
   assert.match(grown.join('\n'), /AG-05 module dependency cycle grew: shops, storefront/)
   const baseline = checkBoundaries(new Map([
-    ['server/src/modules/payment/service.ts', "import { a } from '../recharge/service.js'"],
-    ['server/src/modules/recharge/service.ts', "import { b } from '../payment/helpers.js'"],
-    ['server/src/modules/payment/helpers.ts', 'export const b = 1'],
+    ['server/src/modules/accountGovernance/service.ts', "import '../auth/session.js'"],
+    ['server/src/modules/auth/session.ts', "import '../accountGovernance/status.js'"],
+    ['server/src/modules/accountGovernance/status.ts', ''],
   ]))
   assert.doesNotMatch(baseline.join('\n'), /AG-05/)
+})
+
+test('payment runtime uses the recharge application entry point', () => {
+  assert.match(check('server/src/modules/payment/worker.ts', "import '../recharge/credit.js'"), /payment must reach recharge/)
+  assert.equal(check('server/src/modules/payment/worker.ts', "import '../../bootstrap/rechargePayment.js'"), '')
+})
+
+test('catalog does not own order workflows', () => {
+  assert.match(check('server/src/modules/catalog/workflow.ts', "await import('../orders/platformFulfillment.js')"), /catalog must not import order workflows/)
+  assert.equal(check('server/src/modules/orders/workflow.ts', "import '../catalog/deliveryFileOwnership.js'"), '')
+})
+
+test('AG-05 rejects a new edge without a change in cycle membership', () => {
+  const sources = new Map([
+    ['server/src/modules/accountGovernance/service.ts', "import '../auth/service.js'"],
+    ['server/src/modules/auth/service.ts', ''],
+    ['server/src/modules/auth/session.ts', "import '../wallet/commands.js'"],
+    ['server/src/modules/wallet/commands.ts', ''],
+    ['server/src/modules/wallet/queries.ts', "import '../governance/queries.js'"],
+    ['server/src/modules/governance/queries.ts', "import '../accountGovernance/service.js'"],
+  ])
+  assert.deepEqual(checkBoundaries(sources), [])
+  sources.set('server/src/modules/wallet/probe.ts', "import '../auth/service.js'")
+  assert.match(checkBoundaries(sources).join('\n'), /AG-05.*wallet → auth/)
 })
 
 test('FE-01 only pages and the app root may import pages', () => {

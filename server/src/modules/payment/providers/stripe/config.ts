@@ -1,7 +1,7 @@
 import Stripe from 'stripe'
 import { paymentProviderUnavailable } from '../../../../lib/httpError.js'
-import { isProductionDeploy } from '../../../recharge/config.js'
-import type { RechargeCurrency } from '../../../recharge/types.js'
+import { isProductionDeploy } from '../../../../lib/paymentDeployment.js'
+import type { RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import type { ProviderEnvironment } from '../types.js'
 
 export const STRIPE_PROVIDER_NAME = 'stripe' as const

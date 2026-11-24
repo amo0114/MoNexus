@@ -17,17 +17,18 @@ it('R2-07: unknown cancellations stay held, enter the admin queue and require au
   const product = await createTestProduct('review unknown', 100, 0, [])
   await makeManualService(product.id)
   const offer = await prisma.offer.findFirstOrThrow({ where: { productId: product.id } })
-  await prisma.offer.update({ where: { id: offer.id }, data: { externalIntegration: 'demo_license', externalSku: 'demo-unknown' } })
-  const created = await createOrder(user.id, product.id, { idempotencyKey: randomUUID() })
-  const orderId = created.orderId
-  const job = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { orderId } })
   const providerId = `review_${randomUUID().replaceAll('-', '').slice(0, 8)}`
   registerFulfillmentProvider(createJobFulfillmentProvider({ id: providerId, label: 'review test', isConfigured: () => true,
     execute: async () => ({ kind: 'unknown', code: 'UNKNOWN' }),
     query: async () => ({ kind: 'unknown', code: 'UNKNOWN' }),
     cancel: async () => ({ kind: 'unknown', code: 'UNKNOWN' }),
   }))
-  await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { providerId } })
+  await prisma.offer.update({ where: { id: offer.id }, data: { externalIntegration: providerId, externalSku: 'demo-unknown' } })
+  const { orderId } = await createOrder(user.id, product.id, { idempotencyKey: randomUUID() })
+  const job = await prisma.fulfillmentJob.findUniqueOrThrow({ where: { orderId } })
+  expect(job.providerId).toBe(providerId)
+  expect(await prisma.order.findUniqueOrThrow({ where: { id: orderId } }))
+    .toMatchObject({ externalFulfillmentProvider: providerId })
   await processFulfillmentJob(job.id)
   expect(await cancelUnacceptedOrder(orderId, { kind: 'buyer', userId: user.id })).toBe('cancel_pending')
   await processFulfillmentJob(job.id)

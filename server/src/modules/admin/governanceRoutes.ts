@@ -1,3 +1,4 @@
+import { optionalFulfillmentStatus } from '../../bootstrap/optionalFulfillment.js'
 import '../governance/metrics.js'
 import { Router, type Request, type Response, type NextFunction } from 'express'
 import { z } from 'zod'
@@ -56,6 +57,7 @@ router.get(
     const auth = (await authorization(r.user!.userId))!
     return {
       contractVersion: 'governance-v1',
+      optionalFulfillment: optionalFulfillmentStatus(),
       permissions: auth.permissions,
       features: {
         refundReview: true,

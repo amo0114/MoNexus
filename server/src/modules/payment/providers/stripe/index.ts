@@ -7,8 +7,8 @@ import {
   paymentMethodUnavailable,
   paymentProviderUnavailable,
 } from '../../../../lib/httpError.js'
-import { serializeAmountMinor } from '../../../recharge/money.js'
-import type { RechargeCurrency } from '../../../recharge/types.js'
+import { serializeAmountMinor } from '../../../../lib/minorAmounts.js'
+import type { RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import type {
   CloseProviderPaymentInput,
   CloseResult,

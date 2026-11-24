@@ -144,7 +144,7 @@ export async function countProductPurgeDependencies(tx: Tx | typeof prisma, prod
     tx.review.count({ where: { productId } }),
     tx.inventoryItem.count({ where: { productId } }),
     tx.inventoryLog.count({ where: { productId } }),
-    tx.fakaBridgeTask.count({ where: { order: { productId } } }),
+    tx.order.count({ where: { productId, externalFulfillmentProvider: 'faka_bridge' } }),
     tx.promotionCampaign.count({ where: { productId } }),
     tx.editorialFeature.count({ where: { productId } }),
   ])

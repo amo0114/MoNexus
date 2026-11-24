@@ -1,5 +1,5 @@
 import AdminPaymentSettingsPanel from './AdminPaymentSettingsPanel'
-import AdminFakaSettingsPanel from './AdminFakaSettingsPanel'
+import OptionalFulfillmentPanel from './OptionalFulfillmentPanel'
 import { useEffect, useState } from 'react'
 import { getAdminConfig, updateAdminConfig, AdminSystemConfig, AdminSystemConfigKey } from '../../api/adminConfig'
 import { getApiErrorMessage } from '../../api/error'
@@ -394,7 +394,7 @@ export default function AdminConfigPanel() {
             <div className="mt-6 pt-6 border-t border-[var(--color-border)]">
               <AdminMailPanel />
               <AdminShortlinkSettingsPanel />
-              <AdminFakaSettingsPanel />
+              <OptionalFulfillmentPanel />
               <AdminPaymentSettingsPanel />
             </div>
           )}

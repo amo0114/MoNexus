@@ -5558,6 +5558,9 @@
               "governance-v1"
             ]
           },
+          "optionalFulfillment": {
+            "$ref": "#/components/schemas/FakaPluginStatus"
+          },
           "permissions": {
             "type": "array",
             "items": {
@@ -8995,6 +8998,29 @@
           }
         },
         "description": "不包含明文凭据或密文。enabled 只控制新请求；历史处理保留。"
+      },
+      "FakaPluginStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "installed",
+          "mounted"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "faka_bridge"
+            ]
+          },
+          "installed": {
+            "type": "boolean"
+          },
+          "mounted": {
+            "type": "boolean"
+          }
+        }
       },
       "FakaRuntimeSettings": {
         "type": "object",
@@ -21503,6 +21529,96 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 2147483646
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/integrations/faka-bridge/plugin": {
+      "get": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "读取 FakaBridge 插件运行状态",
+        "description": "需要管理员 MFA 与 settings.manage。",
+        "responses": {
+          "200": {
+            "description": "当前实例的插件制品和运行状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaPluginStatus"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Admin Integrations"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "装载或安全注销 FakaBridge 插件",
+        "description": "需要管理员 MFA 与 settings.manage。注销前须暂停接单并处理现存履约义务。",
+        "responses": {
+          "200": {
+            "description": "当前实例的插件制品和运行状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FakaPluginStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mounted"
+                ],
+                "properties": {
+                  "mounted": {
+                    "type": "boolean"
                   }
                 }
               }

@@ -1,5 +1,5 @@
 import { setProviderCircuitOpen } from '../metrics.js'
-import { PAYMENT_PROVIDER_NAMES } from '../../recharge/types.js'
+import { PAYMENT_PROVIDER_NAMES } from '../../../lib/paymentTypes.js'
 
 const FAILURE_THRESHOLD = 5
 const OPEN_MS = 60_000

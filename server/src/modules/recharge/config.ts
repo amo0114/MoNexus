@@ -1,3 +1,5 @@
+import { isProductionDeploy } from '../../lib/paymentDeployment.js'
+export { isProductionDeploy, shouldLoadHistoricalAdapter } from '../../lib/paymentDeployment.js'
 import {
   PAYMENT_PROVIDER_NAMES,
   RECHARGE_CURRENCIES,
@@ -40,10 +42,6 @@ export type RechargeGateResult = { ok: true } | { ok: false; message: string }
  * Recharge sandbox/Simulator/live isolation only.
  * Cookie, MFA, and other existing production checks stay on NODE_ENV.
  */
-export function isProductionDeploy(nodeEnv: string, deployEnv?: string): boolean {
-  const deploymentEnv = deployEnv ?? 'production'
-  return nodeEnv === 'production' && deploymentEnv === 'production'
-}
 
 export function parseCsvTokens(raw: string | undefined): string[] {
   if (raw === undefined || raw === '') return []
@@ -119,13 +117,6 @@ export function assertEnabledSubsetOfRegistered(
  * Historical webhook/query/refund/dispute/reconciliation adapters stay loaded
  * from the registered set. Removing a name from enabled must not unload them.
  */
-export function shouldLoadHistoricalAdapter(
-  name: PaymentProviderName,
-  registered: readonly PaymentProviderName[],
-  _enabled: readonly PaymentProviderName[],
-): boolean {
-  return registered.includes(name)
-}
 
 function fail(message: string): RechargeGateResult {
   return { ok: false, message }

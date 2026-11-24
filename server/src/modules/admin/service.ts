@@ -55,20 +55,9 @@ export {
   archiveAdminOffer,
   restoreAdminOffer,
   makeDefaultAdminOffer,
-  previewRebindAdminOfferSku,
-  rebindAdminOfferSku,
 } from './offerAdmin.js'
 
-export { previewAdminFakaSync, confirmAdminFakaSync } from '../catalog/fakaSync.js'
-
 export { revokeDeliveryFile, listDeliveryFiles, listDeliveryFileGrants } from './deliveryFileAdmin.js'
-
-export {
-  listFakaBridgeTasks,
-  getFakaBridgeTaskStats,
-  retryFakaBridgeTask,
-  forceFakaBridgeRevoke,
-} from './fakaTaskAdmin.js'
 
 export {
   createProduct,
@@ -86,15 +75,6 @@ export {
   importInventory,
   importOfferInventory,
 } from './inventoryAdmin.js'
-
-export {
-  setAdminFakaCapacity,
-  listAdminFakaCatalog,
-  previewAdminFakaPlan,
-  importAdminFakaPlan,
-  addAdminFakaOffers,
-  PERIOD_OFFER_HINTS,
-} from './fakaCatalogAdmin.js'
 
 export {
   listUsers,

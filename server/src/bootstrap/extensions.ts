@@ -3,9 +3,9 @@
 import { config } from '../config/index.js'
 import { registerFulfillmentProvider } from '../modules/fulfillment/registry.js'
 import { createJobFulfillmentProvider } from '../modules/fulfillment/jobProvider.js'
-import { xboardFulfillmentProvider } from '../modules/fakaBridge/provider.js'
+import { refreshOptionalFulfillment } from './optionalFulfillment.js'
 import { demoLicenseAdapter } from '../plugins/demoLicense/adapter.js'
 
-registerFulfillmentProvider(xboardFulfillmentProvider)
+await refreshOptionalFulfillment(true)
 // Developer example on the core job engine; never sellable in production.
 if (config.nodeEnv !== 'production') registerFulfillmentProvider(createJobFulfillmentProvider(demoLicenseAdapter))
