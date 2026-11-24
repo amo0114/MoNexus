@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import { getShopProducts, type ShopProfile } from '../api/shops'
 import type { ProductSummary as Product } from '../types/product'
-import { AuthSessionChangedError } from '../auth/sessionContext'
 import { captureException } from '../lib/errorReporter'
+import { isReportableRequestError } from '../api/error'
 import { useAuthSessionKey } from './useProductRecommendations'
 
 export type ShopMoreStatus = 'idle' | 'loading' | 'error' | 'expired'
@@ -25,13 +25,6 @@ const LOADING: ShopProductsState = { status: 'loading' }
 
 function httpStatus(err: unknown) {
   return axios.isAxiosError(err) ? err.response?.status : undefined
-}
-
-/** Expected client/session outcomes are not incidents; only server/network failures are reported. */
-function shouldReport(err: unknown): boolean {
-  if (err instanceof AuthSessionChangedError || axios.isCancel(err)) return false
-  if (axios.isAxiosError(err)) return !err.response || err.response.status >= 500
-  return true
 }
 
 /**
@@ -62,7 +55,7 @@ export function useShopProducts(merchantId: number, query: string) {
           setState({ key, value: { status: 'not_found' } })
           return
         }
-        if (shouldReport(err)) captureException(err, { scope: 'shop-products', merchantId })
+        if (isReportableRequestError(err)) captureException(err, { scope: 'shop-products', merchantId })
         setState({ key, value: { status: 'error' } })
       })
     return () => {
@@ -105,7 +98,7 @@ export function useShopProducts(merchantId: number, query: string) {
           update(() => ({ status: 'not_found' }))
           return
         }
-        if (shouldReport(err)) captureException(err, { scope: 'shop-products-more', merchantId })
+        if (isReportableRequestError(err)) captureException(err, { scope: 'shop-products-more', merchantId })
         update(ready => ({ ...ready, more: status === 409 ? 'expired' : 'error' }))
       })
       .finally(() => {

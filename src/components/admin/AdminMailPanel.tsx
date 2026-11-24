@@ -1,7 +1,8 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useState } from 'react'
 import { AdminMailStatus, getAdminMailStatus, sendAdminMailTest } from '../../api/adminMail'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
+import { useAsyncResource } from '../../hooks/useAsyncResource'
 import AdminMailSettingsPanel from './AdminMailSettingsPanel'
 
 const OPS_HINT =
@@ -15,28 +16,12 @@ const OPS_HINT =
  */
 export default function AdminMailPanel() {
   const showToast = useAppStore((s) => s.showToast)
-  const [status, setStatus] = useState<AdminMailStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
+  const { state, reload } = useAsyncResource<AdminMailStatus>('admin-mail-status', () => getAdminMailStatus(), {
+    onError: (err) => showToast(getApiErrorMessage(err, '加载邮件投递状态失败'), 'error'),
+  })
+  const status = state.status === 'ready' ? state.data : null
   const [email, setEmail] = useState('')
   const [sending, setSending] = useState(false)
-
-  useEffect(() => {
-    void fetchStatus()
-  }, [])
-
-  async function fetchStatus() {
-    setLoading(true)
-    try {
-      setStatus(await getAdminMailStatus())
-      setLoadError(false)
-    } catch (err) {
-      setLoadError(true)
-      showToast(getApiErrorMessage(err, '加载邮件投递状态失败'), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   async function handleSend(e: FormEvent) {
     e.preventDefault()
@@ -65,12 +50,12 @@ export default function AdminMailPanel() {
       <h2 className="font-heading text-xl font-bold mb-2 text-[var(--color-text)]">邮件投递</h2>
       <p className="text-sm text-[var(--color-text-muted)] mb-4 break-words">{OPS_HINT}</p>
 
-      {loading ? (
+      {state.status === 'loading' ? (
         <div className="text-sm text-[var(--color-text-muted)] py-4">加载中...</div>
-      ) : loadError || !status ? (
+      ) : !status ? (
         <div className="text-sm text-[var(--color-danger)] py-2" data-testid="admin-mail-error">
           邮件投递状态加载失败
-          <button type="button" className="btn-secondary btn-sm ml-3 px-3" onClick={() => void fetchStatus()}>
+          <button type="button" className="btn-secondary btn-sm ml-3 px-3" onClick={reload}>
             重试
           </button>
         </div>
@@ -138,7 +123,7 @@ export default function AdminMailPanel() {
           )}
         </div>
       )}
-      <AdminMailSettingsPanel onActivated={() => void fetchStatus()} />
+      <AdminMailSettingsPanel onActivated={reload} />
     </section>
   )
 }

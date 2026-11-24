@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
 import { AdminBuildInfo, getAdminBuildInfo } from '../../api/adminBuildInfo'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
+import { useAsyncResource } from '../../hooks/useAsyncResource'
 
 function shortSha(commit: string): string {
   return commit.slice(0, 7)
@@ -9,26 +9,10 @@ function shortSha(commit: string): string {
 
 export default function AdminSystemInfoPanel() {
   const showToast = useAppStore((s) => s.showToast)
-  const [info, setInfo] = useState<AdminBuildInfo | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState(false)
-
-  useEffect(() => {
-    void fetchInfo()
-  }, [])
-
-  async function fetchInfo() {
-    setLoading(true)
-    try {
-      setInfo(await getAdminBuildInfo())
-      setLoadError(false)
-    } catch (err) {
-      setLoadError(true)
-      showToast(getApiErrorMessage(err, '加载构建信息失败'), 'error')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const { state, reload } = useAsyncResource<AdminBuildInfo>('admin-build-info', () => getAdminBuildInfo(), {
+    onError: (err) => showToast(getApiErrorMessage(err, '加载构建信息失败'), 'error'),
+  })
+  const info = state.status === 'ready' ? state.data : null
 
   async function copyCommit() {
     if (!info?.commit) return
@@ -40,15 +24,15 @@ export default function AdminSystemInfoPanel() {
     }
   }
 
-  if (loading) {
+  if (state.status === 'loading') {
     return <div className="text-sm text-[var(--color-text-muted)] py-4">加载中...</div>
   }
 
-  if (loadError || !info) {
+  if (!info) {
     return (
       <div className="text-sm text-[var(--color-danger)] py-2" data-testid="admin-system-info-error">
         构建信息加载失败
-        <button type="button" className="btn-secondary btn-sm ml-3 px-3" onClick={() => void fetchInfo()}>
+        <button type="button" className="btn-secondary btn-sm ml-3 px-3" onClick={reload}>
           重试
         </button>
       </div>

@@ -256,6 +256,16 @@ lint 棘轮从 71 降到 67。剩下的警告保留为 warn，不批量加 disab
 
 下单流程（购买弹窗、会话与路由作用域、下单提交与错误分类、成功态、移动端灵动岛、下单后刷新详情）原样迁入 `src/pages/productDetail/useProductCheckout.ts`，沿用 `pages/merchant/productCreation/useProductCreation.ts` 的页面私有 hook 模式。`ProductDetailPage.tsx` 从 908 行降到 690 行。公开详情请求收进 `api/catalog.ts` 的 `getPublicProductDetail`，PDP 因此移出 FE-02 白名单。行为不变：PDP 现有 5 个测试文件、全量单测与移动端 E2E 均通过。`Layout` 拆分留待下一步。
 
+### 5.4 F-05：数据请求抽象（Owner 选方案 A，2026-11-24）
+
+新增 `src/hooks/useAsyncResource.ts`，不引入依赖，沿用 `useShopProducts` 已验证的模式：
+
+- key 自动并入登录会话，切换账号即重新加载；
+- 只渲染当前 key 对应的结果，被取代的请求不会在任何一帧显示，并且会被 abort；
+- `reload()` 重新请求；`onError` 只对当前 key 的失败调用，abort 和会话切换导致的失败不算错误。
+
+约定：**新的"加载一份数据并显示"场景使用 `useAsyncResource`**；存量手写加载逻辑改到时再迁移。本次迁移了 `AdminSystemInfoPanel`、`AdminMailPanel` 作为示范（lint 棘轮 67 → 65）。`useShopProducts`、`useProductRecommendations` 里两份相同的"是否上报"判断合并为 `api/error.ts` 的 `isReportableRequestError`。分页、无限滚动这类场景不在这个 hook 的范围内，仍用 `useCursorList` 等专用 hook。
+
 ## 6. 本轮没有覆盖的内容
 
 - 运行时性能（首屏、包体积、渲染）：之前的 P1/P2 骨架屏和外壳几何专项已经做过，本轮没有重新测量。

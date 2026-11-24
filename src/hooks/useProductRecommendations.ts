@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import axios from 'axios'
 import { getProductRecommendations, type RecommendedProduct } from '../api/productRecommendations'
-import { AuthSessionChangedError, getAuthSessionContext } from '../auth/sessionContext'
+import { getAuthSessionContext } from '../auth/sessionContext'
+import { isReportableRequestError } from '../api/error'
 import { captureException } from '../lib/errorReporter'
 import { useAuthStore } from '../stores/authStore'
 
@@ -17,13 +17,6 @@ export function useAuthSessionKey(): string {
     const context = getAuthSessionContext(state)
     return context ? `${context.userId}:${context.sessionId}:${context.authEpoch}` : 'guest'
   })
-}
-
-/** Expected client/session outcomes are not incidents; only server/network failures are reported. */
-function shouldReport(err: unknown): boolean {
-  if (err instanceof AuthSessionChangedError || axios.isCancel(err)) return false
-  if (axios.isAxiosError(err)) return !err.response || err.response.status >= 500
-  return true
 }
 
 /**
@@ -57,7 +50,7 @@ export function useProductRecommendations(productId: number | null, enabled: boo
       })
       .catch((err: unknown) => {
         if (!current) return
-        if (shouldReport(err)) captureException(err, { scope: 'product-recommendations', productId })
+        if (isReportableRequestError(err)) captureException(err, { scope: 'product-recommendations', productId })
         setState({ key, value: { status: 'error', items: [] } })
       })
     return () => {
