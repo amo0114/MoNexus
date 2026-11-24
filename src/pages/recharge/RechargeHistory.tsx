@@ -6,9 +6,9 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import EmptyState from '../../components/ui/EmptyState'
 import { TableSkeleton } from '../../components/ui/Skeleton'
-import { formatCurrencyAmount, formatPoints } from './money'
+import { formatCurrencyAmount, formatPoints } from '../../domain/recharge/money'
 import { buildPayableRecognitionNotice } from './payableCopy'
-import { orderStatusLabel, paymentChannelLabel } from './status'
+import { orderStatusLabel, paymentChannelLabel } from '../../domain/recharge/status'
 
 function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => void }) {
   const payableNotice = buildPayableRecognitionNotice(order)

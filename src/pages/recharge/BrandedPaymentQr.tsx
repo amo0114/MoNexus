@@ -1,12 +1,12 @@
 import { QRCodeSVG } from 'qrcode.react'
-import { formatCurrencyAmount } from './money'
-import { isHttpsImageUrl } from './paymentActions'
+import { formatCurrencyAmount } from '../../domain/recharge/money'
+import { isHttpsImageUrl } from '../../domain/recharge/paymentActions'
 import {
   paymentQrCenterMark,
   QR_MIN_SIZE_PX,
   QR_VISUAL_SIZE_PX,
 } from './paymentBrands'
-import { isTerminalOrderStatus, paymentQrAriaLabel } from './status'
+import { isTerminalOrderStatus, paymentQrAriaLabel } from '../../domain/recharge/status'
 
 function isPast(iso?: string | null): boolean {
   if (!iso) return false

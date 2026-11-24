@@ -18,12 +18,12 @@ import { TableSkeleton } from '../../ui/Skeleton'
 import {
   formatCurrencyAmount,
   parseMajorInput,
-} from '../../../pages/recharge/money'
+} from '../../../domain/recharge/money'
 import {
   formatFenPointRatio,
   previewTenYuanCredit,
   vmqfoxCnyExampleRateMismatch,
-} from '../../../pages/recharge/pricePolicyPreview'
+} from '../../../domain/recharge/pricePolicyPreview'
 import { useTabActions } from '../../../auth/adminAccess'
 
 const PAGE_SIZE = 50

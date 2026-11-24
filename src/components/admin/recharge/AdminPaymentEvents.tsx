@@ -8,7 +8,7 @@ import ConfirmDialog from '../../ui/ConfirmDialog'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../ui/Dialog'
 import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
-import { EVENT_STATUS_LABEL, PAYMENT_EVENT_STATUSES, PAYMENT_PROVIDERS, providerLabel } from '../../../pages/recharge/status'
+import { EVENT_STATUS_LABEL, PAYMENT_EVENT_STATUSES, PAYMENT_PROVIDERS, providerLabel } from '../../../domain/recharge/status'
 import { PAYMENT_EVENT_SOURCE_LABEL } from '../../../utils/adminRechargeDisplay'
 import { useTabActions } from '../../../auth/adminAccess'
 

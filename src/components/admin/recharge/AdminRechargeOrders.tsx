@@ -15,12 +15,12 @@ import ConfirmDialog from '../../ui/ConfirmDialog'
 import { Dialog, DialogContent, DialogTitle } from '../../ui/Dialog'
 import EmptyState from '../../ui/EmptyState'
 import { TableSkeleton } from '../../ui/Skeleton'
-import { formatCurrencyAmount, formatPoints } from '../../../pages/recharge/money'
+import { formatCurrencyAmount, formatPoints } from '../../../domain/recharge/money'
 import {
   PAYMENT_PROVIDERS,
   paymentChannelLabel,
   providerLabel,
-} from '../../../pages/recharge/status'
+} from '../../../domain/recharge/status'
 import {
   ADMIN_RECHARGE_STATUS_CONFIG,
   getAdminRechargeStatusConfig,
