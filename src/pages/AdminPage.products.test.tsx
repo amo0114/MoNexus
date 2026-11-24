@@ -276,7 +276,7 @@ describe('AdminPage product publication workflow (T-APUB-004/005)', () => {
   it('hands a successful XBoard import to readiness and does not auto-publish (AC-APUB-001/002/009)', async () => {
     await openProducts()
     fireEvent.click(screen.getByTestId('admin-faka-import-open'))
-    fireEvent.click(screen.getByTestId('mock-faka-imported'))
+    fireEvent.click(await screen.findByTestId('mock-faka-imported'))
     await waitFor(() => expect(mocks.readiness).toHaveBeenCalledWith(11))
     expect(mocks.publish).not.toHaveBeenCalled()
     expect(screen.getByTestId('admin-publication-dialog')).toHaveTextContent('商品已导入，准备发布')

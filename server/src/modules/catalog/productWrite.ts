@@ -24,7 +24,7 @@ import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
 import { checkProductReadiness, type ProductReadinessResult } from './publicationReadiness.js'
 import { canonicalFixedStructuredText, normalizeFixedStructuredContent } from './structuredFixedContent.js'
 import { lockProductRow } from './productLock.js'
-import { normalizeProviderOfferBinding } from '../fulfillment/offerBinding.js'
+import { countOpenExternalOfferTasks, normalizeProviderOfferBinding } from '../fulfillment/offerBinding.js'
 import { invalidateGuestEligibilityIfNeeded } from './guestEligibility.js'
 import { isContentCopilotAvailable } from './contentCopilot/service.js'
 
@@ -151,15 +151,7 @@ async function assertTemplateAssignable(
   })
   const offerIds = offers.map(offer => offer.id)
   if (offerIds.length > 0) {
-    const openTasks = await tx.fakaBridgeTask.count({
-      where: {
-        order: { offerId: { in: offerIds } },
-        OR: [
-          { status: { in: ['pending', 'needs_reconcile'] } },
-          { revokeStatus: 'pending' },
-        ],
-      },
-    })
+    const openTasks = await countOpenExternalOfferTasks(tx, offerIds)
     if (openTasks > 0) {
       throw new HttpError(
         400,

@@ -1,5 +1,6 @@
 import { posix as path } from 'node:path'
 import ts from 'typescript'
+import { cycleEdges } from './architecture-module-cycle-baseline.mjs'
 
 /** Parse module syntax, excluding type-only edges from the runtime graph. */
 export function readDependencies(source, filename = 'source.ts') {
@@ -61,7 +62,7 @@ function resolveSource(file, specifier, sources) {
 
 // wallet is the single writer of real balances, lots, allocations and PointLog
 // rows; the dev seed is not financial history and is the only exception.
-const walletWrites = /\.pointLog\.create(?:Many)?\(|\.pointAccount\.(?:update|updateMany|upsert)\(|UPDATE\s+"PointAccount"|\.pointLot\.(?:create|update|delete)|\.walletAllocation\.(?:create|update|delete)|\.walletOperation\.(?:create|update|delete)/
+const walletWrites = /\.pointLog\.create(?:Many)?\(|\.pointAccount\.(?:create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|upsert|delete|deleteMany)\s*\(|UPDATE\s+"PointAccount"|\.pointLot\.(?:create|update|delete)|\.walletAllocation\.(?:create|update|delete)|\.walletOperation\.(?:create|update|delete)/
 const walletOwners = [`${modules}wallet/`, 'server/src/prisma/seed.ts']
 
 // AG-01: Prisma compiles a filtered relation _count into a GROUP BY over the
@@ -89,15 +90,6 @@ const rowClaimIntervalOwners = new Set([
   `${modules}xboardAccounts/cron.ts`, // backfill.ts acquires the cron lease
   `${modules}notifications/realtime/hub.ts`, // SSE heartbeat, no business writes
 ])
-
-// AG-05: module-level static runtime import cycles as of 2026-11-23. Cycles may
-// only shrink; shrink this baseline when a decoupling lands.
-const moduleCycleBaseline = [
-  ['accountGovernance', 'adminAuthorization', 'adminExports', 'auth', 'catalog', 'checkout', 'fakaBridge',
-    'fulfillment', 'governance', 'invite', 'merchant', 'merchantFinance', 'merchantGovernance', 'orders', 'points',
-    'portable-backups', 'productVideos', 'trafficReset', 'valuePolicy', 'wallet', 'xboardAccounts'],
-  ['payment', 'recharge'],
-].map(members => new Set(members))
 
 // FE-01..03: frontend (src/) layering. Files directly under src/ (App, main) and
 // src/pages/ are composition roots; nothing below them may import a page.
@@ -261,8 +253,13 @@ export function checkBoundaries(sources) {
       // not reach back into the public read module.
       if (dependency.runtime && file.startsWith(`${modules}catalog/`)
         && target.startsWith(`${modules}products/`)) fail('catalog must not import the products read module')
+      if (dependency.runtime && file.startsWith(`${modules}catalog/`)
+        && target.startsWith(`${modules}orders/`)) fail('catalog must not import order workflows')
       // Chat binding mounts its own routes from app.ts; points stays independent of the bot channel.
       if (file.startsWith(`${modules}points/`) && target.startsWith(`${modules}chatbot/`)) fail('points must not import chatbot')
+      if (dependency.runtime && file.startsWith(`${modules}payment/`) && target.startsWith(`${modules}recharge/`)) {
+        fail('payment must reach recharge through the application entry point')
+      }
       for (const facade of facades) {
         const controller = path.join(path.dirname(facade), facade.endsWith('/adminService.ts') ? 'adminController.ts' : 'controller.ts')
         if (file !== controller && file.startsWith(path.dirname(facade) + '/') && target === facade) fail('implementation imports its own public service facade')
@@ -287,8 +284,14 @@ export function checkBoundaries(sources) {
   }
   for (const node of moduleGraph.keys()) moduleGraph.set(node, [...moduleGraph.get(node)].filter(target => moduleGraph.has(target)))
   for (const component of stronglyConnected(moduleGraph)) {
-    if (component.length < 2 || moduleCycleBaseline.some(baseline => component.every(member => baseline.has(member)))) continue
-    failures.push(`AG-05 module dependency cycle grew: ${component.sort().join(', ')}`)
+    if (component.length < 2) continue
+    const members = new Set(component)
+    const addedEdges = component.flatMap(from => moduleGraph.get(from)
+      .filter(to => members.has(to) && !cycleEdges[from]?.includes(to))
+      .map(to => `${from} → ${to}`))
+    if (addedEdges.length) {
+      failures.push(`AG-05 module dependency cycle grew: ${component.sort().join(', ')}; added edges: ${addedEdges.sort().join(', ')}`)
+    }
   }
   return failures
 }

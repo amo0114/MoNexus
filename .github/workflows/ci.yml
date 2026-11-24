@@ -68,6 +68,7 @@ jobs:
           filters: |
             server:
               - 'server/**'
+              - 'docs/superpowers/specs/monexus-api-openapi.json'
               - 'scripts/check-runtime.mjs'
               - '.github/actions/setup-ubuntu-mirrors/**'
               - '.github/workflows/ci.yml'

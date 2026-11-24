@@ -50,6 +50,15 @@ async function demoOrder(sku: string) {
 }
 
 describe('order cancellation barrier', () => {
+  it('blocks an external order whose persisted owner is absent even when its offer has been removed', async () => {
+    const { order } = await manualOrder()
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { externalFulfillmentProvider: 'unloaded_fulfillment_provider' },
+    })
+    expect(await assess(order.id)).toBe('unsupported')
+  })
+
   it('D2: an unregistered owner can never be assumed to have done nothing', async () => {
     const { orderId, job } = await demoOrder('demo-license')
     await prisma.fulfillmentJob.update({ where: { id: job.id }, data: { providerId: 'unregistered_review_owner' } })

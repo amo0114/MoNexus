@@ -1,5 +1,5 @@
 import { withFakaTask, withFakaTaskInBatch, withActiveFaka } from '../../lib/runtimeSettings/fakaBridge.js'
-import { fakaBridgeConfig } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaBridgeConfig, fakaMountedInTx } from '../../lib/runtimeSettings/fakaBridge.js'
 import { grantForOrderInTx } from '../trafficReset/benefits.js'
 import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
@@ -135,6 +135,7 @@ async function processBoundFakaBridgeTask(taskId: number): Promise<ProcessOutcom
     if (!peekSched || !peekSched.nextAttemptDue || !peekSched.leaseExpired) return null
 
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${peek.orderId} FOR UPDATE`
+    if (!await fakaMountedInTx(tx)) return null
 
     // Re-read task + schedule under order lock (UTC re-check)
     const task = await tx.fakaBridgeTask.findUnique({ where: { id: taskId } })
@@ -833,8 +834,8 @@ async function runBoundFakaCapacityPrewarm(): Promise<number> {
 
 const INTERVAL_MS = 30_000
 let timer: NodeJS.Timeout | null = null
-let running = false
-let capacityPrewarmRunning = false
+let running: Promise<void> | null = null
+let capacityPrewarmRunning: Promise<void> | null = null
 
 /**
  * Capacity warming is intentionally outside the fulfillment tick's critical
@@ -844,36 +845,36 @@ let capacityPrewarmRunning = false
  */
 function scheduleFakaCapacityPrewarm(): void {
   if (capacityPrewarmRunning) return
-  capacityPrewarmRunning = true
-  void runFakaCapacityPrewarm()
+  capacityPrewarmRunning = runFakaCapacityPrewarm()
+    .then(() => {})
     .catch(err => {
       logger.warn({ err }, 'Faka capacity prewarm failed')
     })
     .finally(() => {
-      capacityPrewarmRunning = false
+      capacityPrewarmRunning = null
     })
 }
 
 export function startFakaBridgeCron(): void {
   if (timer) return
   timer = setInterval(() => {
-    void tick()
+    if (!running) running = tick().finally(() => { running = null })
   }, INTERVAL_MS)
   timer.unref?.()
   logger.info({ intervalMs: INTERVAL_MS }, 'FakaBridge cron started')
 }
 
-export function stopFakaBridgeCron(): void {
+export async function stopFakaBridgeCron(): Promise<void> {
   if (timer) {
     clearInterval(timer)
     timer = null
   }
+  await running
+  await capacityPrewarmRunning
   logger.info('FakaBridge cron stopped')
 }
 
 async function tick(): Promise<void> {
-  if (running) return
-  running = true
   try {
     const n = await runFakaBridgeBatch()
     const revoked = await runFakaRevokeBatch()
@@ -888,8 +889,6 @@ async function tick(): Promise<void> {
     await refreshFakaTaskGauges()
   } catch (err) {
     logger.error({ err }, 'FakaBridge batch failed')
-  } finally {
-    running = false
   }
 }
 

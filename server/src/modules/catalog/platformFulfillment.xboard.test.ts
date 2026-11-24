@@ -7,7 +7,7 @@ import {
   postPlatformProgress,
   rejectPlatformOrder,
   startPlatformFulfillment,
-} from './platformFulfillment.js'
+} from '../orders/platformFulfillment.js'
 
 const FAKA_OVERRIDE_MESSAGE = '外部开通订单不能由平台人工替代交付'
 

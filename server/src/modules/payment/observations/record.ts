@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../../lib/prisma.js'
-import type { PaymentObservationSource, PaymentVerificationMethod } from '../../recharge/types.js'
-import { serializeAmountMinor } from '../../recharge/money.js'
+import type { PaymentObservationSource, PaymentVerificationMethod } from '../../../lib/paymentTypes.js'
+import { serializeAmountMinor } from '../../../lib/minorAmounts.js'
 import { recordCallbackRetry, recordPaymentObservationMetric } from '../metrics.js'
 
 function isUniqueViolation(err: unknown): boolean {

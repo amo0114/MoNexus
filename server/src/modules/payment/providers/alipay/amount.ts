@@ -1,4 +1,4 @@
-import { AmountParseError } from '../../../recharge/money.js'
+import { AmountParseError } from '../../../../lib/minorAmounts.js'
 
 /** Alipay V1 only accepts ISO currencies whose minor-unit scale is exactly 2. */
 export const ALIPAY_YUAN_SCALE = 2

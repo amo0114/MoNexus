@@ -58,10 +58,12 @@ export function decodeFakaRevision(revision: IntegrationConfigRevision): FakaSna
   } catch { throw new FakaConfigurationUnavailableError() }
 }
 type Db = Pick<Prisma.TransactionClient, 'integrationConfig' | 'integrationConfigRevision'>
-export async function activeFakaSnapshot(db: Db = prisma): Promise<FakaSnapshot> {
+export async function activeFakaSnapshot(db: Db = prisma, purpose: 'intake' | 'existing' = 'intake'): Promise<FakaSnapshot> {
   const row = await db.integrationConfig.findUnique({ where: { key: FAKA_KEY }, include: { activeRevision: true } })
   const snapshot = row?.activeRevisionId ? decodeFakaRevision(row.activeRevision!) : fakaBootstrap()
-  return row && !row.enabled ? { ...snapshot, bridge: { ...snapshot.bridge, enabled: false, url: undefined, secret: undefined } as typeof config.fakaBridge } : snapshot
+  return row && !row.enabled && purpose === 'intake'
+    ? { ...snapshot, bridge: { ...snapshot.bridge, enabled: false, url: undefined, secret: undefined } as typeof config.fakaBridge }
+    : snapshot
 }
 export async function historicalFakaSnapshot(revisionId: string | null, db: Db = prisma): Promise<FakaSnapshot> {
   if (revisionId) return decodeFakaRevision(await db.integrationConfigRevision.findUniqueOrThrow({ where: { id: revisionId } }))
@@ -89,7 +91,7 @@ export async function withFakaTaskInBatch<T>(taskId: number, work: () => Promise
     // Do not change bindings, business state or another worker's active lease.
     await prisma.$executeRaw`
       UPDATE "FakaBridgeTask"
-      SET "nextAttemptAt" = GREATEST("nextAttemptAt", ${retryAt}), "lastError" = 'CONFIG_UNAVAILABLE'
+      SET "nextAttemptAt" = GREATEST("nextAttemptAt", ${retryAt} AT TIME ZONE 'UTC'), "lastError" = 'CONFIG_UNAVAILABLE'
       WHERE "id" = ${taskId}
         AND ("leaseUntil" IS NULL OR ("leaseUntil" AT TIME ZONE 'UTC') <= ${now})`
     logger.warn({ taskId, code: 'CONFIG_UNAVAILABLE' }, 'FakaBridge historical configuration unavailable; task deferred')
@@ -100,17 +102,36 @@ export async function withFakaTaskInBatch<T>(taskId: number, work: () => Promise
 export async function withActiveFaka<T>(work: () => Promise<T>): Promise<T> {
   return withFakaSnapshot(await activeFakaSnapshot(), work)
 }
+/** Serialize obligation writes with detach across API and worker processes. */
+export async function fakaMountedInTx(tx: Prisma.TransactionClient): Promise<boolean> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext('monexus:integration:faka_bridge'))`
+  const plugin = await tx.integrationConfig.findUnique({
+    where: { key: `plugin:${FAKA_KEY}` }, select: { enabled: true },
+  })
+  return plugin?.enabled !== false
+}
+
+export async function requireFakaMountedInTx(tx: Prisma.TransactionClient): Promise<void> {
+  if (!await fakaMountedInTx(tx)) throw conflict('履约插件已注销，请重新装载后处理')
+}
+
 /** Pin the request's snapshot under the same lock as activation. An edited target requires retry. */
 export async function pinFakaSnapshot(tx: Prisma.TransactionClient): Promise<string | null> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('monexus:integration:faka_bridge'))`
+  if (!await fakaMountedInTx(tx)) throw new HttpError(503, 'INTERNAL_SERVER_ERROR', '新履约暂未开放')
   const snapshot = currentFakaSnapshot()
   const active = await activeFakaSnapshot(tx)
   if (!active.bridge.enabled || !active.bridge.url || !active.bridge.secret) throw new HttpError(503, 'INTERNAL_SERVER_ERROR', '新履约暂未开放')
   if (snapshot.revisionId !== active.revisionId || snapshot.bridge.url !== active.bridge.url || snapshot.bridge.secret !== active.bridge.secret) throw conflict('履约配置已变化，请重新确认')
   return snapshot.revisionId
 }
-export const fakaRuntimeMiddleware: RequestHandler = (req, _res, next) => {
+const bindIntake = bindActiveFaka()
+export const fakaRuntimeMiddleware: RequestHandler = (req, res, next) => {
   if (!/^\/(products|orders|checkout|faka-bridge|bot|shops|storefront|merchant)(\/|$)/.test(req.path)
     && !/^\/admin\/(faka|products|offers)/.test(req.path)) return next()
-  void activeFakaSnapshot().then(snapshot => withFakaSnapshot(snapshot, () => next())).catch(next)
+  return bindIntake(req, res, next)
+}
+export function bindActiveFaka(purpose: 'intake' | 'existing' = 'intake'): RequestHandler {
+  return (_req, _res, next) => {
+    void activeFakaSnapshot(prisma, purpose).then(snapshot => withFakaSnapshot(snapshot, () => next())).catch(next)
+  }
 }

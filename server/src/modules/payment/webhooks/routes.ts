@@ -10,12 +10,12 @@ import { getRegisteredProvider } from '../providers/registry.js'
 import { shouldRegisterSimulatorControlRoutes } from '../providers/simulator/index.js'
 import { hashNormalizedPayload, recordPaymentObservation } from '../observations/record.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
-import { applyRefundObservation } from '../../recharge/refund.js'
+import { applyRefundObservation } from '../../../bootstrap/rechargePayment.js'
 import { applyDisputeObservation } from '../disputes/service.js'
 import { encryptPaymentEventPayload } from '../payloadCrypto.js'
 import { recordWebhookAckFailure, recordWebhookSignatureFailure } from '../metrics.js'
-import type { PaymentProviderName } from '../../recharge/types.js'
-import { serializeAmountMinor } from '../../recharge/money.js'
+import type { PaymentProviderName } from '../../../lib/paymentTypes.js'
+import { serializeAmountMinor } from '../../../lib/minorAmounts.js'
 
 export const WEBHOOK_BODY_LIMIT = 64 * 1024
 

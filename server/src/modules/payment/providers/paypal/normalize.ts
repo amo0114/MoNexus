@@ -1,4 +1,4 @@
-import type { PaymentAttemptStatus, RechargeCurrency } from '../../../recharge/types.js'
+import type { PaymentAttemptStatus, RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import { PaypalAmountError, paypalValueToMinor } from './amounts.js'
 import type { NormalizedPayment, NormalizedRefund } from '../types.js'
 

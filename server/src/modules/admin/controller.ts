@@ -2,13 +2,11 @@ import { listGovernanceUsers } from './userQueries.js'
 import { listSellableProviders } from '../fulfillment/coordination.js'
 import * as guestEligibilityService from './guestEligibilityService.js'
 import type { GuestEligibilityActionInput } from './guestEligibilitySchema.js'
-import * as fakaSync from '../catalog/fakaSync.js'
 import * as productLifecycle from './productLifecycle.js'
 import * as auditQueries from './auditQueries.js'
 import * as orderAdmin from './orderAdmin.js'
 import * as fulfillmentReview from './fulfillmentReview.js'
 import * as userAdmin from './userAdmin.js'
-import * as fakaCatalogAdmin from './fakaCatalogAdmin.js'
 import * as inventoryAdmin from './inventoryAdmin.js'
 import * as productAdmin from './productAdmin.js'
 import { Request, Response, NextFunction } from 'express'
@@ -16,7 +14,6 @@ import * as merchantAdmin from './merchantAdmin.js'
 import * as settlementAdmin from './settlementAdmin.js'
 import * as afterSales from '../orders/afterSales.js'
 import * as deliveryFileAdmin from './deliveryFileAdmin.js'
-import * as fakaTaskAdmin from './fakaTaskAdmin.js'
 import * as adminService from './service.js'
 import * as offerAdmin from './offerAdmin.js'
 import * as mailOperations from './mailOperations.js'
@@ -299,35 +296,35 @@ export async function deleteProduct(req: Request, res: Response, next: NextFunct
 
 export async function startPlatformFulfillment(req: Request, res: Response, next: NextFunction) {
   try {
-    const { startPlatformFulfillment } = await import('../catalog/platformFulfillment.js')
+    const { startPlatformFulfillment } = await import('../orders/platformFulfillment.js')
     res.json(await startPlatformFulfillment(req.user!.userId, req.params.id as unknown as number))
   } catch (err) { next(err) }
 }
 
 export async function postPlatformProgress(req: Request, res: Response, next: NextFunction) {
   try {
-    const { postPlatformProgress } = await import('../catalog/platformFulfillment.js')
+    const { postPlatformProgress } = await import('../orders/platformFulfillment.js')
     res.json(await postPlatformProgress(req.user!.userId, req.params.id as unknown as number, req.body.publicNote))
   } catch (err) { next(err) }
 }
 
 export async function deliverPlatformOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    const { deliverPlatformOrder } = await import('../catalog/platformFulfillment.js')
+    const { deliverPlatformOrder } = await import('../orders/platformFulfillment.js')
     res.json(await deliverPlatformOrder(req.user!.userId, req.params.id as unknown as number, req.body))
   } catch (err) { next(err) }
 }
 
 export async function rejectPlatformOrder(req: Request, res: Response, next: NextFunction) {
   try {
-    const { rejectPlatformOrder } = await import('../catalog/platformFulfillment.js')
+    const { rejectPlatformOrder } = await import('../orders/platformFulfillment.js')
     res.json(await rejectPlatformOrder(req.user!.userId, req.params.id as unknown as number, req.body.reason))
   } catch (err) { next(err) }
 }
 
 export async function reportPlatformUnfulfillable(req: Request, res: Response, next: NextFunction) {
   try {
-    const { reportPlatformUnfulfillable } = await import('../catalog/platformFulfillment.js')
+    const { reportPlatformUnfulfillable } = await import('../orders/platformFulfillment.js')
     res.json(await reportPlatformUnfulfillable(req.user!.userId, req.params.id as unknown as number, req.body.reason))
   } catch (err) { next(err) }
 }
@@ -360,138 +357,8 @@ export async function makeDefaultOffer(req: Request, res: Response, next: NextFu
   } catch (err) { next(err) }
 }
 
-export async function previewRebindOfferSku(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    res.json(await offerAdmin.previewRebindAdminOfferSku(id, offerId, req.body.sku))
-  } catch (err) { next(err) }
-}
-
-export async function rebindOfferSku(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { id, offerId } = req.params as unknown as { id: number; offerId: number }
-    if (!req.body.sourceHash) {
-      res.status(400).json({ error: { code: 'BAD_REQUEST', message: '重绑 SKU 需要 sourceHash' } })
-      return
-    }
-    res.json(await offerAdmin.rebindAdminOfferSku(req.user!.userId, id, offerId, {
-      sku: req.body.sku,
-      sourceHash: req.body.sourceHash,
-    }))
-  } catch (err) { next(err) }
-}
-
-export async function previewFakaSync(req: Request, res: Response, next: NextFunction) {
-  try {
-    const productId = req.params.id as unknown as number
-    res.json(await fakaSync.previewAdminFakaSync(productId))
-  } catch (err) { next(err) }
-}
-
-export async function confirmFakaSync(req: Request, res: Response, next: NextFunction) {
-  try {
-    const productId = req.params.id as unknown as number
-    res.json(await fakaSync.confirmAdminFakaSync(
-      req.user!.userId,
-      productId,
-      req.body,
-      req.headers['idempotency-key'] as string | undefined,
-    ))
-  } catch (err) { next(err) }
-}
-
-export async function setFakaCapacity(req: Request, res: Response, next: NextFunction) {
-  try {
-    const productId = req.params.id as unknown as number
-    res.json(
-      await fakaCatalogAdmin.setAdminFakaCapacity(req.user!.userId, productId, {
-        offerId: req.body.offerId,
-        capacityLimit: req.body.capacityLimit,
-      })
-    )
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function fakaCatalog(_req: Request, res: Response, next: NextFunction) {
-  try {
-    res.json(await fakaCatalogAdmin.listAdminFakaCatalog())
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function importFakaPlan(req: Request, res: Response, next: NextFunction) {
-  try {
-    const result = await fakaCatalogAdmin.importAdminFakaPlan(
-      req.user!.userId,
-      req.body,
-      req.headers['idempotency-key'] as string | undefined,
-    )
-    res.status(result.replayed ? 200 : 201).json(result)
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function previewFakaPlan(req: Request, res: Response, next: NextFunction) {
-  try {
-    res.json(await fakaCatalogAdmin.previewAdminFakaPlan(req.body))
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function addFakaOffers(req: Request, res: Response, next: NextFunction) {
-  try {
-    const productId = req.params.id as unknown as number
-    res.status(201).json(
-      await fakaCatalogAdmin.addAdminFakaOffers(req.user!.userId, productId, {
-        offers: req.body.offers,
-      })
-    )
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function listFakaTasks(req: Request, res: Response, next: NextFunction) {
-  try {
-    res.json(await fakaTaskAdmin.listFakaBridgeTasks(req.query as any))
-  } catch (err) {
-    next(err)
-  }
-}
-
 export function listFulfillmentProviders(_req: Request, res: Response) {
   res.json({ providers: listSellableProviders() })
-}
-
-export async function fakaTaskStats(_req: Request, res: Response, next: NextFunction) {
-  try {
-    res.json(await fakaTaskAdmin.getFakaBridgeTaskStats())
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function retryFakaTask(req: Request, res: Response, next: NextFunction) {
-  try {
-    const taskId = req.params.id as unknown as number
-    res.json(await fakaTaskAdmin.retryFakaBridgeTask(req.user!.userId, taskId))
-  } catch (err) {
-    next(err)
-  }
-}
-
-export async function forceFakaRevoke(req: Request, res: Response, next: NextFunction) {
-  try {
-    const taskId = req.params.id as unknown as number
-    res.json(await fakaTaskAdmin.forceFakaBridgeRevoke(req.user!.userId, taskId))
-  } catch (err) {
-    next(err)
-  }
 }
 
 // ---- Merchants ----

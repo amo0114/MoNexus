@@ -14,6 +14,7 @@ import { consumeRegistrationAttempt, consumeRegistrationProviderPreflight } from
 import { publicChallengeDescriptor, type HumanVerificationRequest } from './humanVerification.js'
 import { normalizeInviteCode } from '../../lib/inviteCode.js'
 import { claimInviteCodeForRegistration } from '../invite/service.js'
+import { ensureAccountInTx } from '../wallet/index.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
 import { lockUserRefreshSessionMutations } from './sessionService.js'
 import { getLegalRequirement, recordUserConsents, resolveConsentEvidence } from '../legal/service.js'
@@ -211,9 +212,7 @@ export async function registerUser(
       },
     })
 
-    await tx.pointAccount.create({
-      data: { userId: newUser.id, balance: 0 },
-    })
+    await ensureAccountInTx(tx, newUser.id)
 
     await createRegistrationGrowthReward(tx, newUser.id, registerReward)
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import Stripe from 'stripe'
-import { serializeAmountMinor } from '../../../recharge/money.js'
-import { RECHARGE_CURRENCIES, type PaymentAttemptStatus, type RechargeCurrency } from '../../../recharge/types.js'
+import { serializeAmountMinor } from '../../../../lib/minorAmounts.js'
+import { RECHARGE_CURRENCIES, type PaymentAttemptStatus, type RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import type { NormalizedPayment, NormalizedRefund } from '../types.js'
 import { STRIPE_META, modeFromAccountKey, stripeAccountKey, type StripeMode } from './config.js'
 

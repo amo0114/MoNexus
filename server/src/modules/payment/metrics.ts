@@ -11,7 +11,7 @@ import {
   type PaymentProviderName,
   type RechargeCurrency,
   type ReconciliationMismatchType,
-} from '../recharge/types.js'
+} from '../../lib/paymentTypes.js'
 
 export const PAYMENT_QUOTE_RESULTS = [
   'created',

@@ -51,9 +51,9 @@ export interface AdminProductTableProps {
   onOpenCapacity: (product: AdminProductListItem) => void
   onOpenAssurance: (productId: number) => void
   onOpenOffers: (product: AdminProductListItem) => void
-  onOpenFakaCapacity: (product: AdminProductListItem) => void
-  onOpenFakaSync: (product: AdminProductListItem) => void
-  onOpenSourceDescription: (product: AdminProductListItem) => void
+  onOpenFakaCapacity?: (product: AdminProductListItem) => void
+  onOpenFakaSync?: (product: AdminProductListItem) => void
+  onOpenSourceDescription?: (product: AdminProductListItem) => void
   onOpenGuestReview: (product: AdminProductListItem) => void
   /** governance-v1 batch & revision history; omitted when not permitted. */
   onOpenTrace?: (product: AdminProductListItem) => void
@@ -337,7 +337,7 @@ export default function AdminProductTable({
                             testId: `admin-manage-offers-${p.id}`,
                           })
                         }
-                        if (isFaka && canInventory) {
+                        if (isFaka && canInventory && onOpenFakaCapacity) {
                           menuItems.push({
                             id: `capacity-${p.id}`,
                             label: '调整 Xboard 名额',
@@ -345,7 +345,7 @@ export default function AdminProductTable({
                             testId: `admin-faka-capacity-${p.id}`,
                           })
                         }
-                        if (isFaka && canEdit) {
+                        if (isFaka && canEdit && onOpenFakaSync) {
                           menuItems.push({
                             id: `sync-${p.id}`,
                             label: '同步 Xboard',
@@ -369,7 +369,7 @@ export default function AdminProductTable({
                             testId: `admin-product-trace-${p.id}`,
                           })
                         }
-                        if (canEdit && shouldShowSourceDescriptionAction(p)) {
+                        if (canEdit && onOpenSourceDescription && shouldShowSourceDescriptionAction(p)) {
                           menuItems.push({
                             id: `source-description-${p.id}`,
                             label: '检查上游介绍',

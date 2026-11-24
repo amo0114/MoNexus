@@ -7,13 +7,13 @@ import {
   validateDeliveryValues,
   type StructuredDeliveryContent,
 } from '../../lib/deliveryFields.js'
-import { createOrderStatusEvent, transitionOrderStatus } from '../orders/fulfillment.js'
-import { getProductFulfillmentMode } from '../orders/statusPolicy.js'
-import { releaseHeldOrder } from '../orders/accounting.js'
-import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
-import { assessAndBlockCancellationInTx, refundUnfulfillableOrderInTx } from '../orders/cancellation.js'
+import { createOrderStatusEvent, transitionOrderStatus } from './fulfillment.js'
+import { getProductFulfillmentMode } from './statusPolicy.js'
+import { releaseHeldOrder } from './accounting.js'
+import { applyRefundInventoryPolicy } from './refundInventory.js'
+import { assessAndBlockCancellationInTx, refundUnfulfillableOrderInTx } from './cancellation.js'
 import { afterOrderRefunded, onOrderRefundedInTx } from '../fulfillment/coordination.js'
-import { assertOwnedActiveDeliveryFile } from './deliveryFileOwnership.js'
+import { assertOwnedActiveDeliveryFile } from '../catalog/deliveryFileOwnership.js'
 
 async function assertPlatformOrder(orderId: number, tx: Prisma.TransactionClient) {
   await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
@@ -32,14 +32,14 @@ async function assertPlatformOrder(orderId: number, tx: Prisma.TransactionClient
       merchantId: true,
       product: { select: { deliveryMode: true, merchantId: true } },
       offer: { select: { externalIntegration: true } },
-      fakaBridgeTask: { select: { id: true } },
+      externalFulfillmentProvider: true,
       fulfillmentJob: { select: { id: true } },
       provisionTask: { select: { id: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
   // Durable tasks remain authoritative even after an Offer is unbound.
-  if (order.offer?.externalIntegration || order.fakaBridgeTask || order.fulfillmentJob || order.provisionTask) {
+  if (order.offer?.externalIntegration || order.externalFulfillmentProvider || order.fulfillmentJob || order.provisionTask) {
     throw badRequest('外部开通订单不能由平台人工替代交付')
   }
   return order

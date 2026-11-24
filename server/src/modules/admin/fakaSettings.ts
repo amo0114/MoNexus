@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { badRequest } from '../../lib/httpError.js'
-import { fakaCredentialsSchema, fakaSettingsSchema, fakaPublicBootstrap, fakaBootstrap, FAKA_KEY, FAKA_LEGACY_KEY, withFakaSnapshot } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaCredentialsSchema, fakaSettingsSchema, fakaPublicBootstrap, fakaBootstrap, FAKA_KEY, FAKA_LEGACY_KEY, requireFakaMountedInTx, withFakaSnapshot } from '../../lib/runtimeSettings/fakaBridge.js'
 import { encryptIntegrationCredentials } from '../../lib/runtimeSettings/credentials.js'
 import { callFakaPlanCatalog } from '../../lib/fakaBridge/client.js'
 import { callFakaV2Capabilities } from '../../lib/fakaBridge/accountV2.js'
@@ -8,6 +8,7 @@ import { managedIntegration } from './managedIntegration.js'
 
 export const fakaSettings = managedIntegration({
   key: FAKA_KEY, settings: fakaSettingsSchema, credentials: fakaCredentialsSchema,
+  assertWritable: requireFakaMountedInTx,
   bootstrap: () => {
     const settings = fakaPublicBootstrap(), b = fakaBootstrap()
     const parsed = fakaSettingsSchema.safeParse(settings)

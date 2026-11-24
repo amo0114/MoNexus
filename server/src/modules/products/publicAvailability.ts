@@ -1,5 +1,5 @@
-import type { FakaCapacitySnapshot } from '../../lib/fakaBridge/index.js'
-import { usesStablePaidReset } from '../../lib/fakaBridge/paidResetSku.js'
+import type { ExternalCapacitySnapshot } from '../../extension-contracts/fulfillmentCatalog.js'
+import { catalogForProvider } from '../fulfillment/offerBinding.js'
 import { evaluateActiveOffer, type ReadinessOffer } from '../catalog/readinessOffer.js'
 
 /**
@@ -14,7 +14,7 @@ export interface PublicOfferAvailabilityFacts {
   hasActiveWebhook: boolean
   providerConfigured: boolean
   /** Snapshot for this offer's SKU, or null when it has none. */
-  fakaCapacity: FakaCapacitySnapshot | null
+  fakaCapacity: ExternalCapacitySnapshot | null
 }
 
 export function evaluatePublicOfferAvailability(
@@ -33,7 +33,7 @@ export function evaluatePublicOfferAvailability(
   if (offer.externalIntegration !== 'faka_bridge') return 'available'
   // Local quota still applies; the selected account is checked at checkout.
   // New-subscription headcount says nothing about an existing account's reset.
-  if (usesStablePaidReset(offer)) return 'available'
+  if (catalogForProvider(offer.externalIntegration)?.usesAccountCapacity(offer)) return 'available'
   // `source` separates "unlimited on Xboard" from "could not confirm"; both have remaining=null.
   if (facts.fakaCapacity?.source === 'xboard') {
     return facts.fakaCapacity.sellable ? 'available' : 'unavailable'

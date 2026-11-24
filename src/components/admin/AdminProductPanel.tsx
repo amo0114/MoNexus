@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import AdminVideoReviewPanel from './AdminVideoReviewPanel'
 import { useEffect, useRef, useState } from 'react'
 import { RotateCcw, Search } from 'lucide-react'
@@ -14,20 +15,16 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import { createLatestRequestGuard } from '../../utils/latestRequest'
 import ConfirmDialog from '../ui/ConfirmDialog'
-import AdminFakaImportPreview from '../catalog/AdminFakaImportPreview'
 import AdminProductPublicationDialog, {
   type AdminPublicationTarget,
 } from '../catalog/AdminProductPublicationDialog'
 import AdminOfferManagerModal from '../catalog/AdminOfferManagerModal'
-import AdminFakaSyncDialog from '../catalog/AdminFakaSyncDialog'
-import AdminSourceDescriptionDialog from '../catalog/AdminSourceDescriptionDialog'
 import AdminInventoryImportPreview, {
   type AdminInventoryTarget,
 } from '../catalog/AdminInventoryImportPreview'
 import AdminPanelHeader from './AdminPanelHeader'
 import AdminAssurancePanel from '../catalog/AdminAssurancePanel'
 import AdminProductTable from './productPanel/AdminProductTable'
-import ProductCapacityDialog from './productPanel/ProductCapacityDialog'
 import AdminOfferCapacityDialog from './productPanel/AdminOfferCapacityDialog'
 import AdminGuestReviewDialog from './productPanel/AdminGuestReviewDialog'
 import { useAdminCapabilities } from '../../stores/adminCapabilities'
@@ -38,9 +35,15 @@ interface Props {
   active?: boolean
 }
 
+const AdminFakaImportPreview = lazy(() => import('../catalog/AdminFakaImportPreview'))
+const AdminFakaSyncDialog = lazy(() => import('../catalog/AdminFakaSyncDialog'))
+const AdminSourceDescriptionDialog = lazy(() => import('../catalog/AdminSourceDescriptionDialog'))
+const ProductCapacityDialog = lazy(() => import('./productPanel/ProductCapacityDialog'))
+
 export default function AdminProductPanel({ active = true }: Props) {
   const showToast = useAppStore((s) => s.showToast)
   const caps = useAdminCapabilities()
+  const fakaMounted = caps.optionalFulfillment?.mounted !== false
   const traceBatches = caps.allows('inventoryTraceability', 'inventory.manage')
   const traceRevisions = caps.allows('inventoryTraceability', 'catalog.read')
   const can = useTabActions('products')
@@ -352,14 +355,14 @@ export default function AdminProductPanel({ active = true }: Props) {
             >
               新建平台商品
             </a>
-            <button
+            {fakaMounted && <button
               type="button"
               className="btn-primary btn-sm text-xs px-3 py-1.5 cursor-pointer"
               data-testid="admin-faka-import-open"
               onClick={() => setShowFakaImport(true)}
             >
               从 Xboard 导入套餐
-            </button>
+            </button>}
             </>)}
           </div>
         }
@@ -485,9 +488,9 @@ export default function AdminProductPanel({ active = true }: Props) {
         onOpenCapacity={setCapacityProduct}
         onOpenAssurance={setAssuranceProductId}
         onOpenOffers={setOfferProduct}
-        onOpenFakaCapacity={setFakaCapProduct}
-        onOpenFakaSync={setSyncProduct}
-        onOpenSourceDescription={setSourceDescriptionProduct}
+        onOpenFakaCapacity={fakaMounted ? setFakaCapProduct : undefined}
+        onOpenFakaSync={fakaMounted ? setSyncProduct : undefined}
+        onOpenSourceDescription={fakaMounted ? setSourceDescriptionProduct : undefined}
         onOpenGuestReview={setGuestReviewProduct}
         canEdit={can('edit')}
         canInventory={can('inventory')}
@@ -534,17 +537,17 @@ export default function AdminProductPanel({ active = true }: Props) {
       />
 
       {/* FakaBridge capacity limit modal */}
-      <ProductCapacityDialog
+      {fakaMounted && fakaCapProduct && <Suspense fallback={null}><ProductCapacityDialog
         product={fakaCapProduct}
         onClose={() => setFakaCapProduct(null)}
         onSaved={() => triggerSafeReload()}
-      />
+      /></Suspense>}
 
-      <AdminFakaImportPreview
+      {fakaMounted && showFakaImport && <Suspense fallback={null}><AdminFakaImportPreview
         open={showFakaImport}
         onClose={() => setShowFakaImport(false)}
         onImported={handleImportedPlatformProduct}
-      />
+      /></Suspense>}
 
       <AdminProductPublicationDialog
         open={publicationTarget != null}
@@ -567,21 +570,21 @@ export default function AdminProductPanel({ active = true }: Props) {
         onClose={() => setOfferProduct(null)}
         onChanged={triggerSafeReload}
       />
-      <AdminFakaSyncDialog
+      {fakaMounted && syncProduct && <Suspense fallback={null}><AdminFakaSyncDialog
         product={syncProduct}
         onClose={() => setSyncProduct(null)}
         onSynced={triggerSafeReload}
-      />
+      /></Suspense>}
       <AdminGuestReviewDialog
         product={guestReviewProduct}
         onClose={() => setGuestReviewProduct(null)}
         onChanged={triggerSafeReload}
       />
-      <AdminSourceDescriptionDialog
+      {fakaMounted && sourceDescriptionProduct && <Suspense fallback={null}><AdminSourceDescriptionDialog
         product={sourceDescriptionProduct}
         onClose={() => setSourceDescriptionProduct(null)}
         onApplied={triggerSafeReload}
-      />
+      /></Suspense>}
 
       {/* 商品下架确认弹窗 */}
       <ConfirmDialog

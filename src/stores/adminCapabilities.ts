@@ -70,6 +70,7 @@ export interface AdminCapabilities {
   state: CapabilitiesState
   /** True only when the governance-v1 backend is present. */
   governed: boolean
+  optionalFulfillment?: GVCapabilities['optionalFulfillment']
   can: (permission: AdminPermission) => boolean
   feature: (feature: GovernanceFeature) => boolean
   /** Feature deployed and the admin holds every listed permission. */
@@ -95,6 +96,7 @@ export function useAdminCapabilities(): AdminCapabilities {
   return {
     state,
     governed: capabilities !== null,
+    optionalFulfillment: capabilities?.optionalFulfillment,
     can,
     feature,
     allows: (name, ...permissions) => feature(name) && permissions.every(can),
