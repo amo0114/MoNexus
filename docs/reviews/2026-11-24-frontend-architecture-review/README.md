@@ -281,6 +281,28 @@ lint 棘轮从 71 降到 67。剩下的警告保留为 warn，不批量加 disab
 
 约定：**新的"加载一份数据并显示"场景使用 `useAsyncResource`**；存量手写加载逻辑改到时再迁移。本次迁移了 `AdminSystemInfoPanel`、`AdminMailPanel` 作为示范（lint 棘轮 67 → 65）。`useShopProducts`、`useProductRecommendations` 里两份相同的"是否上报"判断合并为 `api/error.ts` 的 `isReportableRequestError`。分页、无限滚动这类场景不在这个 hook 的范围内，仍用 `useCursorList` 等专用 hook。
 
+### 5.5 密码策略收敛到服务端（G1 + G2）
+
+架构不变量：**任何创建或更新密码的操作都必须经过服务端同一套密码策略**（`server/src/lib/passwordPolicy.ts`）；客户端只做非权威的交互提示。
+
+**G2 入口盘点**（`origin/develop@c00d588`，服务端所有写入密码哈希的位置）：
+
+| 入口 | 策略执行点 | 结论 |
+|---|---|---|
+| 注册 `POST /api/auth/register` | `auth/schema.ts` 的 `registerSchema.superRefine` | 已覆盖。`registerUser` 只被该路由调用；测试直接调用服务时使用弱密码，属于测试夹具 |
+| 重置密码 | `passwordService.resetPasswordWithToken` → `assertNewPasswordPolicy` | 已覆盖 |
+| 修改密码 | `passwordService.changePassword` → `assertNewPasswordPolicy` | 已覆盖 |
+| **灾备恢复创建管理员** `POST /api/portable-restore/bootstrap/admin` | 原来只有"至少 12 位" | **缺口，已修**：同时走共享策略，12 位下限保留（比通用策略更严）。补了回归测试，已确认修复前失败（弱密码一路通过校验，走到令牌检查） |
+| 登录时 bcrypt 轮数迁移 | 对已有密码重新哈希，不是新密码 | 不适用 |
+| `prisma/seed.ts`、`scripts/runValuePolicyStagingGovernance.ts` | 本地或预发环境工具，不对外 | 不适用 |
+
+**G1 前端收敛**：
+- 删除前端 `zxcvbn` 及其类型包；`src/lib/passwordPolicy.ts` 只保留长度检查（`passwordLengthIssue`）和规则提示文案；删除"前后端规则一致"的镜像测试，因为已经没有第二份规则。
+- 错误契约：服务端以 `VALIDATION_ERROR` + `details[{ field, message }]` 返回具体原因。新增 `api/error.ts` 的 `getApiFieldErrorMessage`，注册、重置、修改密码、恢复引导四个表单优先显示字段原因，不再只显示"参数校验失败"。
+- 体积：全部 JS/CSS gzip 从 1244 KiB 降到 861 KiB；首屏不变（201 KiB）。
+
+G3（长度、评分阈值、昵称或邮箱包含规则的评审）、G4（HIBP 泄露密码检测）、G5 另立变更。
+
 ## 6. 本轮没有覆盖的内容
 
 - 运行时性能（首屏、包体积、渲染）：之前的 P1/P2 骨架屏和外壳几何专项已经做过，本轮没有重新测量。

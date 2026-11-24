@@ -21,6 +21,7 @@ export default function MobileSearchIsland({ open, anchorRef, backdropRootRef, t
   const panelRef = useRef<HTMLDivElement>(null)
   const hasEntered = useRef(false)
   const focusFrame = useRef(0)
+  const restoreFocusPending = useRef(false)
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
 
   useLayoutEffect(() => () => cancelAnimationFrame(focusFrame.current), [])
@@ -33,6 +34,17 @@ export default function MobileSearchIsland({ open, anchorRef, backdropRootRef, t
     onPresenceChange(present)
     return () => onPresenceChange(false)
   }, [present, onPresenceChange])
+
+  // Runs in the commit that unmounts the surface. onPresenceChange(false) above makes
+  // the parent remove inert from the navbar synchronously in this same commit, so the
+  // frame scheduled here can always focus the trigger.
+  useLayoutEffect(() => {
+    if (present || !restoreFocusPending.current) return
+    restoreFocusPending.current = false
+    focusFrame.current = requestAnimationFrame(() => {
+      if (useAppStore.getState().modalDepth === 0) triggerRef.current?.focus({ preventScroll: true })
+    })
+  }, [present, triggerRef])
 
   useLayoutEffect(() => {
     const panel = panelRef.current
@@ -84,18 +96,17 @@ export default function MobileSearchIsland({ open, anchorRef, backdropRootRef, t
     }
     setExpanded(false)
     const finish = () => {
+      // Focus is restored after this update commits (see above): a frame requested here
+      // could run before React commits it, while the trigger is still inert.
+      restoreFocusPending.current = true
       setPresent(false)
       hasEntered.current = false
-      // Wait for the parent to remove inert from the returning navbar first.
-      focusFrame.current = requestAnimationFrame(() => {
-        if (useAppStore.getState().modalDepth === 0) triggerRef.current?.focus({ preventScroll: true })
-      })
     }
     if (reducedMotion) { finish(); return }
     const duration = parseFloat(getComputedStyle(panelRef.current!).getPropertyValue('--search-close-duration')) || 350
     const timer = window.setTimeout(finish, duration)
     return () => window.clearTimeout(timer)
-  }, [open, present, reducedMotion, triggerRef])
+  }, [open, present, reducedMotion])
 
   if (!present) return null
   return (

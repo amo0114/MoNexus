@@ -4,8 +4,8 @@ import PasswordInput from '../components/auth/PasswordInput'
 import { KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react'
 import { useAppStore } from '../stores/appStore'
 import { resetPassword } from '../api/auth'
-import { getApiErrorMessage } from '../api/error'
-import { PASSWORD_MIN_LENGTH, PASSWORD_RULE_HINT, passwordPolicyIssue } from '../lib/passwordPolicy'
+import { getApiErrorMessage, getApiFieldErrorMessage } from '../api/error'
+import { PASSWORD_MIN_LENGTH, PASSWORD_RULE_HINT, passwordLengthIssue } from '../lib/passwordPolicy'
 
 export default function ResetPasswordPage() {
   const { token = '' } = useParams<{ token: string }>()
@@ -24,8 +24,7 @@ export default function ResetPasswordPage() {
     }
     setSubmitting(true)
     try {
-      // The reset link carries no account context; the server adds email/nickname checks.
-      const passwordIssue = await passwordPolicyIssue(password)
+      const passwordIssue = passwordLengthIssue(password)
       if (passwordIssue) {
         showToast(passwordIssue, 'error')
         return
@@ -34,7 +33,7 @@ export default function ResetPasswordPage() {
       setDone(true)
       setTimeout(() => navigate('/login'), 2000)
     } catch (err) {
-      showToast(getApiErrorMessage(err, '重置失败，链接可能已失效'), 'error')
+      showToast(getApiFieldErrorMessage(err, 'body.password') ?? getApiErrorMessage(err, '重置失败，链接可能已失效'), 'error')
     } finally {
       setSubmitting(false)
     }
