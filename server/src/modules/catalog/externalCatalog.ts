@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto'
+import { sha256Canonical } from '../../lib/canonicalJson.js'
+export { canonicalJson, sha256Canonical } from '../../lib/canonicalJson.js'
 import type { FakaBridgeClientOptions } from '../../lib/fakaBridge/client.js'
 import type { FakaPlanCatalogItem } from '../../lib/fakaBridge/types.js'
 import { callFakaPlanCatalog } from '../../lib/fakaBridge/index.js'
@@ -30,27 +31,6 @@ export interface ExternalCatalogRequestInput {
   sku?: string
   offerName?: string
   pricePoints?: number
-}
-
-function canonicalValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalValue)
-  if (value && typeof value === 'object' && !(value instanceof Date)) {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([, entry]) => entry !== undefined)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, entry]) => [key, canonicalValue(entry)]),
-    )
-  }
-  return value
-}
-
-export function canonicalJson(value: unknown): string {
-  return JSON.stringify(canonicalValue(value))
-}
-
-export function sha256Canonical(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex')
 }
 
 export function validateExternalCatalogIdempotencyKey(raw: string | null | undefined): string {

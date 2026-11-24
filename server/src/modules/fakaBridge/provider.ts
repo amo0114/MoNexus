@@ -1,3 +1,7 @@
+import { getCachedFakaCapacityByPlanId, getFakaCapacityForPublicRead } from '../../lib/fakaBridge/capacity.js'
+import { isFakaBridgeConfigured } from '../../lib/fakaBridge/client.js'
+import { normalizeFakaOfferIntegration } from '../../lib/fakaBridge/offerIntegration.js'
+import { usesStablePaidReset } from '../../lib/fakaBridge/paidResetSku.js'
 import type { FulfillmentProvider } from '../../extension-contracts/fulfillment.js'
 import { prisma } from '../../lib/prisma.js'
 import { invalidateGrantForOrderInTx } from '../trafficReset/benefits.js'
@@ -20,12 +24,35 @@ export const xboardFulfillmentProvider: FulfillmentProvider = {
   id: 'faka_bridge',
   label: 'Xboard（FakaBridge）',
   checkout: xboardCheckout,
+  catalog: {
+    isConfigured: isFakaBridgeConfigured,
+    normalizeBinding: normalizeFakaOfferIntegration,
+    usesAccountCapacity: usesStablePaidReset,
+    capacityForPublicRead: getFakaCapacityForPublicRead,
+    cachedCapacityByPlanId: getCachedFakaCapacityByPlanId,
+  },
   async isProvisionPending(orderId) {
     const task = await prisma.fakaBridgeTask.findUnique({ where: { orderId }, select: { status: true } })
     return task?.status === 'pending'
   },
   onOrderRefundedInTx: onFakaOrderRefundedInTx,
   afterOrderRefunded: kickPendingRevoke,
+  orderDiagnostics(tx, orderId) {
+    return tx.fakaBridgeTask.findUnique({ where: { orderId }, select: {
+      id: true, status: true, attempts: true, cancelRequested: true,
+      revokeStatus: true, revokedAt: true, leaseUntil: true,
+    } })
+  },
+  operatorReviewWhere: { fakaBridgeTask: { OR: [{ status: 'needs_reconcile' }, { revokeStatus: 'failed' }] } },
+  orderBacklog: [{ state: 'faka_revoke_failed', where: { fakaBridgeTask: { revokeStatus: 'failed' } } }],
+  countOpenOfferTasks(tx, offerIds) {
+    return tx.fakaBridgeTask.count({
+      where: {
+        order: { offerId: { in: offerIds } },
+        OR: [{ status: { in: ['pending', 'needs_reconcile'] } }, { revokeStatus: 'pending' }],
+      },
+    })
+  },
   async closedOrderRefundBlocker(tx, orderId) {
     const task = await tx.fakaBridgeTask.findUnique({
       where: { orderId },
@@ -48,7 +75,6 @@ export const xboardFulfillmentProvider: FulfillmentProvider = {
     startAccountBackfillCron()
   },
   async stopBackgroundJobs() {
-    stopFakaBridgeCron()
-    await Promise.all([stopResetCron(), stopAccountBackfillCron()])
+    await Promise.all([stopFakaBridgeCron(), stopResetCron(), stopAccountBackfillCron()])
   },
 }

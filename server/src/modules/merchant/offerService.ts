@@ -24,7 +24,7 @@ import {
   invalidateGuestEligibilityForNewOffer,
   invalidateGuestEligibilityForOfferChange,
 } from '../catalog/guestEligibility.js'
-import { normalizeFakaOfferIntegration, assertOfferProvisionMutex } from '../../lib/fakaBridge/index.js'
+import { normalizeExternalOfferBinding, assertOfferProvisionMutex } from '../fulfillment/offerBinding.js'
 
 import { withCheckoutVersion } from './offerSerialization.js'
 
@@ -326,7 +326,7 @@ export async function insertOffer(
   if (input.externalSku != null && input.externalSku !== '') {
     throw badRequest('FakaBridge externalSku 仅平台管理员可配置')
   }
-  const faka = normalizeFakaOfferIntegration({
+  const faka = normalizeExternalOfferBinding({
     externalIntegration: null,
     externalSku: null,
     deliveryMode,
@@ -480,7 +480,7 @@ export async function updateMyOffer(
     const mustValidateFaka =
       fakaFieldsTouched || offer.externalIntegration != null || nextExternalIntegration != null
     const fakaUpdate = mustValidateFaka
-      ? normalizeFakaOfferIntegration(
+      ? normalizeExternalOfferBinding(
           {
             externalIntegration: nextExternalIntegration,
             externalSku: nextExternalSku,

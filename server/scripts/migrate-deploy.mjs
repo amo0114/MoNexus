@@ -24,6 +24,37 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const key of ['DATABASE_URL', 'DIRECT_URL']) {
     if (env[key]) env[key] = migrationUrl(env[key])
   }
+  const profile = await readFile(new URL('../prisma/migration-profile', import.meta.url), 'utf8')
+    .catch(error => {
+      if (error.code === 'ENOENT') return 'legacy'
+      throw error
+    })
+  const preflight = new pg.Client({ connectionString: env.DIRECT_URL ?? env.DATABASE_URL })
+  try {
+    await preflight.connect()
+    const { rows: [state] } = await preflight.query(
+      'SELECT to_regclass(\'public."_prisma_migrations"\') IS NOT NULL AS migrated',
+    )
+    if (state.migrated) {
+      const disallowed = profile.trim() === 'core'
+        ? '20260729150000_faka_bridge_foundation'
+        : '20260729150000_external_offer_binding'
+      const existing = await preflight.query(
+        'SELECT 1 FROM "_prisma_migrations" WHERE migration_name=$1 AND rolled_back_at IS NULL',
+        [disallowed],
+      )
+      if (existing.rowCount) {
+        console.error('Database migration profile does not match this release artifact.')
+        process.exitCode = 1
+      }
+    }
+  } catch {
+    console.error('Database migration profile preflight failed.')
+    process.exitCode = 1
+  } finally {
+    await preflight.end()
+  }
+  if (process.exitCode) process.exit(process.exitCode)
   const require = createRequire(import.meta.url)
   const result = spawnSync(
     process.execPath,

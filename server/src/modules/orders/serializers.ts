@@ -268,14 +268,16 @@ export function fulfillmentReviewActions(order: {
   status?: unknown
   delivery?: { id?: unknown } | null
   cancelRequestedAt?: unknown
+  externalFulfillmentProvider?: string | null
   fakaBridgeTask?: TaskDiagnosticsShape | null
   fulfillmentJob?: TaskDiagnosticsShape | null
-  provisionTask?: { status?: string } | null
+  provisionTask?: { status?: string; leaseUntil?: Date | null } | null
 }): Array<'recheck_cancel' | 'confirm_cancelled'> {
   if (!['pending', 'processing'].includes(String(order.status)) || order.delivery?.id) return []
-  if (!order.cancelRequestedAt && !order.fakaBridgeTask && !order.fulfillmentJob && !order.provisionTask) return []
-  const tasks = [order.fakaBridgeTask, order.fulfillmentJob]
+  if (!order.cancelRequestedAt && !order.externalFulfillmentProvider && !order.fakaBridgeTask && !order.fulfillmentJob && !order.provisionTask) return []
+  const tasks = [order.fakaBridgeTask, order.fulfillmentJob, order.provisionTask]
   const canConfirm = Boolean(order.cancelRequestedAt) && !order.fakaBridgeTask
+    && (!order.externalFulfillmentProvider || order.externalFulfillmentProvider === order.fulfillmentJob?.providerId)
     && order.fulfillmentJob?.status !== 'succeeded' && order.provisionTask?.status !== 'succeeded'
     && !tasks.some(task => task?.leaseUntil != null && task.leaseUntil > new Date())
   return canConfirm ? ['recheck_cancel', 'confirm_cancelled'] : ['recheck_cancel']
@@ -291,7 +293,7 @@ function withExternalFulfillmentForStaff<T extends Record<string, unknown>>(orde
     offer?: { externalIntegration: string | null } | null
     product?: ProductWithCatalogLink | null
   }
-  const { fakaBridgeTask, fulfillmentJob, offer, product, ...rest } = raw
+  const { fakaBridgeTask, fulfillmentJob, offer, product, externalFulfillmentProvider, ...rest } = raw
 
   let nextProduct = product
   if (product) {
@@ -306,7 +308,7 @@ function withExternalFulfillmentForStaff<T extends Record<string, unknown>>(orde
 
   return {
     ...rest,
-    externalFulfillment: Boolean(offer?.externalIntegration || fulfillmentJob || fakaBridgeTask),
+    externalFulfillment: Boolean(offer?.externalIntegration || fulfillmentJob || externalFulfillmentProvider || fakaBridgeTask),
     fulfillmentDiagnostics: taskDiagnostics('xboard', fakaBridgeTask as TaskDiagnosticsShape | null)
       ?? taskDiagnostics('plugin', fulfillmentJob as TaskDiagnosticsShape | null),
     fulfillmentReviewActions: fulfillmentReviewActions({

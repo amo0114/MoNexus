@@ -7,6 +7,7 @@ import { api, authHeader, createTestUser, loginAs } from './helpers.js'
 import { getActiveNetworkNodeCategoryId } from './catalogFixture.js'
 import { fakaSettings } from '../modules/admin/fakaSettings.js'
 import { createOrder } from '../modules/orders/service.js'
+import { getFulfillmentProvider } from '../modules/fulfillment/registry.js'
 import { __setFakaClientOverridesForTests, processFakaBridgeTask, runFakaBridgeBatch } from '../modules/fakaBridge/worker.js'
 import { onFakaOrderRefundedInTx, processFakaRevokeTask, runFakaRevokeBatch, runFakaReconcileBatch } from '../modules/fakaBridge/lifecycle.js'
 import { activeFakaSnapshot, withActiveFaka } from '../lib/runtimeSettings/fakaBridge.js'
@@ -39,6 +40,31 @@ async function order() {
   return prisma.fakaBridgeTask.findUniqueOrThrow({ where: { orderId: result.orderId } })
 }
 describe('version-bound FakaBridge runtime', () => {
+  it('retains historical work during pause and changes mounted routes without restarting', async () => {
+    const current = await activate('https://a.example.com', 0)
+    const task = await order()
+    const admin = await prisma.user.findUniqueOrThrow({ where: { id: actor } })
+    const auth = authHeader((await loginAs(admin.email, 'pass123')).accessToken)
+    const path = '/api/admin/integrations/faka-bridge/plugin'
+    await api.put(path).set(auth).send({ mounted: false }).expect(409)
+    await fakaSettings.api.enabled(actor, current.version, false)
+    await api.put(path).set(auth).send({ mounted: false }).expect(409)
+    expect(getFulfillmentProvider('faka_bridge')).toBeDefined()
+    expect(await prisma.fakaBridgeTask.findUnique({ where: { id: task.id } }))
+      .toMatchObject({ configRevisionId: current.activeRevisionId, status: 'pending' })
+
+    await prisma.fakaBridgeTask.update({ where: { id: task.id }, data: { status: 'cancelled' } })
+    const detached = await api.put(path).set(auth).send({ mounted: false }).expect(200)
+    expect(detached.body).toMatchObject({ installed: true, mounted: false })
+    expect(getFulfillmentProvider('faka_bridge')).toBeUndefined()
+    await api.get('/api/admin/integrations/faka-bridge/config').set(auth).expect(404)
+
+    await api.put(path).set(auth).send({ mounted: true }).expect(200)
+    expect(getFulfillmentProvider('faka_bridge')).toBeDefined()
+    const state = await api.get('/api/admin/integrations/faka-bridge/config').set(auth).expect(200)
+    expect(state.body).toMatchObject({ enabled: false, activeRevisionId: current.activeRevisionId })
+  })
+
   it('does not let unreadable refunded tasks with future schedules or active leases fill later batches', async () => {
     const first = await activate('https://a.example.com', 0)
     const damaged = await order()

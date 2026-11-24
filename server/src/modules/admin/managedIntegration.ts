@@ -21,11 +21,18 @@ export interface ManagedIntegration<S extends JsonObject, C extends JsonObject> 
   testKind: 'read_only' | 'local_validation'
   publicDetails?: (draft: S | null) => Record<string, unknown>
   accountIdForRevision?: (tx: Tx, settings: S) => Promise<string>
+  assertWritable?: (tx: Tx) => Promise<void>
   beforeActivate?: (tx: Tx, row: IntegrationConfig, settings: S, actor: number, legacyConfirmed: boolean) => Promise<string | null>
 }
 const version = z.object({ expectedVersion: integrationVersion }).strict()
 export function managedIntegration<S extends JsonObject, C extends JsonObject>(definition: ManagedIntegration<S, C>) {
   const { key } = definition
+  function write<T>(work: (tx: Tx, row: IntegrationConfig | null) => Promise<T>) {
+    return withIntegrationLock(key, async (tx, row) => {
+      await definition.assertWritable?.(tx)
+      return work(tx, row)
+    })
+  }
   function requireRoot() { if (!config.integrationCredentialsEncKey) throw forbidden('服务器尚未配置当前集成凭据加密密钥') }
   function dto(row: IntegrationConfig | null) {
     const bootstrap = definition.bootstrap()
@@ -50,7 +57,7 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
   }
   const api = {
     get: async () => dto(await prisma.integrationConfig.findUnique({ where: { key } })),
-    save: async (actor: number, input: { expectedVersion: number; settings: S; credentials?: C }) => withIntegrationLock(key, async (tx, row) => {
+    save: async (actor: number, input: { expectedVersion: number; settings: S; credentials?: C }) => write(async (tx, row) => {
       requireIntegrationVersion(row, input.expectedVersion); requireRoot()
       const settings = definition.settings.parse(input.settings)
       const bootstrap = definition.bootstrap()
@@ -72,9 +79,9 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
       try { await definition.test(settings, credentials) }
       catch { await audit(prisma, actor, 'draft.test', expected, 'failed'); throw new HttpError(502, 'INTERNAL_SERVER_ERROR', '配置校验或只读探测失败，请检查参数和凭据') }
       await audit(prisma, actor, 'draft.test', expected, definition.testKind)
-      return withIntegrationLock(key, async (tx, latest) => { requireIntegrationVersion(latest, expected); return dto(await tx.integrationConfig.update({ where: { key }, data: { testedVersion: expected } })) })
+      return write(async (tx, latest) => { requireIntegrationVersion(latest, expected); return dto(await tx.integrationConfig.update({ where: { key }, data: { testedVersion: expected } })) })
     },
-    activate: async (actor: number, expected: number, legacyConfirmed = false) => withIntegrationLock(key, async (tx, row) => {
+    activate: async (actor: number, expected: number, legacyConfirmed = false) => write(async (tx, row) => {
       requireIntegrationVersion(row, expected); requireRoot()
       if (!row?.draft || row.testedVersion !== row.version) throw badRequest('请先校验当前配置草稿')
       const settings = definition.settings.parse(row.draft), credentials = decode(settings, row.draftRevisionId, row.draftCredentialsCiphertext)
@@ -87,7 +94,7 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
         enabled: true, rollbackAvailable: true, testedVersion: null, version: { increment: 1 }, updatedBy: actor } })
       await audit(tx, actor, 'activate', updated.version); return dto(updated)
     }),
-    rollback: async (actor: number, expected: number) => withIntegrationLock(key, async (tx, row) => {
+    rollback: async (actor: number, expected: number) => write(async (tx, row) => {
       requireIntegrationVersion(row, expected)
       if (!row?.rollbackAvailable) throw badRequest('没有可回滚的配置')
       if (row.previousRevisionId) {
@@ -100,13 +107,13 @@ export function managedIntegration<S extends JsonObject, C extends JsonObject>(d
         version: { increment: 1 }, testedVersion: null, updatedBy: actor } })
       await audit(tx, actor, 'rollback', updated.version); return dto(updated)
     }),
-    enabled: async (actor: number, expected: number, enabled: boolean) => withIntegrationLock(key, async (tx, row) => {
+    enabled: async (actor: number, expected: number, enabled: boolean) => write(async (tx, row) => {
       requireIntegrationVersion(row, expected)
       const updated = await tx.integrationConfig.upsert({ where: { key }, create: { key, version: 1, enabled, updatedBy: actor },
         update: { enabled, version: { increment: 1 }, testedVersion: null, updatedBy: actor } })
       await audit(tx, actor, enabled ? 'enable' : 'disable', updated.version); return dto(updated)
     }),
-    rewrap: async (actor: number, expected: number) => withIntegrationLock(key, async (tx, row) => {
+    rewrap: async (actor: number, expected: number) => write(async (tx, row) => {
       requireIntegrationVersion(row, expected); requireRoot()
       if (!row) throw badRequest('配置尚未保存')
       for (const revision of await tx.integrationConfigRevision.findMany({ where: { key } })) {

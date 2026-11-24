@@ -1,7 +1,6 @@
 import { publicVideoSummary } from '../productVideos/service.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { usesStablePaidReset } from '../../lib/fakaBridge/paidResetSku.js'
 import { wrapCache } from '../../lib/cache.js'
 import { countAvailableByOfferId, countAvailableByProductId } from '../../lib/inventoryCounts.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
@@ -9,12 +8,8 @@ import { projectPublicTemplateAttributes, serializePublicOffer } from '../../lib
 import { getProductTemplate } from '../../lib/productCatalog/templates/registry.js'
 import { emptyProductDetails } from '../../lib/productCatalog/templates/productDetails.js'
 import { TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../../lib/productCatalog/templates/types.js'
-import {
-  getFakaCapacityForPublicRead,
-  getCachedFakaCapacityByPlanId,
-  isFakaBridgeConfigured,
-  type FakaCapacitySnapshot,
-} from '../../lib/fakaBridge/index.js'
+import type { ExternalCapacitySnapshot } from '../../extension-contracts/fulfillmentCatalog.js'
+import { catalogForProvider } from '../fulfillment/offerBinding.js'
 import {
   buildProductDetailCacheKey,
   buildProductListCacheKey,
@@ -238,7 +233,7 @@ async function loadAvailabilityBatchFacts(
     offerAvailableCounts,
     productAvailableCounts,
     webhookMerchantIds: new Set(webhooks.map(webhook => webhook.merchantId)),
-    providerConfigured: isFakaBridgeConfigured(),
+    providerConfigured: catalogForProvider('faka_bridge')?.isConfigured() ?? false,
   }
 }
 
@@ -246,7 +241,7 @@ function publicOfferStatus(
   offer: AvailabilityOfferInput,
   merchantId: number | null,
   facts: AvailabilityBatchFacts,
-  fakaCapacity: FakaCapacitySnapshot | null,
+  fakaCapacity: ExternalCapacitySnapshot | null,
 ): AvailabilityStatus {
   return evaluatePublicOfferAvailability(offer, {
     availableInventory: facts.offerAvailableCounts.get(offer.id) ?? 0,
@@ -258,8 +253,8 @@ function publicOfferStatus(
 
 function fakaSnapshotForSku(
   offer: { externalIntegration?: string | null; externalSku?: string | null },
-  fakaBySku: Map<string, FakaCapacitySnapshot>,
-): FakaCapacitySnapshot | null {
+  fakaBySku: Map<string, ExternalCapacitySnapshot>,
+): ExternalCapacitySnapshot | null {
   if (offer.externalIntegration !== 'faka_bridge' || !offer.externalSku) return null
   return fakaBySku.get(offer.externalSku.trim().toLowerCase()) ?? null
 }
@@ -320,7 +315,7 @@ function serializePublicProductListItem(
   product: ProductListItem,
   offerAvailableCounts: Map<number, number>,
   productAvailableCounts: Map<number, number>,
-  fakaBySku: Map<string, FakaCapacitySnapshot>,
+  fakaBySku: Map<string, ExternalCapacitySnapshot>,
   availability: AvailabilityStatus,
 ) {
   // Visibility inputs (SPEC-CATALOG-VIS-001 §4.2) are read for the access check only, never serialized.
@@ -331,7 +326,7 @@ function serializePublicProductListItem(
   } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts, productAvailableCounts)
 
-  const fakaCaps: FakaCapacitySnapshot[] = []
+  const fakaCaps: ExternalCapacitySnapshot[] = []
   for (const offer of offers) {
     const cap = fakaSnapshotForSku(offer, fakaBySku)
     if (cap) fakaCaps.push(cap)
@@ -365,15 +360,17 @@ function serializePublicProductListItem(
  */
 function loadFakaCapacityBySku(
   offers: Array<{ externalIntegration?: string | null; externalSku?: string | null }>
-): Map<string, FakaCapacitySnapshot> {
+): Map<string, ExternalCapacitySnapshot> {
+  const catalog = catalogForProvider('faka_bridge')
+  if (!catalog?.isConfigured()) return new Map()
   const skus = [
     ...new Set(
       offers
-        .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku && !usesStablePaidReset(o))
+        .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku && !catalog.usesAccountCapacity(o))
         .map(o => String(o.externalSku).trim().toLowerCase())
     ),
   ]
-  const map = new Map<string, FakaCapacitySnapshot>()
+  const map = new Map<string, ExternalCapacitySnapshot>()
   if (skus.length === 0) return map
 
   const primary: string[] = []
@@ -395,13 +392,13 @@ function loadFakaCapacityBySku(
   }
 
   for (const sku of primary) {
-    map.set(sku, getFakaCapacityForPublicRead(sku))
+    map.set(sku, catalog.capacityForPublicRead(sku))
   }
 
   // Fill plan-* siblings from a warm plan cache or the primary's public
   // projection.  Either route schedules at most one background probe.
   for (const { sku, planId } of deferredPlanSkus) {
-    const cached = getCachedFakaCapacityByPlanId(planId)
+    const cached = catalog.cachedCapacityByPlanId(planId)
     if (cached) {
       map.set(sku, { ...cached, sku })
     } else {
@@ -410,7 +407,7 @@ function loadFakaCapacityBySku(
       if (primaryCapacity) {
         map.set(sku, { ...primaryCapacity, sku })
       } else {
-        map.set(sku, getFakaCapacityForPublicRead(sku))
+        map.set(sku, catalog.capacityForPublicRead(sku))
       }
     }
   }
@@ -423,8 +420,8 @@ function loadFakaCapacityBySku(
  * remaining 相同，绝不能按规格数累加（否则 2 名额 × 8 周期 = 库存 16）。
  * 多 plan 商品（极少见）再对「去重后的 plan」求和。
  */
-function dedupeFakaCapsByPlan(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot[] {
-  const byKey = new Map<string, FakaCapacitySnapshot>()
+function dedupeFakaCapsByPlan(caps: ExternalCapacitySnapshot[]): ExternalCapacitySnapshot[] {
+  const byKey = new Map<string, ExternalCapacitySnapshot>()
   for (const c of caps) {
     if (c.source !== 'xboard') continue
     const key = c.planId != null ? `plan:${c.planId}` : `sku:${c.sku}`
@@ -444,7 +441,7 @@ function dedupeFakaCapsByPlan(caps: FakaCapacitySnapshot[]): FakaCapacitySnapsho
 }
 
 function projectFakaAvailability(
-  caps: FakaCapacitySnapshot[]
+  caps: ExternalCapacitySnapshot[]
 ): { stock: number; stockMode: string } | null {
   if (caps.length === 0) return null
   const unique = dedupeFakaCapsByPlan(caps)
@@ -461,7 +458,7 @@ function projectFakaAvailability(
 
 
 /** Public product payload must not leak internal SKU / plan / activeUsers. */
-function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
+function toPublicFakaCapacity(cap: ExternalCapacitySnapshot) {
   return {
     remaining: cap.remaining,
     capacityLimit: cap.capacityLimit,
@@ -472,7 +469,7 @@ function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
 }
 
 /** 列表/详情商品级 fakaCapacity：单 SKU 直接用；多周期同 plan 取首个 xboard 快照。 */
-function pickProductFakaCapacity(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot | null {
+function pickProductFakaCapacity(caps: ExternalCapacitySnapshot[]): ExternalCapacitySnapshot | null {
   if (caps.length === 0) return null
   if (caps.length === 1) return caps[0]
   const unique = dedupeFakaCapsByPlan(caps)
@@ -491,7 +488,7 @@ function serializePublicProductDetail(
   product: ProductDetail,
   offerAvailableCounts: Map<number, number>,
   productAvailableCounts: Map<number, number>,
-  fakaByOfferId: Map<number, FakaCapacitySnapshot>,
+  fakaByOfferId: Map<number, ExternalCapacitySnapshot>,
   offerStatusById: Map<number, AvailabilityStatus>,
 ) {
   const {
@@ -878,7 +875,7 @@ async function getProductDetailFromDb(id: number, audience: ProductAudience = 'g
   // FakaBridge：详情页只读缓存并后台刷新，绝不在请求内串行外呼 Xboard。
   // Same batch read as the list, so period SKUs of one plan share one snapshot/probe.
   const fakaBySku = loadFakaCapacityBySku(product.offers)
-  const fakaByOfferId = new Map<number, FakaCapacitySnapshot>()
+  const fakaByOfferId = new Map<number, ExternalCapacitySnapshot>()
   for (const offer of product.offers) {
     const snapshot = fakaSnapshotForSku(offer, fakaBySku)
     if (snapshot) fakaByOfferId.set(offer.id, snapshot)

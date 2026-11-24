@@ -15,11 +15,12 @@ import {
 } from '../orders/accounting.js'
 import { applyRefundInventoryPolicy } from '../orders/refundInventory.js'
 import type { ListOrdersQuery, ResolveOrderInput } from './schema.js'
-import { FULFILLMENT_REVIEW_WHERE } from '../orders/operationalState.js'
+import { fulfillmentReviewWhere } from '../orders/operationalState.js'
+import { getFulfillmentProvider } from '../fulfillment/registry.js'
 
 function buildAdminOrderWhere(query: ListOrdersQuery): Prisma.OrderWhereInput {
   const where: Prisma.OrderWhereInput = {}
-  if (query.fulfillmentReview) where.AND = [FULFILLMENT_REVIEW_WHERE]
+  if (query.fulfillmentReview) where.AND = [fulfillmentReviewWhere()]
 
   if (query.status) {
     // 历史数据存在 legacy 'completed'，与 delivered 等价
@@ -64,7 +65,7 @@ export async function listAllOrders(query: ListOrdersQuery = {}) {
         // P6：仲裁需要订阅到期视角——只选 expiresAt（序列化补 expired），内容仍不出列表。
         delivery: { select: { status: true, expiresAt: true } },
         // P7b：列表徽标需要任务态安全投影（复审 P2：UI 已渲染，select 必须跟上）。
-        provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
+        provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true, leaseUntil: true } },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * pageSize,
@@ -96,15 +97,17 @@ export async function getOrderDetail(orderId: number) {
       // P6：详情补订阅到期时刻，供仲裁判断交付是否仍在有效期内。
       delivery: { select: { content: true, status: true, expiresAt: true } },
       // P7b：仲裁上下文透出自动开通任务态 + 脱敏诊断码（安全投影）。
-      provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true } },
+      provisionTask: { select: { status: true, attempts: true, lastError: true, lastHttpStatus: true, nextAttemptAt: true, merchantNotifiedAt: true, updatedAt: true, leaseUntil: true } },
       // Xboard/Faka：只投影任务 id，供前端隐藏平台人工履约入口。
-      fakaBridgeTask: { select: { id: true, status: true, attempts: true, cancelRequested: true, revokeStatus: true, revokedAt: true, leaseUntil: true } },
       fulfillmentJob: { select: { id: true, status: true, attempts: true, cancelRequested: true, leaseUntil: true, providerId: true } },
       offer: { select: { externalIntegration: true } },
     },
   })
   if (!order) throw notFound('订单不存在')
-  return serializeAdminOrderDetail(order)
+  const provider = order.externalFulfillmentProvider ? getFulfillmentProvider(order.externalFulfillmentProvider) : undefined
+  const diagnostics = await provider?.orderDiagnostics?.(prisma, order.id)
+  // Preserve the legacy staff response shape for the separately stored task.
+  return serializeAdminOrderDetail({ ...order, fakaBridgeTask: diagnostics ?? null })
 }
 
 // ---- Order Arbitration ----

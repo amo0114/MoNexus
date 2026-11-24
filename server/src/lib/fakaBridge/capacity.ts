@@ -1,3 +1,4 @@
+import type { ExternalCapacitySnapshot } from '../../extension-contracts/fulfillmentCatalog.js'
 import { fakaCacheIdentity } from '../runtimeSettings/fakaBridge.js'
 import { fakaBridgeConfig } from '../runtimeSettings/fakaBridge.js'
 import { config } from '../../config/index.js'
@@ -5,18 +6,7 @@ import { callFakaPlanCapacity, isFakaBridgeConfigured } from './client.js'
 import { logger } from '../logger.js'
 import { fakaCapacityProbeTotal } from '../metrics.js'
 
-export type FakaCapacitySnapshot = {
-  sku: string
-  planId: number | null
-  /** null = unlimited on Xboard */
-  capacityLimit: number | null
-  activeUsers: number | null
-  /** null = unlimited */
-  remaining: number | null
-  sellable: boolean
-  source: 'xboard' | 'unavailable'
-  reason?: string
-}
+export type FakaCapacitySnapshot = ExternalCapacitySnapshot
 
 /**
  * Process-local cache for Xboard capacity.  Authoritative consumers (checkout

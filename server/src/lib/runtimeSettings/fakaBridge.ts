@@ -100,9 +100,22 @@ export async function withFakaTaskInBatch<T>(taskId: number, work: () => Promise
 export async function withActiveFaka<T>(work: () => Promise<T>): Promise<T> {
   return withFakaSnapshot(await activeFakaSnapshot(), work)
 }
+/** Serialize obligation writes with detach across API and worker processes. */
+export async function fakaMountedInTx(tx: Prisma.TransactionClient): Promise<boolean> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext('monexus:integration:faka_bridge'))`
+  const plugin = await tx.integrationConfig.findUnique({
+    where: { key: `plugin:${FAKA_KEY}` }, select: { enabled: true },
+  })
+  return plugin?.enabled !== false
+}
+
+export async function requireFakaMountedInTx(tx: Prisma.TransactionClient): Promise<void> {
+  if (!await fakaMountedInTx(tx)) throw conflict('履约插件已注销，请重新装载后处理')
+}
+
 /** Pin the request's snapshot under the same lock as activation. An edited target requires retry. */
 export async function pinFakaSnapshot(tx: Prisma.TransactionClient): Promise<string | null> {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('monexus:integration:faka_bridge'))`
+  if (!await fakaMountedInTx(tx)) throw new HttpError(503, 'INTERNAL_SERVER_ERROR', '新履约暂未开放')
   const snapshot = currentFakaSnapshot()
   const active = await activeFakaSnapshot(tx)
   if (!active.bridge.enabled || !active.bridge.url || !active.bridge.secret) throw new HttpError(503, 'INTERNAL_SERVER_ERROR', '新履约暂未开放')
@@ -112,5 +125,8 @@ export async function pinFakaSnapshot(tx: Prisma.TransactionClient): Promise<str
 export const fakaRuntimeMiddleware: RequestHandler = (req, _res, next) => {
   if (!/^\/(products|orders|checkout|faka-bridge|bot|shops|storefront|merchant)(\/|$)/.test(req.path)
     && !/^\/admin\/(faka|products|offers)/.test(req.path)) return next()
-  void activeFakaSnapshot().then(snapshot => withFakaSnapshot(snapshot, () => next())).catch(next)
+  return bindActiveFaka(req, _res, next)
+}
+export const bindActiveFaka: RequestHandler = (_req, _res, next) => {
+  void withActiveFaka(async () => next()).catch(next)
 }

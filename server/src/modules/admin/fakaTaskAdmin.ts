@@ -3,6 +3,7 @@ import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { isFakaBridgeConfigured, isLeaseExpiredUtc } from '../../lib/fakaBridge/index.js'
+import { requireFakaMountedInTx } from '../../lib/runtimeSettings/fakaBridge.js'
 import { syncFakaExpiresAtFromRemote, processFakaBridgeTask, processFakaRevokeTask } from '../fakaBridge/service.js'
 
 // ---- FakaBridge task ops (admin MFA) ----
@@ -138,42 +139,46 @@ export async function retryFakaBridgeTask(adminUserId: number, taskId: number) {
       ...sync,
     }
   }
-  if (task.order.status === 'refunded' || task.order.status === 'closed') {
-    throw badRequest('订单已退款/关闭，请走撤销而非重试开通')
-  }
+  await prisma.$transaction(async tx => {
+    const task = await lockAdminTask(tx, taskId)
+    if (task.order.status === 'refunded' || task.order.status === 'closed') {
+      throw badRequest('订单已退款/关闭，请走撤销而非重试开通')
+    }
 
-  if (!(await isLeaseExpiredUtc(prisma, taskId))) {
-    throw badRequest('任务正在处理中（租约未过期），请稍后再重试')
-  }
-  if (task.cancelRequested) {
-    throw badRequest('任务已标记取消/退款，请走撤销而非重试开通')
-  }
+    if (!(await isLeaseExpiredUtc(tx, taskId))) {
+      throw badRequest('任务正在处理中（租约未过期），请稍后再重试')
+    }
+    if (task.cancelRequested) {
+      throw badRequest('任务已标记取消/退款，请走撤销而非重试开通')
+    }
 
-  await prisma.fakaBridgeTask.update({
-    where: { id: taskId },
-    data: {
-      status: 'pending',
-      attempts: 0,
-      nextAttemptAt: new Date(),
-      // Do not clear an active lease (already gated above).
-      lastError: null,
-      completedAt: null,
-      cancelRequested: false,
-      reconcileNote: `admin retry by user ${adminUserId}`,
-    },
+    if (!['failed', 'cancelled'].includes(task.status)) throw badRequest('仅失败或已取消的开通任务可重试')
+    await tx.fakaBridgeTask.update({
+      where: { id: taskId },
+      data: {
+        status: 'pending',
+        attempts: 0,
+        nextAttemptAt: new Date(),
+        // Do not clear an active lease (already gated above).
+        lastError: null,
+        completedAt: null,
+        cancelRequested: false,
+        reconcileNote: `admin retry by user ${adminUserId}`,
+      },
+    })
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '重试Faka开通',
+        targetType: 'faka_bridge_task',
+        targetId: taskId,
+        detail: `orderId=${task.orderId}`,
+      },
+    })
   })
 
-  await prisma.adminLog.create({
-    data: {
-      adminUserId,
-      action: '重试Faka开通',
-      targetType: 'faka_bridge_task',
-      targetId: taskId,
-      detail: `orderId=${task.orderId}`,
-    },
-  })
-
-  // Fire immediately (outside test skip inside schedule helper — call worker)
+  // Start processing only after the pending state commits.
   if (config.nodeEnv !== 'test') {
     setImmediate(() => {
       void processFakaBridgeTask(taskId).catch(() => undefined)
@@ -185,45 +190,56 @@ export async function retryFakaBridgeTask(adminUserId: number, taskId: number) {
 
 /** Admin: force queue / re-run Xboard revoke for a succeeded provision. */
 export async function forceFakaBridgeRevoke(adminUserId: number, taskId: number) {
-  const task = await prisma.fakaBridgeTask.findUnique({ where: { id: taskId } })
-  if (!task) throw notFound('FakaBridge 任务不存在')
-  const allowed =
-    task.status === 'succeeded' ||
-    task.status === 'needs_reconcile' ||
-    (task.status === 'failed' && Boolean(task.xboardTradeNo)) ||
-    task.cancelRequested
-  if (!allowed) {
-    throw badRequest('仅已开通/可能已开通的任务可强制撤销（succeeded / needs_reconcile / failed+trade_no）')
-  }
-  if (task.revokeStatus === 'succeeded') {
-    throw badRequest('任务已撤销成功')
-  }
-  if (!(await isLeaseExpiredUtc(prisma, taskId))) {
-    throw badRequest('任务租约未过期，请稍后再强制撤销')
-  }
+  await prisma.$transaction(async tx => {
+    const task = await lockAdminTask(tx, taskId)
+    const allowed =
+      task.status === 'succeeded' ||
+      task.status === 'needs_reconcile' ||
+      (task.status === 'failed' && Boolean(task.xboardTradeNo)) ||
+      task.cancelRequested
+    if (!allowed) {
+      throw badRequest('仅已开通/可能已开通的任务可强制撤销（succeeded / needs_reconcile / failed+trade_no）')
+    }
+    if (task.revokeStatus === 'succeeded') {
+      throw badRequest('任务已撤销成功')
+    }
+    if (!(await isLeaseExpiredUtc(tx, taskId))) {
+      throw badRequest('任务租约未过期，请稍后再强制撤销')
+    }
 
-  await prisma.fakaBridgeTask.update({
-    where: { id: taskId },
-    data: {
-      revokeStatus: 'pending',
-      lastRevokeError: null,
-      // Override any provision/revoke cooldown: this endpoint is explicitly a force retry.
-      nextAttemptAt: new Date(),
-      cancelRequested: true,
-      reconcileNote: `admin force revoke by user ${adminUserId}`,
-    },
+    await tx.fakaBridgeTask.update({
+      where: { id: taskId },
+      data: {
+        revokeStatus: 'pending',
+        lastRevokeError: null,
+        // Override any provision/revoke cooldown: this endpoint is explicitly a force retry.
+        nextAttemptAt: new Date(),
+        cancelRequested: true,
+        reconcileNote: `admin force revoke by user ${adminUserId}`,
+      },
+    })
+
+    await tx.adminLog.create({
+      data: {
+        adminUserId,
+        action: '强制撤销Xboard订阅',
+        targetType: 'faka_bridge_task',
+        targetId: taskId,
+        detail: `orderId=${task.orderId}; requestOrderNo=${task.requestOrderNo}`,
+      },
+    })
   })
-
-  await prisma.adminLog.create({
-    data: {
-      adminUserId,
-      action: '强制撤销Xboard订阅',
-      targetType: 'faka_bridge_task',
-      targetId: taskId,
-      detail: `orderId=${task.orderId}; requestOrderNo=${task.requestOrderNo}`,
-    },
-  })
-
   const outcome = await processFakaRevokeTask(taskId)
   return { ok: true, taskId, outcome }
+}
+
+async function lockAdminTask(tx: Prisma.TransactionClient, taskId: number) {
+  const observed = await tx.fakaBridgeTask.findUnique({ where: { id: taskId }, select: { orderId: true } })
+  if (!observed) throw notFound('FakaBridge 任务不存在')
+  await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${observed.orderId} FOR UPDATE`
+  await tx.$queryRaw`SELECT "id" FROM "FakaBridgeTask" WHERE "id" = ${taskId} FOR UPDATE`
+  await requireFakaMountedInTx(tx)
+  const task = await tx.fakaBridgeTask.findUnique({ where: { id: taskId }, include: { order: { select: { status: true } } } })
+  if (!task) throw notFound('FakaBridge 任务不存在')
+  return task
 }
