@@ -30,8 +30,8 @@ export const MERCHANT_TAB_STATE = 'merchantTab'
 
 export function MerchantNav({ activeKey, onSelect }: { activeKey: MerchantTabKey | null; onSelect: (tab: MerchantTab) => void }) {
   return (
-    <aside className="w-full md:w-64 flex-shrink-0 max-md:sticky max-md:top-[calc(var(--navbar-h)+var(--safe-top))] max-md:z-20 max-md:-mx-4 max-md:px-4 max-md:py-2 max-md:bg-[color-mix(in_srgb,var(--color-background)_95%,transparent)] max-md:backdrop-blur-md md:sticky md:top-[calc(var(--navbar-current-h)+1rem)] md:self-start">
-      <nav aria-label="商家中心" className="md:card p-0 md:p-2 flex md:flex-col gap-1 overflow-x-auto hide-scrollbar scroll-fade-x">
+    <aside className="w-full lg:w-56 xl:w-60 flex-shrink-0 max-lg:sticky max-lg:top-[calc(var(--navbar-h)+var(--safe-top))] max-lg:z-20 max-lg:-mx-4 max-lg:px-4 max-lg:py-2 max-lg:bg-[color-mix(in_srgb,var(--color-background)_95%,transparent)] max-lg:backdrop-blur-md lg:sticky lg:top-[calc(var(--navbar-current-h)+1rem)] lg:self-start">
+      <nav aria-label="商家中心" className="lg:card p-0 lg:p-2 flex lg:flex-col gap-1 overflow-x-auto hide-scrollbar scroll-fade-x">
         {MERCHANT_TABS.map((tab) => {
           const active = tab.key === activeKey
           return (
@@ -40,13 +40,13 @@ export function MerchantNav({ activeKey, onSelect }: { activeKey: MerchantTabKey
               type="button"
               aria-current={active ? 'page' : undefined}
               onClick={() => onSelect(tab)}
-              className={`shrink-0 flex items-center gap-3 px-4 py-3 rounded-lg transition-colors cursor-pointer text-sm whitespace-nowrap ${
+              className={`shrink-0 flex items-center gap-3 px-3.5 py-2.5 lg:px-4 lg:py-3 rounded-lg transition-colors cursor-pointer text-sm whitespace-nowrap ${
                 active
                   ? 'bg-[var(--color-primary)] text-[var(--color-on-primary)] font-semibold shadow-sm'
                   : 'text-[var(--color-text-muted)] hover:bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] hover:text-[var(--color-text)] font-medium'
               }`}
             >
-              <tab.Icon className="w-5 h-5 shrink-0" />
+              <tab.Icon className="w-4 h-4 lg:w-5 lg:h-5 shrink-0" />
               {tab.label}
             </button>
           )
@@ -60,7 +60,7 @@ export function MerchantNav({ activeKey, onSelect }: { activeKey: MerchantTabKey
 export default function MerchantShell({ active, children }: { active: MerchantTabKey | null; children: ReactNode }) {
   const navigate = useNavigate()
   return (
-    <div className="flex flex-col md:flex-row gap-6">
+    <div className="flex flex-col lg:flex-row gap-5 lg:gap-6">
       <MerchantNav
         activeKey={active}
         onSelect={(tab) => navigate(tab.path ?? '/merchant', tab.path ? undefined : { state: { [MERCHANT_TAB_STATE]: tab.key } })}

@@ -56,12 +56,12 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
   }, [data, metric, width])
 
   if (loading) {
-    return <div className="card h-[300px] flex items-center justify-center animate-pulse bg-[var(--color-background)] rounded-lg border border-[var(--color-border)] mb-6"><div className="w-1/2 h-4 bg-[var(--color-border)] rounded"></div></div>
+    return <div className="card h-[300px] flex items-center justify-center animate-pulse mb-6"><div className="w-1/2 h-4 bg-[var(--color-border)] rounded"></div></div>
   }
 
   if (!data || data.length === 0) {
     return (
-      <div className="card h-[300px] flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] mb-6">
+      <div className="card h-[300px] flex items-center justify-center mb-6">
         <EmptyState compact icon={LineChart} title="暂无数据" description="所选时间范围内还没有经营数据" />
       </div>
     )
@@ -74,11 +74,11 @@ export default function TrendChart({ data, loading }: { data: DashboardSeriesPoi
   const selectPoint = (index: number) => setHoveredIndex(index)
 
   return (
-    <div className="card p-6 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] mb-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="card p-4 sm:p-6 mb-6">
+      <div className="flex justify-between items-center gap-3 mb-6">
         <h3 className="font-heading text-lg font-bold text-[var(--color-text)]">趋势分析</h3>
         <select
-          className="bg-[var(--color-surface)] border border-[var(--color-border)] text-base rounded-md px-3 py-1.5 text-[var(--color-text)] cursor-pointer"
+          className="input w-auto appearance-none py-1.5 text-base sm:text-sm cursor-pointer"
           value={metric}
           onChange={(e) => setMetric(e.target.value as any)}
           aria-label="选择趋势指标"

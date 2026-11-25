@@ -385,7 +385,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                   {offers.map((offer) => (
                     <div
                       key={offer.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3"
+                      className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] px-4 py-3"
                       data-testid={`offer-row-${offer.id}`}
                     >
                       <div className="min-w-0">
@@ -419,7 +419,7 @@ export default function MerchantOfferManagerModal({ isOpen, onClose, product, on
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 ml-auto">
                         {!offer.isDefault && (
                           <button type="button" onClick={() => setDefault(offer)} disabled={submitting} className="btn-sm text-xs text-[var(--color-text-muted)] hover:text-[var(--color-primary)] cursor-pointer" data-testid={`offer-set-default-${offer.id}`}>
                             设为默认

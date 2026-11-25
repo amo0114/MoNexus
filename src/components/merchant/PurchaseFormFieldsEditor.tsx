@@ -79,11 +79,11 @@ export default function PurchaseFormFieldsEditor({ fields, onChange }: Props) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <p className="text-sm text-[var(--color-text-muted)]">
           可选。买家在确认兑换时填写；答案仅你、买家和管理员可见。
         </p>
-        <button type="button" onClick={addField} className="btn-secondary px-3 py-1.5 text-sm"
+        <button type="button" onClick={addField} className="btn-secondary px-3 py-1.5 text-sm shrink-0"
           disabled={fields.length >= MAX_FORM_FIELDS} data-testid="add-form-field">
           <Plus className="w-4 h-4" /> 添加字段
         </button>
@@ -96,8 +96,8 @@ export default function PurchaseFormFieldsEditor({ fields, onChange }: Props) {
         <div className="mt-3 space-y-3" data-testid="form-field-list">
           {fields.map((field, index) => (
             <div key={field.key} className="rounded-lg border border-[var(--color-border)] p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <input type="text" className="input flex-1" placeholder="字段名称，如：联系方式"
+              <div className="flex flex-wrap sm:flex-nowrap items-center gap-3">
+                <input type="text" className="input flex-1 min-w-[140px]" placeholder="字段名称，如：联系方式"
                   value={field.label} onChange={(e) => updateField(index, { label: e.target.value })}
                   data-testid={`form-field-label-${index}`} />
                 <select className="input w-32 appearance-none cursor-pointer" value={field.type}

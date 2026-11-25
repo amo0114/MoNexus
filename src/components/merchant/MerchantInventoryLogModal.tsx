@@ -80,12 +80,12 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product }: 
           <table className="table-cards w-full text-left border-collapse" data-testid="inventory-log-table">
             <thead>
               <tr className="border-b border-[var(--color-border)]">
-                <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">时间</th>
-                <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">动作</th>
-                <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">目标规格</th>
-                <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider text-right">数量</th>
-                <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">操作人</th>
-                <th className="py-2 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">备注</th>
+                <th className="py-2 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">时间</th>
+                <th className="py-2 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">动作</th>
+                <th className="py-2 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">目标规格</th>
+                <th className="py-2 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider text-right whitespace-nowrap">数量</th>
+                <th className="py-2 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">操作人</th>
+                <th className="py-2 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">备注</th>
               </tr>
             </thead>
             <tbody>
@@ -113,11 +113,11 @@ export default function MerchantInventoryLogModal({ isOpen, onClose, product }: 
                           导入
                         </span>
                       ) : log.action === 'sale' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-blue-500/10 text-blue-600 border-blue-500/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[color-mix(in_srgb,var(--color-info)_10%,transparent)] text-[var(--color-info)] border-[color-mix(in_srgb,var(--color-info)_25%,transparent)] whitespace-nowrap">
                           售出
                         </span>
                       ) : log.action === 'capacity_adjust' ? (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-amber-500/10 text-amber-700 border-amber-500/25">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold border bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] border-[var(--color-warning-border)] whitespace-nowrap">
                           名额调整
                         </span>
                       ) : (
