@@ -2,7 +2,7 @@
 
 - 契约：[hotfix-stripe-checkout.contract.md](hotfix-stripe-checkout.contract.md)
 - 写入负责人：本线程主代理，2026-11-25。
-- 分支：`hotfix/stripe-checkout`。生产基线 `4b098c8`，复审代码提交 `70b480d88a8aaac2e5e874de206dea8e78f02383`。
+- 分支：`hotfix/stripe-checkout`。生产基线 `4b098c8`，最终候选代码提交 `227e74b0d7646e6ba7683c5f477a4f88da9a0fa8`。
 - 审查记录：独立审查 `4b098c8ff415b53dabb32758730cfb792b60cc9c..e12ec4cd5e74899232cfef70b81f8978a8b122aa`，结论 `REQUEST_CHANGES`。
 - 隔离资源：本地可丢弃 PostgreSQL 库 `monexus_stripe_release_test`，同一时间仅主代理运行集成测试。依赖在 `/root/projects/worktrees/monexus-stripe-production` 安装。
 
@@ -26,8 +26,9 @@
 | `npm --prefix server run build` 和 `npm run build` | 退出码 0 |
 | `npm run check:architecture` 和 `git diff --check` | 退出码 0 |
 | `npm run test:architecture` 和 `npm run check:migrations` | 在 `9e816cf` 上运行，退出码 0，分别 14 项与 2 项通过 |
-| 上述后端支付集成套件 | 在复审提交前执行，退出码 0，52 项通过。最终补上的人工对账账号和快照检查正在对固定 `70b480d` 重跑 |
+| 上述后端支付集成套件 | 在复审提交前执行，退出码 0，52 项通过 |
 | 上述前端定向套件与 `npm run build` | 与 `70b480d` 前端代码一致，退出码 0，34 项通过；构建报告已有的分块大小提示 |
+| `npm --prefix server test -- src/__tests__/payment-runtime-settings.test.ts src/__tests__/recharge-reconcile-resolution.test.ts` | 固定业务快照 `70b480d`，退出码 0，16 项通过 |
 
 ## 独立审查
 
@@ -47,6 +48,7 @@
 
 ## 待完成与阻断
 
-- 两条审查发现均已修改，等待独立复审判断是否关闭。候选基于生产以隔离 `develop` 尚未发布的无关提交，当前没有 push、PR 或部署。
+- 在 `88dfc42` 上的独立复审核对了人工对账的 observation 和统一处理，确认关闭第一个 P1。PI 先到能够绑定，但 ACK 之前的同步 Stripe Session 查询引入 P2。已在 `227e74b` 将查询移到落库与 ACK 后，并将 PI 先到用例改为模拟查询故障、验证 ACK 和重试。正在重跑后端相关用例和构建，并需独立复核该修复。
+- 候选基于生产以隔离 `develop` 尚未发布的无关提交，当前没有 push、PR 或部署。
 - 本地测试使用 Stripe 签名夹具和模拟 API。真实 Stripe Sandbox 及真实收款待验证。预发公网探测返回 TLS unexpected EOF，生产公网基线 readiness 返回 ready。
 - 远程 CI、生产部署和生产版本核验未执行。
