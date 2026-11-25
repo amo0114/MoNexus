@@ -146,9 +146,17 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
     setQuoteError('')
   }, [config?.currency])
 
+  const amountConfig = useMemo(() => {
+    if (!config || method?.provider !== 'stripe') return config
+    const selected = config.providers.find(item => item.provider === method.provider)
+      ?.paymentMethods.find(item => item.paymentMethod === method.paymentMethod)
+    if (!selected || BigInt(selected.minimumAmountMinor) <= BigInt(config.minAmountMinor)) return config
+    return { ...config, minAmountMinor: selected.minimumAmountMinor }
+  }, [config, method])
+
   const parsed = config ? parseMajorInput(amountInput, currencyScale(config.currency)) : { ok: false as const, reason: 'empty' as const }
-  const boundError = parsed.ok && config
-    ? validateAmountBounds(parsed.minor, config)
+  const boundError = parsed.ok && amountConfig
+    ? validateAmountBounds(parsed.minor, amountConfig)
     : parsed.ok
       ? null
       : parsed.reason === 'empty' || parsed.reason === 'incomplete'
@@ -156,7 +164,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
         : 'below_min'
 
   useEffect(() => {
-    if (!config || !method || !parsed.ok || boundError) {
+    if (!amountConfig || !method || !parsed.ok || boundError) {
       setQuote(null)
       if (quoteState !== 'idle' && quoteState !== 'changed') setQuoteState('idle')
       return
@@ -166,7 +174,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
     setQuoteError('')
     const timer = window.setTimeout(() => {
       createRechargeQuote({
-        currency: config.currency,
+        currency: amountConfig.currency,
         amountMinor: parsed.minor,
         amountSource,
         provider: method.provider,
@@ -180,16 +188,19 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
         .catch((err) => {
           if (quoteGen.current !== gen) return
           const code = getApiErrorCode(err)
-          if (code === 'RECHARGE_AMOUNT_BELOW_MINIMUM') setInlineError(boundMessage('below_min', config))
-          else if (code === 'RECHARGE_AMOUNT_ABOVE_MAXIMUM') setInlineError(boundMessage('above_max', config))
-          else if (code === 'RECHARGE_AMOUNT_STEP_INVALID') setInlineError(boundMessage('step', config))
+          if (code === 'RECHARGE_AMOUNT_BELOW_MINIMUM') setInlineError(boundMessage('below_min', amountConfig))
+          else if (code === 'RECHARGE_AMOUNT_ABOVE_MAXIMUM') setInlineError(boundMessage('above_max', amountConfig))
+          else if (code === 'RECHARGE_AMOUNT_STEP_INVALID') setInlineError(boundMessage('step', amountConfig))
           else setQuoteError(getApiErrorMessage(err, '报价失败'))
           setQuote(null)
           setQuoteState('idle')
         })
     }, QUOTE_DEBOUNCE_MS)
-    return () => window.clearTimeout(timer)
-  }, [config, method, amountSource, parsed.ok ? parsed.minor : '', boundError])
+    return () => {
+      quoteGen.current += 1
+      window.clearTimeout(timer)
+    }
+  }, [amountConfig, method, amountSource, parsed.ok ? parsed.minor : '', boundError])
 
   useEffect(() => {
     if (!quote || quoteState !== 'ready') return
@@ -203,9 +214,9 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
   }, [quote, quoteState])
 
   useEffect(() => {
-    if (!config) return
+    if (!amountConfig) return
     if (boundError) {
-      setInlineError(boundMessage(boundError, config))
+      setInlineError(boundMessage(boundError, amountConfig))
       return
     }
     if (!parsed.ok && parsed.reason === 'decimals') {
@@ -217,7 +228,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
       return
     }
     setInlineError('')
-  }, [boundError, parsed, config])
+  }, [boundError, parsed, amountConfig])
 
   async function handlePay() {
     if (!quote || !method || quoteState !== 'ready' || submitting) return
@@ -287,6 +298,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
   }
 
   const noProvider = methods.length === 0
+  const minimumAmountMinor = amountConfig?.minAmountMinor ?? config.minAmountMinor
   const canSubmit = Boolean(quote && quoteState === 'ready' && method && !inlineError && !submitting && !noProvider)
 
   return (
@@ -336,6 +348,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
                 key={item.amountMinor}
                 type="button"
                 data-testid={`recharge-suggested-${item.amountMinor}`}
+                disabled={BigInt(item.amountMinor) < BigInt(minimumAmountMinor)}
                 onClick={() => pickSuggested(item.amountMinor)}
                 className={`min-h-11 min-w-0 px-2 py-2 rounded-lg text-sm font-semibold border whitespace-nowrap overflow-visible ${
                   amountSource === 'suggested' && parsed.ok && parsed.minor === item.amountMinor
@@ -365,12 +378,12 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
                 setAmountSource('custom')
                 setAmountInput(e.target.value)
               }}
-              placeholder={formatCurrencyAmount(config.minAmountMinor, config.currency).replace(/^[^\d]*/, '')}
+              placeholder={formatCurrencyAmount(minimumAmountMinor, config.currency).replace(/^[^\d]*/, '')}
               className="input w-full min-w-0"
             />
           </div>
           <p className="text-xs text-[var(--color-text-muted)] mt-2">
-            最低 {formatCurrencyAmount(config.minAmountMinor, config.currency)}
+            最低 {formatCurrencyAmount(minimumAmountMinor, config.currency)}
             ，最高 {formatCurrencyAmount(config.maxAmountMinor, config.currency)}
             ，步进 {formatCurrencyAmount(config.amountStepMinor, config.currency)}
           </p>

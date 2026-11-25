@@ -61,11 +61,20 @@ test('admin saves, validates and activates integrations while preserving unsaved
   await bridge.getByRole('button', { name: '回滚履约配置' }).click()
 
   const payment = page.getByTestId('payment-settings-stripe')
+  await payment.getByLabel('账号环境').selectOption('test')
   await payment.getByLabel('商户账号 ID（acct_ 开头）').fill('acct_fixture')
+  await payment.getByLabel('收款币种（CNY 或 USD）').fill('USD')
+  await payment.getByLabel('账户默认结算币种（例如 HKD）').fill('HKD')
+  await payment.getByLabel('已验证的银行卡最低收款额（分）').fill('500')
   await payment.getByLabel('API 密钥', { exact: true }).fill('sk_test_fixture')
   await payment.getByLabel('Webhook 签名密钥', { exact: true }).fill('whsec_fixture')
   await payment.getByRole('button', { name: '保存支付草稿' }).click()
   await expect(payment.getByLabel('API 密钥', { exact: true })).toHaveValue('')
+  await expect(payment.getByLabel('Webhook 签名密钥', { exact: true })).toHaveValue('')
+  expect(submitted.find(item => item.service === 'payments/stripe' && item.body.settings)?.body.settings).toEqual({
+    provider: 'stripe', mode: 'test', accountId: 'acct_fixture',
+    chargeCurrency: 'USD', settlementCurrency: 'HKD', minimumAmountMinor: '500',
+  })
   await payment.getByRole('button', { name: '校验支付配置' }).click()
   await payment.getByRole('button', { name: '激活支付草稿' }).click()
   await expect(payment).toContainText('管理员后台')

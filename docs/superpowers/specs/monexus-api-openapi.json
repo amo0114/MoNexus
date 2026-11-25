@@ -8615,6 +8615,21 @@
               "accountId": {
                 "type": "string"
               },
+              "chargeCurrency": {
+                "type": "string",
+                "enum": ["CNY", "USD"],
+                "description": "此 Stripe 商户向买家收取的币种。新配置激活前必填。"
+              },
+              "settlementCurrency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$",
+                "description": "Stripe 账户默认结算币种，校验时与账户核对。新配置激活前必填。"
+              },
+              "minimumAmountMinor": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,5}$",
+                "description": "经核实的银行卡最低收款额，按收款币种最小单位填写。新配置激活前必填。"
+              },
               "provider": {
                 "type": "string",
                 "enum": [

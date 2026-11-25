@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { applyConfirmedPayment } from '../modules/payment/events/applyConfirmedPayment.js'
+import { paymentTestHooks } from '../modules/payment/events/hooks.js'
 import { recordNormalizedPaymentFact } from '../modules/payment/observations/record.js'
 import { resetSimulatorState, setStoredPaymentStatus } from '../modules/payment/providers/simulator/index.js'
 import { processDueRefunds } from '../modules/payment/workers/index.js'
@@ -144,7 +145,39 @@ describe('POST /api/admin/recharge/orders/:id/reconcile/resolve', () => {
     expect(after.status).toBe('reconcile_required')
     expect(await prisma.rechargeCredit.count()).toBe(0)
     expect(await prisma.rechargeRefund.count()).toBe(0)
+    expect(await prisma.paymentEvent.count({ where: { eventType: 'payment.manual_resolution' } })).toBe(0)
     expect(await openItems(order.id)).toBe(1)
+  })
+
+  it('commits only one decision when credit and refund race', async () => {
+    const { adminToken, order } = await lateSuccessOrder()
+    const responses = await Promise.all([
+      resolve(adminToken, order.id, 'credit'),
+      resolve(adminToken, order.id, 'refund'),
+    ])
+    expect(responses.map(response => response.status).sort()).toEqual([200, 409])
+    expect(await prisma.paymentEvent.count({ where: { eventType: 'payment.manual_resolution', status: 'processed' } })).toBe(1)
+    const credits = await prisma.rechargeCredit.count({ where: { rechargeOrderId: order.id } })
+    const refunds = await prisma.rechargeRefund.count({ where: { rechargeOrderId: order.id } })
+    expect(credits + refunds).toBe(1)
+  })
+
+  it('recovers a recorded decision after the confirmation transaction rolls back', async () => {
+    const { adminToken, order } = await lateSuccessOrder()
+    paymentTestHooks.applyFailAt = 'after_cas_paid'
+    try {
+      await resolve(adminToken, order.id, 'credit').expect(500)
+    } finally {
+      paymentTestHooks.applyFailAt = null
+    }
+    const observation = await prisma.paymentEvent.findFirstOrThrow({ where: { eventType: 'payment.manual_resolution' } })
+    expect(observation.status).toBe('received')
+    expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: order.id } })).status).toBe('reconcile_required')
+    await resolve(adminToken, order.id, 'refund').expect(409)
+    expect((await applyConfirmedPayment(observation.id)).outcome).toBe('credited')
+    expect((await applyConfirmedPayment(observation.id)).outcome).toBe('already_processed')
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: order.id } })).toBe(1)
+    expect(await prisma.rechargeRefund.count({ where: { rechargeOrderId: order.id } })).toBe(0)
   })
 
   it('validates the action and rejects non-admins', async () => {

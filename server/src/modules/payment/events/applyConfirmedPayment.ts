@@ -9,6 +9,11 @@ import { isPaymentDeadlock, newLeaseToken } from '../workers/lease.js'
 import { providerEnvironment } from '../environment.js'
 import type { ReconciliationMismatchType } from '../../../lib/paymentTypes.js'
 import { recordAmountMismatch, recordPaymentObservationMetric, recordReconciliationMismatch } from '../metrics.js'
+import { findPaymentAttempt } from './findAttempt.js'
+import { matchesStripePaymentIdentity, stripeCheckoutSessionId } from '../providers/stripe/checkoutIdentity.js'
+import { REFUND_BUSINESS_EVENT_KEY } from '../../../lib/paymentOperationKeys.js'
+import { MANUAL_PAYMENT_RESOLUTION, manualPaymentResolutionSchema } from './manualResolution.js'
+import { resolveHistoricalProvider } from '../providers/registry.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const PAYABLE_ORDER = ['created', 'pending_payment', 'closure_pending'] as const
@@ -38,6 +43,44 @@ function verificationPassed(row: {
     return row.verificationMethod === 'webhook_signature' && row.signatureVerified === true
   }
   return row.verificationMethod === 'authenticated_provider_api'
+}
+
+async function resolveUnboundStripeSession(observation: {
+  provider: string
+  source: string
+  eventType: string
+  verificationMethod: string
+  signatureVerified: boolean | null
+  providerCredentialRevisionId: string | null
+  providerAccountKey: string
+  paymentAttemptId: string | null
+  providerPaymentId: string | null
+  normalizedPayload: Prisma.JsonValue
+}) {
+  if (
+    observation.provider !== 'stripe'
+    || observation.source !== 'webhook'
+    || observation.eventType !== 'payment_intent.succeeded'
+    || !verificationPassed(observation)
+    || observation.paymentAttemptId
+    || !observation.providerPaymentId?.startsWith('pi_')
+    || parseNormalizedPaymentPayload(observation.normalizedPayload).status !== 'succeeded'
+  ) return undefined
+
+  // The webhook is already durable and acknowledged. A failed lookup leaves
+  // the unbound observation eligible for normal retry and query recovery.
+  try {
+    const adapter = await resolveHistoricalProvider('stripe', observation.providerCredentialRevisionId)
+    const payment = await adapter.queryPayment({
+      providerAccountKey: observation.providerAccountKey,
+      providerPaymentId: observation.providerPaymentId,
+    })
+    if (payment.status === 'succeeded' && payment.providerPaymentId === observation.providerPaymentId) {
+      return stripeCheckoutSessionId('stripe', payment.providerOrderId)
+    }
+  } catch {
+    return undefined
+  }
 }
 
 export async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
@@ -145,6 +188,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
     return { observationId, outcome: 'reconcile_required' }
   }
 
+  const resolvedSessionId = await resolveUnboundStripeSession(existing)
   const leaseToken = newLeaseToken()
   const applied = await prisma.$transaction(async tx => {
       const claimed = await tx.$queryRaw<Array<{ id: string; leaseToken: string }>>`
@@ -168,6 +212,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         providerAccountKey: string
         source: string
         verificationMethod: string
+        eventType: string
         paymentAttemptId: string | null
         providerPaymentId: string | null
         providerCaptureId: string | null
@@ -176,7 +221,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         leaseToken: string | null
         normalizedPayload: Prisma.JsonValue
       }>>`
-        SELECT "id", "provider", "providerAccountKey", "source", "verificationMethod",
+        SELECT "id", "provider", "providerAccountKey", "source", "verificationMethod", "eventType",
                "paymentAttemptId", "providerPaymentId", "providerCaptureId",
                "signatureVerified", "status", "leaseToken", "normalizedPayload"
         FROM "PaymentEvent"
@@ -191,8 +236,16 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
       if (!verificationPassed(observation)) {
         return { outcome: 'ignored' as const, reason: 'verification_failed' }
       }
+      const manual = observation.eventType === MANUAL_PAYMENT_RESOLUTION
+        ? manualPaymentResolutionSchema.safeParse(observation.normalizedPayload)
+        : null
+      if (manual && (!manual.success || observation.source !== 'reconciliation' || !observation.paymentAttemptId)) {
+        return { outcome: 'ignored' as const, reason: 'manual_resolution_invalid' }
+      }
+      const resolution = manual?.data
 
       const payload = parseNormalizedPaymentPayload(observation.normalizedPayload)
+      const providerOrderId = resolvedSessionId ?? payload.providerOrderId
       if (payload.status !== 'succeeded') {
         return { outcome: 'ignored' as const, reason: `status_${payload.status || 'unknown'}` }
       }
@@ -230,12 +283,11 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
 
       const attemptHint = observation.paymentAttemptId
         ? await tx.paymentAttempt.findUnique({ where: { id: observation.paymentAttemptId } })
-        : await tx.paymentAttempt.findFirst({
-          where: {
-            provider: observation.provider,
-            providerAccountKey: observation.providerAccountKey,
-            providerPaymentId: payload.providerPaymentId,
-          },
+        : await findPaymentAttempt(tx, {
+          provider: observation.provider,
+          providerAccountKey: observation.providerAccountKey,
+          providerPaymentId: payload.providerPaymentId,
+          stripeSessionId: stripeCheckoutSessionId(observation.provider, providerOrderId),
         })
       if (!attemptHint) {
         return { outcome: 'retry' as const, reason: 'attempt_missing' }
@@ -252,8 +304,10 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         provider: string
         providerAccountKey: string
         paymentMethod: string
+        totalPoints: bigint
+        paidAt: Date | null
       }>>`
-        SELECT "id", "status", "amountMinor", "currency", "provider", "providerAccountKey", "paymentMethod"
+        SELECT "id", "status", "amountMinor", "currency", "provider", "providerAccountKey", "paymentMethod", "totalPoints", "paidAt"
         FROM "RechargeOrder" WHERE "id" = ${intentHint.rechargeOrderId}::uuid FOR UPDATE`
       const order = orderRows[0]
       if (!order) return requireReconciliation('order_missing', { attemptId: attemptHint.id })
@@ -272,16 +326,30 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         paymentIntentId: string
         status: string
         providerPaymentId: string | null
+        providerOrderId: string | null
         providerCaptureId: string | null
         expectedProviderAmountMinor: bigint
+        completedAt: Date | null
       }>>`
-        SELECT "id", "paymentIntentId", "status", "providerPaymentId", "providerCaptureId",
-               "expectedProviderAmountMinor"
+        SELECT "id", "paymentIntentId", "status", "providerPaymentId", "providerOrderId", "providerCaptureId",
+               "expectedProviderAmountMinor", "completedAt"
         FROM "PaymentAttempt" WHERE "id" = ${attemptHint.id}::uuid FOR UPDATE`
       const attempt = attemptRows[0]
       if (!attempt) return requireReconciliation('attempt_missing', { orderId: order.id })
       tripWriteHook('after_lock_order')
 
+      if (resolution && (resolution.orderId !== order.id || order.status !== 'reconcile_required')) {
+        return { outcome: 'ignored' as const, reason: 'manual_resolution_stale' }
+      }
+      if (resolution) {
+        const previous = await tx.rechargeOrder.findUniqueOrThrow({
+          where: { id: order.id },
+          select: { credit: { select: { id: true } }, refund: { select: { id: true } }, disputes: { select: { id: true }, take: 1 } },
+        })
+        if (previous.credit || previous.refund || previous.disputes.length > 0) {
+          return { outcome: 'ignored' as const, reason: 'manual_resolution_has_followup' }
+        }
+      }
       const quotedMismatch = payload.quotedAmountMinor !== undefined
         && payload.quotedAmountMinor !== order.amountMinor
       const quotedOrderMismatch = payload.quotedOrderId !== undefined
@@ -297,6 +365,8 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         || quotedMismatch
         || quotedOrderMismatch
         || quotedMethodMismatch
+        || (observation.provider === 'stripe' && !matchesStripePaymentIdentity(attempt, { ...payload, providerOrderId }))
+        || (resolution && observation.provider !== 'stripe' && payload.providerPaymentId !== attempt.providerPaymentId)
         || (payload.quotedOrderId !== undefined && payload.providerPaymentId !== attempt.id)
       ) {
         const mismatchType: ReconciliationMismatchType = order.currency !== payload.currency
@@ -381,7 +451,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         }
       }
 
-      if ((TERMINAL_ORDER as readonly string[]).includes(order.status) || order.status === 'reconcile_required') {
+      if (!resolution && ((TERMINAL_ORDER as readonly string[]).includes(order.status) || order.status === 'reconcile_required')) {
         await tx.paymentAttempt.update({
           where: { id: attempt.id },
           data: {
@@ -426,7 +496,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         return { outcome: 'reconcile_required' as const, reason: 'late_success', rechargeOrderId: order.id }
       }
 
-      if (!(PAYABLE_ORDER as readonly string[]).includes(order.status)) {
+      if (!resolution && !(PAYABLE_ORDER as readonly string[]).includes(order.status)) {
         return requireReconciliation(`order_${order.status}`, {
           mismatchType: 'provider_paid_local_unpaid',
           orderId: order.id,
@@ -444,7 +514,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
           status: 'succeeded',
           providerPaymentId: payload.providerPaymentId,
           providerCaptureId: payload.providerCaptureId ?? attempt.providerCaptureId,
-          completedAt: now,
+          completedAt: (resolution && attempt.completedAt) || now,
         },
       })
       await tx.paymentIntent.update({
@@ -452,8 +522,8 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         data: { status: 'succeeded', activeAttemptId: attempt.id },
       })
       const paid = await tx.rechargeOrder.updateMany({
-        where: { id: order.id, status: { in: [...PAYABLE_ORDER] } },
-        data: { status: 'paid', paidAt: now },
+        where: { id: order.id, status: resolution ? 'reconcile_required' : { in: [...PAYABLE_ORDER] } },
+        data: { status: resolution?.action === 'refund' ? 'refund_pending' : 'paid', paidAt: order.paidAt ?? now },
       })
       if (paid.count !== 1) {
         return requireReconciliation('paid_cas_failed', {
@@ -470,12 +540,47 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
       await consumeLimitReservations(tx, order.id)
       tripWriteHook('after_consume_reservation')
 
-      await tx.rechargeCreditTask.upsert({
-        where: { rechargeOrderId: order.id },
-        create: { rechargeOrderId: order.id, status: 'pending' },
-        update: {},
-      })
-      tripWriteHook('after_credit_task')
+      if (resolution?.action === 'refund') {
+        await tx.rechargeRefund.create({
+          data: {
+            rechargeOrderId: order.id,
+            paymentAttemptId: attempt.id,
+            requestIdempotencyKey: REFUND_BUSINESS_EVENT_KEY(order.id),
+            amountMinor: order.amountMinor,
+            pointsToReverse: order.totalPoints,
+            status: 'requested',
+            reasonCode: 'reconcile_refund',
+            createdByUserId: resolution.actorUserId,
+          },
+        })
+      } else {
+        await tx.rechargeCreditTask.upsert({
+          where: { rechargeOrderId: order.id },
+          create: { rechargeOrderId: order.id, status: 'pending' },
+          update: resolution
+            ? { status: 'pending', nextAttemptAt: now, leaseToken: null, leaseUntil: null, lastErrorCode: null }
+            : {},
+        })
+        tripWriteHook('after_credit_task')
+      }
+
+      if (resolution) {
+        await tx.reconciliationItem.updateMany({
+          where: { rechargeOrderId: order.id, status: 'open' },
+          data: {
+            status: 'resolved',
+            resolutionReason: `manual_${resolution.action}`,
+            resolvedByUserId: resolution.actorUserId,
+            resolvedAt: now,
+          },
+        })
+        // Commit the operator decision and its evidence together. A later
+        // credit failure can reopen the order without replaying this decision.
+        await tx.paymentEvent.update({
+          where: { id: observation.id },
+          data: { status: 'processed', processedAt: now, leaseToken: null, leaseUntil: null },
+        })
+      }
 
       if (!observation.paymentAttemptId) {
         await tx.paymentEvent.update({
@@ -484,10 +589,15 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         })
       }
 
-      return { outcome: 'processed' as const, rechargeOrderId: order.id }
+      return {
+        outcome: 'processed' as const,
+        rechargeOrderId: order.id,
+        skipCredit: resolution?.action === 'refund',
+        observationCommitted: Boolean(resolution),
+      }
   })
 
-  if (applied.outcome !== 'lease_lost') {
+  if (applied.outcome !== 'lease_lost' && !('observationCommitted' in applied && applied.observationCommitted)) {
     const lastError = 'reason' in applied ? applied.reason ?? null : null
     const marked = applied.outcome === 'retry'
       ? await prisma.$queryRaw<Array<{ id: string }>>`
@@ -532,9 +642,14 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
     }
   }
 
+  if ('observationCommitted' in applied && applied.observationCommitted) {
+    recordPaymentObservationMetric(existing.provider, existing.source, 'processed')
+  }
+
   if (
     (applied.outcome === 'processed' || applied.outcome === 'idempotent_paid')
     && applied.rechargeOrderId
+    && !('skipCredit' in applied && applied.skipCredit)
     && !paymentTestHooks.skipCreditAfterApply
   ) {
     const credited = await executeRechargeCredit({ rechargeOrderId: applied.rechargeOrderId })

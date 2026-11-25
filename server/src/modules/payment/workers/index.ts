@@ -245,14 +245,7 @@ export async function recoverUnknownPayments(): Promise<number> {
         provider: attempt.provider,
         providerAccountKey: attempt.providerAccountKey,
         paymentAttemptId: attempt.id,
-        payment: {
-          status: queried.status,
-          providerPaymentId: queried.providerPaymentId,
-          providerCaptureId: queried.providerCaptureId,
-          amountMinor: queried.amountMinor,
-          currency: queried.currency,
-          immutableStateVersion: queried.immutableStateVersion,
-        },
+        payment: queried,
       })
       recordProviderQuerySuccess(name)
       if (queried.status === 'succeeded') {

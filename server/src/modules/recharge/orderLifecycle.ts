@@ -39,6 +39,7 @@ type OrderWithAttempts = {
   paymentMethod: string
   currency: string
   amountMinor: bigint
+  expiresAt: Date
   adminSandbox: boolean
   paymentIntent: {
     id: string
@@ -163,6 +164,7 @@ async function persistProviderCreate(
       paymentMethod: order.paymentMethod,
       providerAccountKey: order.providerAccountKey,
       requestIdempotencyKey: attempt.requestIdempotencyKey,
+      orderExpiresAt: order.expiresAt,
       returnUrl: buyerReturnUrl(order.id),
     })
   } catch (error) {
@@ -554,14 +556,7 @@ async function confirmProviderClosure(
       provider: order.provider,
       providerAccountKey: order.providerAccountKey,
       paymentAttemptId: payable.id,
-      payment: {
-        status: 'succeeded',
-        providerPaymentId: queried.providerPaymentId,
-        providerCaptureId: queried.providerCaptureId,
-        amountMinor: queried.amountMinor,
-        currency: queried.currency,
-        immutableStateVersion: queried.immutableStateVersion,
-      },
+      payment: queried,
     })
     return { status: 'closure_pending' as const, released: false }
   }
