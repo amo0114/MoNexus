@@ -15,6 +15,7 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound, sessionRevoked, sessionChanged, unauthenticated } from '../../lib/httpError.js'
 import { getRefreshTokenMaxAgeMs } from '../../lib/systemConfig.js'
 import {
+  hasActiveRefreshSessionSuccessor,
   hasExplicitRefreshSessionTermination,
   lockUserRefreshSessionMutations,
   revokeAllUserRefreshTokens,
@@ -129,23 +130,36 @@ export async function loginUser(
   }
 }
 
-async function shouldTreatRevokedRefreshTokenAsReplay(
+async function classifyRevokedRefreshToken(
   tx: Prisma.TransactionClient,
-  token: { userId: number; sessionId: string; revokeReason: string | null },
-) {
-  // An explicit reason on the presented row is terminal. For a historical
-  // rotation/null row, inspect the whole family because its active successor
-  // may have been explicitly revoked after the rotation.
-  if (token.revokeReason !== null && token.revokeReason !== 'refresh_rotation') return false
-  return !(await hasExplicitRefreshSessionTermination(tx, token.userId, token.sessionId))
+  token: { userId: number; sessionId: string; revokeReason: string | null; expiresAt: Date },
+  now: Date,
+): Promise<'expired' | 'revoked' | 'replay'> {
+  if (token.expiresAt <= now) return 'expired'
+  // An explicit terminal reason on the presented row is terminal. For a
+  // rotated or legacy-null row, escalate to replay only while the family has
+  // no terminal marker AND still has an unexpired active successor.
+  if (token.revokeReason !== null && token.revokeReason !== 'refresh_rotation') return 'revoked'
+  if (await hasExplicitRefreshSessionTermination(tx, token.userId, token.sessionId)) return 'revoked'
+  if (!(await hasActiveRefreshSessionSuccessor(tx, token.userId, token.sessionId, now))) return 'revoked'
+  return 'replay'
 }
 
 async function handleRefreshReplay(
   tx: Prisma.TransactionClient,
-  token: { userId: number; sessionId: string },
+  token: { id: number; userId: number; sessionId: string },
   metadata: SessionRequestMetadata,
+  now: Date,
 ) {
   const revokedCount = await revokeAllUserRefreshTokens(token.userId, tx, 'refresh_replay', metadata)
+  // Guarantee the replayed family always carries a terminal marker in this
+  // transaction so a repeated replay can never re-trigger user-wide revocation.
+  if (!(await hasExplicitRefreshSessionTermination(tx, token.userId, token.sessionId))) {
+    await tx.refreshToken.updateMany({
+      where: { id: token.id },
+      data: { revoked: true, revokedAt: now, revokeReason: 'refresh_replay' },
+    })
+  }
   await recordSecurityEvent({
     type: 'session_replay_detected',
     userId: token.userId,
@@ -155,6 +169,18 @@ async function handleRefreshReplay(
     detail: { action: 'revoke_all_user_sessions', revokedCount },
   }, tx)
   return { kind: 'reused' as const }
+}
+
+async function handleRevokedRefreshToken(
+  tx: Prisma.TransactionClient,
+  token: { id: number; userId: number; sessionId: string; revokeReason: string | null; expiresAt: Date },
+  metadata: SessionRequestMetadata,
+  now: Date,
+) {
+  const classification = await classifyRevokedRefreshToken(tx, token, now)
+  if (classification === 'expired') return { kind: 'expired' as const }
+  if (classification === 'revoked') return { kind: 'revoked' as const }
+  return handleRefreshReplay(tx, token, metadata, now)
 }
 
 export async function refreshAccessToken(
@@ -188,15 +214,12 @@ export async function refreshAccessToken(
       return { kind: 'session_changed' as const }
     }
 
+    const now = new Date()
     if (storedToken.revoked) {
-      if (!(await shouldTreatRevokedRefreshTokenAsReplay(tx, storedToken))) {
-        return { kind: 'revoked' as const }
-      }
-      return handleRefreshReplay(tx, storedToken, metadata)
+      return handleRevokedRefreshToken(tx, storedToken, metadata, now)
     }
 
-    const now = new Date()
-    if (storedToken.expiresAt < now) {
+    if (storedToken.expiresAt <= now) {
       await tx.refreshToken.updateMany({
         where: { id: storedToken.id, revoked: false },
         data: { revoked: true, revokedAt: now, revokeReason: 'expired' },
@@ -214,13 +237,13 @@ export async function refreshAccessToken(
 
     // CAS remains a defense against direct/out-of-band writers. Normal API
     // paths are already serialized by the user lock, but a failed CAS must
-    // still classify the post-write state instead of assuming replay.
+    // still classify the post-write state with the exact same state machine.
     const revoked = await tx.refreshToken.updateMany({
       where: {
         id: storedToken.id,
         tokenHash,
         revoked: false,
-        expiresAt: { gte: now },
+        expiresAt: { gt: now },
       },
       data: { revoked: true, revokedAt: now, revokeReason: 'refresh_rotation' },
     })
@@ -228,16 +251,14 @@ export async function refreshAccessToken(
     if (revoked.count !== 1) {
       const afterCas = await tx.refreshToken.findUnique({ where: { id: storedToken.id } })
       if (!afterCas) return { kind: 'invalid' as const }
+      const postCasNow = new Date()
       if (afterCas.revoked) {
-        if (!(await shouldTreatRevokedRefreshTokenAsReplay(tx, afterCas))) {
-          return { kind: 'revoked' as const }
-        }
-        return handleRefreshReplay(tx, afterCas, metadata)
+        return handleRevokedRefreshToken(tx, afterCas, metadata, postCasNow)
       }
-      if (afterCas.expiresAt < new Date()) {
+      if (afterCas.expiresAt <= postCasNow) {
         await tx.refreshToken.updateMany({
-          where: { id: afterCas.id, revoked: false, expiresAt: { lt: new Date() } },
-          data: { revoked: true, revokedAt: new Date(), revokeReason: 'expired' },
+          where: { id: afterCas.id, revoked: false, expiresAt: { lte: postCasNow } },
+          data: { revoked: true, revokedAt: postCasNow, revokeReason: 'expired' },
         })
         return { kind: 'expired' as const }
       }

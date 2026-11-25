@@ -118,6 +118,7 @@ for (const action of ['approve', 'reject', 'suspend', 'restore'] as const) {
           action,
           decisionInput.parse(r.body),
           key(r),
+          { ip: r.ip, userAgent: r.headers['user-agent'] },
         ),
       )
     } catch (e) {
@@ -160,6 +161,7 @@ router.post(
           })
           .strict()
           .parse(r.body),
+        { ip: r.ip, userAgent: r.headers['user-agent'] },
       ),
     201,
   ),
@@ -179,6 +181,7 @@ router.post(
         })
         .strict()
         .parse(r.body),
+      { ip: r.ip, userAgent: r.headers['user-agent'] },
     ),
   ),
 )

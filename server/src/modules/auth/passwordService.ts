@@ -10,7 +10,11 @@ import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/index.js'
 import { logger } from '../../lib/logger.js'
 import { passwordPolicyIssue, type PasswordContext } from '../../lib/passwordPolicy.js'
-import { lockUserRefreshSessionMutations, revokeAllUserRefreshTokens } from './sessionService.js'
+import {
+  lockUserRefreshSessionMutations,
+  revokeAllUserRefreshTokens,
+  type SessionRequestMetadata,
+} from './sessionService.js'
 import {
   PASSWORD_BCRYPT_ROUNDS,
   normalizeEmailAddress,
@@ -179,7 +183,11 @@ async function applySuccessfulPasswordChange(
   })
 }
 
-export async function resetPasswordWithToken(rawToken: string, newPassword: string) {
+export async function resetPasswordWithToken(
+  rawToken: string,
+  newPassword: string,
+  metadata: SessionRequestMetadata = {},
+) {
   const tokenHash = hashAuthToken(rawToken)
   const stored = await prisma.passwordResetToken.findUnique({
     where: { tokenHash },
@@ -221,14 +229,19 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
     })
     // Revoke every refresh token outstanding for this user — if the
     // password is being reset, assume the prior session is compromised.
-    await revokeAllUserRefreshTokens(stored.userId, tx)
+    await revokeAllUserRefreshTokens(stored.userId, tx, 'revoke_all', metadata)
     return true
   })
 
   if (!consumed) throw badRequest('重置链接已被使用或已过期', 'BAD_REQUEST')
 }
 
-export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
+export async function changePassword(
+  userId: number,
+  currentPassword: string,
+  newPassword: string,
+  metadata: SessionRequestMetadata = {},
+) {
   const account = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, nickname: true } })
   if (!account) throw notFound('用户不存在')
   assertNewPasswordPolicy(newPassword, account, 'body.newPassword')
@@ -247,6 +260,6 @@ export async function changePassword(userId: number, currentPassword: string, ne
       where: { userId, used: false },
       data: { used: true },
     })
-    await revokeAllUserRefreshTokens(userId, tx)
+    await revokeAllUserRefreshTokens(userId, tx, 'revoke_all', metadata)
   })
 }

@@ -1,9 +1,11 @@
+import crypto from 'node:crypto'
 import jwt from 'jsonwebtoken'
 import { describe, expect, it } from 'vitest'
-import { api, authHeader, createTestMerchant, createTestUser } from './helpers.js'
+import { api, authHeader, createTestMerchant, createTestUser, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
 import { refreshTokenCookieName } from '../lib/cookies.js'
-import { changePassword, loginUser, refreshAccessToken } from '../modules/auth/service.js'
+import { changePassword, loginUser, refreshAccessToken, revokeAllUserRefreshTokens } from '../modules/auth/service.js'
+import { hashRefreshToken } from '../modules/auth/sessionIssuance.js'
 import { lockUserRefreshSessionMutations } from '../modules/auth/sessionService.js'
 import { approveMerchant, banUser, suspendMerchant } from '../modules/admin/service.js'
 import { config } from '../config/index.js'
@@ -448,7 +450,205 @@ describe('device session families', () => {
       && attempts.filter(result => result.status === 'rejected').length === 1
       && activeTokenCount === 0
       && detail?.action === 'revoke_all_user_sessions'
-      && typeof detail?.revokedCount === 'number',
+      && detail?.revokedCount === 1,
     ).toBe(true)
+  })
+
+  it('triggers replay revocation only once per family and never lets repeated replays kick out newer logins', async () => {
+    const { user, password } = await createTestUser('session-replay-once@test.local', 'session-password')
+    const victim = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const secondDevice = await login(user.email, password, 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+
+    // Rotate victim once so victim.refreshCookie becomes a rotated predecessor.
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', victim.refreshCookie)
+      .expect(200)
+
+    // First replay revokes all currently active families (victim successor + secondDevice = 2).
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', victim.refreshCookie)
+      .expect(401)
+
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0)
+    const firstReplayEvents = await prisma.securityEvent.findMany({
+      where: { userId: user.id, type: 'session_replay_detected' },
+      orderBy: { id: 'asc' },
+    })
+    expect(firstReplayEvents).toHaveLength(1)
+    expect(firstReplayEvents[0]?.detailSafe).toEqual({
+      action: 'revoke_all_user_sessions',
+      revokedCount: 2,
+    })
+
+    // User recovers and logs in on a fresh device.
+    const recovered = await login(user.email, password, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Safari/604.1')
+
+    // Replaying the old stolen predecessor again must return 401 without revoking the new login or spamming events.
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', victim.refreshCookie)
+      .expect(401)
+
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', recovered.refreshCookie)
+      .expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(1)
+  })
+
+  it('does not treat a rotated predecessor as replay when its successor naturally expired or when the predecessor itself expired', async () => {
+    const { user, password } = await createTestUser('session-expired-predecessor@test.local', 'session-password')
+    const healthy = await login(user.email, password, 'Healthy Device')
+    const stale = await login(user.email, password, 'Stale Device')
+    const staleSessionId = sessionIdFromAccessToken(stale.accessToken)
+
+    // Rotate stale once -> predecessor has revokeReason='refresh_rotation', successor is active.
+    await api.post('/api/auth/refresh').set('Cookie', stale.refreshCookie).expect(200)
+
+    // Case 1: predecessor itself expired while successor is still active -> 401 expired, no global revoke.
+    const staleRows = await prisma.refreshToken.findMany({
+      where: { userId: user.id, sessionId: staleSessionId },
+      orderBy: { id: 'asc' },
+    })
+    expect(staleRows).toHaveLength(2)
+    const past = new Date(Date.now() - 60_000)
+    const future = new Date(Date.now() + 3_600_000)
+    await prisma.refreshToken.update({
+      where: { id: staleRows[0]!.id },
+      data: { expiresAt: past },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', stale.refreshCookie).expect(401)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(0)
+
+    // Case 2: predecessor is still unexpired, but its active successor naturally expired (never explicitly revoked).
+    await prisma.refreshToken.update({
+      where: { id: staleRows[0]!.id },
+      data: { expiresAt: future },
+    })
+    await prisma.refreshToken.update({
+      where: { id: staleRows[1]!.id },
+      data: { expiresAt: past },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', stale.refreshCookie).expect(401)
+
+    // Healthy session must remain active and no replay event recorded.
+    await api.post('/api/auth/refresh').set('Cookie', healthy.refreshCookie).expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(0)
+  })
+
+  it('requires an active family successor before escalating a legacy null-reason revoked row', async () => {
+    const { user, password } = await createTestUser('session-legacy-null@test.local', 'session-password')
+    const healthy = await login(user.email, password, 'Healthy Device')
+    const future = new Date(Date.now() + 3_600_000)
+
+    // Orphan legacy revoked row (no active successor in its family) -> 401 only, healthy survives.
+    const orphanRaw = crypto.randomBytes(40).toString('hex')
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashRefreshToken(orphanRaw),
+        revoked: true,
+        revokedAt: new Date(Date.now() - 10_000),
+        revokeReason: null,
+        expiresAt: future,
+      },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', [`${refreshTokenCookieName}=${orphanRaw}`]).expect(401)
+    await api.post('/api/auth/refresh').set('Cookie', healthy.refreshCookie).expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(0)
+
+    // Legacy null-reason row WITH an active successor in the same family -> escalates once, then becomes terminal.
+    const liveFamily = await login(user.email, password, 'Legacy Live Family')
+    const liveSessionId = sessionIdFromAccessToken(liveFamily.accessToken)
+    const legacyPredRaw = crypto.randomBytes(40).toString('hex')
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        sessionId: liveSessionId,
+        tokenHash: hashRefreshToken(legacyPredRaw),
+        revoked: true,
+        revokedAt: new Date(Date.now() - 10_000),
+        revokeReason: null,
+        expiresAt: future,
+      },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', [`${refreshTokenCookieName}=${legacyPredRaw}`]).expect(401)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(1)
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0)
+
+    // Re-login after replay; replaying the legacy row a second time must not revoke the new login.
+    const afterReplay = await login(user.email, password, 'Fresh After Legacy Replay')
+    await api.post('/api/auth/refresh').set('Cookie', [`${refreshTokenCookieName}=${legacyPredRaw}`]).expect(401)
+    await api.post('/api/auth/refresh').set('Cookie', afterReplay.refreshCookie).expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(1)
+  })
+
+  it('counts only active families in revokeAllUserRefreshTokens and preserves request audit metadata across password and admin revocations', async () => {
+    const { user, password } = await createTestUser('session-audit-count@test.local', 'Old#Pass-2026')
+    const first = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    await login(user.email, password, 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+
+    // Insert an already-expired unrevoked row that must not inflate active family count.
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+        revoked: false,
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+    })
+
+    const revokedFamilies = await revokeAllUserRefreshTokens(user.id, undefined, 'revoke_all', {
+      ip: '203.0.113.55',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36',
+    })
+    expect(revokedFamilies).toBe(2)
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0)
+
+    const directEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(directEvent.detailSafe).toEqual({ reason: 'revoke_all', revokedCount: 2 })
+    expect(directEvent.ipHash).toBeTruthy()
+    expect(directEvent.deviceHint).toBe('Chrome · macOS')
+
+    // Verify HTTP password-change passes request ip/user-agent metadata to SecurityEvent.
+    const relogged = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    await api
+      .post('/api/auth/password-change')
+      .set(authHeader(relogged.accessToken))
+      .set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+      .send({ currentPassword: password, newPassword: 'New#Pass-2026-Strong' })
+      .expect(200)
+
+    const pwdEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(pwdEvent.ipHash).toBeTruthy()
+    expect(pwdEvent.deviceHint).toBe('Firefox · Windows')
+    expect(pwdEvent.detailSafe).toEqual({ reason: 'revoke_all', revokedCount: 1 })
+
+    // Verify HTTP admin ban passes admin request metadata to SecurityEvent.
+    const { user: admin, password: adminPassword } = await createTestUser('session-audit-admin@test.local', 'Admin#Pass-2026', 'admin')
+    const adminSession = await loginAs(admin.email, adminPassword)
+    await login(user.email, 'New#Pass-2026-Strong', 'Target Session')
+    await api
+      .put(`/api/admin/users/${user.id}/ban`)
+      .set(authHeader(adminSession.accessToken))
+      .set('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+      .send({ reason: 'audit metadata check' })
+      .expect(200)
+
+    const banEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(banEvent.ipHash).toBeTruthy()
+    expect(banEvent.deviceHint).toBe('Chrome · macOS')
+    expect(first.accessToken).toBeTruthy()
   })
 })

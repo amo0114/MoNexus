@@ -56,14 +56,20 @@ export async function adjustPoints(req: Request, res: Response, next: NextFuncti
 export async function banUser(req: Request, res: Response, next: NextFunction) {
   try {
     const targetId = req.params.id as unknown as number
-    res.json(await userAdmin.banUser(req.user!.userId, targetId, req.body.reason))
+    res.json(await userAdmin.banUser(req.user!.userId, targetId, req.body.reason, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    }))
   } catch (err) { next(err) }
 }
 
 export async function unbanUser(req: Request, res: Response, next: NextFunction) {
   try {
     const targetId = req.params.id as unknown as number
-    res.json(await userAdmin.unbanUser(req.user!.userId, targetId))
+    res.json(await userAdmin.unbanUser(req.user!.userId, targetId, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    }))
   } catch (err) { next(err) }
 }
 
@@ -378,7 +384,10 @@ export async function merchantDetail(req: Request, res: Response, next: NextFunc
 
 export async function approveMerchant(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await merchantAdmin.approveMerchant(req.user!.userId, req.params.id as unknown as number))
+    res.json(await merchantAdmin.approveMerchant(req.user!.userId, req.params.id as unknown as number, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    }))
   } catch (err) { next(err) }
 }
 
@@ -390,7 +399,10 @@ export async function rejectMerchant(req: Request, res: Response, next: NextFunc
 
 export async function suspendMerchant(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await merchantAdmin.suspendMerchant(req.user!.userId, req.params.id as unknown as number))
+    res.json(await merchantAdmin.suspendMerchant(req.user!.userId, req.params.id as unknown as number, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    }))
   } catch (err) { next(err) }
 }
 

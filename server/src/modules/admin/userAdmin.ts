@@ -7,7 +7,7 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound, HttpError } from '../../lib/httpError.js'
 import { invalidate as invalidateUserStatusCache } from '../../lib/userStatusCache.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
-import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
+import { lockUserRefreshSessionMutations, type SessionRequestMetadata } from '../auth/sessionService.js'
 import { accountSources, creditInTx, spendInTx, type WalletContext, type WalletResult } from '../wallet/index.js'
 import type { ListUsersQuery } from './schema.js'
 
@@ -107,12 +107,17 @@ async function legacyUserResult(id: number) {
   const u = await prisma.user.findUniqueOrThrow({where:{id},select:{id:true,email:true,role:true}})
   return {...u,status:legacyStatus(await accountStatus(id))}
 }
-export async function banUser(actor: number, userId: number, reason: string) {
+export async function banUser(
+  actor: number,
+  userId: number,
+  reason: string,
+  metadata?: SessionRequestMetadata,
+) {
   const previous = await prisma.accountBan.findFirst({where:{userId},orderBy:{createdAt:'desc'}})
-  await createBan(actor,userId,`legacy-ban:${userId}:${previous?.id??'first'}`,{reasonCode:'admin_banned',reason,expiresAt:null})
+  await createBan(actor,userId,`legacy-ban:${userId}:${previous?.id??'first'}`,{reasonCode:'admin_banned',reason,expiresAt:null},metadata)
   return legacyUserResult(userId)
 }
-export async function unbanUser(actor: number, userId: number) {
+export async function unbanUser(actor: number, userId: number, metadata?: SessionRequestMetadata) {
   await assertPermission(actor,'users.ban')
   // The compatibility endpoint supplies an explicit adapter reason; new clients must supply their own.
   let ban = await prisma.accountBan.findFirst({where:{userId,releasedAt:null}})
@@ -127,6 +132,6 @@ export async function unbanUser(actor: number, userId: number) {
       ban = await prisma.accountBan.findFirst({where:{userId,releasedAt:null}})
     }
   }
-  if(ban)await releaseBan(actor,userId,ban.id,`legacy-unban:${ban.id}`,{expectedVersion:ban.version,reason:'管理员通过旧版兼容接口解封'})
+  if(ban)await releaseBan(actor,userId,ban.id,`legacy-unban:${ban.id}`,{expectedVersion:ban.version,reason:'管理员通过旧版兼容接口解封'},metadata)
   return legacyUserResult(userId)
 }

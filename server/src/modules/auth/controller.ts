@@ -269,7 +269,10 @@ export async function forgotPassword(req: Request, res: Response, next: NextFunc
 
 export async function resetPassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await passwordService.resetPasswordWithToken(req.body.token, req.body.password)
+    await passwordService.resetPasswordWithToken(req.body.token, req.body.password, {
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    })
     res.json({ ok: true })
   } catch (err) {
     next(err)
@@ -281,7 +284,8 @@ export async function changePassword(req: Request, res: Response, next: NextFunc
     await passwordService.changePassword(
       req.user!.userId,
       req.body.currentPassword,
-      req.body.newPassword
+      req.body.newPassword,
+      { ip: req.ip, userAgent: req.headers['user-agent'] },
     )
     res.json({ message: '密码已修改，请重新登录' })
   } catch (err) {

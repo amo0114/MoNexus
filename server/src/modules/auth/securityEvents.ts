@@ -40,6 +40,9 @@ export const SESSION_REVOCATION_REASONS = [
   'mfa_break_glass_reset',
   'mfa_migration',
   'refresh_replay',
+  'expired',
+  'login_replaced',
+  'session_limit',
 ] as const
 export type SessionRevocationReason = typeof SESSION_REVOCATION_REASONS[number]
 

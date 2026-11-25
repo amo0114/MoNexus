@@ -24,6 +24,10 @@ const EXPLICIT_SESSION_TERMINATION_REASONS: readonly SessionRevocationReason[] =
   'mfa_reconfigured',
   'mfa_break_glass_reset',
   'mfa_migration',
+  'refresh_replay',
+  'expired',
+  'login_replaced',
+  'session_limit',
 ]
 
 export type SessionRequestMetadata = {
@@ -92,6 +96,30 @@ export async function hasExplicitRefreshSessionTermination(
     select: { id: true },
   })
   return marker !== null
+}
+
+/**
+ * A rotated or legacy-null row can only be an active token theft / replay when
+ * its family still holds an unexpired active successor. Otherwise, replaying a
+ * dead or naturally expired predecessor must return 401 without revoking the
+ * user's other active device sessions.
+ */
+export async function hasActiveRefreshSessionSuccessor(
+  tx: Prisma.TransactionClient,
+  userId: number,
+  sessionId: string,
+  now: Date = new Date(),
+) {
+  const active = await tx.refreshToken.findFirst({
+    where: {
+      userId,
+      sessionId,
+      revoked: false,
+      expiresAt: { gt: now },
+    },
+    select: { id: true },
+  })
+  return active !== null
 }
 
 /**
@@ -324,25 +352,31 @@ export async function revokeAllUserRefreshTokens(
 ) {
   const revokeInTransaction = async (transaction: Prisma.TransactionClient) => {
     await lockUserRefreshSessionMutations(transaction, userId)
+    const now = new Date()
     const activeFamilies = await transaction.refreshToken.findMany({
-      where: { userId, revoked: false },
+      where: { userId, revoked: false, expiresAt: { gt: now } },
       distinct: ['sessionId'],
       select: { sessionId: true },
     })
-    const result = await transaction.refreshToken.updateMany({
-      where: { userId, revoked: false },
-      data: { revoked: true, revokedAt: new Date(), revokeReason },
+    await transaction.refreshToken.updateMany({
+      where: { userId, revoked: false, expiresAt: { gt: now } },
+      data: { revoked: true, revokedAt: now, revokeReason },
     })
-    if (result.count > 0) {
+    await transaction.refreshToken.updateMany({
+      where: { userId, revoked: false, expiresAt: { lte: now } },
+      data: { revoked: true, revokedAt: now, revokeReason: 'expired' },
+    })
+    const revokedFamilyCount = activeFamilies.length
+    if (revokedFamilyCount > 0) {
       await recordSecurityEvent({
         type: 'session_revoked',
         userId,
         ip: metadata.ip,
         userAgent: metadata.userAgent,
-        detail: { reason: revokeReason, revokedCount: activeFamilies.length },
+        detail: { reason: revokeReason, revokedCount: revokedFamilyCount },
       }, transaction)
     }
-    return result.count
+    return revokedFamilyCount
   }
 
   if (tx) return revokeInTransaction(tx)
