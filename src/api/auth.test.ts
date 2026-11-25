@@ -110,8 +110,7 @@ describe('changePassword & logoutCurrentSession cross-tab safety', () => {
     if (originalLocks) {
       Object.defineProperty(navigator, 'locks', originalLocks)
     } else {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      delete (navigator as any).locks
+      Reflect.deleteProperty(navigator, 'locks')
     }
   })
 
