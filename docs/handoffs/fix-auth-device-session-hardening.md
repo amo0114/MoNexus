@@ -3,10 +3,11 @@
 - Spec / 契约：[docs/handoffs/fix-auth-device-session-hardening.contract.md](fix-auth-device-session-hardening.contract.md)
 - 审查记录：
   - Round 1（`5b2624a..4e1f55e`，Codex）：`REQUEST_CHANGES`（3 项 P1 + 4 项 P2），已于 `334f7f9` 修复；Round 2 复审确认 6/7 关闭。
-  - Round 2（`5b2624a..e9079c7`，Codex）：`REQUEST_CHANGES`（2 项新 P1 + 1 项未关闭 P2），已全部于 `38d1d5e` 修复并补齐复现级回归测试，送交 Round 3 复审。
+  - Round 2（`5b2624a..e9079c7`，Codex）：`REQUEST_CHANGES`（2 项新 P1 + 1 项未关闭 P2），已于 `38d1d5e` 修复；Round 3 复审确认全部 P0/P1 关闭，余 1 项 P2 持续满预算回绕边界。
+  - Round 3（`5b2624a..151bd9d`，Codex）：`REQUEST_CHANGES`（0 P0/P1，仅余 1 项 P2：持续满预算新增到期候选时游标不回绕），已于 `da4e851` 修复并补齐持续满预算回绕回归测试，送交第 3 轮（最后一轮）复审。
 - 写入负责人：Gemini（更新时间 2026-11-25）
 - 分支 / worktree：`fix/auth-device-session-hardening` / `/root/.t3/worktrees/MoNexus-new/fix-auth-device-session-a3a370eea07d6246`
-- Base：`origin/develop@5b2624a`；已验证代码 revision：`38d1d5e`（本交接提交仅更新本文档，不改动代码）
+- Base：`origin/develop@5b2624a`；已验证代码 revision：`da4e851`（本交接提交仅更新本文档，不改动代码）
 - 隔离资源：独立可丢弃测试库 `monexus_test_session_hardening`（PostgreSQL 16，合成测试数据）；Node `v22.23.1` / npm `10.9.8`（`/root/.nvm/versions/node/v22.23.1/bin`）
 - 独立审查对话：`thread:delegated-task:command%3Amcp%3A85fc1595-986e-4bca-9653-92f1cc3a6678%3Adelegate-task%3A0688eca4-0eb8-48ea-a168-374793b34770`
 
@@ -42,6 +43,9 @@
    - R2 P1-2：`backfillLegacyRefreshTokenAbsoluteExpiry` 与 `scrubLegacyRefreshTokenMetadata` 改为按 `userId` 拆分短事务，先获取 `lockUserRefreshSessionMutations(tx, userId)` 再重读更新，与 `revokeAllUserRefreshTokens` 等全部会话写路径保持统一锁序，从结构上消除死锁。
    - R2 P2-1：新增 1 行状态表 `AuthSessionRetentionCursor`（合入纯 DDL 迁移 `20261125100000_refresh_token_session_hardening` 与测试 `setup.ts`），`cleanupExpiredRefreshTokenFamilies` 跨轮持久化最后实际处理到的 `(expiresAt, id)` 游标，到尾部后按 `initialCursor` 上界单次回绕并置空，消除行扫描预算耗尽导致的跨轮饥饿。
    - 验证：重建干净测试库执行 `db:generate` + `db:migrate:deploy`（127 迁移全量通过）、前后端构建、架构/迁移检查、`auth-session-retention-and-backup.test.ts`（6/6，含先续签/先回填对照、用户锁串行防死锁、3 周期跨轮推进+第 4 周期回绕回归）及其他 5 个核心后端套件全部 exit 0。
+6. **Commit 6 — `da4e851`**：`fix(auth): persist fixed sweepCutoff on cleanup cursor to guarantee bounded wrap-around`
+   - R3 P2-1：`AuthSessionRetentionCursor` 增加可空列 `sweepCutoff`（同步合入未应用的纯元数据 DDL 迁移 `20261125100000_refresh_token_session_hardening`）；`cleanupExpiredRefreshTokenFamilies` 跨轮持久化当前扫描周期固定的 `sweepCutoff`，查询使用 `scanCutoff = min(activeSweepCutoff, cutoff)` 严格限定当前扫描终点，到达终点后强制回绕至表头并以最新 `cutoff` 开启新周期，简化 `fetchCleanupPage` SQL；在 `auth-session-retention-and-backup.test.ts` 补齐“管理员回填把旧家族收紧到游标之前 + 连续 5 天新增到期候选每日打满预算仍能在有限轮次内回绕并删除旧家族”回归测试。
+   - 验证：重建干净测试库执行 `db:generate` + `db:migrate:deploy`（127 迁移全量通过）、前后端构建、架构/迁移检查、6 个核心后端测试套件（6 files / 80 tests，含新增持续满预算回绕回归）及 `git diff --check` 全部 exit 0。
 
 ## 待完成
 
@@ -62,17 +66,16 @@
 
 | 命令 | 结果（exit code） | revision |
 |---|---|---|
-| 重建空测试库 + `db:generate` + `db:migrate:deploy`（127 迁移） | PASS (0) | `38d1d5e` |
-| `npm --prefix server run build` | PASS (0) | `38d1d5e` |
-| `npm run build` | PASS (0) | `38d1d5e` |
-| `npm run test:architecture`、`check:architecture`、`check:migrations` | PASS (0) | `38d1d5e` |
-| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/auth-session-retention-and-backup.test.ts`（对 `monexus_test_session_hardening`） | PASS (0) — 1 file, 6 tests | `38d1d5e` |
-| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/auth-sessions.test.ts src/__tests__/refresh-token-wiring.test.ts src/__tests__/auth-mfa.test.ts src/__tests__/auth.test.ts src/lib/deviceHint.test.ts`（同轮变更，仅 `sessionRetentionCron.ts` 后续微调回绕逻辑） | PASS (0) — 5 files, 73 tests | `38d1d5e` |
+| 重建空测试库 + `db:generate` + `db:migrate:deploy`（127 迁移） | PASS (0) | `da4e851` |
+| `npm --prefix server run build` | PASS (0) | `da4e851` |
+| `npm run build` | PASS (0) | `da4e851` |
+| `npm run test:architecture`、`check:architecture`、`check:migrations` | PASS (0) | `da4e851` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/auth-session-retention-and-backup.test.ts src/__tests__/auth-sessions.test.ts src/__tests__/refresh-token-wiring.test.ts src/__tests__/auth-mfa.test.ts src/__tests__/auth.test.ts src/lib/deviceHint.test.ts`（对 `monexus_test_session_hardening`） | PASS (0) — 6 files, 80 tests | `da4e851` |
 | `npm test`（全量前端 Vitest，无前端改动） | PASS (0) — 244 files, 1984 tests | `2a04ede` |
 | `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/lib/clientIp.test.ts src/__tests__/config-trust-proxy.test.ts src/__tests__/auth-security-events.test.ts src/__tests__/abuse-events.test.ts src/__tests__/registration-abuse-primitives.test.ts src/modules/notifications/__tests__/realtime-hub-controller.test.ts` | PASS (0) — 含于 11-file 139-test 联合执行 | `2a04ede` |
 | `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/admin-file-governance.test.ts src/__tests__/file-delivery-chain.test.ts src/__tests__/system-config.test.ts` | PASS (0) — 含于 8-file 92-test 联合执行 | `6694c73` |
 | `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/governance-v1.test.ts` | PASS (0) — 含于 6-file 92-test 联合执行 | `e2ac73f` |
-| `git diff --check` | PASS (0) | `38d1d5e` |
+| `git diff --check` | PASS (0) | `da4e851` |
 
 ## 未运行 / 无法验证
 
