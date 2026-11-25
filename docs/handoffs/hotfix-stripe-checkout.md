@@ -29,6 +29,8 @@
 | 上述后端支付集成套件 | 在复审提交前执行，退出码 0，52 项通过 |
 | 上述前端定向套件与 `npm run build` | 与 `70b480d` 前端代码一致，退出码 0，34 项通过；构建报告已有的分块大小提示 |
 | `npm --prefix server test -- src/__tests__/payment-runtime-settings.test.ts src/__tests__/recharge-reconcile-resolution.test.ts` | 固定业务快照 `70b480d`，退出码 0，16 项通过 |
+| `npm --prefix server test -- src/__tests__/payment-runtime-settings.test.ts src/__tests__/recharge-reconcile-resolution.test.ts src/modules/payment/providers/stripe/index.test.ts` | 最终业务快照 `227e74b`，退出码 0，28 项通过。该快照后端构建和架构检查亦退出码 0 |
+| `playwright test e2e/admin-integration-runtime.spec.ts --reporter=line --retries=0 --workers=1` | 对应 `cfa88bd` 测试代码，独立 PostgreSQL 实例及本地前后端，退出码 0，1 项通过 |
 
 ## 独立审查
 
@@ -48,7 +50,7 @@
 
 ## 待完成与阻断
 
-- 在 `88dfc42` 上的独立复审核对了人工对账的 observation 和统一处理，确认关闭第一个 P1。PI 先到能够绑定，但 ACK 之前的同步 Stripe Session 查询引入 P2。已在 `227e74b` 将查询移到落库与 ACK 后，并将 PI 先到用例改为模拟查询故障、验证 ACK 和重试。正在重跑后端相关用例和构建，并需独立复核该修复。
-- 候选基于生产以隔离 `develop` 尚未发布的无关提交，当前没有 push、PR 或部署。
+- 在 `88dfc42` 上的独立复审确认人工对账 P1 关闭，发现 PI 先到时 Stripe 查询延迟 ACK。修复 `227e74b` 将查询移到落库和 ACK 之后。独立复审核对 `94f9c30` 并通过。
+- [PR #381](https://github.com/amo0114/MoNexus/pull/381) 基于生产分支，隔离 `develop` 尚未发布的无关提交。原 [CI 分片](https://github.com/amo0114/MoNexus/actions/runs/45578703134/job/139083051975) 发现 Stripe 管理端测试未填写新必填项。测试更新 `cfa88bd` 验证真实浏览器提交的公开设置及清空凭据字段，等待重跑 CI。
 - 本地测试使用 Stripe 签名夹具和模拟 API。真实 Stripe Sandbox 及真实收款待验证。预发公网探测返回 TLS unexpected EOF，生产公网基线 readiness 返回 ready。
-- 远程 CI、生产部署和生产版本核验未执行。
+- GitHub CI OK、生产部署和生产版本核验待完成。
