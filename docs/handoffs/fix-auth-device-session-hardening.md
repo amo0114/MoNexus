@@ -1,10 +1,11 @@
 # Handoff: fix-auth-device-session-hardening
 
 - Spec / 契约：[docs/handoffs/fix-auth-device-session-hardening.contract.md](fix-auth-device-session-hardening.contract.md)
-- 审查记录：无（待 Codex 按固定 SHA 独立审查）
+- 审查记录：
+  - Round 1（`5b2624a..4e1f55e`，Codex）：`REQUEST_CHANGES`（3 项 P1 + 4 项 P2），已全部在 `334f7f9` 修复并补齐回归测试，送交 Round 2 复审。
 - 写入负责人：Gemini（更新时间 2026-11-25）
 - 分支 / worktree：`fix/auth-device-session-hardening` / `/root/.t3/worktrees/MoNexus-new/fix-auth-device-session-a3a370eea07d6246`
-- Base：`origin/develop@5b2624a`；已验证代码 revision：`2a04ede`（本交接提交仅更新本文档，不改动代码）
+- Base：`origin/develop@5b2624a`；已验证代码 revision：`334f7f9`（本交接提交仅更新本文档，不改动代码）
 - 隔离资源：独立可丢弃测试库 `monexus_test_session_hardening`（PostgreSQL 16，合成测试数据）；Node `v22.23.1` / npm `10.9.8`（`/root/.nvm/versions/node/v22.23.1/bin`）
 - 独立审查对话：`thread:delegated-task:command%3Amcp%3A85fc1595-986e-4bca-9653-92f1cc3a6678%3Adelegate-task%3A0688eca4-0eb8-48ea-a168-374793b34770`
 
@@ -26,6 +27,15 @@
    - D7：`clientIp.ts` 新增 `normalizeClientIp`（IPv4-mapped IPv6 剥离与 RFC 5952 IPv6 压缩规范化）与 `clientIpRateLimitKey`（IPv6 `/56` 聚合），接入 `securityEvents.ts`、`abuseEvents.ts`、`orders/fileAccess.ts`、`abuseLimiter.ts`、`auth/routes.ts`、`authProtection.ts`、`loginFailures.ts` 与 `notifications/realtime/streamController.ts`；`server/src/config/index.ts` 增加生产 `DEPLOY_TOPOLOGY` ↔ `TRUST_PROXY` 启动硬校验。
    - 前端加固：`SessionManager.tsx` 默认展示前 3 条、「最近活跃」改为「最近续签」、列表防乱序回写、确认弹窗绑定 `AuthSessionContext`；`ProfilePage.tsx` 与 `UserAvatarHoverCard.tsx` 退出失败不再静默吞错清本地状态且防止 `disablePush()` 期间跨标签切号串话；`AdminFileGovernance.tsx` 改称「客户端摘要」；更新 `e2e/m3-identity-security-hardening.spec.ts` 与 `server/src/modules/auth/README.md`。
    - 验证：前后端构建、架构/迁移检查、全量前端单测（244 文件 / 1984 用例）、11 个后端核心测试套件（139 用例）全部 exit 0。
+4. **Commit 4 — `334f7f9`**：`fix(auth): address Codex review findings on deadline clamping, lock-free backfill, password-change cookie proof, cleanup cursor, and backup restore filtering`
+   - P1-1：跨事务传递持久化绝对截止 `expiresAt`，`generateAccessToken` 签发时直接写入整数秒 `exp <= floor(expiresAt / 1000)`，`setRefreshTokenCookie` 响应时重算剩余整秒 `Max-Age`，不足 1 秒统一 401 拒绝。
+   - P1-2：`20261125100000_refresh_token_session_hardening` 改为纯元数据 DDL（零表锁回填）；运行时鉴权（`getAdminMfaSessionState`、`requireActiveUser`、`activeRefreshTokenWhere`）与续签对 `absoluteExpiresAt IS NULL` 存量管理员行立即执行 7 天硬上限；`backfillLegacyRefreshTokenAbsoluteExpiry` 仅按主键分批回填活跃未过期行。
+   - P1-3：`changePassword` 在用户锁内复核 Bearer `sid` 仍活跃，且 `clearCookie=true` 时对任何无法证明属于 `(userId, expectedSessionId)` 的已提交 Cookie（含未知 Cookie）在改密前返回 `409 SESSION_CHANGED` 且不写 `Set-Cookie`。
+   - P2-1：`cleanupExpiredRefreshTokenFamilies` 以 CTE + `NOT EXISTS` 在数据库侧排除仍活跃/宽限期内家族并增加 `maxRowsScanned` 上限，避免活跃家族前驱耗尽家族预算导致合格家族饥饿。
+   - P2-2：`handleRefreshReplay` 与 `revokeAllUserRefreshTokens` 共享同一锁内判定 `now`，并显式确保重放家族写入 `revokeReason = 'refresh_replay'` 终结标记。
+   - P2-3：`portable-backups/service.ts` 在直接 `pg_restore` 与 SQL+`psql` 两条恢复路径均应用 `pg_restore --use-list`（`filterRestoreTocList`）过滤旧格式备份中的 `RefreshToken` / `AuthChallenge` 表数据，防止恢复事务先提交临时凭据。
+   - P2-4：`deviceHint.ts` 先按 UTF-16 截断上限再 UTF-8 编码，并将 `hasSafariSignature` 改为基于 `lastIndexOf('safari/')` 的真单趟线性扫描。
+   - 验证：重建干净测试库 `monexus_test_session_hardening` 执行 `db:generate` + `db:migrate:deploy`（127 迁移全量通过）、前后端构建、架构/迁移检查、6 个核心后端测试套件（77/77）全部 exit 0。
 
 ## 待完成
 
@@ -46,16 +56,18 @@
 
 | 命令 | 结果（exit code） | revision |
 |---|---|---|
-| `npm --prefix server run build` | PASS (0) | `2a04ede` |
-| `npm run build` | PASS (0) | `2a04ede` |
-| `npm run test:architecture` | PASS (0) | `2a04ede` |
-| `npm run check:architecture` | PASS (0) | `2a04ede` |
-| `npm run check:migrations` | PASS (0) | `2a04ede` |
-| `npm test`（全量前端 Vitest） | PASS (0) — 244 files, 1984 tests | `2a04ede` |
-| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/lib/clientIp.test.ts src/lib/deviceHint.test.ts src/__tests__/config-trust-proxy.test.ts src/__tests__/auth-security-events.test.ts src/__tests__/abuse-events.test.ts src/__tests__/registration-abuse-primitives.test.ts src/__tests__/auth-sessions.test.ts src/__tests__/auth-session-retention-and-backup.test.ts src/__tests__/auth-mfa.test.ts src/__tests__/auth.test.ts src/modules/notifications/__tests__/realtime-hub-controller.test.ts`（对 `monexus_test_session_hardening`） | PASS (0) — 11 files, 139 tests | `2a04ede` |
-| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/refresh-token-wiring.test.ts src/__tests__/admin-file-governance.test.ts src/__tests__/file-delivery-chain.test.ts src/__tests__/system-config.test.ts`（含于 Commit 2 8-suite 联合执行） | PASS (0) — 8 files, 92 tests | `6694c73` |
-| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/governance-v1.test.ts`（含于 Commit 1 6-suite 联合执行） | PASS (0) — 6 files, 92 tests | `e2ac73f` |
-| `git diff --check` | PASS (0) | `2a04ede` |
+| 重建空测试库 + `db:generate` + `db:migrate:deploy`（127 迁移） | PASS (0) | `334f7f9` |
+| `npm --prefix server run build` | PASS (0) | `334f7f9` |
+| `npm run build` | PASS (0) | `334f7f9` |
+| `npm run test:architecture` | PASS (0) | `334f7f9` |
+| `npm run check:architecture` | PASS (0) | `334f7f9` |
+| `npm run check:migrations` | PASS (0) | `334f7f9` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/lib/deviceHint.test.ts src/__tests__/auth-sessions.test.ts src/__tests__/auth-session-retention-and-backup.test.ts src/__tests__/refresh-token-wiring.test.ts src/__tests__/auth-mfa.test.ts src/__tests__/auth.test.ts`（对 `monexus_test_session_hardening`） | PASS (0) — 6 files, 77 tests | `334f7f9` |
+| `npm test`（全量前端 Vitest，无前端改动） | PASS (0) — 244 files, 1984 tests | `2a04ede` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/lib/clientIp.test.ts src/__tests__/config-trust-proxy.test.ts src/__tests__/auth-security-events.test.ts src/__tests__/abuse-events.test.ts src/__tests__/registration-abuse-primitives.test.ts src/modules/notifications/__tests__/realtime-hub-controller.test.ts` | PASS (0) — 含于 11-file 139-test 联合执行 | `2a04ede` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/admin-file-governance.test.ts src/__tests__/file-delivery-chain.test.ts src/__tests__/system-config.test.ts` | PASS (0) — 含于 8-file 92-test 联合执行 | `6694c73` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/governance-v1.test.ts` | PASS (0) — 含于 6-file 92-test 联合执行 | `e2ac73f` |
+| `git diff --check` | PASS (0) | `334f7f9` |
 
 ## 未运行 / 无法验证
 
