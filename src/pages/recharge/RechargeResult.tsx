@@ -23,7 +23,7 @@ import { parseSafeProductReturnTo } from '../../utils/returnTo'
 import { rememberRechargeReturnTo } from './session'
 import { createRechargeIslandFeedback } from './islandFeedback'
 import { captureFeedbackOwner } from '../../lib/completionFeedback'
-import { goToRedirect } from './paymentActions'
+import { goToRedirect } from '../../domain/recharge/paymentActions'
 
 function displayStatus(orderStatus: string, resumePayment: boolean): string {
   if (resumePayment && (orderStatus === 'created' || orderStatus === 'pending_payment')) {
