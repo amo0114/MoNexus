@@ -134,6 +134,9 @@ export function assertStripeCredentialIsolation(input: {
   if (input.mode === 'live' && !looksLikeOfficialStripeHost(host)) {
     throw paymentProviderUnavailable('live Stripe must not use a test or sandbox endpoint')
   }
+  if (input.mode === 'live' && new URL(input.apiBaseUrl).protocol !== 'https:') {
+    throw paymentProviderUnavailable('live Stripe requires an HTTPS endpoint')
+  }
   if (input.mode === 'test' && !looksLikeOfficialStripeHost(host) && !looksLikeStripeTestHost(host)) {
     throw paymentProviderUnavailable('test Stripe endpoint is not an allowed Stripe host')
   }

@@ -437,6 +437,23 @@ describe('RechargePage', () => {
     expect(screen.queryByTestId('recharge-checkout')).not.toBeInTheDocument()
   })
 
+  it('lets a buyer return to an unpaid Stripe Checkout Session', async () => {
+    const user = userEvent.setup()
+    const url = 'https://checkout.stripe.com/c/pay/cs_test_return'
+    sessionStorage.setItem('monexus:recharge:pendingOrderId', ORDER_ID)
+    getRechargeOrder.mockResolvedValue(order('pending_payment', {
+      provider: 'stripe',
+      paymentMethod: 'card',
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      action: { type: 'redirect', url },
+    }))
+    renderAt(`/recharge?order=${ORDER_ID}`)
+    await user.click(await screen.findByRole('button', { name: '继续 Stripe 付款' }))
+    expect(goToRedirect).toHaveBeenCalledWith(url)
+    expect(screen.getByTestId('recharge-result-status')).toHaveTextContent('等待支付')
+    expect(completeRechargeOrder).not.toHaveBeenCalled()
+  })
+
   it('submits Alipay form_post from structured actionUrl/method/fields', async () => {
     const user = userEvent.setup()
     createRechargeOrder.mockResolvedValue(order('pending_payment', {

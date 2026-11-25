@@ -13,6 +13,7 @@ import { PAYMENT_PROVIDER_NAMES } from '../../recharge/types.js'
 import { providerEnvironment } from '../../recharge/gates.js'
 import { recordAmountMismatch, recordReconciliationMismatch } from '../metrics.js'
 import { parseStatementCsv } from './statementImport.js'
+import { matchesStripePaymentIdentity } from '../providers/stripe/checkoutIdentity.js'
 
 const TX = { timeout: 20_000, maxWait: 5_000 } as const
 
@@ -472,14 +473,7 @@ export async function reconcileOrder(orderId: string) {
     provider: order.provider,
     providerAccountKey: order.providerAccountKey,
     paymentAttemptId: attempt.id,
-    payment: {
-      status: queried.status,
-      providerPaymentId: queried.providerPaymentId,
-      providerCaptureId: queried.providerCaptureId,
-      amountMinor: queried.amountMinor,
-      currency: queried.currency,
-      immutableStateVersion: queried.immutableStateVersion,
-    },
+    payment: queried,
   })
   const applied = queried.status === 'succeeded'
     ? await applyConfirmedPayment(recorded.id)
@@ -554,9 +548,12 @@ export async function resolveReconcileRequiredOrder(input: {
     providerAccountKey: order.providerAccountKey,
     providerOrderId: attempt.providerOrderId,
   })
+  const matchesPayment = order.provider === 'stripe'
+    ? matchesStripePaymentIdentity(attempt, queried)
+    : queried.providerPaymentId === attempt.providerPaymentId
   if (
     queried.status !== 'succeeded'
-    || queried.providerPaymentId !== attempt.providerPaymentId
+    || !matchesPayment
     || queried.amountMinor !== attempt.expectedProviderAmountMinor
     || queried.currency !== order.currency
   ) {
@@ -576,6 +573,7 @@ export async function resolveReconcileRequiredOrder(input: {
       where: { id: attempt.id },
       data: {
         status: 'succeeded',
+        providerPaymentId: queried.providerPaymentId,
         providerCaptureId: queried.providerCaptureId ?? attempt.providerCaptureId,
         completedAt: attempt.completedAt ?? now,
       },

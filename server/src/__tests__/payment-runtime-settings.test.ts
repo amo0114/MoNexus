@@ -9,7 +9,6 @@ vi.mock('../modules/payment/providers/stripe/config.js', async original => {
 import { config } from '../config/index.js'
 import { prisma } from '../lib/prisma.js'
 import { createStripeSdk } from '../modules/payment/providers/stripe/config.js'
-import { STRIPE_META } from '../modules/payment/providers/stripe/config.js'
 import { signStripeFixture, stripeEventFixture } from '../modules/payment/providers/stripe/fixtures.js'
 import { paymentSettingsDefinition } from '../modules/admin/paymentSettings.js'
 import { integrationProbeLimiter } from '../modules/admin/integrationSettings.js'
@@ -43,9 +42,9 @@ beforeEach(async () => {
       create: async (input: any) => {
         calls.push({ key: cfg.secretKey, operation: 'create' })
         if (failCreate) throw new Error('network uncertain')
-        const id = `cs_${randomUUID().replaceAll('-', '')}`, pi = `pi_${id.slice(3)}`
+        const id = `cs_${randomUUID().replaceAll('-', '')}`
         const session = { id, object: 'checkout.session', url: 'https://checkout.stripe.com/c/pay/fixture', expires_at: Math.floor(Date.now()/1000)+3600,
-          payment_intent: pi, metadata: input.metadata, status: 'open', payment_status: 'unpaid', amount_total: input.line_items[0].price_data.unit_amount, currency: 'cny', livemode: false }
+          payment_intent: null, metadata: input.metadata, status: 'open', payment_status: 'unpaid', amount_total: input.line_items[0].price_data.unit_amount, currency: 'cny', livemode: false }
         sessions.set(id, session); return session
       },
       retrieve: async (id: string) => { calls.push({ key: cfg.secretKey, operation: 'query' }); return sessions.get(id) },
@@ -69,13 +68,21 @@ async function order() {
   return prisma.rechargeOrder.findUniqueOrThrow({ where: { id: created.orderId }, include: { paymentIntent: { include: { attempts: true } } } })
 }
 type RuntimeOrder = Awaited<ReturnType<typeof order>>
+function markCheckoutPaid(order: RuntimeOrder) {
+  const session = sessions.get(order.paymentIntent!.attempts[0].providerOrderId!)!
+  session.status = 'complete'
+  session.payment_status = 'paid'
+  session.payment_intent = `pi_${session.id.slice(3)}`
+  return session
+}
+
 async function callback(order: RuntimeOrder, signingSecret: string, eventId = 'evt_runtime_same') {
-  const attempt = order.paymentIntent!.attempts[0]
-  const signed = signStripeFixture(stripeEventFixture({ id: eventId, type: 'payment_intent.succeeded', object: {
-    id: attempt.providerPaymentId!, object: 'payment_intent', amount: 1000, amount_received: 1000, currency: 'cny', status: 'succeeded', livemode: false, latest_charge: 'ch_runtime',
-    metadata: { [STRIPE_META.orderId]: order.id, [STRIPE_META.paymentIntentId]: order.paymentIntent!.id, [STRIPE_META.paymentAttemptId]: attempt.id,
-      [STRIPE_META.amountMinor]: '1000', [STRIPE_META.currency]: 'CNY', [STRIPE_META.accountKey]: order.providerAccountKey },
-  } }), signingSecret)
+  const session = sessions.get(order.paymentIntent!.attempts[0].providerOrderId!)!
+  const signed = signStripeFixture(stripeEventFixture({
+    id: eventId,
+    type: 'checkout.session.completed',
+    object: session,
+  }), signingSecret)
   return api.post(`/api/payment/webhooks/stripe/accounts/${encodeURIComponent(order.providerAccountKey)}`).set('Content-Type','application/json').set('Stripe-Signature', signed.header).send(signed.payloadString)
 }
 describe('payment runtime versions', () => {
@@ -98,6 +105,10 @@ describe('payment runtime versions', () => {
     const second = await activate(first.version, { ...credentials, secretKey: 'sk_test_second', webhookSecret: 'whsec_second' })
     await managed.enabled(actor, second.version, false)
     await expect(quote()).rejects.toMatchObject({ status: 503 })
+    const attempt = accepted.paymentIntent!.attempts[0]
+    expect(attempt.providerPaymentId).toBe(attempt.providerOrderId)
+    expect(attempt.providerPaymentId).toMatch(/^cs_/)
+    const paid = markCheckoutPaid(accepted)
     const firstResponse = await callback(accepted, 'whsec_first')
     expect(firstResponse.status).toBe(200)
     expect((await callback(accepted, 'whsec_second')).status).toBe(200)
@@ -105,15 +116,28 @@ describe('payment runtime versions', () => {
     expect(observations).toHaveLength(1)
     expect(observations[0].providerAccountKey).toBe(accepted.providerAccountKey)
     expect(observations[0].providerCredentialRevisionId).toBe(first.activeRevisionId)
+    expect(observations[0].paymentAttemptId).toBe(attempt.id)
     await applyConfirmedPayment(observations[0].id)
     // Apply is idempotent even if the webhook's background application won the race.
     await applyConfirmedPayment(observations[0].id)
     await executeRechargeCredit({ rechargeOrderId: accepted.id })
     expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('credited')
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: accepted.id } })).toBe(1)
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } })).providerPaymentId).toBe(paid.payment_intent)
     const refunded = await requestRechargeRefund({ userId: buyer, orderId: accepted.id, idempotencyKey: randomUUID() })
     await submitProviderRefund(refunded!.refundId)
     expect(calls.filter(c => c.operation === 'refund')).toEqual([{ key: 'sk_test_first', operation: 'refund' }])
     expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('refunded')
+  })
+  it('recovers a completed Checkout Session and persists the PaymentIntent if the callback is missing', async () => {
+    await activate()
+    const accepted = await order()
+    const attempt = accepted.paymentIntent!.attempts[0]
+    const paid = markCheckoutPaid(accepted)
+    await prisma.paymentAttempt.update({ where: { id: attempt.id }, data: { updatedAt: new Date(0) } })
+    await recoverUnknownPayments()
+    expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('credited')
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } })).providerPaymentId).toBe(paid.payment_intent)
   })
   it('recovers unknown creation and queries historical attempts using the original secret after a switch', async () => {
     const first = await activate(); failCreate = true

@@ -115,11 +115,9 @@ function rethrowStripe(err: unknown): never {
   throw paymentProviderUnavailable()
 }
 
-function checkoutExpiresAt(session: Stripe.Checkout.Session): string {
-  if (typeof session.expires_at === 'number' && session.expires_at > 0) {
-    return new Date(session.expires_at * 1000).toISOString()
-  }
-  return new Date(Date.now() + 30 * 60 * 1000).toISOString()
+function checkoutActionExpiresAt(session: Stripe.Checkout.Session, orderExpiresAt?: Date): string {
+  const checkoutExpiresAt = session.expires_at * 1000
+  return new Date(Math.min(checkoutExpiresAt, orderExpiresAt?.getTime() ?? checkoutExpiresAt)).toISOString()
 }
 
 function resolveReturnUrls(input: CreateProviderPaymentInput, config: StripeRuntimeConfig): { successUrl: string; cancelUrl: string } {
@@ -309,14 +307,17 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         throw badRequest('stripe amount is invalid')
       }
       try {
-        let session = await clientOf().checkout.sessions.create({
+        const session = await clientOf().checkout.sessions.create({
           mode: 'payment',
           client_reference_id: input.orderId,
           success_url: successUrl,
           cancel_url: cancelUrl,
-          expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
+          // Stripe requires at least 30 minutes of validity at creation.
+          // Anchor the request to the persisted order for identical retries.
+          ...(input.orderExpiresAt && {
+            expires_at: Math.floor(input.orderExpiresAt.getTime() / 1000) + 31 * 60,
+          }),
           payment_method_types: ['card'],
-          expand: ['payment_intent'],
           line_items: [{
             quantity: 1,
             price_data: {
@@ -330,22 +331,14 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         }, { idempotencyKey: input.requestIdempotencyKey })
         const checkoutUrl = session.url
         if (!checkoutUrl) throw paymentProviderUnavailable()
-        let providerPaymentId = paymentIntentIdFromSession(session)
-        if (!providerPaymentId) {
-          session = await retrieveSessionExpanded(session.id)
-          providerPaymentId = paymentIntentIdFromSession(session)
-        }
-        if (!providerPaymentId) {
-          throw paymentProviderUnavailable('stripe checkout did not create a payment intent')
-        }
         return {
           status: 'requires_action',
-          providerPaymentId,
+          providerPaymentId: paymentIntentIdFromSession(session) ?? session.id,
           providerOrderId: session.id,
           action: {
             type: 'redirect',
             url: checkoutUrl,
-            expiresAt: checkoutExpiresAt(session),
+            expiresAt: checkoutActionExpiresAt(session, input.orderExpiresAt),
           },
           requestIdempotencyKey: input.requestIdempotencyKey,
           amountMinor: input.amountMinor,

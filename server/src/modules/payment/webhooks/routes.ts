@@ -10,6 +10,8 @@ import { getRegisteredProvider } from '../providers/registry.js'
 import { shouldRegisterSimulatorControlRoutes } from '../providers/simulator/index.js'
 import { hashNormalizedPayload, recordPaymentObservation } from '../observations/record.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
+import { findPaymentAttempt } from '../events/findAttempt.js'
+import { stripeCheckoutSessionId } from '../providers/stripe/checkoutIdentity.js'
 import { applyRefundObservation } from '../../recharge/refund.js'
 import { applyDisputeObservation } from '../disputes/service.js'
 import { encryptPaymentEventPayload } from '../payloadCrypto.js'
@@ -92,14 +94,13 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
 
       const payment = event.payment
       const providerPaymentId = event.providerPaymentId ?? payment?.providerPaymentId ?? event.refund?.providerPaymentId ?? null
+      const stripeSessionId = stripeCheckoutSessionId(providerName, payment?.providerOrderId)
       const attempt = providerPaymentId
-        ? await prisma.paymentAttempt.findFirst({
-          where: {
-            provider: providerName,
-            providerAccountKey: event.providerAccountKey,
-            providerPaymentId,
-          },
-          include: { paymentIntent: true },
+        ? await findPaymentAttempt(prisma, {
+          provider: providerName,
+          providerAccountKey: event.providerAccountKey,
+          providerPaymentId,
+          stripeSessionId,
         })
         : null
 
@@ -155,6 +156,7 @@ function handleProviderWebhook(providerName: PaymentProviderName) {
         ? {
             status: payment.status,
             providerPaymentId: payment.providerPaymentId,
+            ...(stripeSessionId && { providerOrderId: stripeSessionId }),
             providerCaptureId: payment.providerCaptureId ?? null,
             amountMinor: serializeAmountMinor(payment.amountMinor),
             currency: payment.currency,

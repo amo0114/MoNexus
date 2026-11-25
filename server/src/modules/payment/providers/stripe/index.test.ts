@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import Stripe from 'stripe'
 import { HttpError } from '../../../../lib/httpError.js'
 import { applyConfirmedPayment } from '../../events/applyConfirmedPayment.js'
@@ -65,6 +65,7 @@ class FakeStripe implements StripeAdapterClient {
   expireCalls = 0
   cancelCalls = 0
   withholdPaymentIntent = false
+  checkoutExpiries: Array<number | undefined> = []
   sessions = new Map<string, Stripe.Checkout.Session>()
   intents = new Map<string, Stripe.PaymentIntent>()
   sessionToIntent = new Map<string, string>()
@@ -78,6 +79,7 @@ class FakeStripe implements StripeAdapterClient {
       create: async (params: Stripe.Checkout.SessionCreateParams, options?: { idempotencyKey?: string }) => {
         this.lastIdempotencyKey = options?.idempotencyKey
         this.createCalls += 1
+        this.checkoutExpiries.push(params.expires_at)
         if (options?.idempotencyKey && this.sessionsByIdempotency.has(options.idempotencyKey)) {
           return this.sessionsByIdempotency.get(options.idempotencyKey)!
         }
@@ -291,6 +293,12 @@ describe('Stripe credential isolation', () => {
     })).toThrow(/test or sandbox endpoint/)
 
     expect(() => assertStripeCredentialIsolation({
+      mode: 'live',
+      secretKey: stripeSecretKey('live'),
+      apiBaseUrl: 'http://api.stripe.com',
+    })).toThrow(/HTTPS/)
+
+    expect(() => assertStripeCredentialIsolation({
       mode: 'test',
       secretKey: stripeSecretKey('live'),
     })).toThrow(/live credentials/)
@@ -342,7 +350,7 @@ describe('Stripe Checkout create, query, close, refund', () => {
     if (first.action.type === 'redirect') {
       expect(first.action.url).toMatch(/^https:\/\/checkout\.stripe\.com\//)
     }
-    expect(first.providerPaymentId).toBe('pi_test_1')
+    expect(first.providerPaymentId).toBe('cs_test_1')
     expect(first.providerOrderId).toBe('cs_test_1')
     expect(first.amountMinor).toBe(100n)
     expect(second.providerPaymentId).toBe(first.providerPaymentId)
@@ -351,16 +359,23 @@ describe('Stripe Checkout create, query, close, refund', () => {
     expect(fake.sessionsByIdempotency.get('recharge:order:attempt:v1')?.id).toBe(first.providerOrderId)
   })
 
-  it('retrieves a deferred payment_intent after create and fails closed if it is still missing', async () => {
+  it('returns the Checkout link without a PaymentIntent and reuses identical expiry on retry', async () => {
     const { provider, fake } = providerWith()
-    const created = await provider.createPayment(createInput({ requestIdempotencyKey: 'recharge:order:attempt:deferred' }))
-    expect(created.providerPaymentId).toMatch(/^pi_/)
-    expect(created.providerOrderId).toMatch(/^cs_/)
-    expect(fake.sessions.get(created.providerOrderId!)?.payment_intent).toBeNull()
-
     fake.withholdPaymentIntent = true
-    await expect(provider.createPayment(createInput({ requestIdempotencyKey: 'recharge:order:attempt:missing-pi' })))
-      .rejects.toThrow(/payment intent/)
+    const startedAt = Date.now()
+    const orderExpiresAt = new Date(startedAt + 30 * 60_000)
+    const input = createInput({ orderExpiresAt })
+    const clock = vi.spyOn(Date, 'now')
+    try {
+      const created = await provider.createPayment(input)
+      clock.mockReturnValue(startedAt + 4000)
+      expect(await provider.createPayment(input)).toEqual(created)
+      expect(created.providerPaymentId).toBe('cs_test_1')
+      expect(created.action).toMatchObject({ type: 'redirect', expiresAt: orderExpiresAt.toISOString() })
+      expect(fake.checkoutExpiries).toEqual(Array(2).fill(Math.floor(orderExpiresAt.getTime() / 1000) + 31 * 60))
+    } finally {
+      clock.mockRestore()
+    }
   })
 
   it('expires the Checkout Session when closing a Checkout-owned PaymentIntent', async () => {
@@ -391,27 +406,28 @@ describe('Stripe Checkout create, query, close, refund', () => {
     })
     expect(afterClose.status).toBe('cancelled')
 
-    await expect(fake.paymentIntents.cancel(created.providerPaymentId))
+    await expect(fake.paymentIntents.cancel(queried.providerPaymentId))
       .rejects.toThrow(/Checkout/)
   })
 
   it('refunds a Checkout PaymentIntent with the same idempotency key', async () => {
     const { provider, fake } = providerWith()
     const created = await provider.createPayment(createInput())
-    fake.intents.set(created.providerPaymentId, {
-      ...fake.intents.get(created.providerPaymentId)!,
+    const paymentIntentId = fake.sessionToIntent.get(created.providerPaymentId)!
+    fake.intents.set(paymentIntentId, {
+      ...fake.intents.get(paymentIntentId)!,
       status: 'succeeded',
       amount_received: 100,
     })
     const refund = await provider.createRefund({
-      providerPaymentId: created.providerPaymentId,
+      providerPaymentId: paymentIntentId,
       providerAccountKey: stripeAccountKey('test'),
       amountMinor: 100n,
       currency: 'USD',
       requestIdempotencyKey: 'recharge:order:refund:v1',
     })
     const refundAgain = await provider.createRefund({
-      providerPaymentId: created.providerPaymentId,
+      providerPaymentId: paymentIntentId,
       providerAccountKey: stripeAccountKey('test'),
       amountMinor: 100n,
       currency: 'USD',

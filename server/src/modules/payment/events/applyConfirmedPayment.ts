@@ -8,6 +8,8 @@ import { isPaymentDeadlock, newLeaseToken } from '../workers/lease.js'
 import { providerEnvironment } from '../../recharge/gates.js'
 import type { ReconciliationMismatchType } from '../../recharge/types.js'
 import { recordAmountMismatch, recordPaymentObservationMetric, recordReconciliationMismatch } from '../metrics.js'
+import { findPaymentAttempt } from './findAttempt.js'
+import { matchesStripePaymentIdentity, stripeCheckoutSessionId } from '../providers/stripe/checkoutIdentity.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const PAYABLE_ORDER = ['created', 'pending_payment', 'closure_pending'] as const
@@ -229,12 +231,11 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
 
       const attemptHint = observation.paymentAttemptId
         ? await tx.paymentAttempt.findUnique({ where: { id: observation.paymentAttemptId } })
-        : await tx.paymentAttempt.findFirst({
-          where: {
-            provider: observation.provider,
-            providerAccountKey: observation.providerAccountKey,
-            providerPaymentId: payload.providerPaymentId,
-          },
+        : await findPaymentAttempt(tx, {
+          provider: observation.provider,
+          providerAccountKey: observation.providerAccountKey,
+          providerPaymentId: payload.providerPaymentId,
+          stripeSessionId: stripeCheckoutSessionId(observation.provider, payload.providerOrderId),
         })
       if (!attemptHint) {
         return { outcome: 'retry' as const, reason: 'attempt_missing' }
@@ -271,10 +272,11 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         paymentIntentId: string
         status: string
         providerPaymentId: string | null
+        providerOrderId: string | null
         providerCaptureId: string | null
         expectedProviderAmountMinor: bigint
       }>>`
-        SELECT "id", "paymentIntentId", "status", "providerPaymentId", "providerCaptureId",
+        SELECT "id", "paymentIntentId", "status", "providerPaymentId", "providerOrderId", "providerCaptureId",
                "expectedProviderAmountMinor"
         FROM "PaymentAttempt" WHERE "id" = ${attemptHint.id}::uuid FOR UPDATE`
       const attempt = attemptRows[0]
@@ -296,6 +298,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         || quotedMismatch
         || quotedOrderMismatch
         || quotedMethodMismatch
+        || (observation.provider === 'stripe' && !matchesStripePaymentIdentity(attempt, payload))
         || (payload.quotedOrderId !== undefined && payload.providerPaymentId !== attempt.id)
       ) {
         const mismatchType: ReconciliationMismatchType = order.currency !== payload.currency

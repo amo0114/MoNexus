@@ -4,6 +4,7 @@ import { prisma } from '../../../lib/prisma.js'
 import type { PaymentObservationSource, PaymentVerificationMethod } from '../../recharge/types.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 import { recordCallbackRetry, recordPaymentObservationMetric } from '../metrics.js'
+import { stripeCheckoutSessionId } from '../providers/stripe/checkoutIdentity.js'
 
 function isUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
@@ -100,6 +101,7 @@ export function hashNormalizedPayload(payload: unknown): string {
 export type NormalizedPaymentFact = {
   status: string
   providerPaymentId: string
+  providerOrderId?: string | null
   providerCaptureId?: string | null
   amountMinor: bigint
   currency: string
@@ -107,10 +109,11 @@ export type NormalizedPaymentFact = {
   providerRefundId?: string | null
 }
 
-export function buildNormalizedPaymentPayload(fact: NormalizedPaymentFact): Prisma.InputJsonValue {
+export function buildNormalizedPaymentPayload(fact: NormalizedPaymentFact, providerOrderId?: string): Prisma.InputJsonValue {
   return {
     status: fact.status,
     providerPaymentId: fact.providerPaymentId,
+    ...(providerOrderId && { providerOrderId }),
     providerCaptureId: fact.providerCaptureId ?? null,
     providerRefundId: fact.providerRefundId ?? null,
     amountMinor: serializeAmountMinor(fact.amountMinor),
@@ -138,7 +141,10 @@ export async function recordNormalizedPaymentFact(input: {
     currency: input.payment.currency,
     immutableStateVersion: input.payment.immutableStateVersion,
   })
-  const normalizedPayload = buildNormalizedPaymentPayload(input.payment)
+  const normalizedPayload = buildNormalizedPaymentPayload(
+    input.payment,
+    stripeCheckoutSessionId(input.provider, input.payment.providerOrderId),
+  )
   return recordPaymentObservation({
     provider: input.provider,
     providerAccountKey: input.providerAccountKey,
