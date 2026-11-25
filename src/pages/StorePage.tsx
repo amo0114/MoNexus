@@ -1,6 +1,6 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { LayoutGrid, LogIn, Search, SearchX, X } from 'lucide-react'
+import { LayoutGrid, LogIn, Search, SearchX, SlidersHorizontal, X, Zap } from 'lucide-react'
 import { listStoreProducts, loadStoreCandidates, type StoreProductQuery } from '../api/storeFeed'
 import { getApiErrorCode } from '../api/error'
 import { useAppStore } from '../stores/appStore'
@@ -14,6 +14,7 @@ import {
 import { Skeleton } from '../components/ui/Skeleton'
 import EmptyState from '../components/ui/EmptyState'
 import StoreProductCard from '../components/store/StoreProductCard'
+import StoreSortMenu, { type StoreSortKey } from '../components/store/StoreSortMenu'
 import type { FeedDisclosure, Product } from '../components/store/types'
 import {
   composeStoreFeed,
@@ -26,8 +27,23 @@ import FluidOrb from '../components/ui/FluidOrb'
 import BackToTop from '../components/BackToTop'
 import { useTheme } from '../lib/ThemeProvider'
 
-interface StorePageCache extends Omit<StoredStorePageCache, 'feedItems'> {
+/** Sorting and filtering run on the server; the page only forwards the toggles. */
+interface StoreListOptions {
+  sort: StoreSortKey
+  inStock: boolean
+  instant: boolean
+  affordable: boolean
+}
+
+const DEFAULT_LIST_OPTIONS: StoreListOptions = { sort: 'default', inStock: false, instant: false, affordable: false }
+
+function isDefaultListOptions(options: StoreListOptions) {
+  return options.sort === 'default' && !options.inStock && !options.instant && !options.affordable
+}
+
+interface StorePageCache extends Omit<StoredStorePageCache, 'feedItems' | 'listOptions'> {
   feedItems: FeedOutputItem<Product>[]
+  listOptions?: StoreListOptions
 }
 
 const PAGE_SIZE = 60
@@ -64,9 +80,10 @@ function readMatchingStoreCache(): StorePageCache | null {
 function getProductQueryKey(
   category: string,
   searchQuery: string,
+  listOptions: StoreListOptions,
   identityKey = currentStoreIdentity(),
 ) {
-  return JSON.stringify({ category, searchQuery, identityKey })
+  return JSON.stringify({ category, searchQuery, listOptions, identityKey })
 }
 
 function getColumnCount(width: number, isMobile: boolean) {
@@ -127,6 +144,16 @@ export default function StorePage() {
     const cached = readMatchingStoreCache()
     return urlCategory && cached?.category !== category ? null : cached
   })())
+  // Restored with the cached feed so returning from a detail page keeps the same result set.
+  const [listOptions, setListOptions] = useState<StoreListOptions>(
+    () => initialCacheRef.current?.listOptions ?? DEFAULT_LIST_OPTIONS,
+  )
+  // 积分可兑 needs a signed-in balance; the server ignores it for guests anyway.
+  const effectiveListOptions = useMemo<StoreListOptions>(
+    () => (isLoggedIn ? listOptions : { ...listOptions, affordable: false }),
+    [isLoggedIn, listOptions],
+  )
+  const listFiltered = !isDefaultListOptions(effectiveListOptions)
   const restoreScrollRef = useRef<number | null>(
     initialCacheRef.current?.scrollY ??
       (!urlCategory && typeof window !== 'undefined'
@@ -144,6 +171,7 @@ export default function StorePage() {
       ? getProductQueryKey(
           initialCacheRef.current.category,
           initialCacheRef.current.searchQuery,
+          initialCacheRef.current.listOptions ?? DEFAULT_LIST_OPTIONS,
           initialCacheRef.current.identityKey,
         )
       : null,
@@ -225,6 +253,7 @@ export default function StorePage() {
     restoreProductIdRef.current = null
     hydratedQueryKeyRef.current = null
     failedCursorRef.current = null
+    setListOptions(prev => ({ ...prev, affordable: false }))
   }
   // A cached pre-Catalog session may still hold a legacy label. Once the
   // dynamic registry is available, migrate that local selection to stable code.
@@ -301,7 +330,7 @@ export default function StorePage() {
   const fetchProducts = useCallback(async (
     cursor: string | null,
     append: boolean,
-    queryKey = getProductQueryKey(category, searchQuery),
+    queryKey = getProductQueryKey(category, searchQuery, effectiveListOptions),
     recoveryAttempt = 0,
   ) => {
     // Stale-response guard: a category/search switch while a list request is
@@ -317,6 +346,10 @@ export default function StorePage() {
         if (categoryCode) params.categoryCode = categoryCode
         else params.category = category
       }
+      if (effectiveListOptions.sort !== 'default') params.sort = effectiveListOptions.sort
+      if (effectiveListOptions.inStock) params.inStock = true
+      if (effectiveListOptions.instant) params.instant = true
+      if (effectiveListOptions.affordable) params.affordable = true
       const data = await listStoreProducts(params, signal)
       if (signal?.aborted || epoch !== organicEpochRef.current) return
       // A successful fetch clears any pause recorded for this cursor.
@@ -361,7 +394,7 @@ export default function StorePage() {
       setLoadingMore(false)
       loadingMoreRef.current = false
     }
-  }, [searchQuery, category, categoryCode, showToast, maybeComposePage1, appendOrganicPage, recoverFromExpiredCursor])
+  }, [searchQuery, category, categoryCode, effectiveListOptions, showToast, maybeComposePage1, appendOrganicPage, recoverFromExpiredCursor])
 
   useEffect(() => {
     const requestId = ++candidateRequestRef.current
@@ -372,8 +405,9 @@ export default function StorePage() {
     candidatesRef.current = { sponsored: [], editorial: [] }
 
     const selectedCategoryHasNoStableCode = category !== '全部' && !categoryCode
-    if (searchQuery || selectedCategoryHasNoStableCode || waitingForCategory) {
-      // Search mode: no injection (D-UX-02). Settle immediately with no
+    if (searchQuery || listFiltered || selectedCategoryHasNoStableCode || waitingForCategory) {
+      // Search mode: no injection (D-UX-02). Sorted/filtered lists likewise:
+      // a placement would break the requested order or bypass the filter. Settle immediately with no
       // candidates so page-1 organic composes as a plain feed. A legacy-only
       // category label also cannot safely scope candidates, so fail closed
       // instead of injecting home placements into a category result.
@@ -401,17 +435,18 @@ export default function StorePage() {
       // async continuations see a stale requestId and never setState.
       candidateRequestRef.current += 1
     }
-  }, [identityKey, category, categoryCode, waitingForCategory, searchQuery, maybeComposePage1])
+  }, [identityKey, category, categoryCode, waitingForCategory, searchQuery, listFiltered, maybeComposePage1])
 
   const saveStorePageCache = useCallback((scrollY = window.scrollY, lastProductId?: number | null) => {
     const liveIdentity = currentStoreIdentity()
-    if (liveIdentity !== feedIdentity || hydratedQueryKeyRef.current !== getProductQueryKey(category, searchQuery, liveIdentity)) return
+    if (liveIdentity !== feedIdentity || hydratedQueryKeyRef.current !== getProductQueryKey(category, searchQuery, effectiveListOptions, liveIdentity)) return
     const prevCache = getStorePageCache<StorePageCache>()
     setStorePageCache({
       feedItems,
       seenIds: [...seenRef.current],
       category,
       searchQuery,
+      listOptions: effectiveListOptions,
       nextCursor,
       hasMore,
       scrollY,
@@ -419,10 +454,10 @@ export default function StorePage() {
       identityKey: liveIdentity,
       lastProductId: lastProductId !== undefined ? lastProductId : (prevCache?.lastProductId ?? null),
     })
-  }, [category, audience, feedIdentity, feedItems, hasMore, nextCursor, searchQuery])
+  }, [category, audience, feedIdentity, feedItems, hasMore, nextCursor, searchQuery, effectiveListOptions])
 
   useEffect(() => {
-    const queryKey = getProductQueryKey(category, searchQuery, identityKey)
+    const queryKey = getProductQueryKey(category, searchQuery, effectiveListOptions, identityKey)
     if (waitingForCategory) return
 
     const previous = scheduledQueryRef.current
@@ -489,7 +524,7 @@ export default function StorePage() {
       controller.abort()
       organicEpochRef.current += 1
     }
-  }, [identityKey, category, fetchProducts, searchQuery, waitingForCategory])
+  }, [identityKey, category, fetchProducts, searchQuery, effectiveListOptions, waitingForCategory])
 
   // Enter flushes a pending debounce. An identical in-flight or completed
   // query keeps its controller and cursor instead of being aborted/restarted.
@@ -560,6 +595,7 @@ export default function StorePage() {
       window.removeEventListener('resize', scheduleUpdate)
     }
   }, [])
+
 
   useEffect(() => {
     const target = gridRef.current
@@ -728,6 +764,14 @@ export default function StorePage() {
     return registry?.productTypes.find(type => type.value === value)?.label ?? value
   }
 
+  function resetToolbarFilters() {
+    setListOptions(DEFAULT_LIST_OPTIONS)
+  }
+
+  function toggleListOption(key: 'inStock' | 'instant' | 'affordable') {
+    setListOptions(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
   const rowCount = Math.ceil(feedItems.length / columnCount)
   const viewportStart = viewport.scrollY - viewport.gridTop
   const viewportEnd = viewportStart + viewport.height
@@ -750,7 +794,7 @@ export default function StorePage() {
   }, [columnCount, loadMore, feedItems.length, visibleEndIndex])
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Guest welcome hero — signed-in users go straight to search & catalog; check-in lives in navbar / drawer */}
       {!isLoggedIn && (
         <div className="flex flex-col items-center justify-center text-center max-md:pt-0 max-md:pb-1 pt-2 pb-2 relative">
@@ -777,39 +821,105 @@ export default function StorePage() {
         </div>
       )}
 
-      {/* Search & Categories — 全视口常驻，移动端紧凑直出（与顶栏搜索共用 appStore 状态） */}
-      <div className="max-w-3xl mx-auto w-full space-y-2.5 md:space-y-4">
-        <div className="relative group">
-          <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition duration-200 pointer-events-none" />
-          <input
-            type="text"
-            value={draftSearchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) submitSearch()
-            }}
-            placeholder={isMobile ? '搜索商品、服务...' : '搜账号、卡密、教程...'}
-            aria-label="搜索商品"
-            className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:scale-90 rounded-full hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] transition duration-150 cursor-pointer animate-in fade-in zoom-in-75"
-              aria-label="清除搜索词"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
+      {/* Search + full-width categories & sort/filter toolbar */}
+      <div className="space-y-3 md:space-y-4">
+        <div className="max-w-3xl mx-auto w-full space-y-2">
+          <div className="relative group">
+            <Search className="w-4 h-4 md:w-5 md:h-5 absolute left-3.5 md:left-5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)] group-focus-within:text-[var(--color-primary)] group-focus-within:scale-110 transition duration-200 pointer-events-none" />
+            <input
+              type="text"
+              value={draftSearchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing && e.keyCode !== 229) submitSearch()
+              }}
+              placeholder={isMobile ? '搜索商品、服务...' : '搜账号、卡密、教程...'}
+              aria-label="搜索商品"
+              className="w-full pl-10 md:pl-12 pr-12 md:pr-14 py-2.5 md:py-3.5 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl md:rounded-2xl shadow-xs hover:border-[color-mix(in_srgb,var(--color-primary)_40%,transparent)] focus:outline-none focus:border-[var(--color-primary)] focus:[box-shadow:var(--shadow-focus)] transition text-sm md:text-base text-[var(--color-text)] placeholder:text-[var(--color-text-muted)]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:scale-90 rounded-full hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] transition duration-150 cursor-pointer animate-in fade-in zoom-in-75"
+                aria-label="清除搜索词"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
         </div>
 
-        <CategorySlidingNav
-          categories={categories}
-          activeCategory={category}
-          onSelectCategory={setCategory}
-          getCategoryLabel={getCategoryLabel}
-        />
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
+          <div className="min-w-0 lg:flex-1">
+            <CategorySlidingNav
+              categories={categories}
+              activeCategory={category}
+              onSelectCategory={setCategory}
+              getCategoryLabel={getCategoryLabel}
+              align="start"
+            />
+          </div>
+
+          <div
+            className="flex flex-wrap items-center justify-center lg:justify-end gap-2 shrink-0"
+            data-testid="storefront-filter-toolbar"
+          >
+            <button
+              type="button"
+              aria-pressed={effectiveListOptions.inStock}
+              onClick={() => toggleListOption('inStock')}
+              data-testid="store-filter-instock"
+              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                effectiveListOptions.inStock
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary)] font-semibold'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-text)]'
+              }`}
+            >
+              仅看有货
+            </button>
+            <button
+              type="button"
+              aria-pressed={effectiveListOptions.instant}
+              onClick={() => toggleListOption('instant')}
+              data-testid="store-filter-instant"
+              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                effectiveListOptions.instant
+                  ? 'border-[var(--color-cta)] bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] font-semibold'
+                  : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-text)]'
+              }`}
+            >
+              <Zap className="w-3 h-3" aria-hidden="true" />
+              自动秒发
+            </button>
+            {isLoggedIn && (
+              <button
+                type="button"
+                aria-pressed={effectiveListOptions.affordable}
+                onClick={() => toggleListOption('affordable')}
+                data-testid="store-filter-affordable"
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                  effectiveListOptions.affordable
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary)] font-semibold'
+                    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-text)]'
+                }`}
+              >
+                积分可兑
+              </button>
+            )}
+            <StoreSortMenu value={effectiveListOptions.sort} onChange={(sort) => setListOptions(prev => ({ ...prev, sort }))} />
+            {listFiltered && (
+              <button
+                type="button"
+                onClick={resetToolbarFilters}
+                className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)] px-1.5 py-1 cursor-pointer"
+              >
+                重置
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Product Grid — one blended feed (SPEC-CMI-UX-001 §4): sponsored/
@@ -827,7 +937,7 @@ export default function StorePage() {
             </button>
           }
         />
-      ) : loading ? (
+      ) : loading || (feedItems.length === 0 && hasMore && failedCursorRef.current !== nextCursor) ? (
         // P2-3：骨架与最终网格同几何（列数/gap/卡高）且共享同一 pt-2
         // 起点容器——加载完成零跳动（R2）
         <div className="pt-2">
@@ -845,7 +955,18 @@ export default function StorePage() {
           </div>
         </div>
       ) : feedItems.length === 0 ? (
-        searchQuery ? (
+        listFiltered ? (
+          <EmptyState
+            icon={SlidersHorizontal}
+            title="当前筛选条件下暂无商品"
+            description="放宽筛选条件或重置后查看全部商品"
+            action={
+              <button type="button" className="btn-secondary px-6 py-2" onClick={resetToolbarFilters}>
+                重置筛选
+              </button>
+            }
+          />
+        ) : searchQuery ? (
           <EmptyState
             icon={SearchX}
             title={`没有找到「${searchQuery}」相关的商品`}

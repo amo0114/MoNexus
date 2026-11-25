@@ -5,6 +5,7 @@ export interface CategorySlidingNavProps {
   activeCategory: string
   onSelectCategory: (category: string) => void
   getCategoryLabel: (category: string) => string
+  align?: 'center' | 'start'
 }
 
 export default function CategorySlidingNav({
@@ -12,6 +13,7 @@ export default function CategorySlidingNav({
   activeCategory,
   onSelectCategory,
   getCategoryLabel,
+  align = 'center',
 }: CategorySlidingNavProps) {
   const scrollContainerRef = useRef<HTMLDivElement | null>(null)
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -90,7 +92,7 @@ export default function CategorySlidingNav({
   }
 
   return (
-    <div className="w-full min-w-0 flex justify-center py-1">
+    <div className={`w-full min-w-0 flex py-1 ${align === 'start' ? 'justify-center lg:justify-start' : 'justify-center'}`}>
       {/* 移动端外框属于固定视口，仅内部按钮横滑；阻止横向滚动传递到页面。
           外框在外层，边缘渐隐只作用于滚动内容，不会把圆角边框一起淡掉。 */}
       <div className="min-w-0 max-w-full overflow-hidden rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] shadow-xs md:overflow-visible md:rounded-none md:bg-transparent md:border-0 md:shadow-none">
