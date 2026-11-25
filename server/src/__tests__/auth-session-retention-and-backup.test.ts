@@ -184,6 +184,123 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
     expect(await prisma.refreshToken.count({ where: { sessionId: earlierDeadFamilyId } })).toBe(0)
   })
 
+  it('forces sweep wrap-around at fixed sweepCutoff under continuous daily budget saturation so backfilled families behind cursor are deleted in finite runs', async () => {
+    const { user: admin } = await createTestUser('sweep-wrap-admin@test.local', 'Sweep#A2026', 'admin')
+    const { user: member } = await createTestUser('sweep-wrap-user@test.local', 'Sweep#U2026')
+    const day0 = new Date('2026-11-25T12:00:00.000Z')
+    const cutoff0Ms = day0.getTime() - 30 * DAY_MS
+
+    // Legacy admin family whose older rotated row sits before the initial cursor
+    // and whose active row is still alive at day0, so it is ineligible on day0.
+    // After backfill tightens the active row to sessionStartedAt + 7d (< cutoff0
+    // and behind the saved cursor), the entire family becomes eligible.
+    const adminBackfilledFamilyId = crypto.randomUUID()
+    await prisma.refreshToken.createMany({
+      data: [
+        {
+          userId: admin.id,
+          sessionId: adminBackfilledFamilyId,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          sessionStartedAt: new Date(cutoff0Ms - 25 * DAY_MS),
+          revoked: true,
+          revokedAt: new Date(cutoff0Ms - 22 * DAY_MS),
+          revokeReason: 'refresh_rotation',
+          expiresAt: new Date(cutoff0Ms - 20 * DAY_MS),
+          absoluteExpiresAt: null,
+        },
+        {
+          userId: admin.id,
+          sessionId: adminBackfilledFamilyId,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          sessionStartedAt: new Date(cutoff0Ms - 25 * DAY_MS),
+          revoked: false,
+          expiresAt: new Date(day0.getTime() + 5 * DAY_MS),
+          absoluteExpiresAt: null,
+        },
+      ],
+    })
+
+    // Two eligible families already past cutoff0 on day0.
+    const initialFamily1 = crypto.randomUUID()
+    const initialFamily2 = crypto.randomUUID()
+    for (const [sessionId, offsetDays] of [
+      [initialFamily1, 15],
+      [initialFamily2, 10],
+    ] as const) {
+      await prisma.refreshToken.create({
+        data: {
+          userId: member.id,
+          sessionId,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          revoked: true,
+          revokedAt: new Date(cutoff0Ms - offsetDays * DAY_MS),
+          revokeReason: 'logout',
+          expiresAt: new Date(cutoff0Ms - offsetDays * DAY_MS),
+        },
+      })
+    }
+
+    // Day 0: skips adminBackfilledFamilyId (ineligible), deletes initialFamily1,
+    // saturates maxFamiliesPerRun=1, and persists fixed sweepCutoff = cutoff0.
+    const run0 = await cleanupExpiredRefreshTokenFamilies({
+      now: day0,
+      batchSize: 1,
+      maxFamiliesPerRun: 1,
+      maxRowsScanned: 5,
+    })
+    expect(run0.familiesDeleted).toBe(1)
+    expect(run0.nextCursor).not.toBeNull()
+    expect(await prisma.refreshToken.count({ where: { sessionId: initialFamily1 } })).toBe(0)
+    expect(await prisma.refreshToken.count({ where: { sessionId: adminBackfilledFamilyId } })).toBe(2)
+
+    const savedAfterRun0 = await prisma.authSessionRetentionCursor.findUniqueOrThrow({
+      where: { key: 'refresh_token_cleanup' },
+    })
+    expect(savedAfterRun0.sweepCutoff?.getTime()).toBe(cutoff0Ms)
+
+    // Online admin backfill now tightens adminBackfilledFamilyId's active row to
+    // cutoff0 - 18d (strictly behind saved cursor at cutoff0 - 15d).
+    expect(await backfillLegacyRefreshTokenAbsoluteExpiry({ now: day0, batchSize: 10, maxBatches: 5 })).toBe(1)
+
+    // Simulate 5 consecutive days where a brand-new family expires past cutoff0
+    // every single day (saturating the 1-family/run budget indefinitely if the
+    // sweep boundary kept sliding with each day's cutoff).
+    const rollingNewFamilies: string[] = []
+    for (let day = 1; day <= 5; day += 1) {
+      const nowDay = new Date(day0.getTime() + day * DAY_MS)
+      const newFamilyId = crypto.randomUUID()
+      rollingNewFamilies.push(newFamilyId)
+      await prisma.refreshToken.create({
+        data: {
+          userId: member.id,
+          sessionId: newFamilyId,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          revoked: true,
+          revokedAt: new Date(cutoff0Ms + (day - 0.5) * DAY_MS),
+          revokeReason: 'logout',
+          expiresAt: new Date(cutoff0Ms + (day - 0.5) * DAY_MS),
+        },
+      })
+
+      const run = await cleanupExpiredRefreshTokenFamilies({
+        now: nowDay,
+        batchSize: 1,
+        maxFamiliesPerRun: 1,
+        maxRowsScanned: 5,
+      })
+      expect(run.familiesDeleted).toBe(1)
+    }
+
+    // Day 1 deletes initialFamily2 (reaching cutoff0); Day 2 hits empty past cutoff0,
+    // wraps to head with new sweepCutoff, and deletes both rows of adminBackfilledFamilyId!
+    expect(await prisma.refreshToken.count({ where: { sessionId: initialFamily2 } })).toBe(0)
+    expect(await prisma.refreshToken.count({ where: { sessionId: adminBackfilledFamilyId } })).toBe(0)
+    // Subsequent days continue draining the newly expired families in order.
+    expect(await prisma.refreshToken.count({ where: { sessionId: rollingNewFamilies[0]! } })).toBe(0)
+    expect(await prisma.refreshToken.count({ where: { sessionId: rollingNewFamilies[1]! } })).toBe(0)
+    expect(await prisma.refreshToken.count({ where: { sessionId: rollingNewFamilies[2]! } })).toBe(0)
+  })
+
   it('scrubs legacy RefreshToken raw IP/UA and FileGrantLog raw UA in idempotent primary-key batches', async () => {
     const { user: merchantUser, merchant } = await createTestMerchant('scrub-m@test.local', 'Scrub#Pass-2026', {
       role: 'merchant',

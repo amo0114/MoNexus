@@ -33,6 +33,11 @@ export type RefreshFamilyCleanupResult = {
   nextCursor: RefreshFamilyCleanupCursor | null
 }
 
+type PersistedCleanupState = {
+  cursor: RefreshFamilyCleanupCursor
+  sweepCutoff: Date
+}
+
 type CleanupPageRow = {
   id: number
   userId: number
@@ -41,103 +46,48 @@ type CleanupPageRow = {
   eligible: boolean
 }
 
-async function loadCleanupCursor(): Promise<RefreshFamilyCleanupCursor | null> {
+async function loadCleanupState(fallbackSweepCutoff: Date): Promise<PersistedCleanupState | null> {
   const saved = await prisma.authSessionRetentionCursor.findUnique({
     where: { key: CLEANUP_CURSOR_KEY },
-    select: { cursorExpiresAt: true, cursorId: true },
+    select: { cursorExpiresAt: true, cursorId: true, sweepCutoff: true },
   })
   if (!saved || !saved.cursorExpiresAt || saved.cursorId === null) return null
-  return { expiresAt: saved.cursorExpiresAt, id: saved.cursorId }
+  return {
+    cursor: { expiresAt: saved.cursorExpiresAt, id: saved.cursorId },
+    sweepCutoff: saved.sweepCutoff ?? fallbackSweepCutoff,
+  }
 }
 
-async function saveCleanupCursor(cursor: RefreshFamilyCleanupCursor | null): Promise<void> {
+async function saveCleanupState(state: PersistedCleanupState | null): Promise<void> {
   await prisma.authSessionRetentionCursor.upsert({
     where: { key: CLEANUP_CURSOR_KEY },
     create: {
       key: CLEANUP_CURSOR_KEY,
-      cursorExpiresAt: cursor?.expiresAt ?? null,
-      cursorId: cursor?.id ?? null,
+      cursorExpiresAt: state?.cursor.expiresAt ?? null,
+      cursorId: state?.cursor.id ?? null,
+      sweepCutoff: state?.sweepCutoff ?? null,
     },
     update: {
-      cursorExpiresAt: cursor?.expiresAt ?? null,
-      cursorId: cursor?.id ?? null,
+      cursorExpiresAt: state?.cursor.expiresAt ?? null,
+      cursorId: state?.cursor.id ?? null,
+      sweepCutoff: state?.sweepCutoff ?? null,
     },
   })
 }
 
 async function fetchCleanupPage(input: {
+  scanCutoff: Date
   cutoff: Date
   now: Date
   cursor: RefreshFamilyCleanupCursor | null
-  upperBound: RefreshFamilyCleanupCursor | null
   batchSize: number
 }): Promise<CleanupPageRow[]> {
-  if (input.cursor === null && input.upperBound === null) {
+  if (input.cursor === null) {
     return prisma.$queryRaw<CleanupPageRow[]>`
       WITH page AS (
         SELECT rt."id", rt."userId", rt."sessionId", rt."expiresAt"
         FROM "RefreshToken" rt
-        WHERE rt."expiresAt" < ${input.cutoff}
-        ORDER BY rt."expiresAt" ASC, rt."id" ASC
-        LIMIT ${input.batchSize}
-      )
-      SELECT
-        p."id",
-        p."userId",
-        p."sessionId",
-        p."expiresAt",
-        NOT EXISTS (
-          SELECT 1
-          FROM "RefreshToken" newer
-          WHERE newer."userId" = p."userId"
-            AND newer."sessionId" = p."sessionId"
-            AND (
-              newer."expiresAt" >= ${input.cutoff}
-              OR (newer."revoked" = false AND newer."expiresAt" > ${input.now})
-            )
-        ) AS "eligible"
-      FROM page p
-      ORDER BY p."expiresAt" ASC, p."id" ASC
-    `
-  }
-
-  if (input.cursor === null && input.upperBound !== null) {
-    return prisma.$queryRaw<CleanupPageRow[]>`
-      WITH page AS (
-        SELECT rt."id", rt."userId", rt."sessionId", rt."expiresAt"
-        FROM "RefreshToken" rt
-        WHERE rt."expiresAt" < ${input.cutoff}
-          AND (rt."expiresAt", rt."id") <= (${input.upperBound.expiresAt}, ${input.upperBound.id})
-        ORDER BY rt."expiresAt" ASC, rt."id" ASC
-        LIMIT ${input.batchSize}
-      )
-      SELECT
-        p."id",
-        p."userId",
-        p."sessionId",
-        p."expiresAt",
-        NOT EXISTS (
-          SELECT 1
-          FROM "RefreshToken" newer
-          WHERE newer."userId" = p."userId"
-            AND newer."sessionId" = p."sessionId"
-            AND (
-              newer."expiresAt" >= ${input.cutoff}
-              OR (newer."revoked" = false AND newer."expiresAt" > ${input.now})
-            )
-        ) AS "eligible"
-      FROM page p
-      ORDER BY p."expiresAt" ASC, p."id" ASC
-    `
-  }
-
-  if (input.cursor !== null && input.upperBound === null) {
-    return prisma.$queryRaw<CleanupPageRow[]>`
-      WITH page AS (
-        SELECT rt."id", rt."userId", rt."sessionId", rt."expiresAt"
-        FROM "RefreshToken" rt
-        WHERE rt."expiresAt" < ${input.cutoff}
-          AND (rt."expiresAt", rt."id") > (${input.cursor.expiresAt}, ${input.cursor.id})
+        WHERE rt."expiresAt" < ${input.scanCutoff}
         ORDER BY rt."expiresAt" ASC, rt."id" ASC
         LIMIT ${input.batchSize}
       )
@@ -165,9 +115,8 @@ async function fetchCleanupPage(input: {
     WITH page AS (
       SELECT rt."id", rt."userId", rt."sessionId", rt."expiresAt"
       FROM "RefreshToken" rt
-      WHERE rt."expiresAt" < ${input.cutoff}
-        AND (rt."expiresAt", rt."id") > (${input.cursor!.expiresAt}, ${input.cursor!.id})
-        AND (rt."expiresAt", rt."id") <= (${input.upperBound!.expiresAt}, ${input.upperBound!.id})
+      WHERE rt."expiresAt" < ${input.scanCutoff}
+        AND (rt."expiresAt", rt."id") > (${input.cursor.expiresAt}, ${input.cursor.id})
       ORDER BY rt."expiresAt" ASC, rt."id" ASC
       LIMIT ${input.batchSize}
     )
@@ -196,11 +145,15 @@ async function fetchCleanupPage(input: {
  *
  * Scans bounded pages via the composite `(expiresAt, id)` index while filtering
  * out clearly ineligible families (those still holding an active or within-grace
- * row) in PostgreSQL. Persists the exact last-processed `(expiresAt, id)` cursor
- * in `AuthSessionRetentionCursor` across runs and wraps cleanly back to `null`
- * upon reaching the tail, so neither family caps nor row-scan budgets can ever
- * cause cross-run starvation. Each eligible family is re-verified inside the
- * user's session advisory lock before whole-family deletion.
+ * row) in PostgreSQL. Persists both the exact last-processed `(expiresAt, id)`
+ * cursor and the sweep's fixed `sweepCutoff` upper bound in
+ * `AuthSessionRetentionCursor` across runs: each sweep is strictly bounded by
+ * its starting `sweepCutoff`, so even under continuous daily inflows of newly
+ * expired families that saturate every run's budget, the cursor reaches the
+ * fixed sweep end in finite runs and wraps back to the head of the table to
+ * pick up any families tightened behind the previous cursor (e.g., by legacy
+ * admin backfill). Each eligible family is re-verified inside the user's
+ * session advisory lock before whole-family deletion.
  */
 export async function cleanupExpiredRefreshTokenFamilies(options: {
   now?: Date
@@ -230,8 +183,10 @@ export async function cleanupExpiredRefreshTokenFamilies(options: {
 
   const cutoff = new Date(now.getTime() - retentionDays * ONE_DAY_MS)
   const seenFamilies = new Set<string>()
-  const initialCursor = await loadCleanupCursor()
+  const initialState = await loadCleanupState(cutoff)
+  const initialCursor = initialState?.cursor ?? null
   let cursor = initialCursor
+  let activeSweepCutoff = initialState?.sweepCutoff ?? cutoff
   let wrappedFromTail = false
   let reachedEnd = false
   let rowsScanned = 0
@@ -242,12 +197,14 @@ export async function cleanupExpiredRefreshTokenFamilies(options: {
   while (familiesChecked < maxFamiliesPerRun && rowsScanned < maxRowsScanned) {
     const remainingRowBudget = maxRowsScanned - rowsScanned
     const pageLimit = Math.min(batchSize, remainingRowBudget)
-    const upperBound = wrappedFromTail ? initialCursor : null
-    const candidates = await fetchCleanupPage({ cutoff, now, cursor, upperBound, batchSize: pageLimit })
+    // Never scan past the current run's grace boundary even if wall clock moved backward.
+    const scanCutoff = activeSweepCutoff.getTime() < cutoff.getTime() ? activeSweepCutoff : cutoff
+    const candidates = await fetchCleanupPage({ scanCutoff, cutoff, now, cursor, batchSize: pageLimit })
     if (candidates.length === 0) {
       if (!wrappedFromTail && initialCursor !== null) {
         wrappedFromTail = true
         cursor = null
+        activeSweepCutoff = cutoff
         continue
       }
       reachedEnd = true
@@ -301,10 +258,11 @@ export async function cleanupExpiredRefreshTokenFamilies(options: {
 
     if (!exhaustedFamilyBudget && candidates.length < pageLimit) {
       if (!wrappedFromTail && initialCursor !== null) {
-        // Reached the tail after starting mid-table; wrap once up to
-        // `initialCursor` using any remaining budget in this run.
+        // Reached this sweep's fixed `sweepCutoff` tail; wrap back to the head
+        // for a fresh sweep bounded by the current run's `cutoff`.
         wrappedFromTail = true
         cursor = null
+        activeSweepCutoff = cutoff
         continue
       }
       reachedEnd = true
@@ -313,7 +271,7 @@ export async function cleanupExpiredRefreshTokenFamilies(options: {
   }
 
   const nextCursor = reachedEnd ? null : cursor
-  await saveCleanupCursor(nextCursor)
+  await saveCleanupState(nextCursor ? { cursor: nextCursor, sweepCutoff: activeSweepCutoff } : null)
 
   return { rowsScanned, familiesChecked, familiesDeleted, rowsDeleted, nextCursor }
 }

@@ -915,6 +915,7 @@ model AuthSessionRetentionCursor {
   key             String    @id
   cursorExpiresAt DateTime?
   cursorId        Int?
+  sweepCutoff     DateTime?
   updatedAt       DateTime  @updatedAt
 }
 

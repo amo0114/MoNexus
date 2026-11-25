@@ -13,6 +13,7 @@ CREATE TABLE "AuthSessionRetentionCursor" (
   "key" TEXT NOT NULL,
   "cursorExpiresAt" TIMESTAMP(3),
   "cursorId" INTEGER,
+  "sweepCutoff" TIMESTAMP(3),
   "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT "AuthSessionRetentionCursor_pkey" PRIMARY KEY ("key")
