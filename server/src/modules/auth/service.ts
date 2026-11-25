@@ -262,6 +262,7 @@ export async function refreshAccessToken(
       now,
       existing: {
         sessionStartedAt: storedToken.sessionStartedAt,
+        expiresAt: storedToken.expiresAt,
         absoluteExpiresAt: storedToken.absoluteExpiresAt,
       },
     })
@@ -324,6 +325,7 @@ export async function refreshAccessToken(
       {
         sessionId: storedToken.sessionId,
         sessionStartedAt: storedToken.sessionStartedAt,
+        expiresAt: storedToken.expiresAt,
         absoluteExpiresAt: nextExpiry.absoluteExpiresAt,
       },
       storedToken.user.role,

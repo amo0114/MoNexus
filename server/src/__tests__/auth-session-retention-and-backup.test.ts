@@ -4,8 +4,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { prisma } from '../lib/prisma.js'
-import { createTestMerchant, createTestProduct, createTestUser } from './helpers.js'
+import { api, createTestMerchant, createTestProduct, createTestUser } from './helpers.js'
+import { refreshTokenCookieName } from '../lib/cookies.js'
 import { hashRefreshToken } from '../modules/auth/sessionIssuance.js'
+import {
+  lockUserRefreshSessionMutations,
+  revokeAllUserRefreshTokens,
+} from '../modules/auth/sessionService.js'
 import {
   backfillLegacyRefreshTokenAbsoluteExpiry,
   cleanupExpiredRefreshTokenFamilies,
@@ -113,28 +118,70 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
       ],
     })
 
-    // Even with maxFamiliesPerRun=1 and batchSize=2, activeFamilyId's 4 older
-    // predecessors must NOT consume the family budget or starve deadFamilyId!
-    // First prove maxRowsScanned=3 stops cleanly after scanning only 3 rows.
-    const bounded = await cleanupExpiredRefreshTokenFamilies({
+    // Even with maxRowsScanned=2 and maxFamiliesPerRun=1, persisting the exact
+    // last-processed cursor across runs must advance past activeFamilyId's 4 older
+    // predecessors and delete deadFamilyId on cycle 3 without cross-run starvation.
+    const cycle1 = await cleanupExpiredRefreshTokenFamilies({
       now,
       batchSize: 2,
       maxFamiliesPerRun: 1,
-      maxRowsScanned: 3,
+      maxRowsScanned: 2,
     })
-    expect(bounded.rowsScanned).toBe(3)
-    expect(bounded.familiesChecked).toBe(0)
-    expect(bounded.familiesDeleted).toBe(0)
+    expect(cycle1.rowsScanned).toBe(2)
+    expect(cycle1.familiesChecked).toBe(0)
+    expect(cycle1.familiesDeleted).toBe(0)
+    expect(cycle1.nextCursor).not.toBeNull()
 
-    const result = await cleanupExpiredRefreshTokenFamilies({ now, batchSize: 2, maxFamiliesPerRun: 1 })
-    expect(result.familiesChecked).toBe(1)
-    expect(result.familiesDeleted).toBe(1)
-    expect(result.rowsDeleted).toBe(2)
-    expect(result.rowsScanned).toBe(6)
+    const cycle2 = await cleanupExpiredRefreshTokenFamilies({
+      now,
+      batchSize: 2,
+      maxFamiliesPerRun: 1,
+      maxRowsScanned: 2,
+    })
+    expect(cycle2.rowsScanned).toBe(2)
+    expect(cycle2.familiesChecked).toBe(0)
+    expect(cycle2.familiesDeleted).toBe(0)
+    expect(cycle2.nextCursor).not.toBeNull()
+
+    const cycle3 = await cleanupExpiredRefreshTokenFamilies({
+      now,
+      batchSize: 2,
+      maxFamiliesPerRun: 1,
+      maxRowsScanned: 2,
+    })
+    expect(cycle3.familiesChecked).toBe(1)
+    expect(cycle3.familiesDeleted).toBe(1)
+    expect(cycle3.rowsDeleted).toBe(2)
 
     expect(await prisma.refreshToken.count({ where: { sessionId: deadFamilyId } })).toBe(0)
     expect(await prisma.refreshToken.count({ where: { sessionId: activeFamilyId } })).toBe(5)
     expect(await prisma.refreshToken.count({ where: { sessionId: withinGraceFamilyId } })).toBe(2)
+
+    // Subsequent run reaches the tail and wraps cursor cleanly back to null,
+    // allowing a newly aged-out dead family earlier in (expiresAt, id) order to be deleted.
+    const earlierDeadFamilyId = crypto.randomUUID()
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        sessionId: earlierDeadFamilyId,
+        tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+        revoked: true,
+        revokedAt: new Date(now.getTime() - 70 * DAY_MS),
+        revokeReason: 'logout',
+        expiresAt: new Date(now.getTime() - 70 * DAY_MS),
+        deviceLabel: 'Chrome · macOS',
+        ipHint: '203.0.113.*',
+      },
+    })
+    const cycle4 = await cleanupExpiredRefreshTokenFamilies({
+      now,
+      batchSize: 10,
+      maxFamiliesPerRun: 5,
+      maxRowsScanned: 100,
+    })
+    expect(cycle4.familiesDeleted).toBe(1)
+    expect(cycle4.nextCursor).toBeNull()
+    expect(await prisma.refreshToken.count({ where: { sessionId: earlierDeadFamilyId } })).toBe(0)
   })
 
   it('scrubs legacy RefreshToken raw IP/UA and FileGrantLog raw UA in idempotent primary-key batches', async () => {
@@ -410,5 +457,117 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
     expect(aWithin.absoluteExpiresAt?.getTime()).toBe(expectedWithinCap)
     expect(aWithin.expiresAt.getTime()).toBe(expectedWithinCap)
     expect(aWithin.revoked).toBe(false)
+  })
+
+  it('produces identical refresh outcomes for legacy non-admin and admin sessions regardless of whether refresh or backfill runs first', async () => {
+    const { user: userBefore } = await createTestUser('legacy-order-a@test.local', 'Order#A2026')
+    const { user: userAfter } = await createTestUser('legacy-order-b@test.local', 'Order#B2026')
+    const nowMs = Date.now()
+    const started40dAgo = new Date(nowMs - 40 * DAY_MS)
+    const expiresIn3d = new Date(nowMs + 3 * DAY_MS)
+
+    const rawBefore = crypto.randomBytes(40).toString('hex')
+    const rawAfter = crypto.randomBytes(40).toString('hex')
+    await prisma.refreshToken.create({
+      data: {
+        userId: userBefore.id,
+        tokenHash: hashRefreshToken(rawBefore),
+        sessionStartedAt: started40dAgo,
+        expiresAt: expiresIn3d,
+        absoluteExpiresAt: null,
+      },
+    })
+    await prisma.refreshToken.create({
+      data: {
+        userId: userAfter.id,
+        tokenHash: hashRefreshToken(rawAfter),
+        sessionStartedAt: started40dAgo,
+        expiresAt: expiresIn3d,
+        absoluteExpiresAt: null,
+      },
+    })
+
+    // Order 1: refresh BEFORE backfill must still succeed (preserving existing 3d expiresAt).
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', [`${refreshTokenCookieName}=${rawBefore}`])
+      .expect(200)
+    const rotatedBefore = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: userBefore.id, revoked: false },
+    })
+    expect(rotatedBefore.absoluteExpiresAt?.getTime()).toBe(expiresIn3d.getTime())
+
+    // Order 2: backfill FIRST, then refresh -> identical absoluteExpiresAt.
+    expect(await backfillLegacyRefreshTokenAbsoluteExpiry({ batchSize: 10, maxBatches: 5 })).toBe(1)
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', [`${refreshTokenCookieName}=${rawAfter}`])
+      .expect(200)
+    const rotatedAfter = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: userAfter.id, revoked: false },
+    })
+    expect(rotatedAfter.absoluteExpiresAt?.getTime()).toBe(expiresIn3d.getTime())
+  })
+
+  it('serializes online backfill on the per-user advisory lock without deadlocking against revokeAllUserRefreshTokens', async () => {
+    const { user: admin } = await createTestUser('backfill-lock-admin@test.local', 'Lock#A2026', 'admin')
+    const nowMs = Date.now()
+
+    await prisma.refreshToken.createMany({
+      data: [
+        {
+          userId: admin.id,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          sessionStartedAt: new Date(nowMs - 8 * DAY_MS),
+          expiresAt: new Date(nowMs + 3 * DAY_MS),
+          absoluteExpiresAt: null,
+        },
+        {
+          userId: admin.id,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          sessionStartedAt: new Date(nowMs - 1 * 60 * 60 * 1000),
+          expiresAt: new Date(nowMs + 6 * DAY_MS),
+          absoluteExpiresAt: new Date(nowMs + 7 * DAY_MS),
+        },
+      ],
+    })
+
+    // Hold the user's advisory lock while launching backfill; verify backfill waits
+    // on the advisory lock (not row locks) before writing, then completes cleanly
+    // alongside revokeAllUserRefreshTokens with zero deadlocks.
+    let releaseLock!: () => void
+    let lockAcquired!: () => void
+    const lockHeld = new Promise<void>(resolve => { lockAcquired = resolve })
+    const allowRelease = new Promise<void>(resolve => { releaseLock = resolve })
+
+    const holder = prisma.$transaction(async tx => {
+      await lockUserRefreshSessionMutations(tx, admin.id)
+      lockAcquired()
+      await allowRelease
+    })
+    await lockHeld
+
+    const pendingBackfill = backfillLegacyRefreshTokenAbsoluteExpiry({ batchSize: 10, maxBatches: 5 })
+    const pendingRevoke = revokeAllUserRefreshTokens(admin.id, undefined, 'revoke_all')
+
+    let queuedLocks = 0
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const [row] = await prisma.$queryRaw<Array<{ count: number }>>`
+        SELECT COUNT(*)::int AS "count"
+        FROM pg_locks
+        WHERE locktype = 'advisory' AND objid = ${admin.id}::int4 AND NOT granted
+      `
+      queuedLocks = row?.count ?? 0
+      if (queuedLocks >= 2) break
+      await new Promise<void>(resolve => setTimeout(resolve, 10))
+    }
+    expect(queuedLocks).toBeGreaterThanOrEqual(2)
+
+    releaseLock()
+    await holder
+    const [backfilledCount, revokedCount] = await Promise.all([pendingBackfill, pendingRevoke])
+    expect(backfilledCount).toBeGreaterThanOrEqual(0)
+    expect(revokedCount).toBe(1)
+    expect(await prisma.refreshToken.count({ where: { userId: admin.id, revoked: false } })).toBe(0)
   })
 })

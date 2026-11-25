@@ -72,7 +72,7 @@ export async function createStoredRefreshToken(
   userAgent: string | undefined,
   tx: Prisma.TransactionClient,
   configuredMaxAgeMs: number,
-  existingSession?: { sessionId: string; sessionStartedAt: Date; absoluteExpiresAt?: Date | null },
+  existingSession?: { sessionId: string; sessionStartedAt: Date; expiresAt: Date; absoluteExpiresAt?: Date | null },
   role: string = 'user',
   now: Date = new Date(),
 ) {
@@ -83,6 +83,7 @@ export async function createStoredRefreshToken(
     existing: existingSession
       ? {
           sessionStartedAt: existingSession.sessionStartedAt,
+          expiresAt: existingSession.expiresAt,
           absoluteExpiresAt: existingSession.absoluteExpiresAt ?? null,
         }
       : undefined,

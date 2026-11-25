@@ -39,8 +39,8 @@
    - 仅当提交行未过期、类型为 `'refresh_rotation'` 或历史 `null`，且同家族仍存在活跃后继、无终结标记时，升级为 `handleRefreshReplay`：同事务全量吊销当前活跃家族、确保被重放家族写入 `'refresh_replay'` 终结标记，并仅记录一次 `session_replay_detected`（计数为被吊销的活跃家族数）。
    - **对存量规格 M3 D-07（`docs/superpowers/specs/2026-07-27-m3-identity-security-hardening/spec.md:94`）的获批修订**：历史 `revokeReason IS NULL` 行仅在同家族仍存在活跃后继时升级为重放；无活跃后继时返回 `401`。本修订已向 Owner 说明并获批准。
 2. **家族级清理与历史脱敏任务**：
-   - 新增每日 `defineLeasedCron` 任务（走 `CronLease` 并暴露 `monexus_cron_*` 指标），按有界批次与推进游标认领候选 `(userId, sessionId)`，对每家族获取 `lockUserRefreshSessionMutations(tx, userId)` 后二次核验该家族全部行均满足 `expiresAt < now - 30d` 再整族删除，杜绝活跃家族的历史前驱行被清理或阻塞游标。
-   - 同时以独立有界批处理推进存量 `RefreshToken` 与 `FileGrantLog` PII 回填/清理，幂等且不阻塞正常请求。
+   - 新增每日 `defineLeasedCron` 任务（走 `CronLease` 并暴露 `monexus_cron_*` 指标），按有界页宽、家族预算与行扫描上限扫描候选 `(userId, sessionId)`，在数据库侧以 `NOT EXISTS` 过滤仍活跃或宽限期内的家族，并在 `AuthSessionRetentionCursor` 持久化每轮最后实际处理到的 `(expiresAt, id)` 游标（到尾部后回绕置空），消除跨轮饥饿；删除前对每家族获取 `lockUserRefreshSessionMutations(tx, userId)` 二次核验全部行均满足 `expiresAt < now - 30d` 再整族删除。
+   - 存量 `RefreshToken` 的 `absoluteExpiresAt` 回填与 PII 清理均按用户拆分短事务并先获取 `lockUserRefreshSessionMutations(tx, userId)` 再重读更新，与 `revokeAllUserRefreshTokens` 共享同一锁序，杜绝死锁；`FileGrantLog` 历史 UA 改写按主键分批幂等推进。
    - 在 `server/src/main.ts` 接入 `start*` / `stop*` 生命周期。
 3. **索引迁移**：
    - 单独单语句迁移 `CREATE INDEX CONCURRENTLY "RefreshToken_expiresAt_id_idx" ON "RefreshToken"("expiresAt", "id");`，遵循 `AGENTS.md` §3 并在 `check:migrations` 下校验通过。
@@ -56,7 +56,7 @@
      - 管理员绝对窗口 = `min(effectiveDays, 7)` 天；
      - 普通用户 / 商家绝对窗口 = `min(90, max(30, effectiveDays))` 天。
    - 新签发家族时：`absoluteExpiresAt = now + absoluteWindowMs`，`expiresAt = min(now + idleMs, absoluteExpiresAt)`。
-   - 续签轮换时：继承原 `absoluteExpiresAt`（历史空值按 `sessionStartedAt + roleWindow` 推导）；若 `absoluteExpiresAt <= now` 拒绝并按过期处理；`nextExpiresAt = min(now + idleMs, absoluteExpiresAt)`。
+   - 续签轮换时：继承原 `absoluteExpiresAt`（历史空值与在线回填共用 `resolveLegacyAbsoluteExpiresAt`：管理员为 `sessionStartedAt + 7d`，非管理员为 `GREATEST(existingExpiresAt, sessionStartedAt + 30d)`，确保先续签与先回填结果完全一致）；若 `absoluteExpiresAt <= now` 拒绝并按过期处理；`nextExpiresAt = min(now + idleMs, absoluteExpiresAt)`。
    - 跨事务传递持久化绝对截止 `expiresAt`：JWT 签名时直接写入整数秒 `exp <= floor(expiresAt / 1000)`，写 Refresh Cookie 时按响应时刻重新计算剩余整秒 `Max-Age <= expiresAt - now`（剩余不足 1 秒均拒绝签发），确保即使提交与写响应之间存在延迟也不越界。
    - 迁移与回填解耦（无长表锁）：
      - DDL 迁移仅执行无默认值的可空列 `ALTER TABLE ... ADD COLUMN`（毫秒级元数据锁，不扫描或更新历史行）；

@@ -911,6 +911,13 @@ model CronLease {
   updatedAt     DateTime @updatedAt
 }
 
+model AuthSessionRetentionCursor {
+  key             String    @id
+  cursorExpiresAt DateTime?
+  cursorId        Int?
+  updatedAt       DateTime  @updatedAt
+}
+
 model Review {
   id            Int       @id @default(autoincrement())
   productId     Int

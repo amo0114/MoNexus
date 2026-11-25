@@ -171,16 +171,20 @@ public-registration switch, written through `PUT /api/admin/config/registrationE
   overshooting DB expiry, rejecting if `< 1s` remains). Sliding idle TTL comes
   from `SystemConfig.refreshTokenMaxAgeDays`, bounded by role-based absolute
   lifetimes (`admin`: `min(days, 7)` days; non-admin: `clamp(days, 30, 90)`
-  days). Schema migration is metadata-only (`ADD COLUMN` nullable), while
-  online primary-key batched backfill (`backfillLegacyRefreshTokenAbsoluteExpiry`)
-  runs lock-free in `authSessionRetention`.
+  days). Schema migration is metadata-only (`ADD COLUMN` nullable +
+  `AuthSessionRetentionCursor` state table), while online primary-key batched
+  backfill (`backfillLegacyRefreshTokenAbsoluteExpiry`) runs per-user under
+  `lockUserRefreshSessionMutations` in `authSessionRetention`, sharing
+  `resolveLegacyAbsoluteExpiresAt` with refresh rotation so order of execution
+  never changes user outcomes or deadlocks with revocations.
 - Global revocation marks active unexpired `RefreshToken` rows as revoked with a
   closed reason (recording the active family count in `SecurityEvent`) and marks
   already-expired unrevoked rows as `expired`. Historical rows are retained for
   at least 30 days after the entire family expires before the leased daily
-  retention cron filters eligible families in SQL (`NOT EXISTS`) under bounded
-  scan/family budgets and deletes whole expired families atomically under the
-  user advisory lock.
+  retention cron filters eligible families in SQL (`NOT EXISTS`), persists its
+  last-processed `(expiresAt, id)` cursor in `AuthSessionRetentionCursor` across
+  bounded runs (wrapping to `null` at the tail), and deletes whole expired
+  families atomically under the user advisory lock.
 - Portable backups exclude `RefreshToken` and `AuthChallenge` table data via
   `pg_dump --exclude-table-data` while preserving schema DDL, and restore
   applies `pg_restore --use-list` filtering on both restore paths so even legacy

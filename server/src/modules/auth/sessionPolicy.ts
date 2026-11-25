@@ -17,6 +17,27 @@ export function legacyAdminSessionStartCutoff(now: Date): Date {
 }
 
 /**
+ * Single source of truth for deriving `absoluteExpiresAt` on legacy rows where
+ * the column is still `NULL`. Shared by both `refreshAccessToken` and
+ * `backfillLegacyRefreshTokenAbsoluteExpiry` so refresh outcome never depends
+ * on whether backfill ran first:
+ * - admin: strict 7-day ceiling from `sessionStartedAt`
+ * - non-admin: `GREATEST(existingExpiresAt, sessionStartedAt + 30d)` so active
+ *   legacy users keep at least their currently granted lifetime
+ */
+export function resolveLegacyAbsoluteExpiresAt(input: {
+  role: string
+  sessionStartedAt: Date
+  expiresAt: Date
+}): Date {
+  if (input.role === 'admin') {
+    return new Date(input.sessionStartedAt.getTime() + ADMIN_ABSOLUTE_SESSION_MAX_DAYS * ONE_DAY_MS)
+  }
+  const floorCapMs = input.sessionStartedAt.getTime() + USER_ABSOLUTE_SESSION_MIN_DAYS * ONE_DAY_MS
+  return new Date(Math.max(input.expiresAt.getTime(), floorCapMs))
+}
+
+/**
  * Computes the absolute lifetime ceiling of a refresh-token family from the
  * runtime sliding TTL (`refreshTokenMaxAgeDays`) and account role:
  * - admin: min(effectiveDays, 7) days
@@ -80,12 +101,20 @@ export function computeSessionExpiry(input: {
   now: Date
   existing?: {
     sessionStartedAt: Date
+    expiresAt: Date
     absoluteExpiresAt: Date | null
   }
 }): SessionExpiryComputation {
   const absoluteWindowMs = resolveAbsoluteSessionWindowMs(input.role, input.configuredMaxAgeMs)
   const absoluteExpiresAt = input.existing
-    ? (input.existing.absoluteExpiresAt ?? new Date(input.existing.sessionStartedAt.getTime() + absoluteWindowMs))
+    ? (
+        input.existing.absoluteExpiresAt
+        ?? resolveLegacyAbsoluteExpiresAt({
+          role: input.role,
+          sessionStartedAt: input.existing.sessionStartedAt,
+          expiresAt: input.existing.expiresAt,
+        })
+      )
     : new Date(input.now.getTime() + absoluteWindowMs)
 
   const slidingExpiresAtMs = input.now.getTime() + input.configuredMaxAgeMs
