@@ -350,6 +350,22 @@ describe('Stripe capabilities and account selection', () => {
 })
 
 describe('Stripe Checkout create, query, close, refund', () => {
+  it('keeps Stripe minimum-amount rejections distinct from other invalid requests', async () => {
+    const fake = new FakeStripe()
+    const reject = vi.spyOn(fake.checkout.sessions, 'create')
+    const { provider } = providerWith(fake)
+    reject.mockRejectedValueOnce(new Stripe.errors.StripeInvalidRequestError({
+      type: 'invalid_request_error', code: 'amount_too_small', message: 'upstream diagnostic',
+    }))
+    await expect(provider.createPayment(createInput())).rejects.toMatchObject({
+      status: 400, code: 'RECHARGE_AMOUNT_BELOW_MINIMUM',
+    })
+    reject.mockRejectedValueOnce(new Stripe.errors.StripeInvalidRequestError({
+      type: 'invalid_request_error', code: 'parameter_invalid_integer', message: 'upstream diagnostic',
+    }))
+    await expect(provider.createPayment(createInput())).rejects.toMatchObject({ status: 400, code: 'BAD_REQUEST' })
+  })
+
   it('creates hosted Checkout with a stable idempotency key', async () => {
     const { provider, fake } = providerWith()
     const first = await provider.createPayment(createInput())
