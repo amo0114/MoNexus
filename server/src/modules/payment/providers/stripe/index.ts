@@ -33,6 +33,7 @@ import {
   STRIPE_PROVIDER_NAME,
   STRIPE_WECHAT_PAY_METHOD,
   assertStripeCredentialIsolation,
+  isStripeWalletMethod,
   createStripeSdk,
   modeFromAccountKey,
   modeFromEnvironment,
@@ -82,8 +83,8 @@ function assertPaymentMethod(
   method: string,
 ): asserts method is typeof STRIPE_PAYMENT_METHODS[number] {
   if (method === 'card') return
-  if (method === STRIPE_WECHAT_PAY_METHOD && currency === 'CNY'
-      && config.chargeCurrency === 'CNY' && config.wechatPayMinimumAmountMinor != null) return
+  if (isStripeWalletMethod(method) && currency === 'CNY'
+      && config.chargeCurrency === 'CNY' && config.walletMinimumAmountMinor?.[method] != null) return
   throw paymentMethodUnavailable()
 }
 
@@ -274,8 +275,8 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
       assertPaymentMethod(config, context.currency, context.paymentMethod)
       assertAccount(context.providerAccountKey, config)
       const platformMinimum = stripeMinimumAmountMinor(context.currency, context.paymentMethod)
-      const wechat = context.paymentMethod === STRIPE_WECHAT_PAY_METHOD
-      const accountMinimum = wechat ? config.wechatPayMinimumAmountMinor : config.minimumAmountMinor
+      const wallet = isStripeWalletMethod(context.paymentMethod) ? context.paymentMethod : undefined
+      const accountMinimum = wallet ? config.walletMinimumAmountMinor?.[wallet] : config.minimumAmountMinor
       if (config.chargeCurrency && config.chargeCurrency !== context.currency) throw paymentMethodUnavailable()
       const minimumAmountMinor = accountMinimum != null && accountMinimum > platformMinimum ? accountMinimum : platformMinimum
       const maximumAmountMinor = null
@@ -286,7 +287,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         actionTypes: ['redirect'],
         supportsRefunds: true,
         supportsPartialRefund: false,
-        supportsDisputes: !wechat,
+        supportsDisputes: !wallet,
         supportsReconciliation: false,
         supportsBuyerApprovalCapture: false,
         minimumAmountMinor,
@@ -307,7 +308,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
     async createPayment(input: CreateProviderPaymentInput): Promise<ProviderPaymentAction> {
       const config = configOf()
       assertPaymentMethod(config, input.currency, input.paymentMethod)
-      const wechat = input.paymentMethod === STRIPE_WECHAT_PAY_METHOD
+      const wallet = isStripeWalletMethod(input.paymentMethod) ? input.paymentMethod : undefined
       assertAccount(input.providerAccountKey, config)
       const { successUrl, cancelUrl } = resolveReturnUrls(input, config)
       const metadata = stripeMetadata({
@@ -317,7 +318,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         amountMinor: input.amountMinor,
         currency: input.currency,
         providerAccountKey: input.providerAccountKey,
-        ...(wechat && { paymentMethod: STRIPE_WECHAT_PAY_METHOD }),
+        ...(wallet && { paymentMethod: wallet }),
       })
       let unitAmount: number
       try {
@@ -337,7 +338,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
             expires_at: Math.floor(input.orderExpiresAt.getTime() / 1000) + 31 * 60,
           }),
           payment_method_types: [input.paymentMethod],
-          ...(wechat && { payment_method_options: { wechat_pay: { client: 'web' as const } } }),
+          ...(wallet === STRIPE_WECHAT_PAY_METHOD && { payment_method_options: { wechat_pay: { client: 'web' as const } } }),
           adaptive_pricing: { enabled: false },
           line_items: [{
             quantity: 1,
