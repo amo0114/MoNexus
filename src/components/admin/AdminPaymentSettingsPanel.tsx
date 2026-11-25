@@ -5,6 +5,7 @@ import { useAppStore } from '../../stores/appStore'
 type Name = 'stripe' | 'paypal' | 'wechat_pay' | 'alipay' | 'vmqfox'
 type Values = Record<string, string | number>
 type Field = readonly [key: string, label: string]
+const optionalPaymentFields = new Set(['payeeEmail', 'wechatPayMinimumAmountMinor'])
 const definitions: Record<Name, { label: string; public: Field[]; secrets: Field[]; defaults?: Values }> = {
   stripe: {
     label: 'Stripe',
@@ -13,6 +14,7 @@ const definitions: Record<Name, { label: string; public: Field[]; secrets: Field
       ['chargeCurrency', '收款币种（CNY 或 USD）'],
       ['settlementCurrency', '账户默认结算币种（例如 HKD）'],
       ['minimumAmountMinor', '已验证的银行卡最低收款额（分）'],
+      ['wechatPayMinimumAmountMinor', 'Stripe 微信支付最低收款额（CNY 分，留空停用）'],
     ],
     secrets: [['secretKey', 'API 密钥'], ['webhookSecret', 'Webhook 签名密钥']],
   },
@@ -39,7 +41,7 @@ function AccountPanel({ name }: { name: Name }) {
     event.preventDefault(); if (!state || busy) return
     setBusy(true); setError('')
     const credentials = Object.fromEntries(Object.entries(secrets).filter(([,v]) => v !== ''))
-    const settings = Object.fromEntries(Object.entries(form).filter(([key,v]) => key !== 'payeeEmail' || v !== ''))
+    const settings = Object.fromEntries(Object.entries(form).filter(([key,v]) => !optionalPaymentFields.has(key) || v !== ''))
     try { accept(await api.save(state.version, settings, Object.keys(credentials).length ? { provider: name, ...credentials } : undefined)); toast('支付草稿已保存，请先校验') }
     catch (err) { setError(getApiErrorMessage(err, '保存支付配置失败')) } finally { setBusy(false) }
   }
@@ -56,12 +58,12 @@ function AccountPanel({ name }: { name: Name }) {
     {error && <p role="alert" className="text-sm text-[var(--color-danger)] break-words">{error}</p>}
     {!state ? <button disabled={busy} className="btn-secondary min-h-10 px-4" onClick={() => void reload()}>重新加载支付设置</button> : <>
       <p className="text-sm">{def.label} · 当前来源：{state.source === 'database' ? '管理员后台' : '部署环境兼容路径'} · 新收款：{state.enabled ? '允许（仍受部署总开关限制）' : '已停止'}</p>
-      <p className="text-sm text-[var(--color-text-muted)]">{name === 'stripe' ? '校验会只读核对 Stripe 商户 ID 和账户默认结算币种。请按该账户和收款币种核实银行卡最低金额后填写。' : '校验仅检查参数、密钥材料与渠道能力，不请求扣款、退款或创建远端订单。'} 请另行完成第三方回调配置与受控业务验收。</p>
+      <p className="text-sm text-[var(--color-text-muted)]">{name === 'stripe' ? '校验会只读核对 Stripe 商户 ID 和账户默认结算币种。请按账户核实银行卡最低金额。填写微信最低额时，校验也会查询 Stripe 微信支付开通状态。' : '校验仅检查参数、密钥材料与渠道能力，不请求扣款、退款或创建远端订单。'} 请另行完成第三方回调配置与受控业务验收。</p>
       {!state.encryptionReady && <p className="text-sm">部署集成凭据加密密钥后才能保存和激活。</p>}
       <form onSubmit={save} className="space-y-3">
         <fieldset disabled={busy} className="grid min-w-0 gap-3 sm:grid-cols-2">
           <label className="text-sm">账号环境<select className="input mt-1 w-full min-h-10" value={form.mode} onChange={e => { setForm(f => ({ ...f, mode: e.target.value })); setDirty(true) }}><option value="live">正式商户</option>{name !== 'wechat_pay' && name !== 'vmqfox' && <option value={name === 'stripe' ? 'test' : 'sandbox'}>沙箱（生产部署不可用）</option>}</select></label>
-          {def.public.map(([key,label]) => <label key={key} className="text-sm min-w-0">{label}<input className="input mt-1 w-full min-h-10" required={key !== 'payeeEmail'} type={key === 'requestTimeoutMs' ? 'number' : key === 'baseUrl' ? 'url' : 'text'} value={form[key] ?? ''} onChange={e => { setForm(f => ({ ...f, [key]: key === 'requestTimeoutMs' ? Number(e.target.value) : e.target.value })); setDirty(true) }} /></label>)}
+          {def.public.map(([key,label]) => <label key={key} className="text-sm min-w-0">{label}<input className="input mt-1 w-full min-h-10" required={!optionalPaymentFields.has(key)} type={key === 'requestTimeoutMs' ? 'number' : key === 'baseUrl' ? 'url' : 'text'} value={form[key] ?? ''} onChange={e => { setForm(f => ({ ...f, [key]: key === 'requestTimeoutMs' ? Number(e.target.value) : e.target.value })); setDirty(true) }} /></label>)}
           {def.secrets.map(([key,label]) => <label key={key} className="text-sm min-w-0">{label}{/Pem|Cert|Key$/.test(key) && name !== 'stripe' && name !== 'vmqfox' ? <textarea className="input mt-1 w-full min-h-20" autoComplete="off" value={secrets[key] ?? ''} onChange={e => { setSecrets(s => ({ ...s, [key]: e.target.value })); setDirty(true) }} /> : <input className="input mt-1 w-full min-h-10" type="password" autoComplete="new-password" value={secrets[key] ?? ''} onChange={e => { setSecrets(s => ({ ...s, [key]: e.target.value })); setDirty(true) }} />}</label>)}
         </fieldset>
         <p className="text-sm text-[var(--color-text-muted)]">凭据全部留空保留已保存值。替换时填写该账号的完整凭据组；更换商户或应用必须重新填写。凭据保存后清空，不会回传。支付宝选择完整证书组或公钥模式。</p>

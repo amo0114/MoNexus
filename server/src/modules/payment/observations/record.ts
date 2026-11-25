@@ -107,6 +107,7 @@ export type NormalizedPaymentFact = {
   currency: string
   immutableStateVersion: string
   providerRefundId?: string | null
+  quotedPaymentMethod?: string
 }
 
 export function buildNormalizedPaymentPayload(fact: NormalizedPaymentFact, providerOrderId?: string): Prisma.InputJsonObject {
@@ -116,6 +117,7 @@ export function buildNormalizedPaymentPayload(fact: NormalizedPaymentFact, provi
     ...(providerOrderId && { providerOrderId }),
     providerCaptureId: fact.providerCaptureId ?? null,
     providerRefundId: fact.providerRefundId ?? null,
+    ...(fact.quotedPaymentMethod && { quotedPaymentMethod: fact.quotedPaymentMethod }),
     amountMinor: serializeAmountMinor(fact.amountMinor),
     currency: fact.currency,
     immutableStateVersion: fact.immutableStateVersion,
