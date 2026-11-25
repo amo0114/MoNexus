@@ -190,6 +190,17 @@ mchid/appid，支付宝填写 appId/sellerId，VMQFox 填写稳定商户标识�
 完成付款后核对回调验签、RP 到账、同一事件重发后余额不变，以及整单退款。
 付款前订单已保存 Checkout Session ID，付款确认后才记录 PaymentIntent ID。
 
+#### Stripe 微信支付
+
+在 Stripe 对应环境的默认支付方式配置中启用微信支付。在 MoNexus 的 Stripe 商户
+草稿填写 CNY 和该商户已核实的微信最低收款额（分），保存、校验并激活。后台只读
+核对 Stripe 的微信支付可用性和启用状态。银行卡最低额与微信最低额分别配置。
+Checkout 只展示用户已选定的方式，微信扫码失败或未完成付款不会入账。
+
+使用小额 CNY 测试单核对 Checkout 二维码、付款成功回调、到账、重复通知和整单退款。
+预发使用 Stripe 沙箱扫码页面模拟授权，正式站用获批 Live 商户。要停止新微信订单，
+清空微信最低金额、保存并校验激活。历史订单继续按原版本查询和退款。
+
 停收新订单后，已绑定版本的创建恢复、complete/capture、查询、关单、退款、争议和
 对账继续运行，迟到回调仍沿用原 Observation → applyConfirmedPayment → Credit 入口。
 回滚不改写任何已有订单绑定。不要停掉支付 worker 或移除旧账号回调来“禁用”新收款。

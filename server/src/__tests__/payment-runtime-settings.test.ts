@@ -1,4 +1,4 @@
-import { validateRuntimePayment } from '../modules/payment/providers/runtimeConfig.js'
+import { validateRuntimePayment, type PaymentSettings } from '../modules/payment/providers/runtimeConfig.js'
 import { executeRechargeCredit } from '../modules/recharge/credit.js'
 import { randomUUID, generateKeyPairSync } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -14,7 +14,7 @@ import { paymentSettingsDefinition } from '../modules/admin/paymentSettings.js'
 import { integrationProbeLimiter } from '../modules/admin/integrationSettings.js'
 import { resolveHistoricalProvider } from '../modules/payment/providers/registry.js'
 import { runtimePaymentSelection } from '../modules/payment/providers/runtime.js'
-import { createQuote } from '../modules/recharge/quoteService.js'
+import { createQuote, getRechargeConfig } from '../modules/recharge/quoteService.js'
 import { createOrder, recoverProviderCreate } from '../modules/recharge/orderLifecycle.js'
 import { requestRechargeRefund, submitProviderRefund } from '../modules/recharge/refund.js'
 import { recoverUnknownPayments } from '../modules/payment/workers/index.js'
@@ -30,6 +30,7 @@ const settings = {
 const credentials = { provider: 'stripe' as const, secretKey: 'sk_test_first', webhookSecret: 'whsec_first' }
 const managed = paymentSettingsDefinition('stripe').api
 let actor: number, buyer: number, failCreate = false, failCheckoutLookup = false
+let wechatAvailable = true
 const sessions = new Map<string, Record<string, any>>()
 const calls: Array<{ key: string; operation: string }> = []
 beforeEach(async () => {
@@ -39,7 +40,7 @@ beforeEach(async () => {
   buyer = (await createTestUser('runtime-payment-buyer@test.local', 'pass123', 'user', 0)).user.id
   await prisma.rechargePricePolicy.create({ data: { code: randomUUID(), version: 1, currency: 'CNY', currencyScale: 2, pointsNumerator: 1n, pointsDenominator: 1n,
     minAmountMinor: 100n, maxAmountMinor: 100000n, amountStepMinor: 100n, dailyLimitMinor: 200000n, monthlyLimitMinor: 1000000n, limitTimeZone: 'Asia/Shanghai', status: 'active', effectiveAt: new Date() } })
-  sessions.clear(); calls.length = 0; failCreate = false; failCheckoutLookup = false
+  sessions.clear(); calls.length = 0; failCreate = false; failCheckoutLookup = false; wechatAvailable = true
   vi.mocked(createStripeSdk).mockImplementation(cfg => ({
     accounts: {
       retrieve: async () => ({
@@ -49,6 +50,11 @@ beforeEach(async () => {
         capabilities: { card_payments: 'active' },
       }),
     },
+    paymentMethodConfigurations: {
+      list: async () => ({ data: [{
+        active: true, is_default: true, wechat_pay: { available: wechatAvailable, display_preference: { value: 'on' } },
+      }] }),
+    },
     checkout: { sessions: {
       create: async (input: any) => {
         calls.push({ key: cfg.secretKey, operation: 'create' })
@@ -56,7 +62,10 @@ beforeEach(async () => {
         const id = `cs_${randomUUID().replaceAll('-', '')}`
         const session = { id, object: 'checkout.session', url: 'https://checkout.stripe.com/c/pay/fixture', expires_at: Math.floor(Date.now()/1000)+3600,
           payment_intent: null, metadata: input.metadata, status: 'open', payment_status: 'unpaid', amount_total: input.line_items[0].price_data.unit_amount, currency: 'cny', livemode: false }
-        sessions.set(id, session); return session
+        sessions.set(id, {
+          ...session, payment_method_types: input.payment_method_types, payment_method_options: input.payment_method_options,
+        })
+        return session
       },
       retrieve: async (id: string) => { calls.push({ key: cfg.secretKey, operation: 'query' }); return sessions.get(id) },
       list: async (input: { payment_intent?: string }) => {
@@ -70,14 +79,18 @@ beforeEach(async () => {
   }) as never)
 })
 afterEach(() => { config.integrationCredentialsEncKey = original.key; config.integrationCredentialsEncKeyPrevious = original.previous; Object.assign(config.recharge, original.recharge); vi.clearAllMocks() })
-async function activate(version = 0, replacement = credentials, account = settings) {
+async function activate(
+  version = 0,
+  replacement = credentials,
+  account: Extract<PaymentSettings, { provider: 'stripe' }> = settings,
+) {
   const saved = await managed.save(actor, { expectedVersion: version, settings: account, credentials: replacement })
   await managed.test(actor, saved.version)
   return managed.activate(actor, saved.version)
 }
-const quote = (amountMinor = 1000n) => createQuote(buyer, { currency: 'CNY', amountMinor, amountSource: 'custom', provider: 'stripe', paymentMethod: 'card' }, 'user')
-async function order() {
-  const q = await quote()
+const quote = (amountMinor = 1000n, paymentMethod = 'card') => createQuote(buyer, { currency: 'CNY', amountMinor, amountSource: 'custom', provider: 'stripe', paymentMethod }, 'user')
+async function order(paymentMethod = 'card') {
+  const q = await quote(1000n, paymentMethod)
   const created = await createOrder(buyer, q.quoteId, randomUUID(), 'user')
   return prisma.rechargeOrder.findUniqueOrThrow({ where: { id: created.orderId }, include: { paymentIntent: { include: { attempts: true } } } })
 }
@@ -108,6 +121,77 @@ describe('payment runtime versions', () => {
     await expect(quote(400n)).rejects.toMatchObject({ code: 'RECHARGE_AMOUNT_BELOW_MINIMUM' })
     await expect(quote(500n)).resolves.toMatchObject({ effectiveMinAmountMinor: '500' })
   })
+  it('only offers Stripe WeChat when a CNY account has a verified, separate minimum', async () => {
+    const first = await activate()
+    await expect(quote(1000n, 'wechat_pay')).rejects.toMatchObject({ code: 'PAYMENT_METHOD_UNAVAILABLE' })
+    const wechatSettings = { ...settings, wechatPayMinimumAmountMinor: '600' }
+    wechatAvailable = false
+    await expect(validateRuntimePayment(wechatSettings, credentials)).rejects.toThrow(/启用微信支付/)
+    wechatAvailable = true
+    await expect(validateRuntimePayment({ ...wechatSettings, chargeCurrency: 'USD' }, credentials)).rejects.toThrow(/只支持 CNY/)
+    await activate(first.version, credentials, wechatSettings)
+
+    const configuration = await getRechargeConfig(buyer, 'CNY', 'user')
+    expect(configuration.providers).toEqual([{
+      provider: 'stripe',
+      paymentMethods: [
+        expect.objectContaining({ paymentMethod: 'card', minimumAmountMinor: '500' }),
+        expect.objectContaining({ paymentMethod: 'wechat_pay', minimumAmountMinor: '600' }),
+      ],
+    }])
+    await expect(quote(500n, 'wechat_pay')).rejects.toMatchObject({ code: 'RECHARGE_AMOUNT_BELOW_MINIMUM' })
+    await expect(quote(600n, 'wechat_pay')).resolves.toMatchObject({ effectiveMinAmountMinor: '600' })
+  })
+
+  it('credits an authenticated Stripe WeChat payment once and refunds with its original revision', async () => {
+    const first = await activate(0, credentials, { ...settings, wechatPayMinimumAmountMinor: '600' })
+    const accepted = await order('wechat_pay')
+    const session = sessions.get(accepted.paymentIntent!.attempts[0].providerOrderId!)!
+    expect(accepted.paymentMethod).toBe('wechat_pay')
+    expect(session.payment_method_types).toEqual(['wechat_pay'])
+    expect(session.payment_method_options.wechat_pay).toEqual({ client: 'web' })
+    expect(session.metadata.monexus_payment_method).toBe('wechat_pay')
+    session.status = 'complete'
+    const unpaid = await callback(accepted, credentials.webhookSecret, 'evt_wechat_unpaid')
+    expect(unpaid.status).toBe(200)
+    await applyConfirmedPayment(unpaid.body.observationId)
+    expect(await prisma.rechargeCredit.count()).toBe(0)
+
+    markCheckoutPaid(accepted)
+    session.payment_method_types = ['card']
+    const wrongMethod = await callback(accepted, credentials.webhookSecret, 'evt_wechat_wrong_method')
+    await applyConfirmedPayment(wrongMethod.body.observationId)
+    expect(await prisma.rechargeCredit.count()).toBe(0)
+
+    session.payment_method_types = ['wechat_pay']
+    await activate(first.version, { ...credentials, secretKey: 'sk_test_second' })
+    const paid = await callback(accepted, credentials.webhookSecret, 'evt_wechat_paid')
+    const replay = await callback(accepted, credentials.webhookSecret, 'evt_wechat_paid')
+    expect(replay.body.observationId).toBe(paid.body.observationId)
+    await applyConfirmedPayment(paid.body.observationId)
+    await executeRechargeCredit({ rechargeOrderId: accepted.id })
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: accepted.id } })).toBe(1)
+    const refund = await requestRechargeRefund({ userId: buyer, orderId: accepted.id, idempotencyKey: randomUUID() })
+    await submitProviderRefund(refund!.refundId)
+    expect(calls.filter(call => call.operation === 'refund')).toEqual([{ key: credentials.secretKey, operation: 'refund' }])
+    const final = await prisma.rechargeOrder.findUniqueOrThrow({
+      where: { id: accepted.id }, include: { refund: { include: { reversal: true } } },
+    })
+    expect(final.status).toBe('refunded')
+    expect(final.refund?.reversal?.points).toBe(1000n)
+  })
+
+  it('recovers a paid Stripe WeChat session through the authenticated query path', async () => {
+    await activate(0, credentials, { ...settings, wechatPayMinimumAmountMinor: '600' })
+    const accepted = await order('wechat_pay')
+    const attempt = accepted.paymentIntent!.attempts[0]
+    markCheckoutPaid(accepted)
+    await prisma.paymentAttempt.update({ where: { id: attempt.id }, data: { updatedAt: new Date(0) } })
+    await recoverUnknownPayments()
+    expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('credited')
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: accepted.id } })).toBe(1)
+  })
+
   it('pins quote, order and attempt; rejects a quote after activation and isolates merchant identity', async () => {
     const first = await activate()
     const q = await quote()
