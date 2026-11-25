@@ -61,6 +61,8 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
   const [inlineError, setInlineError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const quoteGen = useRef(0)
+  const [quoteRefresh, setQuoteRefresh] = useState(0)
+  const payRequest = useRef<{ quoteId: string; key: string } | null>(null)
 
   const config = configs.find((item) => item.currency === currency) ?? null
   const methods = useMemo<MethodChoice[]>(() => {
@@ -200,7 +202,7 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
       quoteGen.current += 1
       window.clearTimeout(timer)
     }
-  }, [amountConfig, method, amountSource, parsed.ok ? parsed.minor : '', boundError])
+  }, [amountConfig, method, amountSource, parsed.ok ? parsed.minor : '', boundError, quoteRefresh])
 
   useEffect(() => {
     if (!quote || quoteState !== 'ready') return
@@ -233,8 +235,12 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
   async function handlePay() {
     if (!quote || !method || quoteState !== 'ready' || submitting) return
     setSubmitting(true)
+    const generation = quoteGen.current
+    if (payRequest.current?.quoteId !== quote.quoteId) {
+      payRequest.current = { quoteId: quote.quoteId, key: newIdempotencyKey() }
+    }
     try {
-      const order = await createRechargeOrder(quote.quoteId, newIdempotencyKey())
+      const order = await createRechargeOrder(quote.quoteId, payRequest.current.key)
       const target = parseSafeProductReturnTo(returnTo)
       rememberRechargeReturnTo(order.orderId, target)
       const action = order.action
@@ -251,13 +257,20 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
       navigate(`/recharge?order=${encodeURIComponent(order.orderId)}${target ? `&returnTo=${encodeURIComponent(target)}` : ''}`)
     } catch (err) {
       const code = getApiErrorCode(err)
+      if (quoteGen.current !== generation) return
       if (code === 'RECHARGE_QUOTE_EXPIRED') {
-        setQuoteState('expired')
-        setQuoteError('报价已过期，请重新获取')
-      } else if (code === 'RECHARGE_QUOTE_CHANGED') {
-        setQuoteState('changed')
-        setQuoteError('支付能力已变化，请重新报价')
         setQuote(null)
+        setQuoteState('expired')
+      } else if (code === 'RECHARGE_QUOTE_CHANGED' || (method.provider === 'stripe' && code === 'BAD_REQUEST')) {
+        setQuote(null)
+        setQuoteState('changed')
+        setQuoteError(code === 'RECHARGE_QUOTE_CHANGED'
+          ? '支付能力已变化，请重新报价'
+          : 'Stripe 未能创建付款，请核对金额后重新报价')
+      } else if (code === 'RECHARGE_AMOUNT_BELOW_MINIMUM') {
+        setQuote(null)
+        setQuoteState('idle')
+        setQuoteError(getApiErrorMessage(err, '金额低于当前最低收款额，请提高充值金额'))
       } else {
         showToast(getApiErrorMessage(err, '创建支付失败'), 'error')
       }
@@ -270,7 +283,6 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
     if (!config) return
     setAmountSource('suggested')
     setAmountInput(formatCurrencyAmount(amountMinor, config.currency).replace(/^[^\d]*/, '').replace(/,/g, ''))
-    setQuoteState('idle')
   }
 
   if (bootState === 'loading') {
@@ -441,13 +453,23 @@ export default function RechargeCheckout({ returnTo }: { returnTo?: string | nul
           )}
           {quoteState === 'expired' && (
             <p className="text-sm text-[var(--color-warning-accent)]" data-testid="recharge-quote-expired">
-              报价已过期，请调整金额后重新报价
+              报价已过期，请重新报价
             </p>
           )}
           {quoteState === 'changed' && (
             <p className="text-sm text-[var(--color-warning-accent)]" data-testid="recharge-quote-changed">
               {quoteError || '报价已变化，请重新确认'}
             </p>
+          )}
+          {(quoteState === 'expired' || quoteState === 'changed') && (
+            <button
+              type="button"
+              className="btn-secondary mt-2 min-h-10 px-3"
+              disabled={submitting}
+              onClick={() => setQuoteRefresh((value) => value + 1)}
+            >
+              重新报价
+            </button>
           )}
           {quoteError && quoteState !== 'changed' && (
             <p className="text-sm text-[var(--color-danger)]">{quoteError}</p>
