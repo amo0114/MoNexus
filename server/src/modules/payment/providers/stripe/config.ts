@@ -7,7 +7,17 @@ import type { ProviderEnvironment } from '../types.js'
 export const STRIPE_PROVIDER_NAME = 'stripe' as const
 export const STRIPE_CAPABILITY_VERSION = 'stripe-v1'
 export const STRIPE_WECHAT_PAY_METHOD = 'wechat_pay' as const
-export const STRIPE_PAYMENT_METHODS = ['card', STRIPE_WECHAT_PAY_METHOD] as const
+export const STRIPE_ALIPAY_METHOD = 'alipay' as const
+// CNY wallets are opt-in per account with their own verified minimum, have no
+// chargeback flow, and are bound to the order so a session cannot settle under
+// a different method than the one quoted.
+export const STRIPE_WALLET_METHODS = [STRIPE_WECHAT_PAY_METHOD, STRIPE_ALIPAY_METHOD] as const
+export type StripeWalletMethod = typeof STRIPE_WALLET_METHODS[number]
+export const STRIPE_PAYMENT_METHODS = ['card', ...STRIPE_WALLET_METHODS] as const
+
+export function isStripeWalletMethod(value: unknown): value is StripeWalletMethod {
+  return (STRIPE_WALLET_METHODS as readonly unknown[]).includes(value)
+}
 export const STRIPE_DEFAULT_HOST = 'api.stripe.com'
 export const STRIPE_API_VERSION = '2026-07-29.dahlia' as const
 
@@ -32,7 +42,7 @@ export type StripeRuntimeConfig = {
   returnBaseUrl?: string
   chargeCurrency?: RechargeCurrency
   minimumAmountMinor?: bigint
-  wechatPayMinimumAmountMinor?: bigint
+  walletMinimumAmountMinor?: Partial<Record<StripeWalletMethod, bigint>>
 }
 
 export type StripeRequestOptions = { idempotencyKey?: string }
