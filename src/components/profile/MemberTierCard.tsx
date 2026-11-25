@@ -31,6 +31,24 @@ export default function MemberTierCard({
 
   const { tier, label, tone, lifetimeEarnedPoints, bonusBps, nextTier } = tierData
 
+  const tierAccentIconBox =
+    tier === 'platinum'
+      ? 'bg-[#e2f0ea] text-[#1f5e50] dark:bg-[#172e29] dark:text-[#8dd0be]'
+      : tier === 'gold'
+        ? 'bg-[#f8f1e1] text-[#846123] dark:bg-[#2a2216] dark:text-[#dfc083]'
+        : tier === 'silver'
+          ? 'bg-[#eef4f8] text-[#3a5d75] dark:bg-[#192630] dark:text-[#9fc3db]'
+          : 'bg-[var(--color-background)] text-[var(--color-text-muted)]'
+
+  const tierAccentText =
+    tier === 'platinum'
+      ? 'text-[#1f5e50] dark:text-[#8dd0be]'
+      : tier === 'gold'
+        ? 'text-[#846123] dark:text-[#dfc083]'
+        : tier === 'silver'
+          ? 'text-[#3a5d75] dark:text-[#9fc3db]'
+          : 'text-[var(--color-primary)]'
+
   let nextTierLabel = nextTier
   if (nextTier && registry?.memberTiers) {
     const found = registry.memberTiers.find((t: any) => t.value === nextTier)
@@ -38,11 +56,14 @@ export default function MemberTierCard({
   }
 
   return (
-    <div className="card h-full flex flex-col justify-between gap-4">
+    <div
+      className="card member-tier-craft-card h-full flex flex-col justify-between gap-4"
+      data-tier={tier}
+    >
       <div>
         <div className="flex items-start sm:items-center justify-between gap-2.5 mb-3">
           <div className="flex items-center gap-2.5 min-w-0 flex-1">
-            <div className="w-10 h-10 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl flex items-center justify-center shrink-0">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${tierAccentIconBox}`}>
               <Trophy className="w-5 h-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -57,12 +78,12 @@ export default function MemberTierCard({
               </p>
             </div>
           </div>
-          <span className="text-xs font-semibold text-[var(--color-text)] bg-[var(--color-background)] px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] shrink-0 whitespace-nowrap">
+          <span className="text-xs font-semibold text-[var(--color-text)] bg-[var(--color-background)] px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] shrink-0 whitespace-nowrap tabular-nums">
             累计 {lifetimeEarnedPoints} 积分
           </span>
         </div>
 
-        {/* 成长阶梯进度展示 (Plan A: 流光质感进度条) */}
+        {/* 成长阶梯进度展示 */}
         <div className="mt-4 p-3 rounded-xl bg-[var(--color-background)] border border-[color-mix(in_srgb,var(--color-border)_50%,transparent)]">
           <ExperienceProgressBar
             tierData={tierData}
@@ -73,7 +94,7 @@ export default function MemberTierCard({
         {/* 特权清单矩阵 */}
         <div className="mt-4 grid grid-cols-2 gap-2 text-xs pt-3 border-t border-[color-mix(in_srgb,var(--color-border)_60%,transparent)]">
           <div className="p-2.5 rounded-lg bg-[var(--color-background)] border border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+            <Sparkles className={`w-4 h-4 shrink-0 ${tierAccentText}`} />
             <div className="min-w-0">
               <div className="font-bold text-[var(--color-text)] truncate">签到加成</div>
               <div className="text-[11px] text-[var(--color-text-muted)] truncate">
@@ -89,14 +110,14 @@ export default function MemberTierCard({
             </div>
           </div>
           <div className="p-2.5 rounded-lg bg-[var(--color-background)] border border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+            <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <div className="min-w-0">
               <div className="font-bold text-[var(--color-text)] truncate">售后保障</div>
               <div className="text-[11px] text-[var(--color-text-muted)] truncate">失效卡密极速核实</div>
             </div>
           </div>
           <div className="p-2.5 rounded-lg bg-[var(--color-background)] border border-[color-mix(in_srgb,var(--color-border)_50%,transparent)] flex items-center gap-2">
-            <Gift className="w-4 h-4 text-purple-500 shrink-0" />
+            <Gift className={`w-4 h-4 shrink-0 ${tierAccentText}`} />
             <div className="min-w-0">
               <div className="font-bold text-[var(--color-text)] truncate">专属特权</div>
               <div className="text-[11px] text-[var(--color-text-muted)] truncate">高阶活动优先参与</div>
@@ -107,7 +128,7 @@ export default function MemberTierCard({
 
       <div className="pt-3 border-t border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] flex items-center justify-between text-xs text-[var(--color-text-muted)]">
         <span>当前等级专属加成：</span>
-        <span className="font-bold text-[var(--color-primary)]">
+        <span className={`font-bold ${tierAccentText}`}>
           {bonusBps === 0 ? '暂无等级加成' : `+${(bonusBps / 100).toFixed(1).replace(/\.0$/, '')}%`}
         </span>
       </div>

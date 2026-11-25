@@ -41,53 +41,8 @@ import UserAvatar from '../components/ui/UserAvatar'
 import { ExperienceProgressBar } from '../components/profile/ExperienceProgressBar'
 import { FluidSegmentedControl, type FluidSegmentOption } from '../components/ui/FluidSegmentedControl'
 import PointCoin from '../components/ui/PointCoin'
-
-function getTierSkinConfig(tier?: 'bronze' | 'silver' | 'gold' | 'platinum') {
-  switch (tier) {
-    case 'platinum':
-      return {
-        cardBg:
-          'bg-gradient-to-br from-purple-950/20 via-[var(--color-surface)] to-indigo-950/25 dark:from-purple-950/60 dark:via-[var(--color-surface)] dark:to-indigo-950/45',
-        borderColor:
-          'border-purple-400/35 dark:border-purple-400/40 shadow-[0_8px_32px_rgba(168,85,247,0.14)]',
-        glowTop: 'bg-purple-500/20 dark:bg-purple-600/30',
-        glowBottom: 'bg-fuchsia-500/15 dark:bg-fuchsia-600/20',
-        avatarRing:
-          'ring-3 ring-purple-400/80 dark:ring-purple-400 shadow-[0_0_20px_rgba(168,85,247,0.45)]',
-      }
-    case 'gold':
-      return {
-        cardBg:
-          'bg-gradient-to-br from-amber-500/12 via-[var(--color-surface)] to-yellow-500/8 dark:from-amber-950/40 dark:via-[var(--color-surface)] dark:to-yellow-950/25',
-        borderColor:
-          'border-amber-400/40 dark:border-amber-400/35 shadow-[0_8px_32px_rgba(245,158,11,0.12)]',
-        glowTop: 'bg-amber-400/25 dark:bg-amber-500/30',
-        glowBottom: 'bg-yellow-400/18 dark:bg-yellow-500/20',
-        avatarRing:
-          'ring-3 ring-amber-400 dark:ring-amber-400 shadow-[0_0_18px_rgba(245,158,11,0.4)]',
-      }
-    case 'silver':
-      return {
-        cardBg:
-          'bg-gradient-to-br from-slate-100/70 via-[var(--color-surface)] to-sky-50/50 dark:from-slate-900/80 dark:via-[var(--color-surface)] dark:to-cyan-950/30',
-        borderColor:
-          'border-slate-300 dark:border-cyan-500/35 shadow-[0_8px_30px_rgba(6,182,212,0.08)]',
-        glowTop: 'bg-cyan-400/20 dark:bg-cyan-500/25',
-        glowBottom: 'bg-sky-400/15 dark:bg-sky-500/18',
-        avatarRing:
-          'ring-3 ring-cyan-400/70 dark:ring-cyan-400/60 shadow-[0_0_14px_rgba(6,182,212,0.25)]',
-      }
-    case 'bronze':
-    default:
-      return {
-        cardBg: 'bg-[var(--color-surface)]',
-        borderColor: 'border-[var(--color-border)] shadow-md',
-        glowTop: 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)]',
-        glowBottom: 'bg-amber-500/10',
-        avatarRing: 'ring-3 ring-[color-mix(in_srgb,var(--color-primary)_20%,transparent)] shadow-xs',
-      }
-  }
-}
+import { TIER_SEALS } from '../lib/tierSeal'
+import '../styles/tierCraft.css'
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -114,7 +69,7 @@ export default function ProfilePage() {
   const [tierData, setTierData] = useState<TierResponse | null>(null)
   const [registry, setRegistry] = useState<any>(null)
   const [tierLoading, setTierLoading] = useState(true)
-  const tierSkin = getTierSkinConfig(tierData?.tier)
+  const effectiveTier = tierData?.tier ?? 'bronze'
 
   const [selectedOrderState, setSelectedOrderState] = useState<{
     sessionKey: string
@@ -278,20 +233,31 @@ export default function ProfilePage() {
   return (
     <div className="fade-in space-y-6 pb-12 sm:space-y-7">
       {/* ─────────────────────────────────────────────────────────────
-          1. 顶层：一体化主身份与资产尊贵浮岛（Identity & Asset Hero）
+          1. 顶层：一体化主身份与资产浮岛（与导航头像卡共用东方四阶器物美学）
           ───────────────────────────────────────────────────────────── */}
       <div
-        className={`relative overflow-hidden rounded-2xl border transition duration-300 ${tierSkin.cardBg} ${tierSkin.borderColor}`}
+        className="tier-craft-surface profile-hero-craft relative overflow-hidden transition duration-300"
         data-testid="profile-hero-card"
-        data-tier={tierData?.tier || 'bronze'}
+        data-tier={effectiveTier}
       >
-        {/* 背景动态专属流光氛围 */}
-        <div
-          className={`absolute top-0 right-0 w-80 h-80 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20 transition duration-700 ${tierSkin.glowTop}`}
-        />
-        <div
-          className={`absolute bottom-0 left-1/3 w-64 h-64 rounded-full blur-3xl pointer-events-none transition duration-700 ${tierSkin.glowBottom}`}
-        />
+        {/* 宋式书画装裱内细线 */}
+        {effectiveTier !== 'bronze' && <span aria-hidden="true" className="tier-craft-mount-line" />}
+
+        {/* 高阶暗纹圆弧（泥金笺 / 青玉） */}
+        {(effectiveTier === 'gold' || effectiveTier === 'platinum') && (
+          <span aria-hidden="true" className="profile-hero-watermark" />
+        )}
+
+        {/* 右上角传统方印（仅非青铜展示，无多余标语） */}
+        {effectiveTier !== 'bronze' && (
+          <span
+            aria-hidden="true"
+            className="avatar-seal-mark absolute top-3.5 right-4 z-10 pointer-events-none"
+            data-tier={effectiveTier}
+          >
+            {TIER_SEALS[effectiveTier]}
+          </span>
+        )}
 
         <div className="relative z-10 p-5 sm:p-7 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
           {/* 左侧：头像 + 昵称 + 邮箱 + 身份徽章 + 等级进度 */}
@@ -299,7 +265,8 @@ export default function ProfilePage() {
             {/* 头像与身份基础行 */}
             <div className="flex items-start sm:items-center gap-4 sm:gap-5 min-w-0">
               <div
-                className="relative group cursor-pointer shrink-0"
+                className="relative group cursor-pointer shrink-0 rounded-full profile-hero-avatar-ring transition duration-300"
+                data-tier={effectiveTier}
                 onClick={() => handleTabChange('settings')}
                 title="前往设置修改头像"
               >
@@ -308,7 +275,7 @@ export default function ProfilePage() {
                   url={user?.avatarUrl}
                   name={user?.nickname || user?.email}
                   size={68}
-                  className={`transition duration-300 ${tierSkin.avatarRing}`}
+                  className="transition duration-300"
                 />
                 <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-semibold backdrop-blur-xs">
                   <Camera className="w-5 h-5" />
@@ -318,7 +285,10 @@ export default function ProfilePage() {
               <div className="min-w-0 flex-1">
                 {/* 昵称 + 会员徽章 + 特殊身份 */}
                 <div className="flex items-center gap-2 flex-wrap min-w-0">
-                  <h2 className="text-xl sm:text-2xl font-bold font-heading text-[var(--color-text)] tracking-tight truncate">
+                  <h2
+                    className="text-xl sm:text-2xl font-bold font-heading tracking-tight truncate"
+                    style={{ color: 'var(--tc-text)' }}
+                  >
                     {user?.nickname || user?.email?.split('@')[0] || '用户'}
                   </h2>
                   {tierData && (
@@ -329,7 +299,7 @@ export default function ProfilePage() {
                     />
                   )}
                   {user?.role === 'merchant' && (
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap">
                       商家认证
                     </span>
                   )}
@@ -341,17 +311,20 @@ export default function ProfilePage() {
                 </div>
 
                 {/* 邮箱与认证徽章独立成行，告别拥挤局促 */}
-                <div className="flex items-center gap-2 mt-1.5 text-xs text-[var(--color-text-muted)] flex-wrap min-w-0">
+                <div
+                  className="flex items-center gap-2 mt-1.5 text-xs flex-wrap min-w-0"
+                  style={{ color: 'var(--tc-muted)' }}
+                >
                   <span className="truncate max-w-[180px] sm:max-w-none font-mono text-[11px] sm:text-xs opacity-90">
                     {user?.email || '未绑定邮箱'}
                   </span>
-                  <span className="text-[var(--color-border)] select-none">·</span>
+                  <span style={{ color: 'var(--tc-divider)' }} className="select-none">·</span>
                   {user?.emailVerified ? (
-                    <span className="inline-flex items-center text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold gap-1 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full whitespace-nowrap shadow-2xs">
+                    <span className="inline-flex items-center text-emerald-700 dark:text-emerald-400 text-[11px] font-semibold gap-1 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full whitespace-nowrap shadow-2xs">
                       <CheckCircle2 className="w-3 h-3" /> 已验证
                     </span>
                   ) : (
-                    <span className="inline-flex items-center text-amber-600 dark:text-amber-400 text-[11px] font-semibold gap-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full whitespace-nowrap shadow-2xs">
+                    <span className="inline-flex items-center text-amber-700 dark:text-amber-400 text-[11px] font-semibold gap-1 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full whitespace-nowrap shadow-2xs">
                       <AlertCircle className="w-3 h-3" /> 待验证
                     </span>
                   )}
@@ -366,12 +339,21 @@ export default function ProfilePage() {
           </div>
 
           {/* 右侧：可用积分 + 核心操作栏（打卡 / 充值 / 流水） */}
-          <div className="lg:col-span-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-5 lg:border-l lg:border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] lg:pl-6 pt-4 lg:pt-0 border-t border-[color-mix(in_srgb,var(--color-border)_60%,transparent)] lg:border-t-0">
+          <div
+            className="lg:col-span-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-5 lg:border-l lg:pl-6 pt-4 lg:pt-0 border-t lg:border-t-0"
+            style={{ borderColor: 'var(--tc-divider)' }}
+          >
             <div className="text-left sm:text-right shrink-0">
-              <span className="text-xs font-medium text-[var(--color-text-muted)] flex items-center sm:justify-end gap-1.5">
+              <span
+                className="text-xs font-medium flex items-center sm:justify-end gap-1.5"
+                style={{ color: 'var(--tc-muted)' }}
+              >
                 <PointCoin className="w-3.5 h-3.5" /> 我的可用积分
               </span>
-              <div className="font-heading text-3xl sm:text-4xl font-extrabold text-[var(--color-text)] tracking-tight mt-0.5 flex items-center sm:justify-end gap-2">
+              <div
+                className="font-heading text-3xl sm:text-4xl font-extrabold tracking-tight mt-0.5 flex items-center sm:justify-end gap-2 tabular-nums"
+                style={{ color: 'var(--tc-text)' }}
+              >
                 <PointCoin size={28} className="w-7 h-7 sm:w-8 sm:h-8 drop-shadow-sm shrink-0" />
                 <span>{user?.points?.toLocaleString() ?? '--'}</span>
               </div>
@@ -385,7 +367,7 @@ export default function ProfilePage() {
                   hasCheckedIn === null
                     ? 'bg-[color-mix(in_srgb,var(--color-primary)_10%,transparent)] text-[var(--color-primary)] opacity-60'
                     : hasCheckedIn
-                    ? 'bg-[var(--color-background)] text-[var(--color-text-muted)] border border-[var(--color-border)] cursor-not-allowed'
+                    ? 'bg-[var(--tc-inset-bg)] text-[var(--tc-muted)] border border-[var(--tc-inset-border)] cursor-not-allowed'
                     : 'bg-[var(--color-primary)] text-[var(--color-on-primary)] hover:bg-[var(--color-primary-hover)] active:scale-95'
                 }`}
               >
@@ -405,13 +387,14 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
-                className="max-md:min-h-10 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-[var(--color-background)] hover:bg-[color-mix(in_srgb,var(--color-border)_50%,transparent)] text-[var(--color-text)] border border-[var(--color-border)] px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition cursor-pointer"
+                className="max-md:min-h-10 w-full sm:w-auto inline-flex items-center justify-center gap-1.5 bg-[var(--tc-inset-bg)] hover:bg-[var(--tc-hover-bg)] text-[var(--tc-text)] border border-[var(--tc-inset-border)] px-3.5 py-2.5 rounded-xl font-medium text-xs sm:text-sm transition cursor-pointer"
               >
                 流水明细
               </button>
             </div>
           </div>
         </div>
+
       </div>
 
       <CheckinCard state={checkinState} />

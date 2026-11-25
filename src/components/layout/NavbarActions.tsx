@@ -9,7 +9,7 @@ import type { useCheckin } from '../../hooks/useCheckin'
 import { formatBadgeCount } from '../../utils/orderAttention'
 import CountBadge from '../ui/CountBadge'
 import PointCoin from '../ui/PointCoin'
-import UserAvatar from '../ui/UserAvatar'
+import UserAvatarHoverCard from '../UserAvatarHoverCard'
 import { AnnouncementBellButton } from '../AnnouncementCenter'
 import { ThemeMenu } from '../ThemeToggle'
 import MobileNavDrawer from '../MobileNavDrawer'
@@ -327,16 +327,8 @@ export default function NavbarActions({
         )}
       </button>
 
-      {/* Avatar — 移动端入口由 Tab Bar「我的」承担（V3 去重），≥md 保留 */}
-      {user && (
-      <button
-        onClick={() => navigate('/profile')}
-        className="hidden md:flex items-center gap-2 ml-1 relative group cursor-pointer"
-        aria-label="个人中心"
-      >
-        <UserAvatar userId={user.id} url={user.avatarUrl} name={user.nickname || user.email} size={44} className="shadow-md border-2 border-[var(--color-background)] relative z-10 transition-shadow duration-300 group-hover:shadow-lg" />
-      </button>
-      )}
+      {/* Avatar — 移动端入口由 Tab Bar「我的」承担（V3 去重），≥md 挂载悬浮名片卡 */}
+      {user && <UserAvatarHoverCard user={user} />}
 
       {/* Mobile hamburger — drawer carries the entries hidden below md */}
       <MobileNavDrawer />

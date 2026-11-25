@@ -1,0 +1,286 @@
+/* =========================================================
+   Shared Eastern-Craft 4-Tier Visual Language
+   (Used by UserAvatarHoverCard, ProfilePage hero, MemberTierCard)
+   bronze   → 素笺（宣纸本色，素净留白）
+   silver   → 影青（宋瓷月白青灰冷釉 + 银青细框）
+   gold     → 泥金笺（洒金暖宣 + 哑光赤金双线 + 朱砂方印）
+   platinum → 青玉（和田温润碧玉 + 翡翠细框双线 + 朱砂方印，通透不发黑）
+   ========================================================= */
+
+/* ---------- Shared Craft Tokens on Cards / Hero Surfaces ---------- */
+.tier-craft-surface {
+  position: relative;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  --tc-text: var(--color-text);
+  --tc-muted: var(--color-text-muted);
+  --tc-divider: var(--color-border);
+  --tc-inset-bg: var(--color-background);
+  --tc-inset-border: var(--color-border);
+  --tc-hover-bg: var(--color-primary-tint);
+  --tc-hover-text: var(--color-primary);
+  --tc-points: var(--color-points);
+  --tc-accent: var(--color-primary);
+  --tc-accent-fg: var(--color-on-primary);
+  --tc-track-bg: color-mix(in srgb, var(--color-border) 85%, transparent);
+  --tc-danger-bg: var(--color-danger-bg);
+  --tc-danger-text: var(--color-danger-text);
+  --tc-frame-line: transparent;
+}
+
+/* SILVER — 影青（宋瓷月白蓝灰冷釉） */
+.tier-craft-surface[data-tier='silver'] {
+  background:
+    radial-gradient(ellipse 90% 44% at 50% 0%, rgba(114, 152, 180, 0.15), transparent 72%),
+    linear-gradient(172deg, #f3f6fa 0%, #f8fafc 52%, #ebf1f6 100%);
+  border-color: rgba(114, 150, 178, 0.38);
+  --tc-text: #1c2933;
+  --tc-muted: #5c6f7e;
+  --tc-divider: rgba(114, 150, 178, 0.22);
+  --tc-inset-bg: rgba(255, 255, 255, 0.68);
+  --tc-inset-border: rgba(114, 150, 178, 0.25);
+  --tc-hover-bg: rgba(74, 107, 130, 0.09);
+  --tc-hover-text: #2e526b;
+  --tc-points: #2b6458;
+  --tc-accent: #3e637d;
+  --tc-track-bg: rgba(114, 150, 178, 0.2);
+  --tc-frame-line: rgba(114, 150, 178, 0.2);
+}
+
+.dark .tier-craft-surface[data-tier='silver'],
+:root[data-theme='dark'] .tier-craft-surface[data-tier='silver'] {
+  background:
+    radial-gradient(ellipse 90% 44% at 50% 0%, rgba(114, 152, 180, 0.18), transparent 72%),
+    linear-gradient(172deg, #161d24 0%, #11171d 55%, #151c23 100%);
+  border-color: rgba(126, 162, 190, 0.34);
+  --tc-text: #e6eef4;
+  --tc-muted: #90a4b4;
+  --tc-divider: rgba(126, 162, 190, 0.18);
+  --tc-inset-bg: rgba(255, 255, 255, 0.045);
+  --tc-inset-border: rgba(126, 162, 190, 0.2);
+  --tc-hover-bg: rgba(126, 162, 190, 0.12);
+  --tc-hover-text: #bfd8ea;
+  --tc-points: #6fc2a8;
+  --tc-accent: #96bdd9;
+  --tc-accent-fg: #101920;
+  --tc-track-bg: rgba(126, 162, 190, 0.18);
+  --tc-frame-line: rgba(126, 162, 190, 0.15);
+}
+
+/* GOLD — 泥金笺（古法洒金暖宣 + 哑光赤金描线） */
+.tier-craft-surface[data-tier='gold'] {
+  background:
+    radial-gradient(ellipse 95% 44% at 50% 0%, rgba(186, 148, 74, 0.18), transparent 70%),
+    radial-gradient(circle at 86% 94%, rgba(186, 148, 74, 0.09), transparent 52%),
+    linear-gradient(170deg, #faf6ec 0%, #fdfaf3 48%, #f3ebd9 100%);
+  border-color: rgba(181, 146, 76, 0.46);
+  --tc-text: #241f18;
+  --tc-muted: #726552;
+  --tc-divider: rgba(181, 146, 76, 0.22);
+  --tc-inset-bg: rgba(255, 253, 248, 0.74);
+  --tc-inset-border: rgba(181, 146, 76, 0.25);
+  --tc-hover-bg: rgba(181, 146, 76, 0.11);
+  --tc-hover-text: #7c5c22;
+  --tc-points: #2e5d47;
+  --tc-accent: #8c6a2b;
+  --tc-track-bg: rgba(181, 146, 76, 0.19);
+  --tc-frame-line: rgba(181, 146, 76, 0.25);
+}
+
+.dark .tier-craft-surface[data-tier='gold'],
+:root[data-theme='dark'] .tier-craft-surface[data-tier='gold'] {
+  background:
+    radial-gradient(ellipse 90% 42% at 50% 0%, rgba(186, 148, 74, 0.18), transparent 70%),
+    linear-gradient(170deg, #1c1813 0%, #15120e 52%, #1a1611 100%);
+  border-color: rgba(184, 147, 74, 0.38);
+  --tc-text: #efe8da;
+  --tc-muted: #a69984;
+  --tc-divider: rgba(184, 147, 74, 0.18);
+  --tc-inset-bg: rgba(239, 232, 218, 0.045);
+  --tc-inset-border: rgba(184, 147, 74, 0.21);
+  --tc-hover-bg: rgba(184, 147, 74, 0.12);
+  --tc-hover-text: #dfc083;
+  --tc-points: #7ac49d;
+  --tc-accent: #d4b26f;
+  --tc-accent-fg: #1a150e;
+  --tc-track-bg: rgba(239, 232, 218, 0.11);
+  --tc-danger-bg: rgba(185, 58, 58, 0.18);
+  --tc-danger-text: #f3a6a6;
+  --tc-frame-line: rgba(184, 147, 74, 0.19);
+}
+
+/* PLATINUM — 青玉（和田温润碧玉：通透玉青光感，不再沉黑压抑） */
+.tier-craft-surface[data-tier='platinum'] {
+  background:
+    radial-gradient(ellipse 96% 48% at 50% 0%, rgba(49, 126, 106, 0.2), transparent 68%),
+    radial-gradient(circle at 88% 92%, rgba(72, 128, 124, 0.13), transparent 54%),
+    linear-gradient(168deg, #e4f0eb 0%, #eef5f2 46%, #d7e7e0 100%);
+  border-color: rgba(48, 116, 98, 0.46);
+  --tc-text: #142925;
+  --tc-muted: #4b6862;
+  --tc-divider: rgba(48, 116, 98, 0.22);
+  --tc-inset-bg: rgba(255, 255, 255, 0.68);
+  --tc-inset-border: rgba(48, 116, 98, 0.24);
+  --tc-hover-bg: rgba(42, 108, 92, 0.1);
+  --tc-hover-text: #174d41;
+  --tc-points: #1d5c4e;
+  --tc-accent: #206354;
+  --tc-track-bg: rgba(48, 116, 98, 0.18);
+  --tc-frame-line: rgba(48, 116, 98, 0.27);
+}
+
+.dark .tier-craft-surface[data-tier='platinum'],
+:root[data-theme='dark'] .tier-craft-surface[data-tier='platinum'] {
+  background:
+    radial-gradient(ellipse 92% 46% at 50% 0%, rgba(72, 168, 142, 0.22), transparent 68%),
+    radial-gradient(circle at 86% 92%, rgba(56, 122, 118, 0.16), transparent 54%),
+    linear-gradient(168deg, #172825 0%, #12201e 48%, #182b28 100%);
+  border-color: rgba(98, 168, 150, 0.4);
+  --tc-text: #e8f3ef;
+  --tc-muted: #93b3ab;
+  --tc-divider: rgba(116, 182, 164, 0.19);
+  --tc-inset-bg: rgba(232, 243, 239, 0.055);
+  --tc-inset-border: rgba(116, 182, 164, 0.22);
+  --tc-hover-bg: rgba(116, 182, 164, 0.13);
+  --tc-hover-text: #d5efe7;
+  --tc-points: #7fd1b8;
+  --tc-accent: #8dd0be;
+  --tc-accent-fg: #101f1c;
+  --tc-track-bg: rgba(232, 243, 239, 0.12);
+  --tc-danger-bg: rgba(185, 58, 58, 0.18);
+  --tc-danger-text: #f3a6a6;
+  --tc-frame-line: rgba(116, 182, 164, 0.21);
+}
+
+/* ---------- Song-Style Mounting Hairline Frame ---------- */
+.tier-craft-mount-line {
+  position: absolute;
+  inset: 5px;
+  border-radius: calc(1rem - 5px);
+  border: 1px solid var(--tc-frame-line);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ---------- Traditional Square Seal Stamp ---------- */
+.avatar-seal-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  font-family: 'Songti SC', 'Noto Serif SC', 'STSong', 'SimSun', Georgia, serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.avatar-seal-mark[data-tier='bronze'] {
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.avatar-seal-mark[data-tier='silver'] {
+  background: rgba(74, 107, 130, 0.13);
+  border: 1px solid rgba(74, 107, 130, 0.36);
+  color: #3a5d75;
+}
+.dark .avatar-seal-mark[data-tier='silver'],
+:root[data-theme='dark'] .avatar-seal-mark[data-tier='silver'] {
+  color: #a9cbe2;
+  border-color: rgba(126, 162, 190, 0.4);
+}
+
+.avatar-seal-mark[data-tier='gold'] {
+  background: #9e2a2b; /* 朱砂印泥 */
+  color: #fbf7ee;
+}
+
+.avatar-seal-mark[data-tier='platinum'] {
+  background: #9e2a2b; /* 青玉配朱印，温润雅正 */
+  color: #fbf7ee;
+  box-shadow: 0 1px 3px rgba(32, 99, 84, 0.22);
+}
+
+/* ---------- Profile Hero Card Specific Refinements ---------- */
+.profile-hero-craft {
+  border-radius: 1rem;
+  box-shadow: 0 12px 30px -14px rgba(20, 26, 33, 0.1), 0 2px 6px -2px rgba(20, 26, 33, 0.04);
+}
+
+.profile-hero-craft[data-tier='silver'] {
+  box-shadow:
+    0 14px 34px -14px rgba(48, 82, 108, 0.14),
+    0 2px 8px -2px rgba(114, 150, 178, 0.08);
+}
+
+.profile-hero-craft[data-tier='gold'] {
+  box-shadow:
+    0 16px 38px -14px rgba(90, 68, 28, 0.16),
+    0 2px 8px -2px rgba(181, 146, 76, 0.1);
+}
+
+.profile-hero-craft[data-tier='platinum'] {
+  box-shadow:
+    0 18px 40px -14px rgba(24, 72, 60, 0.2),
+    0 2px 10px -2px rgba(48, 116, 98, 0.11),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.dark .profile-hero-craft[data-tier='gold'],
+:root[data-theme='dark'] .profile-hero-craft[data-tier='gold'],
+.dark .profile-hero-craft[data-tier='platinum'],
+:root[data-theme='dark'] .profile-hero-craft[data-tier='platinum'] {
+  box-shadow: 0 20px 44px -14px rgba(0, 0, 0, 0.48);
+}
+
+.profile-hero-watermark {
+  position: absolute;
+  right: -28px;
+  top: -36px;
+  width: 176px;
+  height: 176px;
+  border-radius: 9999px;
+  border: 1px solid var(--tc-accent);
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+.profile-hero-watermark::after {
+  content: '';
+  position: absolute;
+  inset: 20px;
+  border-radius: 9999px;
+  border: 1px dashed var(--tc-accent);
+  opacity: 0.7;
+}
+
+.profile-hero-avatar-ring[data-tier='bronze'] {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-border) 90%, transparent);
+}
+
+.profile-hero-avatar-ring[data-tier='silver'] {
+  box-shadow: 0 0 0 2px #7ea1bc, 0 0 0 5px rgba(126, 161, 188, 0.18);
+}
+
+.profile-hero-avatar-ring[data-tier='gold'] {
+  box-shadow: 0 0 0 2px #b8934a, 0 0 0 5px rgba(184, 147, 74, 0.2);
+}
+
+.profile-hero-avatar-ring[data-tier='platinum'] {
+  box-shadow: 0 0 0 2px #2f7a68, 0 0 0 5px rgba(47, 122, 104, 0.2), 0 4px 14px rgba(24, 72, 60, 0.18);
+}
+
+/* ---------- MemberTierCard Accent Harmony ---------- */
+.member-tier-craft-card[data-tier='silver'] {
+  border-color: rgba(114, 150, 178, 0.36);
+}
+.member-tier-craft-card[data-tier='gold'] {
+  border-color: rgba(181, 146, 76, 0.42);
+}
+.member-tier-craft-card[data-tier='platinum'] {
+  border-color: rgba(48, 116, 98, 0.42);
+}
