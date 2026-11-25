@@ -56,6 +56,7 @@ describe('member tier derivation', () => {
       bonusBps: 0,
       thresholds: config.thresholds,
       nextTier: 'silver',
+      nextTierLabel: '银卡',
       pointsToNextTier: config.thresholds.silver,
     })
   })
@@ -103,6 +104,7 @@ describe('member tier derivation', () => {
       bonusBps: config.bonusBps.platinum,
       thresholds: config.thresholds,
       nextTier: null,
+      nextTierLabel: null,
       pointsToNextTier: 0,
     })
   })
