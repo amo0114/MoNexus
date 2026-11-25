@@ -29,7 +29,7 @@ const settings = {
 }
 const credentials = { provider: 'stripe' as const, secretKey: 'sk_test_first', webhookSecret: 'whsec_first' }
 const managed = paymentSettingsDefinition('stripe').api
-let actor: number, buyer: number, failCreate = false
+let actor: number, buyer: number, failCreate = false, failCheckoutLookup = false
 const sessions = new Map<string, Record<string, any>>()
 const calls: Array<{ key: string; operation: string }> = []
 beforeEach(async () => {
@@ -39,7 +39,7 @@ beforeEach(async () => {
   buyer = (await createTestUser('runtime-payment-buyer@test.local', 'pass123', 'user', 0)).user.id
   await prisma.rechargePricePolicy.create({ data: { code: randomUUID(), version: 1, currency: 'CNY', currencyScale: 2, pointsNumerator: 1n, pointsDenominator: 1n,
     minAmountMinor: 100n, maxAmountMinor: 100000n, amountStepMinor: 100n, dailyLimitMinor: 200000n, monthlyLimitMinor: 1000000n, limitTimeZone: 'Asia/Shanghai', status: 'active', effectiveAt: new Date() } })
-  sessions.clear(); calls.length = 0; failCreate = false
+  sessions.clear(); calls.length = 0; failCreate = false; failCheckoutLookup = false
   vi.mocked(createStripeSdk).mockImplementation(cfg => ({
     accounts: {
       retrieve: async () => ({
@@ -59,9 +59,10 @@ beforeEach(async () => {
         sessions.set(id, session); return session
       },
       retrieve: async (id: string) => { calls.push({ key: cfg.secretKey, operation: 'query' }); return sessions.get(id) },
-      list: async (input: { payment_intent?: string }) => ({
-        data: [...sessions.values()].filter(item => !input.payment_intent || item.payment_intent === input.payment_intent),
-      }),
+      list: async (input: { payment_intent?: string }) => {
+        if (failCheckoutLookup) throw new Error('Stripe session lookup temporarily unavailable')
+        return { data: [...sessions.values()].filter(item => !input.payment_intent || item.payment_intent === input.payment_intent) }
+      },
       expire: async (id: string) => { const row = sessions.get(id)!; row.status = 'expired'; return row },
     } },
     paymentIntents: { retrieve: async () => ({}), cancel: async () => ({}) },
@@ -160,11 +161,12 @@ describe('payment runtime versions', () => {
     expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('credited')
     expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } })).providerPaymentId).toBe(paid.payment_intent)
   })
-  it('binds a PaymentIntent success callback that arrives before the Session callback', async () => {
+  it('acknowledges a PaymentIntent callback before Session lookup and recovers after a lookup failure', async () => {
     await activate()
     const accepted = await order()
     const attempt = accepted.paymentIntent!.attempts[0]
     const paid = markCheckoutPaid(accepted)
+    failCheckoutLookup = true
     const signed = signStripeFixture(stripeEventFixture({
       id: 'evt_intent_first',
       type: 'payment_intent.succeeded',
@@ -176,9 +178,15 @@ describe('payment runtime versions', () => {
     }), credentials.webhookSecret)
     const response = await api.post(`/api/payment/webhooks/stripe/accounts/${encodeURIComponent(accepted.providerAccountKey)}`)
       .set('Content-Type', 'application/json').set('Stripe-Signature', signed.header).send(signed.payloadString).expect(200)
-    const observation = await prisma.paymentEvent.findUniqueOrThrow({ where: { id: response.body.observationId } })
-    expect(observation.paymentAttemptId).toBe(attempt.id)
-    await applyConfirmedPayment(observation.id)
+    const observation = await vi.waitFor(async () => {
+      const row = await prisma.paymentEvent.findUniqueOrThrow({ where: { id: response.body.observationId } })
+      expect(row.status).toBe('failed')
+      expect(row.paymentAttemptId).toBeNull()
+      return row
+    })
+    failCheckoutLookup = false
+    expect((await applyConfirmedPayment(observation.id)).outcome).toBe('credited')
+    expect((await prisma.paymentEvent.findUniqueOrThrow({ where: { id: observation.id } })).paymentAttemptId).toBe(attempt.id)
     const sessionResponse = await callback(accepted, credentials.webhookSecret)
     expect(sessionResponse.status).toBe(200)
     await applyConfirmedPayment(sessionResponse.body.observationId)

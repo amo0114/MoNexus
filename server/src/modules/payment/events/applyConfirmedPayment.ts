@@ -12,6 +12,7 @@ import { findPaymentAttempt } from './findAttempt.js'
 import { matchesStripePaymentIdentity, stripeCheckoutSessionId } from '../providers/stripe/checkoutIdentity.js'
 import { REFUND_BUSINESS_EVENT_KEY } from '../../recharge/idempotency.js'
 import { MANUAL_PAYMENT_RESOLUTION, manualPaymentResolutionSchema } from './manualResolution.js'
+import { resolveHistoricalProvider } from '../providers/registry.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
 const PAYABLE_ORDER = ['created', 'pending_payment', 'closure_pending'] as const
@@ -41,6 +42,44 @@ function verificationPassed(row: {
     return row.verificationMethod === 'webhook_signature' && row.signatureVerified === true
   }
   return row.verificationMethod === 'authenticated_provider_api'
+}
+
+async function resolveUnboundStripeSession(observation: {
+  provider: string
+  source: string
+  eventType: string
+  verificationMethod: string
+  signatureVerified: boolean | null
+  providerCredentialRevisionId: string | null
+  providerAccountKey: string
+  paymentAttemptId: string | null
+  providerPaymentId: string | null
+  normalizedPayload: Prisma.JsonValue
+}) {
+  if (
+    observation.provider !== 'stripe'
+    || observation.source !== 'webhook'
+    || observation.eventType !== 'payment_intent.succeeded'
+    || !verificationPassed(observation)
+    || observation.paymentAttemptId
+    || !observation.providerPaymentId?.startsWith('pi_')
+    || parseNormalizedPaymentPayload(observation.normalizedPayload).status !== 'succeeded'
+  ) return undefined
+
+  // The webhook is already durable and acknowledged. A failed lookup leaves
+  // the unbound observation eligible for normal retry and query recovery.
+  try {
+    const adapter = await resolveHistoricalProvider('stripe', observation.providerCredentialRevisionId)
+    const payment = await adapter.queryPayment({
+      providerAccountKey: observation.providerAccountKey,
+      providerPaymentId: observation.providerPaymentId,
+    })
+    if (payment.status === 'succeeded' && payment.providerPaymentId === observation.providerPaymentId) {
+      return stripeCheckoutSessionId('stripe', payment.providerOrderId)
+    }
+  } catch {
+    return undefined
+  }
 }
 
 export async function writeOpenReconItem(tx: Prisma.TransactionClient, input: {
@@ -148,6 +187,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
     return { observationId, outcome: 'reconcile_required' }
   }
 
+  const resolvedSessionId = await resolveUnboundStripeSession(existing)
   const leaseToken = newLeaseToken()
   const applied = await prisma.$transaction(async tx => {
       const claimed = await tx.$queryRaw<Array<{ id: string; leaseToken: string }>>`
@@ -204,6 +244,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
       const resolution = manual?.data
 
       const payload = parseNormalizedPaymentPayload(observation.normalizedPayload)
+      const providerOrderId = resolvedSessionId ?? payload.providerOrderId
       if (payload.status !== 'succeeded') {
         return { outcome: 'ignored' as const, reason: `status_${payload.status || 'unknown'}` }
       }
@@ -245,7 +286,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
           provider: observation.provider,
           providerAccountKey: observation.providerAccountKey,
           providerPaymentId: payload.providerPaymentId,
-          stripeSessionId: stripeCheckoutSessionId(observation.provider, payload.providerOrderId),
+          stripeSessionId: stripeCheckoutSessionId(observation.provider, providerOrderId),
         })
       if (!attemptHint) {
         return { outcome: 'retry' as const, reason: 'attempt_missing' }
@@ -323,7 +364,7 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         || quotedMismatch
         || quotedOrderMismatch
         || quotedMethodMismatch
-        || (observation.provider === 'stripe' && !matchesStripePaymentIdentity(attempt, payload))
+        || (observation.provider === 'stripe' && !matchesStripePaymentIdentity(attempt, { ...payload, providerOrderId }))
         || (resolution && observation.provider !== 'stripe' && payload.providerPaymentId !== attempt.providerPaymentId)
         || (payload.quotedOrderId !== undefined && payload.providerPaymentId !== attempt.id)
       ) {

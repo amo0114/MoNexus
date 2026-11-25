@@ -503,14 +503,6 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
 
       if (isPaymentIntent(object)) {
         const payment = paymentFromIntent(object, providerAccountKey)
-        if (payment.status === 'succeeded') {
-          try {
-            const session = await findSessionForPaymentIntent(object.id)
-            if (session) payment.providerOrderId = session.id
-          } catch (err) {
-            rethrowStripe(err)
-          }
-        }
         return {
           eventType: event.type,
           providerEventId: event.id,
