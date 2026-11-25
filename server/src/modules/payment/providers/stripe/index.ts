@@ -30,6 +30,7 @@ import {
   STRIPE_CAPABILITY_VERSION,
   STRIPE_PAYMENT_METHODS,
   STRIPE_PROVIDER_NAME,
+  STRIPE_WECHAT_PAY_METHOD,
   assertStripeCredentialIsolation,
   createStripeSdk,
   modeFromAccountKey,
@@ -74,8 +75,15 @@ export type CreateStripeProviderOptions = {
   client?: StripeAdapterClient
 }
 
-function isCardMethod(value: string): boolean {
-  return (STRIPE_PAYMENT_METHODS as readonly string[]).includes(value)
+function assertPaymentMethod(
+  config: StripeRuntimeConfig,
+  currency: RechargeCurrency,
+  method: string,
+): asserts method is typeof STRIPE_PAYMENT_METHODS[number] {
+  if (method === 'card') return
+  if (method === STRIPE_WECHAT_PAY_METHOD && currency === 'CNY'
+      && config.chargeCurrency === 'CNY' && config.wechatPayMinimumAmountMinor != null) return
+  throw paymentMethodUnavailable()
 }
 
 function digestCapabilities(input: {
@@ -95,7 +103,7 @@ function digestCapabilities(input: {
     version: input.version,
     minimumAmountMinor: serializeAmountMinor(input.minimumAmountMinor),
     maximumAmountMinor: input.maximumAmountMinor == null ? null : serializeAmountMinor(input.maximumAmountMinor),
-    methods: [...STRIPE_PAYMENT_METHODS],
+    methods: [input.paymentMethod],
   })).digest('hex')
 }
 
@@ -115,11 +123,9 @@ function rethrowStripe(err: unknown): never {
   throw paymentProviderUnavailable()
 }
 
-function checkoutExpiresAt(session: Stripe.Checkout.Session): string {
-  if (typeof session.expires_at === 'number' && session.expires_at > 0) {
-    return new Date(session.expires_at * 1000).toISOString()
-  }
-  return new Date(Date.now() + 30 * 60 * 1000).toISOString()
+function checkoutActionExpiresAt(session: Stripe.Checkout.Session, orderExpiresAt?: Date): string {
+  const checkoutExpiresAt = session.expires_at * 1000
+  return new Date(Math.min(checkoutExpiresAt, orderExpiresAt?.getTime() ?? checkoutExpiresAt)).toISOString()
 }
 
 function resolveReturnUrls(input: CreateProviderPaymentInput, config: StripeRuntimeConfig): { successUrl: string; cancelUrl: string } {
@@ -248,30 +254,37 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
       currency: RechargeCurrency
       paymentMethod: string
     }) {
-      if (!isCardMethod(input.paymentMethod)) throw paymentMethodUnavailable()
       const config = configOf()
+      assertPaymentMethod(config, input.currency, input.paymentMethod)
       const mode = modeFromEnvironment(input.environment)
       if (mode !== config.mode) {
         throw paymentProviderUnavailable('stripe mode does not match recharge environment')
+      }
+      if ((config.accountId || config.mode === 'live') && (!config.chargeCurrency || config.minimumAmountMinor === undefined)) {
+        throw paymentProviderUnavailable('请为 Stripe 商户配置收款币种与银行卡最低收款额')
       }
       assertStripeCredentialIsolation(config)
       return { providerAccountKey: stripeAccountKey(mode, config.accountId) }
     },
 
     async getCapabilities(context: ProviderContext): Promise<ProviderCapabilities> {
-      if (!isCardMethod(context.paymentMethod)) throw paymentMethodUnavailable()
       const config = configOf()
+      assertPaymentMethod(config, context.currency, context.paymentMethod)
       assertAccount(context.providerAccountKey, config)
-      const minimumAmountMinor = stripeMinimumAmountMinor(context.currency, context.paymentMethod)
+      const platformMinimum = stripeMinimumAmountMinor(context.currency, context.paymentMethod)
+      const wechat = context.paymentMethod === STRIPE_WECHAT_PAY_METHOD
+      const accountMinimum = wechat ? config.wechatPayMinimumAmountMinor : config.minimumAmountMinor
+      if (config.chargeCurrency && config.chargeCurrency !== context.currency) throw paymentMethodUnavailable()
+      const minimumAmountMinor = accountMinimum != null && accountMinimum > platformMinimum ? accountMinimum : platformMinimum
       const maximumAmountMinor = null
       const version = STRIPE_CAPABILITY_VERSION
       return {
-        supportedCurrencies: ['CNY', 'USD'],
-        paymentMethods: STRIPE_PAYMENT_METHODS,
+        supportedCurrencies: config.chargeCurrency ? [config.chargeCurrency] : ['CNY', 'USD'],
+        paymentMethods: [context.paymentMethod],
         actionTypes: ['redirect'],
         supportsRefunds: true,
         supportsPartialRefund: false,
-        supportsDisputes: true,
+        supportsDisputes: !wechat,
         supportsReconciliation: false,
         supportsBuyerApprovalCapture: false,
         minimumAmountMinor,
@@ -290,8 +303,9 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
     },
 
     async createPayment(input: CreateProviderPaymentInput): Promise<ProviderPaymentAction> {
-      if (!isCardMethod(input.paymentMethod)) throw paymentMethodUnavailable()
       const config = configOf()
+      assertPaymentMethod(config, input.currency, input.paymentMethod)
+      const wechat = input.paymentMethod === STRIPE_WECHAT_PAY_METHOD
       assertAccount(input.providerAccountKey, config)
       const { successUrl, cancelUrl } = resolveReturnUrls(input, config)
       const metadata = stripeMetadata({
@@ -301,6 +315,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         amountMinor: input.amountMinor,
         currency: input.currency,
         providerAccountKey: input.providerAccountKey,
+        ...(wechat && { paymentMethod: STRIPE_WECHAT_PAY_METHOD }),
       })
       let unitAmount: number
       try {
@@ -309,14 +324,19 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         throw badRequest('stripe amount is invalid')
       }
       try {
-        let session = await clientOf().checkout.sessions.create({
+        const session = await clientOf().checkout.sessions.create({
           mode: 'payment',
           client_reference_id: input.orderId,
           success_url: successUrl,
           cancel_url: cancelUrl,
-          expires_at: Math.floor(Date.now() / 1000) + 31 * 60,
-          payment_method_types: ['card'],
-          expand: ['payment_intent'],
+          // Stripe requires at least 30 minutes of validity at creation.
+          // Anchor the request to the persisted order for identical retries.
+          ...(input.orderExpiresAt && {
+            expires_at: Math.floor(input.orderExpiresAt.getTime() / 1000) + 31 * 60,
+          }),
+          payment_method_types: [input.paymentMethod],
+          ...(wechat && { payment_method_options: { wechat_pay: { client: 'web' as const } } }),
+          adaptive_pricing: { enabled: false },
           line_items: [{
             quantity: 1,
             price_data: {
@@ -330,22 +350,14 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
         }, { idempotencyKey: input.requestIdempotencyKey })
         const checkoutUrl = session.url
         if (!checkoutUrl) throw paymentProviderUnavailable()
-        let providerPaymentId = paymentIntentIdFromSession(session)
-        if (!providerPaymentId) {
-          session = await retrieveSessionExpanded(session.id)
-          providerPaymentId = paymentIntentIdFromSession(session)
-        }
-        if (!providerPaymentId) {
-          throw paymentProviderUnavailable('stripe checkout did not create a payment intent')
-        }
         return {
           status: 'requires_action',
-          providerPaymentId,
+          providerPaymentId: paymentIntentIdFromSession(session) ?? session.id,
           providerOrderId: session.id,
           action: {
             type: 'redirect',
             url: checkoutUrl,
-            expiresAt: checkoutExpiresAt(session),
+            expiresAt: checkoutActionExpiresAt(session, input.orderExpiresAt),
           },
           requestIdempotencyKey: input.requestIdempotencyKey,
           amountMinor: input.amountMinor,

@@ -18,6 +18,7 @@ export function parseNormalizedPaymentPayload(value: Prisma.JsonValue | null | u
   return {
     status: typeof payload.status === 'string' ? payload.status : '',
     providerPaymentId: typeof payload.providerPaymentId === 'string' ? payload.providerPaymentId : null,
+    providerOrderId: typeof payload.providerOrderId === 'string' ? payload.providerOrderId : null,
     providerCaptureId: typeof payload.providerCaptureId === 'string' ? payload.providerCaptureId : null,
     providerRefundId: typeof payload.providerRefundId === 'string' ? payload.providerRefundId : null,
     amountMinor: typeof amountRaw === 'string' ? BigInt(amountRaw) : null,

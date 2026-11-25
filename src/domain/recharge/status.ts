@@ -115,6 +115,7 @@ export const PROVIDER_LABEL: Record<string, string> = {
 
 export const METHOD_LABEL: Record<string, string> = {
   card: '银行卡',
+  wechat_pay: '微信支付',
   redirect: '跳转支付',
   qr_code: '扫码支付',
   form_post: '表单支付',

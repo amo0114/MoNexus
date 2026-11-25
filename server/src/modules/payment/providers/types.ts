@@ -33,6 +33,7 @@ export type CreateProviderPaymentInput = {
   paymentMethod: string
   providerAccountKey: string
   requestIdempotencyKey: string
+  orderExpiresAt?: Date
   returnUrl?: string
   metadata?: Record<string, string>
 }
