@@ -41,7 +41,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       nickname,
       presentedRefreshToken(req),
     )
-    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenExpiresAt)
     res.status(201).json({ user: result.user, accessToken: result.accessToken })
   } catch (err) {
     next(err)
@@ -96,7 +96,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       })
       return
     }
-    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenExpiresAt)
     res.json({ user: result.user, accessToken: result.accessToken })
   } catch (err) {
     next(err)
@@ -124,7 +124,7 @@ export async function confirmMfaEnrollment(req: Request, res: Response, next: Ne
       ip: req.ip,
       userAgent: req.headers['user-agent'],
     })
-    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenExpiresAt)
     res.status(201).json({
       user: result.user,
       accessToken: result.accessToken,
@@ -145,7 +145,7 @@ export async function verifyMfa(req: Request, res: Response, next: NextFunction)
       userAgent: req.headers['user-agent'],
       existingRefreshToken: presentedRefreshToken(req),
     })
-    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenExpiresAt)
     res.json({
       user: result.user,
       accessToken: result.accessToken,
@@ -167,7 +167,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
       req.headers['user-agent'],
       req.body?.expectedSessionId,
     )
-    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
+    setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenExpiresAt)
     res.json({ accessToken: result.accessToken })
   } catch (err) {
     next(err)

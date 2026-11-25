@@ -13,6 +13,7 @@ import {
 import { prisma } from '../lib/prisma.js'
 import { getSystemConfigValue } from '../lib/systemConfig.js'
 import { recordActiveDay } from '../lib/activeDay.js'
+import { legacyAdminSessionStartCutoff } from '../modules/auth/sessionPolicy.js'
 
 export interface AuthPayload {
   userId: number
@@ -125,6 +126,7 @@ export async function getAdminMfaSessionState(payload: AuthPayload): Promise<Adm
   if (!user.mfaEnabled || user.mfaVersion !== mfaVersion) return 'mfa_required'
 
   const now = new Date()
+  const adminLegacyCutoff = legacyAdminSessionStartCutoff(now)
   const activeSession = await prisma.refreshToken.findFirst({
     where: {
       userId: payload.userId,
@@ -132,8 +134,8 @@ export async function getAdminMfaSessionState(payload: AuthPayload): Promise<Adm
       revoked: false,
       expiresAt: { gt: now },
       OR: [
-        { absoluteExpiresAt: null },
         { absoluteExpiresAt: { gt: now } },
+        { absoluteExpiresAt: null, sessionStartedAt: { gt: adminLegacyCutoff } },
       ],
     },
     select: { id: true },
@@ -192,7 +194,7 @@ export async function requireActiveUser(req: Request, _res: Response, next: Next
     // revocation on another replica. Authorization always reads current facts.
     const user = await prisma.user.findUnique({
       where: { id: req.user.userId },
-      select: { id: true },
+      select: { id: true, role: true },
     })
     if (!user) {
       next(unauthenticated('未登录'))
@@ -210,10 +212,15 @@ export async function requireActiveUser(req: Request, _res: Response, next: Next
           sessionId: req.user.sid,
           revoked: false,
           expiresAt: { gt: now },
-          OR: [
-            { absoluteExpiresAt: null },
-            { absoluteExpiresAt: { gt: now } },
-          ],
+          OR: user.role === 'admin'
+            ? [
+                { absoluteExpiresAt: { gt: now } },
+                { absoluteExpiresAt: null, sessionStartedAt: { gt: legacyAdminSessionStartCutoff(now) } },
+              ]
+            : [
+                { absoluteExpiresAt: null },
+                { absoluteExpiresAt: { gt: now } },
+              ],
         },
         select: { id: true },
       })

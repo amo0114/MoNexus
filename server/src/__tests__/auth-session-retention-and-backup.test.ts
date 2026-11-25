@@ -7,12 +7,14 @@ import { prisma } from '../lib/prisma.js'
 import { createTestMerchant, createTestProduct, createTestUser } from './helpers.js'
 import { hashRefreshToken } from '../modules/auth/sessionIssuance.js'
 import {
+  backfillLegacyRefreshTokenAbsoluteExpiry,
   cleanupExpiredRefreshTokenFamilies,
   scrubLegacyFileGrantUserAgents,
   scrubLegacyRefreshTokenMetadata,
 } from '../modules/auth/sessionRetentionCron.js'
-import { dumpDatabase } from '../modules/portable-backups/service.js'
+import { dumpDatabase, filterRestoreTocList } from '../modules/portable-backups/service.js'
 import { runProgram } from '../modules/portable-backups/archive.js'
+import { config } from '../config/index.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -111,9 +113,24 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
       ],
     })
 
-    const result = await cleanupExpiredRefreshTokenFamilies({ now, batchSize: 2 })
+    // Even with maxFamiliesPerRun=1 and batchSize=2, activeFamilyId's 4 older
+    // predecessors must NOT consume the family budget or starve deadFamilyId!
+    // First prove maxRowsScanned=3 stops cleanly after scanning only 3 rows.
+    const bounded = await cleanupExpiredRefreshTokenFamilies({
+      now,
+      batchSize: 2,
+      maxFamiliesPerRun: 1,
+      maxRowsScanned: 3,
+    })
+    expect(bounded.rowsScanned).toBe(3)
+    expect(bounded.familiesChecked).toBe(0)
+    expect(bounded.familiesDeleted).toBe(0)
+
+    const result = await cleanupExpiredRefreshTokenFamilies({ now, batchSize: 2, maxFamiliesPerRun: 1 })
+    expect(result.familiesChecked).toBe(1)
     expect(result.familiesDeleted).toBe(1)
     expect(result.rowsDeleted).toBe(2)
+    expect(result.rowsScanned).toBe(6)
 
     expect(await prisma.refreshToken.count({ where: { sessionId: deadFamilyId } })).toBe(0)
     expect(await prisma.refreshToken.count({ where: { sessionId: activeFamilyId } })).toBe(5)
@@ -244,22 +261,84 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
       // Ephemeral auth credentials must NOT have TABLE DATA entries in the dump.
       expect(toc).not.toMatch(/TABLE DATA public RefreshToken/)
       expect(toc).not.toMatch(/TABLE DATA public AuthChallenge/)
+
+      // Also verify legacy-dump restore filtering (`pg_restore --use-list`): take
+      // an UNFILTERED dump (simulating a pre-upgrade backup that still holds
+      // RefreshToken & AuthChallenge rows), filter its TOC, and prove `pg_restore`
+      // generates table DDL + User data with ZERO COPY data for either auth table.
+      const legacyDumpPath = path.join(tmpDir, 'legacy.dump')
+      const url = new URL(config.databaseUrl)
+      const password = decodeURIComponent(url.password)
+      url.password = ''
+      url.searchParams.delete('schema')
+      const pgEnv = { ...process.env, ...(password ? { PGPASSWORD: password } : {}) }
+      await runProgram('pg_dump', [
+        '--format=custom',
+        '--no-owner',
+        '--no-privileges',
+        '--file', legacyDumpPath,
+        '--dbname', url.toString(),
+      ], { env: pgEnv })
+
+      const legacyToc = await runProgram('pg_restore', ['--list', legacyDumpPath], { env: pgEnv })
+      expect(legacyToc).toMatch(/TABLE DATA public RefreshToken/)
+      expect(legacyToc).toMatch(/TABLE DATA public AuthChallenge/)
+
+      const filteredToc = filterRestoreTocList(legacyToc)
+      expect(filteredToc).toMatch(/TABLE public RefreshToken/)
+      expect(filteredToc).toMatch(/TABLE public AuthChallenge/)
+      expect(filteredToc).toMatch(/TABLE DATA public User/)
+      expect(filteredToc).not.toMatch(/TABLE DATA public RefreshToken/)
+      expect(filteredToc).not.toMatch(/TABLE DATA public AuthChallenge/)
+
+      const listPath = path.join(tmpDir, 'restore.list')
+      const sqlPath = path.join(tmpDir, 'restore.sql')
+      await fsp.writeFile(listPath, filteredToc, { mode: 0o600 })
+      await runProgram('pg_restore', [
+        '--clean',
+        '--if-exists',
+        '--no-owner',
+        '--no-privileges',
+        '--use-list', listPath,
+        '--file', sqlPath,
+        legacyDumpPath,
+      ], { env: pgEnv })
+      const restoreSql = await fsp.readFile(sqlPath, 'utf8')
+      expect(restoreSql).toMatch(/CREATE TABLE public\."RefreshToken"/)
+      expect(restoreSql).toMatch(/CREATE TABLE public\."AuthChallenge"/)
+      expect(restoreSql).toMatch(/COPY public\."User"/)
+      expect(restoreSql).not.toMatch(/COPY public\."RefreshToken"/)
+      expect(restoreSql).not.toMatch(/COPY public\."AuthChallenge"/)
+      expect(restoreSql).not.toContain('backup-canary-secret-ciphertext')
     } finally {
       await fsp.rm(tmpDir, { recursive: true, force: true })
     }
   })
 
-  it('backfill SQL tightens legacy active admin sessions to 7d absolute cap without evicting non-admin active sessions', async () => {
+  it('keeps DDL migration free of table-locking UPDATEs and backfills legacy active rows online in PK batches', async () => {
+    const migrationSqlPath = path.resolve(
+      __dirname,
+      '../../prisma/migrations/20261125100000_refresh_token_session_hardening/migration.sql',
+    )
+    const migrationSql = await fsp.readFile(migrationSqlPath, 'utf8')
+    const nonCommentSql = migrationSql
+      .split('\n')
+      .filter(line => !line.trim().startsWith('--'))
+      .join('\n')
+    expect(nonCommentSql).toMatch(/ALTER TABLE "RefreshToken"/)
+    expect(nonCommentSql).not.toMatch(/\bUPDATE\b/i)
+
     const { user: normalUser } = await createTestUser('backfill-user@test.local', 'Backfill#U2026')
     const { user: adminUser } = await createTestUser('backfill-admin@test.local', 'Backfill#A2026', 'admin')
-    const now = Date.now()
+    const now = new Date('2026-11-25T12:00:00.000Z')
+    const nowMs = now.getTime()
 
     const userStandard = await prisma.refreshToken.create({
       data: {
         userId: normalUser.id,
         tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
-        sessionStartedAt: new Date(now - 5 * DAY_MS),
-        expiresAt: new Date(now + 2 * DAY_MS),
+        sessionStartedAt: new Date(nowMs - 5 * DAY_MS),
+        expiresAt: new Date(nowMs + 2 * DAY_MS),
         absoluteExpiresAt: null,
       },
     })
@@ -267,8 +346,18 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
       data: {
         userId: normalUser.id,
         tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
-        sessionStartedAt: new Date(now - 5 * DAY_MS),
-        expiresAt: new Date(now + 40 * DAY_MS),
+        sessionStartedAt: new Date(nowMs - 5 * DAY_MS),
+        expiresAt: new Date(nowMs + 40 * DAY_MS),
+        absoluteExpiresAt: null,
+      },
+    })
+    const userAlreadyExpired = await prisma.refreshToken.create({
+      data: {
+        userId: normalUser.id,
+        tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+        sessionStartedAt: new Date(nowMs - 20 * DAY_MS),
+        expiresAt: new Date(nowMs - 1 * DAY_MS),
+        revoked: false,
         absoluteExpiresAt: null,
       },
     })
@@ -276,34 +365,31 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
       data: {
         userId: adminUser.id,
         tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
-        sessionStartedAt: new Date(now - 8 * DAY_MS),
-        expiresAt: new Date(now + 3 * DAY_MS),
+        sessionStartedAt: new Date(nowMs - 8 * DAY_MS),
+        expiresAt: new Date(nowMs + 3 * DAY_MS),
+        absoluteExpiresAt: null,
+      },
+    })
+    const adminWithinCap = await prisma.refreshToken.create({
+      data: {
+        userId: adminUser.id,
+        tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+        sessionStartedAt: new Date(nowMs - 2 * DAY_MS),
+        expiresAt: new Date(nowMs + 20 * DAY_MS),
         absoluteExpiresAt: null,
       },
     })
 
-    const migrationSqlPath = path.resolve(
-      __dirname,
-      '../../prisma/migrations/20261125100000_refresh_token_session_hardening/migration.sql',
-    )
-    const migrationSql = await fsp.readFile(migrationSqlPath, 'utf8')
-    const updateStatements = migrationSql
-      .split(';')
-      .map(chunk => chunk
-        .split('\n')
-        .filter(line => !line.trim().startsWith('--'))
-        .join('\n')
-        .trim())
-      .filter(statement => /^UPDATE\b/i.test(statement))
-    expect(updateStatements).toHaveLength(2)
-    for (const statement of updateStatements) {
-      await prisma.$executeRawUnsafe(statement)
-    }
+    // Run in small PK batches; already-expired legacy rows are skipped (4 active rows updated).
+    expect(await backfillLegacyRefreshTokenAbsoluteExpiry({ now, batchSize: 1, maxBatches: 10 })).toBe(4)
+    expect(await backfillLegacyRefreshTokenAbsoluteExpiry({ now, batchSize: 1, maxBatches: 10 })).toBe(0)
 
-    const [u1, u2, a1] = await Promise.all([
+    const [u1, u2, uExpired, aOver, aWithin] = await Promise.all([
       prisma.refreshToken.findUniqueOrThrow({ where: { id: userStandard.id } }),
       prisma.refreshToken.findUniqueOrThrow({ where: { id: userLongExpiry.id } }),
+      prisma.refreshToken.findUniqueOrThrow({ where: { id: userAlreadyExpired.id } }),
       prisma.refreshToken.findUniqueOrThrow({ where: { id: adminOverCap.id } }),
+      prisma.refreshToken.findUniqueOrThrow({ where: { id: adminWithinCap.id } }),
     ])
 
     expect(u1.absoluteExpiresAt?.getTime()).toBe(userStandard.sessionStartedAt.getTime() + 30 * DAY_MS)
@@ -312,9 +398,17 @@ describe('session retention, legacy PII scrub, and portable backup exclusion', (
     expect(u2.absoluteExpiresAt?.getTime()).toBe(userLongExpiry.expiresAt.getTime())
     expect(u2.expiresAt.getTime()).toBe(userLongExpiry.expiresAt.getTime())
 
-    const expectedAdminCap = adminOverCap.sessionStartedAt.getTime() + 7 * DAY_MS
-    expect(a1.absoluteExpiresAt?.getTime()).toBe(expectedAdminCap)
-    expect(a1.expiresAt.getTime()).toBe(expectedAdminCap)
-    expect(a1.expiresAt.getTime()).toBeLessThan(now)
+    expect(uExpired.absoluteExpiresAt).toBeNull()
+
+    const expectedOverCap = adminOverCap.sessionStartedAt.getTime() + 7 * DAY_MS
+    expect(aOver.absoluteExpiresAt?.getTime()).toBe(expectedOverCap)
+    expect(aOver.expiresAt.getTime()).toBe(expectedOverCap)
+    expect(aOver.revoked).toBe(true)
+    expect(aOver.revokeReason).toBe('expired')
+
+    const expectedWithinCap = adminWithinCap.sessionStartedAt.getTime() + 7 * DAY_MS
+    expect(aWithin.absoluteExpiresAt?.getTime()).toBe(expectedWithinCap)
+    expect(aWithin.expiresAt.getTime()).toBe(expectedWithinCap)
+    expect(aWithin.revoked).toBe(false)
   })
 })

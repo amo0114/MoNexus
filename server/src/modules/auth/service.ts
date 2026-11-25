@@ -34,7 +34,7 @@ type AuthenticatedLoginResult = {
   kind: 'authenticated'
   accessToken: string
   refreshToken: string
-  refreshTokenMaxAgeMs: number
+  refreshTokenExpiresAt: Date
   user: ReturnType<typeof buildAuthUser>
 }
 
@@ -143,14 +143,14 @@ export async function loginUser(
     issued.user.role,
     issued.session.sessionId,
     undefined,
-    issued.session.accessTokenExpiresInSeconds,
+    issued.session.expiresAt,
   )
 
   return {
     kind: 'authenticated',
     accessToken,
     refreshToken: issued.session.refreshToken,
-    refreshTokenMaxAgeMs: issued.session.maxAgeMs,
+    refreshTokenExpiresAt: issued.session.expiresAt,
     user: buildAuthUser({ ...issued.user, status: 'active' }, issued.user.pointAccount?.balance ?? 0),
   }
 }
@@ -176,10 +176,22 @@ async function handleRefreshReplay(
   metadata: SessionRequestMetadata,
   now: Date,
 ) {
-  const revokedCount = await revokeAllUserRefreshTokens(token.userId, tx, 'refresh_replay', metadata)
-  // Guarantee the replayed family always carries a terminal marker in this
-  // transaction so a repeated replay can never re-trigger user-wide revocation.
-  if (!(await hasExplicitRefreshSessionTermination(tx, token.userId, token.sessionId))) {
+  // Reuse the same lock-held `now` from replay classification so a successor
+  // that was active at classification time is always marked `refresh_replay`
+  // rather than drifting across an expiry boundary into `expired`.
+  const revokedCount = await revokeAllUserRefreshTokens(token.userId, tx, 'refresh_replay', metadata, now)
+  // Explicitly verify a `refresh_replay` marker exists on this family so the
+  // family revocation reason stays consistent with `session_replay_detected`.
+  const hasReplayMarker = await tx.refreshToken.findFirst({
+    where: {
+      userId: token.userId,
+      sessionId: token.sessionId,
+      revoked: true,
+      revokeReason: 'refresh_replay',
+    },
+    select: { id: true },
+  })
+  if (!hasReplayMarker) {
     await tx.refreshToken.updateMany({
       where: { id: token.id },
       data: { revoked: true, revokedAt: now, revokeReason: 'refresh_replay' },
@@ -322,8 +334,7 @@ export async function refreshAccessToken(
       userId: storedToken.userId,
       role: storedToken.user.role,
       refreshToken: next.refreshToken,
-      refreshTokenMaxAgeMs: next.maxAgeMs,
-      accessTokenExpiresInSeconds: next.accessTokenExpiresInSeconds,
+      refreshTokenExpiresAt: next.expiresAt,
       sessionId: next.sessionId,
       mfaVersion: storedToken.user.role === 'admin' ? storedToken.user.mfaVersion : undefined,
     }
@@ -345,10 +356,10 @@ export async function refreshAccessToken(
       result.role === 'admin' && typeof result.mfaVersion === 'number'
         ? { verified: true, version: result.mfaVersion }
         : undefined,
-      result.accessTokenExpiresInSeconds,
+      result.refreshTokenExpiresAt,
     ),
     refreshToken: result.refreshToken,
-    refreshTokenMaxAgeMs: result.refreshTokenMaxAgeMs,
+    refreshTokenExpiresAt: result.refreshTokenExpiresAt,
   }
 }
 

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, HttpError, notFound, sessionChanged, unauthenticated } from '../../lib/httpError.js'
+import { badRequest, HttpError, notFound, sessionChanged, sessionRevoked, unauthenticated } from '../../lib/httpError.js'
 import { consumePasswordReset } from './abusePolicy.js'
 import type { HumanVerificationRequest } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
@@ -12,6 +12,7 @@ import { logger } from '../../lib/logger.js'
 import { passwordPolicyIssue, type PasswordContext } from '../../lib/passwordPolicy.js'
 import { hashRefreshToken } from './sessionIssuance.js'
 import {
+  activeRefreshTokenWhere,
   lockUserRefreshSessionMutations,
   revokeAllUserRefreshTokens,
   type SessionRequestMetadata,
@@ -262,10 +263,32 @@ export async function changePassword(
     if (!user) throw notFound('用户不存在')
     if (await isAccountBanned(user.id, tx)) throw badRequest('账号已被封禁')
 
+    const now = new Date()
+
+    // Re-verify inside the user lock that the caller's Bearer session family is
+    // still active; another tab or device may have replaced/revoked it between
+    // route authentication and acquiring the user lock.
+    if (options.currentSessionId !== undefined) {
+      const activeCurrent = await tx.refreshToken.findFirst({
+        where: {
+          userId,
+          sessionId: options.currentSessionId,
+          ...activeRefreshTokenWhere(now),
+        },
+        select: { id: true },
+      })
+      if (!activeCurrent) {
+        throw (options.expectedSessionId !== undefined || shouldClearCookie)
+          ? sessionChanged()
+          : sessionRevoked()
+      }
+    }
+
     // When the caller binds the change to a specific session or asks to clear
     // the shared refresh cookie, verify ownership inside the user lock before
     // mutating the password so a stale tab never mutates or clears another
-    // session's cookie.
+    // session's cookie. Any presented cookie whose ownership cannot be proven
+    // to match the active expectedSessionId is rejected with 409.
     if (options.expectedSessionId !== undefined && options.currentSessionId !== options.expectedSessionId) {
       throw sessionChanged()
     }
@@ -282,7 +305,7 @@ export async function changePassword(
           where: { tokenHash: hashRefreshToken(options.presentedRefreshToken) },
           select: { userId: true, sessionId: true },
         })
-        if (cookieToken && (cookieToken.userId !== userId || cookieToken.sessionId !== options.expectedSessionId)) {
+        if (!cookieToken || cookieToken.userId !== userId || cookieToken.sessionId !== options.expectedSessionId) {
           throw sessionChanged()
         }
       }
@@ -299,7 +322,7 @@ export async function changePassword(
     await revokeAllUserRefreshTokens(userId, tx, 'revoke_all', {
       ip: options.ip,
       userAgent: options.userAgent,
-    })
+    }, now)
   })
 
   return { shouldClearCookie }

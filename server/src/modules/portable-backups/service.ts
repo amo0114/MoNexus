@@ -392,11 +392,35 @@ export async function dumpDatabase(destination: string, snapshot?: string) {
   ], { env })
 }
 
-async function restoreDatabase(source: string, videoObjects?: VideoBackupObject[]) {
+const EXCLUDED_RESTORE_TABLE_DATA_PATTERN = /^\s*\d+;\s+\d+\s+\d+\s+TABLE DATA\s+public\s+"?(?:RefreshToken|AuthChallenge)"?(?:\s|$)/i
+
+/**
+ * Removes `TABLE DATA` entries for ephemeral authentication tables from a
+ * `pg_restore --list` TOC while preserving table DDL, constraints, indexes,
+ * and all business data. Passing this filtered list to `pg_restore --use-list`
+ * ensures even legacy backups never commit session or MFA challenge rows into
+ * the target database before post-restore cleanup runs.
+ */
+export function filterRestoreTocList(toc: string): string {
+  return toc
+    .split('\n')
+    .filter(line => !EXCLUDED_RESTORE_TABLE_DATA_PATTERN.test(line))
+    .join('\n')
+}
+
+export async function restoreDatabase(source: string, videoObjects?: VideoBackupObject[]) {
   const { url, env } = databaseProcessOptions()
+  const rawToc = await runProgram('pg_restore', ['--list', source], { env })
+  const filteredTocPath = path.join(path.dirname(source), 'restore.list')
+  await fsp.writeFile(filteredTocPath, filterRestoreTocList(rawToc), { mode: 0o600 })
+
   if (videoObjects !== undefined) {
     const sqlFile = path.join(path.dirname(source), 'restore.sql')
-    await runProgram('pg_restore', ['--clean', '--if-exists', '--no-owner', '--no-privileges', '--file', sqlFile, source], { env })
+    await runProgram(
+      'pg_restore',
+      ['--clean', '--if-exists', '--no-owner', '--no-privileges', '--use-list', filteredTocPath, '--file', sqlFile, source],
+      { env },
+    )
     await fsp.appendFile(sqlFile, videoRestoreSql(videoObjects))
     await runProgram('psql', ['-X', '-v', 'ON_ERROR_STOP=1', '--single-transaction', '--dbname', url.toString(), '--file', sqlFile], { env })
     return
@@ -406,6 +430,8 @@ async function restoreDatabase(source: string, videoObjects?: VideoBackupObject[
     '--if-exists',
     '--no-owner',
     '--no-privileges',
+    '--use-list',
+    filteredTocPath,
     '--exit-on-error',
     // PostgreSQL supports transactional DDL. This makes a malformed or
     // incompatible dump fail without leaving the deliberately-empty target

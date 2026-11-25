@@ -46,7 +46,7 @@
    - 单独单语句迁移 `CREATE INDEX CONCURRENTLY "RefreshToken_expiresAt_id_idx" ON "RefreshToken"("expiresAt", "id");`，遵循 `AGENTS.md` §3 并在 `check:migrations` 下校验通过。
 4. **可移植备份脱敏**：
    - `portable-backups/service.ts` 在 `pg_dump` 中加入 `--exclude-table-data=public."RefreshToken"` 与 `--exclude-table-data=public."AuthChallenge"`（保留表结构 DDL）。
-   - 恢复路径保持对旧格式备份兼容，且在恢复完成前清理 `refreshToken` 与 `authChallenge` 两表。
+   - 恢复路径（直接 `pg_restore` 与导出 SQL + `psql` 两条路径）在恢复事务提交前即通过 `pg_restore --use-list` 过滤旧格式备份中的 `RefreshToken` 与 `AuthChallenge` 表数据，并保留恢复后清空事务作纵深防御。
 
 ## D5 · 会话绝对有效期与单用户 20 台活跃设备上限
 
@@ -57,10 +57,11 @@
      - 普通用户 / 商家绝对窗口 = `min(90, max(30, effectiveDays))` 天。
    - 新签发家族时：`absoluteExpiresAt = now + absoluteWindowMs`，`expiresAt = min(now + idleMs, absoluteExpiresAt)`。
    - 续签轮换时：继承原 `absoluteExpiresAt`（历史空值按 `sessionStartedAt + roleWindow` 推导）；若 `absoluteExpiresAt <= now` 拒绝并按过期处理；`nextExpiresAt = min(now + idleMs, absoluteExpiresAt)`。
-   - Refresh Cookie `Max-Age` 裁剪至距 `nextExpiresAt` 的剩余毫秒数；Access JWT `exp` 裁剪至 `Math.floor(Math.min(jwtTtlMs, remainingToAbsoluteMs) / 1000)` 秒（剩余不足 1 秒时视为已过期拒绝续签），保证 SSE 硬过期边界同步收紧。
-   - 迁移回填：
-     - 非管理员活跃行：`absoluteExpiresAt = GREATEST("expiresAt", "sessionStartedAt" + INTERVAL '30 days')`（不踢出既有活跃用户）；
-     - 管理员活跃行：`absoluteExpiresAt = "sessionStartedAt" + INTERVAL '7 days'` 且同步收紧 `"expiresAt" = LEAST("expiresAt", "sessionStartedAt" + INTERVAL '7 days')`（存量超 7 天管理员会话按硬上限过期并重新验证密码 + MFA）。
+   - 跨事务传递持久化绝对截止 `expiresAt`：JWT 签名时直接写入整数秒 `exp <= floor(expiresAt / 1000)`，写 Refresh Cookie 时按响应时刻重新计算剩余整秒 `Max-Age <= expiresAt - now`（剩余不足 1 秒均拒绝签发），确保即使提交与写响应之间存在延迟也不越界。
+   - 迁移与回填解耦（无长表锁）：
+     - DDL 迁移仅执行无默认值的可空列 `ALTER TABLE ... ADD COLUMN`（毫秒级元数据锁，不扫描或更新历史行）；
+     - 新版本上线即在运行时鉴权（`getAdminMfaSessionState`、`requireActiveUser`、`activeRefreshTokenWhere`）与续签路径对 `absoluteExpiresAt IS NULL` 的存量管理员行立即执行 7 天硬上限，同时保持非管理员活跃会话在线；
+     - 线上由 `authSessionRetention` 任务调用 `backfillLegacyRefreshTokenAbsoluteExpiry` 按主键分批仅回填 `revoked = false AND expiresAt > now AND absoluteExpiresAt IS NULL` 的活跃行（非管理员 `GREATEST(expiresAt, sessionStartedAt + 30d)`；管理员 `sessionStartedAt + 7d` 并收紧 `expiresAt` 与超期行标记 `expired`）。
    - 同步更新 `systemConfig.ts` 与 `adminConfigMeta.ts` 对 `refreshTokenMaxAgeDays` 的说明文案。
 2. **单用户 20 台活跃家族上限**：
    - 新家族签发事务内（在 D6 同账号替换之后），若用户当前活跃家族（`revoked = false AND expiresAt > now`）数 `>= 20`，按 `(lastUsedAt ASC, sessionId ASC)` 淘汰最旧家族至插入新家族后总数 `<= 20`，被淘汰家族标记 `revoked = true, revokedAt = now, revokeReason = 'session_limit'` 并记录 `session_revoked`。续签轮换不触发淘汰。

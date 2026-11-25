@@ -35,8 +35,19 @@ const KNOWN_PLATFORMS = new Set([
 ])
 
 function truncateUtf8Bytes(value: string, maxBytes: number): string {
-  if (Buffer.byteLength(value, 'utf8') <= maxBytes) return value
-  const buffer = Buffer.from(value, 'utf8')
+  // Every UTF-16 code unit encodes to at least 1 UTF-8 byte (surrogate pairs:
+  // 2 code units -> 4 bytes), so capping at `maxBytes` code units avoids
+  // measuring or encoding arbitrarily large legacy strings.
+  let sliceEnd = Math.min(value.length, maxBytes)
+  if (sliceEnd > 0 && sliceEnd < value.length) {
+    const lastCode = value.charCodeAt(sliceEnd - 1)
+    if (lastCode >= 0xd800 && lastCode <= 0xdbff) {
+      sliceEnd -= 1
+    }
+  }
+  const prefix = sliceEnd < value.length ? value.slice(0, sliceEnd) : value
+  if (Buffer.byteLength(prefix, 'utf8') <= maxBytes) return prefix
+  const buffer = Buffer.from(prefix, 'utf8')
   let end = maxBytes
   // Step back past any UTF-8 continuation bytes (10xxxxxx) so multi-byte
   // code points are never split mid-sequence.
@@ -82,14 +93,19 @@ function hasLeadingBoundedPrefix(lower: string, prefix: string): boolean {
 }
 
 function hasSafariSignature(lower: string): boolean {
+  // Single-pass equivalence to `/Version\/[^ ]+.*Safari\//i`: there exists a
+  // `version/<non-space>` followed by `safari/` iff one precedes the last `safari/`.
+  const lastSafariIdx = lower.lastIndexOf('safari/')
+  if (lastSafariIdx === -1) return false
+
   let offset = 0
-  while (offset < lower.length) {
-    const versionIdx = lower.indexOf('version/', offset)
-    if (versionIdx === -1) return false
-    const afterPrefix = versionIdx + 'version/'.length
-    if (afterPrefix < lower.length && lower[afterPrefix] !== ' ') {
-      const safariIdx = lower.indexOf('safari/', afterPrefix)
-      if (safariIdx !== -1) return true
+  const prefix = 'version/'
+  while (offset < lastSafariIdx) {
+    const versionIdx = lower.indexOf(prefix, offset)
+    if (versionIdx === -1 || versionIdx >= lastSafariIdx) return false
+    const afterPrefix = versionIdx + prefix.length
+    if (afterPrefix < lastSafariIdx && lower[afterPrefix] !== ' ') {
+      return true
     }
     offset = afterPrefix
   }
@@ -125,11 +141,11 @@ function detectBrowser(lower: string, platform: string | null): string | null {
  * returns `null` when empty or neither browser nor platform is recognized.
  */
 export function parseDeviceHint(userAgent: string | null | undefined): string | null {
-  if (typeof userAgent !== 'string') return null
-  const trimmed = userAgent.trim()
-  if (trimmed.length === 0) return null
+  if (typeof userAgent !== 'string' || userAgent.length === 0) return null
 
-  const bounded = truncateUtf8Bytes(trimmed, MAX_UA_UTF8_BYTES)
+  const bounded = truncateUtf8Bytes(userAgent, MAX_UA_UTF8_BYTES).trim()
+  if (bounded.length === 0) return null
+
   const lower = bounded.toLowerCase()
   const platform = detectPlatform(lower)
   const browser = detectBrowser(lower, platform)

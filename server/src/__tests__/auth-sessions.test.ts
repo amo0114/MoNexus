@@ -3,9 +3,9 @@ import jwt from 'jsonwebtoken'
 import { describe, expect, it } from 'vitest'
 import { api, authHeader, createTestMerchant, createTestUser, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
-import { refreshTokenCookieName } from '../lib/cookies.js'
+import { refreshTokenCookieName, setRefreshTokenCookie } from '../lib/cookies.js'
 import { changePassword, loginUser, refreshAccessToken, revokeAllUserRefreshTokens } from '../modules/auth/service.js'
-import { hashRefreshToken } from '../modules/auth/sessionIssuance.js'
+import { generateAccessToken, hashRefreshToken } from '../modules/auth/sessionIssuance.js'
 import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 import { lockUserRefreshSessionMutations } from '../modules/auth/sessionService.js'
 import { approveMerchant, banUser, suspendMerchant } from '../modules/admin/service.js'
@@ -977,5 +977,116 @@ describe('device session families', () => {
     const setCookies = Array.isArray(rawSetCookie) ? rawSetCookie.map(String) : typeof rawSetCookie === 'string' ? [rawSetCookie] : []
     expect(setCookies.some(cookie => cookie.startsWith(`${refreshTokenCookieName}=;`) && cookie.includes('Expires=Thu, 01 Jan 1970'))).toBe(true)
     await api.post('/api/auth/refresh').set('Cookie', sessionA3.refreshCookie).expect(401)
+  })
+
+  it('never overshoots persisted session deadline on delayed JWT signing or cookie writing, and rejects already-expired issuance', () => {
+    const t0 = new Date('2026-11-25T12:00:00.200Z')
+    const deadline = new Date(t0.getTime() + 3_000) // 12:00:03.200Z
+    const delayedNow = new Date(t0.getTime() + 1_500) // 12:00:01.700Z (1.5s remaining)
+
+    const token = generateAccessToken(1, 'user', crypto.randomUUID(), undefined, deadline, delayedNow)
+    const decoded = jwt.decode(token) as { exp?: number }
+    expect(Number.isInteger(decoded.exp)).toBe(true)
+    expect(decoded.exp! * 1_000).toBeLessThanOrEqual(deadline.getTime())
+    expect(decoded.exp).toBe(Math.floor(deadline.getTime() / 1_000))
+
+    let capturedMaxAge: number | undefined
+    const fakeRes = {
+      cookie: (_name: string, _value: string, options: { maxAge?: number }) => {
+        capturedMaxAge = options.maxAge
+      },
+    } as never
+    setRefreshTokenCookie(fakeRes, 'raw-refresh', deadline, delayedNow)
+    expect(capturedMaxAge).toBe(1_000)
+    expect(delayedNow.getTime() + capturedMaxAge!).toBeLessThanOrEqual(deadline.getTime())
+
+    // When delay consumes remaining time below 1s, both signing and cookie setting reject with 401.
+    const expiredNow = new Date(deadline.getTime() - 500)
+    expect(() => generateAccessToken(1, 'user', crypto.randomUUID(), undefined, deadline, expiredNow))
+      .toThrow(/登录会话已过期/)
+    expect(() => setRefreshTokenCookie(fakeRes, 'raw-refresh', deadline, expiredNow))
+      .toThrow(/Refresh Token 已过期/)
+  })
+
+  it('immediately enforces the 7-day cap on legacy NULL-absoluteExpiresAt admin sessions before backfill while preserving active non-admin sessions', async () => {
+    const dayMs = 24 * 60 * 60 * 1000
+    const { user: admin, password: adminPassword } = await createTestUser('legacy-null-admin@test.local', 'LegAdm#2026', 'admin')
+    const adminSession = await loginAs(admin.email, adminPassword)
+    const adminRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: admin.id, revoked: false },
+      orderBy: { id: 'desc' },
+    })
+    // Simulate a pre-backfill legacy admin session started 8 days ago with NULL absoluteExpiresAt.
+    await prisma.refreshToken.update({
+      where: { id: adminRow.id },
+      data: {
+        absoluteExpiresAt: null,
+        sessionStartedAt: new Date(Date.now() - 8 * dayMs),
+        expiresAt: new Date(Date.now() + 3 * dayMs),
+      },
+    })
+
+    const adminRouteRes = await api.get('/api/admin/users').set(authHeader(adminSession.accessToken)).expect(401)
+    expect(adminRouteRes.body.error.code).toBe('SESSION_REVOKED')
+    const meRes = await api.get('/api/auth/me').set(authHeader(adminSession.accessToken)).expect(401)
+    expect(meRes.body.error.code).toBe('SESSION_REVOKED')
+    await api.post('/api/auth/refresh').set('Cookie', adminSession.cookies).expect(401)
+
+    // A non-admin legacy row with NULL absoluteExpiresAt and 8-day age stays active before backfill.
+    const { user: normalUser, password: userPassword } = await createTestUser('legacy-null-user@test.local', 'LegUsr#2026')
+    const userSession = await login(normalUser.email, userPassword)
+    const userRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: normalUser.id, revoked: false },
+      orderBy: { id: 'desc' },
+    })
+    await prisma.refreshToken.update({
+      where: { id: userRow.id },
+      data: {
+        absoluteExpiresAt: null,
+        sessionStartedAt: new Date(Date.now() - 8 * dayMs),
+        expiresAt: new Date(Date.now() + 3 * dayMs),
+      },
+    })
+    await api.get('/api/auth/me').set(authHeader(userSession.accessToken)).expect(200)
+    await api.post('/api/auth/refresh').set('Cookie', userSession.refreshCookie).expect(200)
+  })
+
+  it('rejects password-change with 409 when clearCookie=true carries an unknown cookie or when the caller session was revoked before acquiring the user lock', async () => {
+    const { user, password } = await createTestUser('d6-pwd-strict@test.local', 'Strict#Old-2026')
+    const session = await login(user.email, password)
+    const sid = sessionIdFromAccessToken(session.accessToken)
+
+    // 1. Unknown/unrecognized refreshToken cookie with clearCookie=true -> 409 before password mutation.
+    const unknownCookieRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(session.accessToken))
+      .set('Cookie', [`${refreshTokenCookieName}=unknown-unproven-cookie-token`])
+      .send({
+        currentPassword: password,
+        newPassword: 'Strict#New-ShouldFail',
+        expectedSessionId: sid,
+        clearCookie: true,
+      })
+      .expect(409)
+    expect(unknownCookieRes.body.error.code).toBe('SESSION_CHANGED')
+    expect(unknownCookieRes.headers['set-cookie']).toBeUndefined()
+
+    // Password was NOT mutated; old password still works.
+    await login(user.email, password)
+
+    // 2. Direct service call simulating a race where the Bearer session became inactive
+    // between route auth and acquiring the user lock -> rejected with 409 before password mutation.
+    await prisma.refreshToken.updateMany({
+      where: { userId: user.id, sessionId: sid },
+      data: { revoked: true, revokedAt: new Date(), revokeReason: 'single_session' },
+    })
+    await expect(changePassword(user.id, password, 'Strict#New-AfterRevoke', {
+      currentSessionId: sid,
+      expectedSessionId: sid,
+      clearCookie: true,
+    })).rejects.toMatchObject({ status: 409, code: 'SESSION_CHANGED' })
+
+    // Old password still works because the transaction aborted before password update.
+    await login(user.email, password)
   })
 })

@@ -7,7 +7,10 @@ import {
   recordSecurityEvent,
   type SessionRevocationReason,
 } from './securityEvents.js'
-import { MAX_ACTIVE_SESSIONS_PER_USER } from './sessionPolicy.js'
+import {
+  legacyAdminSessionStartCutoff,
+  MAX_ACTIVE_SESSIONS_PER_USER,
+} from './sessionPolicy.js'
 
 type RefreshTokenClient = Pick<typeof prisma, 'refreshToken'>
 
@@ -109,12 +112,19 @@ export async function hasExplicitRefreshSessionTermination(
  * user's other active device sessions.
  */
 export function activeRefreshTokenWhere(now: Date = new Date()): Prisma.RefreshTokenWhereInput {
+  const adminLegacyCutoff = legacyAdminSessionStartCutoff(now)
   return {
     revoked: false,
     expiresAt: { gt: now },
     OR: [
-      { absoluteExpiresAt: null },
       { absoluteExpiresAt: { gt: now } },
+      {
+        absoluteExpiresAt: null,
+        OR: [
+          { user: { role: { not: 'admin' } } },
+          { sessionStartedAt: { gt: adminLegacyCutoff } },
+        ],
+      },
     ],
   }
 }
@@ -472,10 +482,10 @@ export async function revokeAllUserRefreshTokens(
   tx?: Prisma.TransactionClient,
   revokeReason: SessionRevocationReason = 'revoke_all',
   metadata: SessionRequestMetadata = {},
+  now: Date = new Date(),
 ) {
   const revokeInTransaction = async (transaction: Prisma.TransactionClient) => {
     await lockUserRefreshSessionMutations(transaction, userId)
-    const now = new Date()
     const activeFamilies = await transaction.refreshToken.findMany({
       where: { userId, ...activeRefreshTokenWhere(now) },
       distinct: ['sessionId'],

@@ -157,27 +157,34 @@ public-registration switch, written through `PUT /api/admin/config/registrationE
 ## Token and Revocation Model
 
 - **Access token**: short-lived JWT (`config.jwtExpiresIn`) sent in
-  `Authorization: Bearer …`, clamped to whole integer seconds remaining until
-  the session's `absoluteExpiresAt` so SSE hard-expiry boundaries tighten in
-  lockstep. Non-admin business routes remain stateless, so a revoked device's
-  already-issued access token can live until its remaining TTL. Admin tokens
-  additionally carry `sid`, MFA verification and MFA version claims; every admin
-  request verifies the active unexpired session (including `absoluteExpiresAt`)
-  and current MFA version, so an admin session revoke or absolute expiry takes
-  effect immediately.
+  `Authorization: Bearer …`. When bound to a session deadline, signing writes an
+  explicit integer `exp <= floor(expiresAt / 1000)` at signing time (rejecting
+  if `< 1s` remains) so commit/response latency can never overshoot the DB
+  deadline or SSE hard-expiry boundary. Admin tokens additionally carry `sid`,
+  MFA verification, and MFA version claims; every admin request verifies the
+  active unexpired session (including `absoluteExpiresAt`, and enforcing the
+  7-day ceiling immediately even on pre-backfill `NULL` rows) and current MFA
+  version.
 - **Refresh token**: 40-byte hex secret, stored only as a SHA-256 hash. It is
-  issued/rotated through HttpOnly + Secure-in-production Cookie. Sliding idle
-  TTL comes from `SystemConfig.refreshTokenMaxAgeDays`, bounded by role-based
-  absolute lifetimes (`admin`: `min(days, 7)` days; non-admin: `clamp(days, 30, 90)`
-  days) persisted on `absoluteExpiresAt` and clamped on cookie `Max-Age`.
+  issued/rotated through HttpOnly + Secure-in-production Cookie whose `Max-Age`
+  is computed at response-write time from the persisted `expiresAt` (never
+  overshooting DB expiry, rejecting if `< 1s` remains). Sliding idle TTL comes
+  from `SystemConfig.refreshTokenMaxAgeDays`, bounded by role-based absolute
+  lifetimes (`admin`: `min(days, 7)` days; non-admin: `clamp(days, 30, 90)`
+  days). Schema migration is metadata-only (`ADD COLUMN` nullable), while
+  online primary-key batched backfill (`backfillLegacyRefreshTokenAbsoluteExpiry`)
+  runs lock-free in `authSessionRetention`.
 - Global revocation marks active unexpired `RefreshToken` rows as revoked with a
   closed reason (recording the active family count in `SecurityEvent`) and marks
   already-expired unrevoked rows as `expired`. Historical rows are retained for
   at least 30 days after the entire family expires before the leased daily
-  retention cron deletes whole expired families atomically.
+  retention cron filters eligible families in SQL (`NOT EXISTS`) under bounded
+  scan/family budgets and deletes whole expired families atomically under the
+  user advisory lock.
 - Portable backups exclude `RefreshToken` and `AuthChallenge` table data via
-  `pg_dump --exclude-table-data` while preserving schema DDL, and restore clears
-  both tables for compatibility with older backup archives.
+  `pg_dump --exclude-table-data` while preserving schema DDL, and restore
+  applies `pg_restore --use-list` filtering on both restore paths so even legacy
+  backups never commit ephemeral credentials before post-restore cleanup.
 - IP-based abuse limiters and SSE per-IP connection caps normalize IPv4-mapped
   IPv6 to canonical IPv4 and aggregate IPv6 clients at `/56` via
   `clientIpRateLimitKey`. Production boot also enforces the

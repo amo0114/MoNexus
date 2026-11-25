@@ -45,9 +45,16 @@ describe('bounded linear User-Agent parser (deviceHint)', () => {
     expect(result).toBeNull()
     expect(elapsedMs).toBeLessThan(50)
 
-    // Multi-byte UTF-8 boundary does not corrupt or throw.
+    // Multi-byte UTF-8 boundary and surrogate pairs do not corrupt or throw.
     const multiByte = `${'汉'.repeat(200)} Chrome/131.0`
     expect(parseDeviceHint(multiByte)).toBeNull()
+    expect(parseDeviceHint(`${' '.repeat(500_000)}Chrome/131.0`)).toBeNull()
+    expect(parseDeviceHint(`${'😀'.repeat(260)}Chrome/131.0`)).toBeNull()
+
+    // Single-pass Safari check matches exact Version/<non-space>...Safari/ ordering.
+    expect(parseDeviceHint('Mozilla/5.0 (Macintosh; Intel Mac OS X) Version/17.0 Safari/605.1.15')).toBe('Safari · macOS')
+    expect(parseDeviceHint('Mozilla/5.0 (Macintosh; Intel Mac OS X) Version/ Safari/605.1.15')).toBe('Unknown browser · macOS')
+    expect(parseDeviceHint('Mozilla/5.0 (Macintosh; Intel Mac OS X) Safari/605.1.15 Version/17.0')).toBe('Unknown browser · macOS')
   })
 
   it('recognizes whitelisted labels and makes normalizeStoredDeviceLabel strictly idempotent', () => {

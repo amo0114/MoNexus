@@ -276,13 +276,13 @@ export async function registerUser(
     issued.user.role,
     issued.session.sessionId,
     undefined,
-    issued.session.accessTokenExpiresInSeconds,
+    issued.session.expiresAt,
   )
 
   return {
     accessToken,
     refreshToken: issued.session.refreshToken,
-    refreshTokenMaxAgeMs: issued.session.maxAgeMs,
+    refreshTokenExpiresAt: issued.session.expiresAt,
     // Registration awards are only ledger rows at this point. Returning the
     // configured amount here would make clients advertise spendable points
     // that do not exist yet.

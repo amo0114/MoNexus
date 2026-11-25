@@ -6,7 +6,7 @@ import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { unauthenticated } from '../../lib/httpError.js'
 import { createRefreshTokenRecord, enforceUserActiveSessionLimit } from './sessionService.js'
-import { computeSessionExpiry } from './sessionPolicy.js'
+import { computeSessionExpiry, resolveClampedJwtExp } from './sessionPolicy.js'
 import { resolveUserNickname } from '../../lib/defaultNickname.js'
 
 type MfaSessionClaims = {
@@ -19,17 +19,27 @@ export function generateAccessToken(
   role: string,
   sessionId: string,
   mfa?: MfaSessionClaims,
-  expiresInSeconds?: number,
+  sessionDeadline?: Date,
+  now: Date = new Date(),
 ) {
-  const expiresIn = typeof expiresInSeconds === 'number' && Number.isSafeInteger(expiresInSeconds) && expiresInSeconds >= 1
-    ? expiresInSeconds
-    : config.jwtExpiresIn
-  return jwt.sign({
+  const basePayload = {
     userId,
     role,
     sid: sessionId,
     ...(role === 'admin' && mfa ? { mfaVerified: true, mfaVersion: mfa.version } : {}),
-  }, config.jwtSecret, { expiresIn })
+  }
+
+  if (sessionDeadline instanceof Date) {
+    const exp = resolveClampedJwtExp(sessionDeadline, now)
+    if (exp === null) {
+      throw unauthenticated('登录会话已过期，请重新登录')
+    }
+    // Sign with an explicit integer `exp` so signing latency after DB commit
+    // can never push the JWT past the persisted session deadline.
+    return jwt.sign({ ...basePayload, exp }, config.jwtSecret)
+  }
+
+  return jwt.sign(basePayload, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
 }
 
 function generateRefreshToken() {
@@ -104,8 +114,8 @@ export async function createStoredRefreshToken(
   }, tx)
   return {
     refreshToken,
-    maxAgeMs: expiry.cookieMaxAgeMs,
+    expiresAt: expiry.expiresAt,
+    absoluteExpiresAt: expiry.absoluteExpiresAt,
     sessionId: stored.sessionId,
-    accessTokenExpiresInSeconds: expiry.accessTokenExpiresInSeconds,
   }
 }

@@ -8,6 +8,15 @@ export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60
 export const ACCESS_TOKEN_TTL_MS = ACCESS_TOKEN_TTL_SECONDS * 1000
 
 /**
+ * Cutoff for legacy admin sessions whose `absoluteExpiresAt` has not yet been
+ * backfilled (`NULL`). Any legacy admin session started at or before this
+ * instant exceeds the 7-day hard ceiling and is rejected immediately on deploy.
+ */
+export function legacyAdminSessionStartCutoff(now: Date): Date {
+  return new Date(now.getTime() - ADMIN_ABSOLUTE_SESSION_MAX_DAYS * ONE_DAY_MS)
+}
+
+/**
  * Computes the absolute lifetime ceiling of a refresh-token family from the
  * runtime sliding TTL (`refreshTokenMaxAgeDays`) and account role:
  * - admin: min(effectiveDays, 7) days
@@ -24,20 +33,46 @@ export function resolveAbsoluteSessionWindowMs(role: string, effectiveIdleMs: nu
   )
 }
 
+/**
+ * Computes an explicit integer JWT `exp` (Unix seconds) at signing time so the
+ * signed access token can never overshoot the session's DB deadline even when
+ * transaction commit or response writing is delayed. Returns `null` when less
+ * than 1 whole second remains.
+ */
+export function resolveClampedJwtExp(deadline: Date, now: Date = new Date()): number | null {
+  const remainingMs = deadline.getTime() - now.getTime()
+  if (remainingMs < 1_000) return null
+
+  const nowSec = Math.floor(now.getTime() / 1_000)
+  const capSec = Math.floor(deadline.getTime() / 1_000)
+  const targetExp = Math.min(nowSec + ACCESS_TOKEN_TTL_SECONDS, capSec)
+  if (targetExp <= nowSec) return null
+  return targetExp
+}
+
+/**
+ * Computes the remaining whole-second cookie `Max-Age` (in milliseconds) at
+ * response-write time so the browser cookie never outlives the DB `expiresAt`.
+ * Returns `null` when less than 1 whole second remains.
+ */
+export function resolveRemainingCookieMaxAgeMs(expiresAt: Date, now: Date = new Date()): number | null {
+  const remainingMs = expiresAt.getTime() - now.getTime()
+  if (remainingMs < 1_000) return null
+  return Math.floor(remainingMs / 1_000) * 1_000
+}
+
 export type SessionExpiryComputation =
   | { expired: true }
   | {
       expired: false
       expiresAt: Date
       absoluteExpiresAt: Date
-      cookieMaxAgeMs: number
-      accessTokenExpiresInSeconds: number
     }
 
 /**
- * Computes the bounded sliding expiry, absolute expiry, refresh-cookie Max-Age,
- * and integer JWT access-token TTL (so SSE hard-expiry also respects the
- * absolute session ceiling).
+ * Computes the bounded sliding expiry and absolute expiry for a refresh-token
+ * row. Downstream JWT signing and cookie setting compute their integer `exp`
+ * and `Max-Age` directly from `expiresAt` at issuance/response time.
  */
 export function computeSessionExpiry(input: {
   role: string
@@ -53,26 +88,19 @@ export function computeSessionExpiry(input: {
     ? (input.existing.absoluteExpiresAt ?? new Date(input.existing.sessionStartedAt.getTime() + absoluteWindowMs))
     : new Date(input.now.getTime() + absoluteWindowMs)
 
-  const remainingToAbsoluteMs = absoluteExpiresAt.getTime() - input.now.getTime()
-  // Require at least 1 whole second so JWT `exp` stays a positive integer in the future.
-  if (remainingToAbsoluteMs < 1_000) {
-    return { expired: true }
-  }
-
   const slidingExpiresAtMs = input.now.getTime() + input.configuredMaxAgeMs
-  const expiresAtMs = Math.min(slidingExpiresAtMs, absoluteExpiresAt.getTime())
-  const cookieMaxAgeMs = Math.max(1_000, expiresAtMs - input.now.getTime())
-  const accessTokenExpiresInSeconds = Math.floor(Math.min(ACCESS_TOKEN_TTL_MS, remainingToAbsoluteMs) / 1_000)
+  const expiresAt = new Date(Math.min(slidingExpiresAtMs, absoluteExpiresAt.getTime()))
 
-  if (accessTokenExpiresInSeconds < 1) {
+  if (
+    resolveClampedJwtExp(expiresAt, input.now) === null
+    || resolveRemainingCookieMaxAgeMs(expiresAt, input.now) === null
+  ) {
     return { expired: true }
   }
 
   return {
     expired: false,
-    expiresAt: new Date(expiresAtMs),
+    expiresAt,
     absoluteExpiresAt,
-    cookieMaxAgeMs,
-    accessTokenExpiresInSeconds,
   }
 }

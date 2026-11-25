@@ -31,7 +31,7 @@ import { buildAuthUser, generateAccessToken, hashRefreshToken, createStoredRefre
 
 type MfaFactorMethod = 'totp' | 'recovery_code'
 type MfaVerificationOutcome =
-  | { kind: 'issued'; user: { id: number; email: string; role: string; status: string; nickname: string | null; mfaVersion: number; pointAccount: { balance: number } | null }; session: { refreshToken: string; maxAgeMs: number; sessionId: string; accessTokenExpiresInSeconds: number }; recoveryCodes?: string[]; recoveryCodeRemaining?: number }
+  | { kind: 'issued'; user: { id: number; email: string; role: string; status: string; nickname: string | null; mfaVersion: number; pointAccount: { balance: number } | null }; session: { refreshToken: string; expiresAt: Date; absoluteExpiresAt: Date; sessionId: string }; recoveryCodes?: string[]; recoveryCodeRemaining?: number }
   | { kind: 'verification_failed' | 'too_many_attempts' | 'challenge_invalid' }
 
 /** Forces a transaction rollback when a recovery-code claim lost its challenge race. */
@@ -174,10 +174,10 @@ function issueMfaLoginResponse(outcome: Extract<MfaVerificationOutcome, { kind: 
       outcome.user.role,
       outcome.session.sessionId,
       { verified: true, version: outcome.user.mfaVersion },
-      outcome.session.accessTokenExpiresInSeconds,
+      outcome.session.expiresAt,
     ),
     refreshToken: outcome.session.refreshToken,
-    refreshTokenMaxAgeMs: outcome.session.maxAgeMs,
+    refreshTokenExpiresAt: outcome.session.expiresAt,
     ...(outcome.recoveryCodes === undefined ? {} : { recoveryCodes: outcome.recoveryCodes }),
     ...(outcome.recoveryCodeRemaining === undefined ? {} : { recoveryCodeRemaining: outcome.recoveryCodeRemaining }),
   }
