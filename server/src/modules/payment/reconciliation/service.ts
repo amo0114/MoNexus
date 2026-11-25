@@ -3,17 +3,22 @@ import { randomUUID } from 'node:crypto'
 import { conflict, notFound, paymentRefundNotSupported } from '../../../lib/httpError.js'
 import { prisma } from '../../../lib/prisma.js'
 import { resolveHistoricalProvider } from '../providers/registry.js'
-import { recordNormalizedPaymentFact } from '../observations/record.js'
+import {
+  buildNormalizedPaymentPayload,
+  hashNormalizedPayload,
+  recordNormalizedPaymentFact,
+  recordPaymentObservation,
+} from '../observations/record.js'
 import { applyConfirmedPayment } from '../events/applyConfirmedPayment.js'
-import { applyRefundObservation, providerSupportsRefunds, REFUND_BUSINESS_EVENT_KEY } from '../../recharge/refund.js'
-import { executeRechargeCredit } from '../../recharge/credit.js'
+import { applyRefundObservation, providerSupportsRefunds } from '../../recharge/refund.js'
 import { serializeAmountMinor } from '../../recharge/money.js'
 import type { PaymentProviderName, ReconciliationScopeType } from '../../recharge/types.js'
 import { PAYMENT_PROVIDER_NAMES } from '../../recharge/types.js'
 import { providerEnvironment } from '../../recharge/gates.js'
 import { recordAmountMismatch, recordReconciliationMismatch } from '../metrics.js'
 import { parseStatementCsv } from './statementImport.js'
-import { matchesStripePaymentIdentity } from '../providers/stripe/checkoutIdentity.js'
+import { matchesStripePaymentIdentity, stripeCheckoutSessionId } from '../providers/stripe/checkoutIdentity.js'
+import { MANUAL_PAYMENT_RESOLUTION } from '../events/manualResolution.js'
 
 const TX = { timeout: 20_000, maxWait: 5_000 } as const
 
@@ -554,6 +559,7 @@ export async function resolveReconcileRequiredOrder(input: {
   if (
     queried.status !== 'succeeded'
     || !matchesPayment
+    || queried.providerAccountKey !== order.providerAccountKey
     || queried.amountMinor !== attempt.expectedProviderAmountMinor
     || queried.currency !== order.currency
   ) {
@@ -563,69 +569,45 @@ export async function resolveReconcileRequiredOrder(input: {
     throw paymentRefundNotSupported()
   }
 
-  const now = new Date()
-  await prisma.$transaction(async tx => {
-    const locked = await tx.$queryRaw<Array<{ status: string }>>`
-      SELECT "status" FROM "RechargeOrder" WHERE "id" = ${order.id}::uuid FOR UPDATE`
-    if (locked[0]?.status !== 'reconcile_required') throw conflict('订单状态已变化，请刷新后重试')
-
-    await tx.paymentAttempt.update({
-      where: { id: attempt.id },
-      data: {
-        status: 'succeeded',
-        providerPaymentId: queried.providerPaymentId,
-        providerCaptureId: queried.providerCaptureId ?? attempt.providerCaptureId,
-        completedAt: attempt.completedAt ?? now,
-      },
-    })
-    await tx.paymentIntent.update({
-      where: { id: intent.id },
-      data: { status: 'succeeded', activeAttemptId: attempt.id },
-    })
-
-    if (input.action === 'credit') {
-      await tx.rechargeOrder.update({
-        where: { id: order.id },
-        data: { status: 'paid', paidAt: order.paidAt ?? now },
-      })
-      // A credit that previously ended in reconcile_required left its task terminal.
-      await tx.rechargeCreditTask.upsert({
-        where: { rechargeOrderId: order.id },
-        create: { rechargeOrderId: order.id, status: 'pending' },
-        update: { status: 'pending', nextAttemptAt: now, leaseToken: null, leaseUntil: null, lastErrorCode: null },
-      })
-    } else {
-      await tx.rechargeOrder.update({
-        where: { id: order.id },
-        data: { status: 'refund_pending', paidAt: order.paidAt ?? now },
-      })
-      await tx.rechargeRefund.create({
-        data: {
-          rechargeOrderId: order.id,
-          paymentAttemptId: attempt.id,
-          requestIdempotencyKey: REFUND_BUSINESS_EVENT_KEY(order.id),
-          amountMinor: order.amountMinor,
-          pointsToReverse: order.totalPoints,
-          status: 'requested',
-          reasonCode: 'reconcile_refund',
-          createdByUserId: input.actorUserId,
-        },
-      })
+  const normalizedPayload = {
+    ...buildNormalizedPaymentPayload(queried, stripeCheckoutSessionId(order.provider, queried.providerOrderId)),
+    orderId: order.id,
+    action: input.action,
+    actorUserId: input.actorUserId,
+  }
+  const recorded = await prisma.$transaction(async tx => {
+    const [locked] = await tx.$queryRaw<Array<{ status: string; updatedAt: Date }>>`
+      SELECT "status", "updatedAt" FROM "RechargeOrder" WHERE "id" = ${order.id}::uuid FOR UPDATE`
+    if (locked?.status !== 'reconcile_required' || locked.updatedAt.getTime() !== order.updatedAt.getTime()) {
+      throw conflict('订单状态已变化，请刷新后重试')
     }
-
-    await tx.reconciliationItem.updateMany({
-      where: { rechargeOrderId: order.id, status: 'open' },
-      data: {
-        status: 'resolved',
-        resolutionReason: `manual_${input.action}`,
-        resolvedByUserId: input.actorUserId,
-        resolvedAt: now,
+    const pending = await tx.paymentEvent.findFirst({
+      where: {
+        paymentAttempt: { paymentIntentId: intent.id },
+        eventType: MANUAL_PAYMENT_RESOLUTION,
+        status: { in: ['received', 'processing', 'failed'] },
       },
+      select: { id: true },
     })
+    if (pending) throw conflict('已有人工对账处置正在处理，请刷新后查看结果')
+    return recordPaymentObservation({
+      provider: order.provider,
+      providerAccountKey: order.providerAccountKey,
+      source: 'reconciliation',
+      verificationMethod: 'authenticated_provider_api',
+      paymentAttemptId: attempt.id,
+      providerPaymentId: queried.providerPaymentId,
+      providerCaptureId: queried.providerCaptureId,
+      dedupeKey: `manual_resolution:${order.id}:${randomUUID()}`,
+      eventType: MANUAL_PAYMENT_RESOLUTION,
+      payloadSha256: hashNormalizedPayload(normalizedPayload),
+      normalizedPayload,
+    }, tx)
   }, TX)
 
-  if (input.action === 'credit') {
-    await executeRechargeCredit({ rechargeOrderId: order.id })
+  const applied = await applyConfirmedPayment(recorded.id)
+  if (!['processed', 'credited', 'already_processed'].includes(applied.outcome)) {
+    throw conflict('人工对账处置尚未完成，请刷新后查看结果')
   }
   const fresh = await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: order.id } })
   return { orderId: fresh.id, status: fresh.status }

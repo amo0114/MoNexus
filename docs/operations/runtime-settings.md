@@ -175,9 +175,16 @@ mchid/appid，支付宝填写 appId/sellerId，VMQFox 填写稳定商户标识�
 `https://<支付回调域名>/api/payment/webhooks/stripe/accounts/stripe%3Atest%3A<acct_商户ID>`，
 正式环境将路径中的 `test` 换成 `live`。保存草稿后可在后台核对完整地址。
 选择 Snapshot 事件，订阅 `checkout.session.completed`、`checkout.session.expired`、
+`payment_intent.succeeded`、
 `refund.created`、`refund.updated`、`refund.failed`、`charge.dispute.created`、
 `charge.dispute.updated` 和 `charge.dispute.closed`。将该端点的签名密钥填入 Stripe
 草稿，完成校验并激活。预发用 Sandbox，生产用 Live。
+
+每个 Stripe 商户启用一个收款币种（CNY 或 USD）。填入账户默认结算币种和
+实际核实的银行卡最低收款额，后者以收款币种最小单位填写。校验只读核对商户 ID、
+默认结算币种及银行卡收款能力。金额由 Stripe 账户、币种与结算方式决定，
+配置前按 Stripe 官方限额和该账户的实际收款能力核实。应用会关闭 Checkout 自适应定价，
+并取账户配置、平台和充值价格政策的最低金额中的最高值。旧版本仍可处理历史交易。
 
 使用生效的价格政策创建测试充值，确认待付款订单可以再次打开 Checkout。
 完成付款后核对回调验签、RP 到账、同一事件重发后余额不变，以及整单退款。

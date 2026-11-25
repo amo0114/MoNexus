@@ -109,7 +109,7 @@ export type NormalizedPaymentFact = {
   providerRefundId?: string | null
 }
 
-export function buildNormalizedPaymentPayload(fact: NormalizedPaymentFact, providerOrderId?: string): Prisma.InputJsonValue {
+export function buildNormalizedPaymentPayload(fact: NormalizedPaymentFact, providerOrderId?: string): Prisma.InputJsonObject {
   return {
     status: fact.status,
     providerPaymentId: fact.providerPaymentId,

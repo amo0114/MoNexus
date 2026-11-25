@@ -16,10 +16,12 @@ import {
 import type { PaymentProviderName, ReconciliationScopeType } from './types.js'
 import { writePaymentAdminLog } from '../payment/audit.js'
 import { recordNormalizedPaymentFact } from '../payment/observations/record.js'
+import { MANUAL_PAYMENT_RESOLUTION } from '../payment/events/manualResolution.js'
 
 export async function adminRetryEvent(eventId: string, actorUserId: number) {
   const event = await prisma.paymentEvent.findUnique({ where: { id: eventId } })
   if (!event) throw notFound('支付事件不存在')
+  if (event.eventType === MANUAL_PAYMENT_RESOLUTION) throw conflict('请在充值订单中重新发起人工对账处置')
   await writePaymentAdminLog({
     adminUserId: actorUserId,
     action: 'payment.event.retry',

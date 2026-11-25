@@ -19,10 +19,14 @@ import { createOrder, recoverProviderCreate } from '../modules/recharge/orderLif
 import { requestRechargeRefund, submitProviderRefund } from '../modules/recharge/refund.js'
 import { recoverUnknownPayments } from '../modules/payment/workers/index.js'
 import { applyConfirmedPayment } from '../modules/payment/events/applyConfirmedPayment.js'
+import { resolveReconcileRequiredOrder } from '../modules/payment/reconciliation/service.js'
 import { api, authHeader, createTestUser, loginAs } from './helpers.js'
 
 const original = { key: config.integrationCredentialsEncKey, previous: config.integrationCredentialsEncKeyPrevious, recharge: { ...config.recharge } }
-const settings = { provider: 'stripe' as const, mode: 'test' as const, accountId: 'acct_runtimeA' }
+const settings = {
+  provider: 'stripe' as const, mode: 'test' as const, accountId: 'acct_runtimeA',
+  chargeCurrency: 'CNY' as const, settlementCurrency: 'HKD', minimumAmountMinor: '500',
+}
 const credentials = { provider: 'stripe' as const, secretKey: 'sk_test_first', webhookSecret: 'whsec_first' }
 const managed = paymentSettingsDefinition('stripe').api
 let actor: number, buyer: number, failCreate = false
@@ -37,7 +41,14 @@ beforeEach(async () => {
     minAmountMinor: 100n, maxAmountMinor: 100000n, amountStepMinor: 100n, dailyLimitMinor: 200000n, monthlyLimitMinor: 1000000n, limitTimeZone: 'Asia/Shanghai', status: 'active', effectiveAt: new Date() } })
   sessions.clear(); calls.length = 0; failCreate = false
   vi.mocked(createStripeSdk).mockImplementation(cfg => ({
-    accounts: { retrieve: async () => ({ id: cfg.secretKey.includes('other') ? 'acct_runtimeB' : 'acct_runtimeA' }) },
+    accounts: {
+      retrieve: async () => ({
+        id: cfg.secretKey.includes('other') ? 'acct_runtimeB' : 'acct_runtimeA',
+        default_currency: 'hkd',
+        charges_enabled: true,
+        capabilities: { card_payments: 'active' },
+      }),
+    },
     checkout: { sessions: {
       create: async (input: any) => {
         calls.push({ key: cfg.secretKey, operation: 'create' })
@@ -48,7 +59,9 @@ beforeEach(async () => {
         sessions.set(id, session); return session
       },
       retrieve: async (id: string) => { calls.push({ key: cfg.secretKey, operation: 'query' }); return sessions.get(id) },
-      list: async () => ({ data: [...sessions.values()] }),
+      list: async (input: { payment_intent?: string }) => ({
+        data: [...sessions.values()].filter(item => !input.payment_intent || item.payment_intent === input.payment_intent),
+      }),
       expire: async (id: string) => { const row = sessions.get(id)!; row.status = 'expired'; return row },
     } },
     paymentIntents: { retrieve: async () => ({}), cancel: async () => ({}) },
@@ -61,7 +74,7 @@ async function activate(version = 0, replacement = credentials, account = settin
   await managed.test(actor, saved.version)
   return managed.activate(actor, saved.version)
 }
-const quote = () => createQuote(buyer, { currency: 'CNY', amountMinor: 1000n, amountSource: 'custom', provider: 'stripe', paymentMethod: 'card' }, 'user')
+const quote = (amountMinor = 1000n) => createQuote(buyer, { currency: 'CNY', amountMinor, amountSource: 'custom', provider: 'stripe', paymentMethod: 'card' }, 'user')
 async function order() {
   const q = await quote()
   const created = await createOrder(buyer, q.quoteId, randomUUID(), 'user')
@@ -86,6 +99,14 @@ async function callback(order: RuntimeOrder, signingSecret: string, eventId = 'e
   return api.post(`/api/payment/webhooks/stripe/accounts/${encodeURIComponent(order.providerAccountKey)}`).set('Content-Type','application/json').set('Stripe-Signature', signed.header).send(signed.payloadString)
 }
 describe('payment runtime versions', () => {
+  it('requires an account-specific card floor and honors it in quotes', async () => {
+    await expect(validateRuntimePayment({ ...settings, minimumAmountMinor: undefined }, credentials)).rejects.toMatchObject({ status: 503 })
+    await expect(validateRuntimePayment({ ...settings, settlementCurrency: 'USD' }, credentials)).rejects.toThrow(/结算币种/)
+    await expect(validateRuntimePayment({ ...settings, minimumAmountMinor: '100001' }, credentials)).rejects.toThrow(/单笔上限/)
+    await activate()
+    await expect(quote(400n)).rejects.toMatchObject({ code: 'RECHARGE_AMOUNT_BELOW_MINIMUM' })
+    await expect(quote(500n)).resolves.toMatchObject({ effectiveMinAmountMinor: '500' })
+  })
   it('pins quote, order and attempt; rejects a quote after activation and isolates merchant identity', async () => {
     const first = await activate()
     const q = await quote()
@@ -138,6 +159,53 @@ describe('payment runtime versions', () => {
     await recoverUnknownPayments()
     expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('credited')
     expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } })).providerPaymentId).toBe(paid.payment_intent)
+  })
+  it('binds a PaymentIntent success callback that arrives before the Session callback', async () => {
+    await activate()
+    const accepted = await order()
+    const attempt = accepted.paymentIntent!.attempts[0]
+    const paid = markCheckoutPaid(accepted)
+    const signed = signStripeFixture(stripeEventFixture({
+      id: 'evt_intent_first',
+      type: 'payment_intent.succeeded',
+      object: {
+        id: paid.payment_intent, object: 'payment_intent', amount: paid.amount_total,
+        amount_received: paid.amount_total, status: 'succeeded', currency: paid.currency,
+        metadata: paid.metadata, livemode: false,
+      },
+    }), credentials.webhookSecret)
+    const response = await api.post(`/api/payment/webhooks/stripe/accounts/${encodeURIComponent(accepted.providerAccountKey)}`)
+      .set('Content-Type', 'application/json').set('Stripe-Signature', signed.header).send(signed.payloadString).expect(200)
+    const observation = await prisma.paymentEvent.findUniqueOrThrow({ where: { id: response.body.observationId } })
+    expect(observation.paymentAttemptId).toBe(attempt.id)
+    await applyConfirmedPayment(observation.id)
+    const sessionResponse = await callback(accepted, credentials.webhookSecret)
+    expect(sessionResponse.status).toBe(200)
+    await applyConfirmedPayment(sessionResponse.body.observationId)
+    await executeRechargeCredit({ rechargeOrderId: accepted.id })
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: accepted.id } })).toBe(1)
+  })
+  it('resolves a deferred Stripe payment through a recorded manual decision', async () => {
+    await activate()
+    const accepted = await order()
+    const attempt = accepted.paymentIntent!.attempts[0]
+    await prisma.rechargeOrder.update({ where: { id: accepted.id }, data: { status: 'reconcile_required' } })
+    const paid = markCheckoutPaid(accepted)
+    const result = await resolveReconcileRequiredOrder({ orderId: accepted.id, action: 'refund', actorUserId: actor })
+    expect(result.status).toBe('refund_pending')
+    const observation = await prisma.paymentEvent.findFirstOrThrow({
+      where: { paymentAttemptId: attempt.id, eventType: 'payment.manual_resolution' },
+    })
+    expect(observation).toMatchObject({
+      source: 'reconciliation', status: 'processed', providerPaymentId: paid.payment_intent,
+      normalizedPayload: { orderId: accepted.id, action: 'refund', actorUserId: actor },
+    })
+    expect((await applyConfirmedPayment(observation.id)).outcome).toBe('already_processed')
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: accepted.id } })).toBe(0)
+    expect((await prisma.paymentAttempt.findUniqueOrThrow({ where: { id: attempt.id } })).providerPaymentId).toBe(paid.payment_intent)
+    const refund = await prisma.rechargeRefund.findUniqueOrThrow({ where: { rechargeOrderId: accepted.id } })
+    await submitProviderRefund(refund.id)
+    expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('refunded')
   })
   it('recovers unknown creation and queries historical attempts using the original secret after a switch', async () => {
     const first = await activate(); failCreate = true

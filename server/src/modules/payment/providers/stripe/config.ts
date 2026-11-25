@@ -28,6 +28,8 @@ export type StripeRuntimeConfig = {
   webhookSecret: string
   apiBaseUrl?: string
   returnBaseUrl?: string
+  chargeCurrency?: RechargeCurrency
+  minimumAmountMinor?: bigint
 }
 
 export type StripeRequestOptions = { idempotencyKey?: string }

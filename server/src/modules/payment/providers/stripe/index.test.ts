@@ -24,6 +24,8 @@ const LIVE_CONFIG: StripeRuntimeConfig = {
   mode: 'live',
   secretKey: 'stripe_live_key_not_real',
   webhookSecret: STRIPE_TEST_WEBHOOK_SECRET,
+  chargeCurrency: 'USD',
+  minimumAmountMinor: 150n,
 }
 
 const ORDER_ID = '11111111-1111-4111-8111-111111111111'
@@ -336,6 +338,12 @@ describe('Stripe capabilities and account selection', () => {
     const live = createStripeProvider({ config: LIVE_CONFIG, client: new FakeStripe() })
     await expect(live.selectAccount({ environment: 'live', currency: 'USD', paymentMethod: 'card' }))
       .resolves.toEqual({ providerAccountKey: 'stripe:live:default' })
+    await expect(live.getCapabilities({
+      providerAccountKey: 'stripe:live:default', environment: 'live', currency: 'USD', paymentMethod: 'card',
+    })).resolves.toMatchObject({ supportedCurrencies: ['USD'], minimumAmountMinor: 150n })
+    await expect(live.getCapabilities({
+      providerAccountKey: 'stripe:live:default', environment: 'live', currency: 'CNY', paymentMethod: 'card',
+    })).rejects.toMatchObject({ code: 'PAYMENT_METHOD_UNAVAILABLE' })
     await expect(live.selectAccount({ environment: 'sandbox', currency: 'USD', paymentMethod: 'card' }))
       .rejects.toThrow(/mode/)
   })

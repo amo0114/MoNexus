@@ -252,6 +252,9 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
       if (mode !== config.mode) {
         throw paymentProviderUnavailable('stripe mode does not match recharge environment')
       }
+      if ((config.accountId || config.mode === 'live') && (!config.chargeCurrency || config.minimumAmountMinor === undefined)) {
+        throw paymentProviderUnavailable('请为 Stripe 商户配置收款币种与银行卡最低收款额')
+      }
       assertStripeCredentialIsolation(config)
       return { providerAccountKey: stripeAccountKey(mode, config.accountId) }
     },
@@ -260,11 +263,14 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
       if (!isCardMethod(context.paymentMethod)) throw paymentMethodUnavailable()
       const config = configOf()
       assertAccount(context.providerAccountKey, config)
-      const minimumAmountMinor = stripeMinimumAmountMinor(context.currency, context.paymentMethod)
+      const platformMinimum = stripeMinimumAmountMinor(context.currency, context.paymentMethod)
+      const accountMinimum = config.minimumAmountMinor
+      if (config.chargeCurrency && config.chargeCurrency !== context.currency) throw paymentMethodUnavailable()
+      const minimumAmountMinor = accountMinimum != null && accountMinimum > platformMinimum ? accountMinimum : platformMinimum
       const maximumAmountMinor = null
       const version = STRIPE_CAPABILITY_VERSION
       return {
-        supportedCurrencies: ['CNY', 'USD'],
+        supportedCurrencies: config.chargeCurrency ? [config.chargeCurrency] : ['CNY', 'USD'],
         paymentMethods: STRIPE_PAYMENT_METHODS,
         actionTypes: ['redirect'],
         supportsRefunds: true,
@@ -318,6 +324,7 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
             expires_at: Math.floor(input.orderExpiresAt.getTime() / 1000) + 31 * 60,
           }),
           payment_method_types: ['card'],
+          adaptive_pricing: { enabled: false },
           line_items: [{
             quantity: 1,
             price_data: {
@@ -496,6 +503,14 @@ export function createStripeProvider(options: CreateStripeProviderOptions = {}):
 
       if (isPaymentIntent(object)) {
         const payment = paymentFromIntent(object, providerAccountKey)
+        if (payment.status === 'succeeded') {
+          try {
+            const session = await findSessionForPaymentIntent(object.id)
+            if (session) payment.providerOrderId = session.id
+          } catch (err) {
+            rethrowStripe(err)
+          }
+        }
         return {
           eventType: event.type,
           providerEventId: event.id,
