@@ -168,11 +168,14 @@ export type PaymentLabelAudience = 'user' | 'admin'
 const USER_CHANNEL_LABEL: Record<string, string> = {
   'vmqfox:wechat': '微信支付',
   'vmqfox:alipay': '支付宝支付',
+  // `alipay` is also a VMQFox method id, so it stays out of METHOD_LABEL.
+  'stripe:alipay': 'Stripe · 支付宝',
 }
 
 const ADMIN_CHANNEL_LABEL: Record<string, string> = {
   'vmqfox:wechat': '微信支付（VMQFox）',
   'vmqfox:alipay': '支付宝支付（VMQFox）',
+  'stripe:alipay': 'Stripe · 支付宝',
 }
 
 function channelKey(provider: string, method: string): string {
