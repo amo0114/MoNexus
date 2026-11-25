@@ -429,26 +429,30 @@ model ProvisionTask {
 }
 
 model RefreshToken {
-  id               Int       @id @default(autoincrement())
-  userId           Int
-  tokenHash        String    @unique
-  revoked          Boolean   @default(false)
-  revokedAt        DateTime?
-  revokeReason     String?
-  expiresAt        DateTime
-  userAgent        String?
-  ip               String?
+  id                Int       @id @default(autoincrement())
+  userId            Int
+  tokenHash         String    @unique
+  revoked           Boolean   @default(false)
+  revokedAt         DateTime?
+  revokeReason      String?
+  expiresAt         DateTime
+  absoluteExpiresAt DateTime?
+  userAgent         String?
+  ip                String?
+  deviceLabel       String?
+  ipHint            String?
   // PostgreSQL default (rather than Prisma's client-side uuid()) is required
   // to assign a distinct family ID to refresh-token rows that predate M3.
-  sessionId        String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  sessionStartedAt DateTime  @default(now())
-  lastUsedAt       DateTime  @default(now())
-  createdAt        DateTime  @default(now())
+  sessionId         String    @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionStartedAt  DateTime  @default(now())
+  lastUsedAt        DateTime  @default(now())
+  createdAt         DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId, sessionId])
   @@index([userId, revoked, expiresAt])
+  @@index([expiresAt, id])
 }
 
 model MfaRecoveryCode {

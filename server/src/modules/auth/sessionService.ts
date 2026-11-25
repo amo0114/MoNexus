@@ -1,12 +1,13 @@
 import type { Prisma } from '@prisma/client'
 import { redactIpHint } from '../../lib/clientIp.js'
+import { sessionDeviceLabel } from '../../lib/deviceHint.js'
 import { badRequest, notFound, sessionChanged, unauthenticated } from '../../lib/httpError.js'
 import { prisma } from '../../lib/prisma.js'
 import {
-  getSecurityEventDeviceHint,
   recordSecurityEvent,
   type SessionRevocationReason,
 } from './securityEvents.js'
+import { MAX_ACTIVE_SESSIONS_PER_USER } from './sessionPolicy.js'
 
 type RefreshTokenClient = Pick<typeof prisma, 'refreshToken'>
 
@@ -39,8 +40,11 @@ export type CreateRefreshTokenInput = {
   userId: number
   tokenHash: string
   expiresAt: Date
+  absoluteExpiresAt?: Date | null
   ip?: string | null
   userAgent?: string | null
+  deviceLabel?: string | null
+  ipHint?: string | null
   /** Omit for a new device session; PostgreSQL supplies its UUID family ID. */
   sessionId?: string
   /** Supply only while rotating an existing family. */
@@ -104,6 +108,17 @@ export async function hasExplicitRefreshSessionTermination(
  * dead or naturally expired predecessor must return 401 without revoking the
  * user's other active device sessions.
  */
+export function activeRefreshTokenWhere(now: Date = new Date()): Prisma.RefreshTokenWhereInput {
+  return {
+    revoked: false,
+    expiresAt: { gt: now },
+    OR: [
+      { absoluteExpiresAt: null },
+      { absoluteExpiresAt: { gt: now } },
+    ],
+  }
+}
+
 export async function hasActiveRefreshSessionSuccessor(
   tx: Prisma.TransactionClient,
   userId: number,
@@ -114,8 +129,7 @@ export async function hasActiveRefreshSessionSuccessor(
     where: {
       userId,
       sessionId,
-      revoked: false,
-      expiresAt: { gt: now },
+      ...activeRefreshTokenWhere(now),
     },
     select: { id: true },
   })
@@ -123,27 +137,78 @@ export async function hasActiveRefreshSessionSuccessor(
 }
 
 /**
- * Writes one refresh-token row. A first-login row intentionally omits the
- * family columns so their database defaults initialize a new session. A
- * rotation supplies the existing family values explicitly.
+ * Enforces the per-user active family cap before a new login/register/MFA
+ * family is inserted. Must be called inside the user's advisory-lock
+ * transaction. Rotation never calls this because it stays in the same family.
+ */
+export async function enforceUserActiveSessionLimit(
+  tx: Prisma.TransactionClient,
+  userId: number,
+  now: Date,
+  metadata?: SessionRequestMetadata,
+  maxActiveSessions: number = MAX_ACTIVE_SESSIONS_PER_USER,
+) {
+  const rows = await tx.refreshToken.findMany({
+    where: { userId, ...activeRefreshTokenWhere(now) },
+    select: { sessionId: true, lastUsedAt: true },
+  })
+
+  const byFamily = new Map<string, Date>()
+  for (const row of rows) {
+    const existing = byFamily.get(row.sessionId)
+    if (!existing || row.lastUsedAt > existing) {
+      byFamily.set(row.sessionId, row.lastUsedAt)
+    }
+  }
+
+  if (byFamily.size < maxActiveSessions) return 0
+
+  const evictCount = byFamily.size - maxActiveSessions + 1
+  const evictedSessionIds = [...byFamily.entries()]
+    .sort((left, right) => left[1].getTime() - right[1].getTime() || left[0].localeCompare(right[0]))
+    .slice(0, evictCount)
+    .map(([sessionId]) => sessionId)
+
+  await tx.refreshToken.updateMany({
+    where: { userId, sessionId: { in: evictedSessionIds }, revoked: false },
+    data: { revoked: true, revokedAt: now, revokeReason: 'session_limit' },
+  })
+
+  await recordSecurityEvent({
+    type: 'session_revoked',
+    userId,
+    ip: metadata?.ip,
+    userAgent: metadata?.userAgent,
+    detail: { reason: 'session_limit', revokedCount: evictedSessionIds.length },
+  }, tx)
+
+  return evictedSessionIds.length
+}
+
+/**
+ * Writes one refresh-token row. Only minimized display summaries (`deviceLabel`,
+ * `ipHint`) are persisted; legacy raw `ip` and `userAgent` columns are always
+ * written as `null` by new code while remaining nullable for deploy compatibility.
  */
 export async function createRefreshTokenRecord(input: CreateRefreshTokenInput, tx: Prisma.TransactionClient) {
+  const deviceLabel = input.deviceLabel ?? sessionDeviceLabel(input.userAgent ?? null)
+  const ipHint = input.ipHint ?? redactIpHint(input.ip ?? null)
+
   return tx.refreshToken.create({
     data: {
       userId: input.userId,
       tokenHash: input.tokenHash,
       expiresAt: input.expiresAt,
-      ip: input.ip ?? null,
-      userAgent: input.userAgent ?? null,
+      ...(input.absoluteExpiresAt === undefined ? {} : { absoluteExpiresAt: input.absoluteExpiresAt }),
+      deviceLabel,
+      ipHint,
+      ip: null,
+      userAgent: null,
       ...(input.sessionId === undefined ? {} : { sessionId: input.sessionId }),
       ...(input.sessionStartedAt === undefined ? {} : { sessionStartedAt: input.sessionStartedAt }),
       ...(input.lastUsedAt === undefined ? {} : { lastUsedAt: input.lastUsedAt }),
     },
   })
-}
-
-function sessionDeviceLabel(userAgent: string | null) {
-  return getSecurityEventDeviceHint(userAgent) ?? '浏览器会话'
 }
 
 async function assertCurrentSessionActive(
@@ -156,8 +221,7 @@ async function assertCurrentSessionActive(
     where: {
       userId,
       sessionId: currentSessionId,
-      revoked: false,
-      expiresAt: { gt: now },
+      ...activeRefreshTokenWhere(now),
     },
     select: { id: true },
   })
@@ -171,11 +235,13 @@ export async function listActiveSessions(userId: number, currentSessionId: strin
   await assertCurrentSessionActive(userId, currentSessionId)
 
   const rows = await prisma.refreshToken.findMany({
-    where: { userId, revoked: false, expiresAt: { gt: now } },
+    where: { userId, ...activeRefreshTokenWhere(now) },
     select: {
       sessionId: true,
       sessionStartedAt: true,
       lastUsedAt: true,
+      deviceLabel: true,
+      ipHint: true,
       ip: true,
       userAgent: true,
     },
@@ -193,8 +259,8 @@ export async function listActiveSessions(userId: number, currentSessionId: strin
   return [...bySessionId.values()]
     .map(row => ({
       sessionId: row.sessionId,
-      deviceLabel: sessionDeviceLabel(row.userAgent),
-      ipHint: redactIpHint(row.ip),
+      deviceLabel: row.deviceLabel ?? sessionDeviceLabel(row.userAgent),
+      ipHint: row.ipHint ?? redactIpHint(row.ip),
       sessionStartedAt: row.sessionStartedAt,
       lastUsedAt: row.lastUsedAt,
       current: row.sessionId === currentSessionId,
@@ -250,8 +316,7 @@ export async function revokeOwnedNonCurrentSession(input: {
       where: {
         userId: input.userId,
         sessionId: input.targetSessionId,
-        revoked: false,
-        expiresAt: { gt: new Date() },
+        ...activeRefreshTokenWhere(new Date()),
       },
       select: { id: true },
     })
@@ -283,8 +348,7 @@ export async function revokeOtherSessions(input: {
       where: {
         userId: input.userId,
         sessionId: { not: input.currentSessionId },
-        revoked: false,
-        expiresAt: { gt: new Date() },
+        ...activeRefreshTokenWhere(new Date()),
       },
       distinct: ['sessionId'],
       select: { sessionId: true },
@@ -354,16 +418,16 @@ export async function revokeAllUserRefreshTokens(
     await lockUserRefreshSessionMutations(transaction, userId)
     const now = new Date()
     const activeFamilies = await transaction.refreshToken.findMany({
-      where: { userId, revoked: false, expiresAt: { gt: now } },
+      where: { userId, ...activeRefreshTokenWhere(now) },
       distinct: ['sessionId'],
       select: { sessionId: true },
     })
     await transaction.refreshToken.updateMany({
-      where: { userId, revoked: false, expiresAt: { gt: now } },
+      where: { userId, ...activeRefreshTokenWhere(now) },
       data: { revoked: true, revokedAt: now, revokeReason },
     })
     await transaction.refreshToken.updateMany({
-      where: { userId, revoked: false, expiresAt: { lte: now } },
+      where: { userId, revoked: false },
       data: { revoked: true, revokedAt: now, revokeReason: 'expired' },
     })
     const revokedFamilyCount = activeFamilies.length

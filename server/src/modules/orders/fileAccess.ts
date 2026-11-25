@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
+import { sessionDeviceLabel } from '../../lib/deviceHint.js'
 import { notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
 import { getDeliveryStorageForProvider } from '../../lib/storage/delivery.js'
@@ -160,7 +161,7 @@ async function resolveGrant(
         role: role!,
         outcome,
         ipHash: hashIp(requester.ip),
-        userAgent: requester.userAgent?.slice(0, 256) ?? null,
+        userAgent: requester.userAgent?.trim() ? sessionDeviceLabel(requester.userAgent) : null,
         expiresAt: expiresAt ?? null,
       },
     })

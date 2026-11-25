@@ -178,7 +178,7 @@ export const systemConfigDescriptions: Record<SystemConfigKey, string> = {
   checkinMakeupMonthlyLimit: '每月补签次数上限（0 = 关闭补签）',
   checkinRewardClaimDays: '连签/全勤奖励待领取有效天数',
   inviteReward: '邀请新用户奖励积分',
-  refreshTokenMaxAgeDays: 'Refresh Token 有效天数',
+  refreshTokenMaxAgeDays: 'Refresh Token 滑动续期天数',
   defaultPageSize: '列表默认分页大小',
   maxPageSize: '列表最大分页大小',
   lowStockThreshold: '低库存提醒阈值',
@@ -353,7 +353,7 @@ const BONUS_BPS_HINT = '万分比，10000=100%；例如 500 表示额外 +5%'
 export const systemConfigHints: Partial<Record<SystemConfigKey, string>> = {
   notificationEnabled: '保存后对后续请求和通知写入生效；不删除已有通知，不影响验证码等业务邮件。',
   notificationExpiryDays: '1–365 天，仅影响之后创建的通知；已有通知的到期时间保持不变。',
-  refreshTokenMaxAgeDays: '修改后对新签发的 Refresh Token 生效',
+  refreshTokenMaxAgeDays: '控制新签发与续签的滑动闲置有效期；会话绝对上限按角色强制封顶（管理员 ≤ 7 天，普通用户/商家 30–90 天）',
   defaultPageSize: '列表接口未显式传 pageSize 时使用，需 ≤ 最大分页大小',
   maxPageSize: '请求 pageSize 超过该值会被拒绝或截断',
   lowStockThreshold: '即时库存商品可用库存 ≤ 该值时触发低库存预警',

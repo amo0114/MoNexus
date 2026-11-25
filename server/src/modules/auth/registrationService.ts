@@ -251,10 +251,26 @@ export async function registerUser(
     if (!currentUser) throw notFound('用户不存在')
     if (await isAccountBanned(currentUser.id, tx)) throw badRequest('账号已被封禁')
 
-    const session = await createStoredRefreshToken(currentUser.id, ip, userAgent, tx, maxAgeMs)
+    const now = new Date()
+    const session = await createStoredRefreshToken(
+      currentUser.id,
+      ip,
+      userAgent,
+      tx,
+      maxAgeMs,
+      undefined,
+      currentUser.role,
+      now,
+    )
     return { user: currentUser, session }
   })
-  const accessToken = generateAccessToken(issued.user.id, issued.user.role, issued.session.sessionId)
+  const accessToken = generateAccessToken(
+    issued.user.id,
+    issued.user.role,
+    issued.session.sessionId,
+    undefined,
+    issued.session.accessTokenExpiresInSeconds,
+  )
 
   return {
     accessToken,

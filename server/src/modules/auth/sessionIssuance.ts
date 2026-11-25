@@ -4,7 +4,9 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
-import { createRefreshTokenRecord } from './sessionService.js'
+import { unauthenticated } from '../../lib/httpError.js'
+import { createRefreshTokenRecord, enforceUserActiveSessionLimit } from './sessionService.js'
+import { computeSessionExpiry } from './sessionPolicy.js'
 import { resolveUserNickname } from '../../lib/defaultNickname.js'
 
 type MfaSessionClaims = {
@@ -12,13 +14,22 @@ type MfaSessionClaims = {
   version: number
 }
 
-export function generateAccessToken(userId: number, role: string, sessionId: string, mfa?: MfaSessionClaims) {
+export function generateAccessToken(
+  userId: number,
+  role: string,
+  sessionId: string,
+  mfa?: MfaSessionClaims,
+  expiresInSeconds?: number,
+) {
+  const expiresIn = typeof expiresInSeconds === 'number' && Number.isSafeInteger(expiresInSeconds) && expiresInSeconds >= 1
+    ? expiresInSeconds
+    : config.jwtExpiresIn
   return jwt.sign({
     userId,
     role,
     sid: sessionId,
     ...(role === 'admin' && mfa ? { mfaVerified: true, mfaVersion: mfa.version } : {}),
-  }, config.jwtSecret, { expiresIn: config.jwtExpiresIn })
+  }, config.jwtSecret, { expiresIn })
 }
 
 function generateRefreshToken() {
@@ -51,14 +62,36 @@ export async function createStoredRefreshToken(
   userAgent: string | undefined,
   tx: Prisma.TransactionClient,
   configuredMaxAgeMs: number,
-  existingSession?: { sessionId: string; sessionStartedAt: Date },
+  existingSession?: { sessionId: string; sessionStartedAt: Date; absoluteExpiresAt?: Date | null },
+  role: string = 'user',
+  now: Date = new Date(),
 ) {
+  const expiry = computeSessionExpiry({
+    role,
+    configuredMaxAgeMs,
+    now,
+    existing: existingSession
+      ? {
+          sessionStartedAt: existingSession.sessionStartedAt,
+          absoluteExpiresAt: existingSession.absoluteExpiresAt ?? null,
+        }
+      : undefined,
+  })
+  if (expiry.expired) {
+    throw unauthenticated('Refresh Token 已过期')
+  }
+
+  // Enforce the per-user active family cap only when issuing a new family.
+  if (existingSession === undefined) {
+    await enforceUserActiveSessionLimit(tx, userId, now, { ip, userAgent })
+  }
+
   const refreshToken = generateRefreshToken()
-  const now = new Date()
   const stored = await createRefreshTokenRecord({
     userId,
     tokenHash: hashRefreshToken(refreshToken),
-    expiresAt: new Date(now.getTime() + configuredMaxAgeMs),
+    expiresAt: expiry.expiresAt,
+    absoluteExpiresAt: expiry.absoluteExpiresAt,
     ip,
     userAgent,
     ...(existingSession === undefined
@@ -69,5 +102,10 @@ export async function createStoredRefreshToken(
           lastUsedAt: now,
         }),
   }, tx)
-  return { refreshToken, maxAgeMs: configuredMaxAgeMs, sessionId: stored.sessionId }
+  return {
+    refreshToken,
+    maxAgeMs: expiry.cookieMaxAgeMs,
+    sessionId: stored.sessionId,
+    accessTokenExpiresInSeconds: expiry.accessTokenExpiresInSeconds,
+  }
 }

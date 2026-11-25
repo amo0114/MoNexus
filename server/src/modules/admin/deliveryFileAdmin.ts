@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client'
+import { normalizeStoredDeviceLabel } from '../../lib/deviceHint.js'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import type { ListDeliveryFilesQuery, ListFileGrantsQuery } from './schema.js'
@@ -116,5 +117,13 @@ export async function listDeliveryFileGrants(fileId: number, query: ListFileGran
     prisma.fileGrantLog.count({ where: { fileId } }),
   ])
 
-  return { items, total, page: query.page, pageSize: query.pageSize }
+  return {
+    items: items.map(item => ({
+      ...item,
+      userAgent: item.userAgent ? normalizeStoredDeviceLabel(item.userAgent) : null,
+    })),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+  }
 }

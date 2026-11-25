@@ -216,6 +216,7 @@ describe('P5 T5 — download-url issuance: authz matrix, anti-enumeration, audit
     const grant = await api
       .post(`/api/orders/${orderId}/files/download-url`)
       .set(authHeader(buyer.accessToken))
+      .set('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36')
       .expect(200)
     expect(grant.headers['cache-control']).toBe('no-store')
     expect(grant.body.fileName).toBe('交付包.zip')
@@ -226,8 +227,7 @@ describe('P5 T5 — download-url issuance: authz matrix, anti-enumeration, audit
     expect(download.headers['content-disposition']).toContain('attachment')
 
     const log = await prisma.fileGrantLog.findFirstOrThrow({ where: { orderId } })
-    expect(log).toMatchObject({ fileId, role: 'buyer', outcome: 'granted' })
-    expect(log.userAgent === null || log.userAgent.length <= 256).toBe(true)
+    expect(log).toMatchObject({ fileId, role: 'buyer', outcome: 'granted', userAgent: 'Chrome · macOS' })
 
     // 防枚举：他人订单 / 不存在订单 / 无文件交付订单 → 统一 404。
     await createTestUser('t5-stranger@test.local', 'pass123', 'user', 1000)

@@ -133,11 +133,17 @@ describe('device session families', () => {
     const initialClaims = jwt.decode(original.accessToken) as { sid?: unknown } | null
 
     expect(initialClaims?.sid === originalRow.sessionId).toBe(true)
+    // D2 write-side minimization: new writes store only summaries and null out raw IP/UA columns.
+    expect(originalRow.ip).toBeNull()
+    expect(originalRow.userAgent).toBeNull()
+    expect(originalRow.deviceLabel).toBe('浏览器会话')
+    expect(originalRow.ipHint).toBe('未知 IP')
+    expect(originalRow.absoluteExpiresAt).toBeInstanceOf(Date)
 
     const refreshed = await api
       .post('/api/auth/refresh')
       .set('Cookie', original.refreshCookie)
-      .set('User-Agent', 'Sensitive Session UA / 1.0')
+      .set('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 Chrome/131.0 Safari/537.36')
       .expect(200)
     const refreshedRow = await prisma.refreshToken.findFirstOrThrow({
       where: { userId: user.id },
@@ -150,8 +156,13 @@ describe('device session families', () => {
       originalRevoked: originalAfterRefresh.revoked,
       sameSessionId: refreshedRow.sessionId === originalRow.sessionId,
       sameStartedAt: refreshedRow.sessionStartedAt.getTime() === originalRow.sessionStartedAt.getTime(),
+      sameAbsoluteExpiry: refreshedRow.absoluteExpiresAt?.getTime() === originalRow.absoluteExpiresAt?.getTime(),
       lastUsedAdvanced: refreshedRow.lastUsedAt.getTime() >= originalRow.lastUsedAt.getTime(),
       refreshedSid: refreshedClaims?.sid === originalRow.sessionId,
+      refreshedRawIpNull: refreshedRow.ip === null,
+      refreshedRawUaNull: refreshedRow.userAgent === null,
+      refreshedDeviceLabel: refreshedRow.deviceLabel === 'Chrome · macOS',
+      refreshedIpHint: refreshedRow.ipHint === '未知 IP',
     }
     const failedRotationInvariants = Object.entries(rotationInvariants)
       .filter(([, passed]) => !passed)
@@ -160,8 +171,9 @@ describe('device session families', () => {
 
     const items = await listSessions(refreshed.body.accessToken)
     const [current] = items
-    const noRawMetadata = !JSON.stringify(items).includes(originalRow.userAgent ?? '')
-      && !JSON.stringify(items).includes(originalRow.ip ?? '')
+    const noRawMetadata = !JSON.stringify(items).includes('Sensitive Session UA')
+      && !JSON.stringify(items).includes('Mozilla/')
+      && !JSON.stringify(items).includes('127.0.0.1')
     const hasOnlySummaryFields = current !== undefined
       && Object.keys(current).every(key => [
         'sessionId',
@@ -172,12 +184,32 @@ describe('device session families', () => {
         'current',
       ].includes(key))
       && current.current
+      && current.deviceLabel === 'Chrome · macOS'
       && current.sessionId === originalRow.sessionId
       && !('tokenHash' in current)
       && !('userAgent' in current)
       && !('ip' in current)
 
     expect(items.length === 1 && hasOnlySummaryFields && noRawMetadata).toBe(true)
+
+    // Legacy row read-side fallback during rolling upgrades: null summary columns fall back to raw columns via bounded parser.
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+        expiresAt: new Date(Date.now() + 3_600_000),
+        ip: '203.0.113.50',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/130.0',
+        deviceLabel: null,
+        ipHint: null,
+      },
+    })
+    const withLegacy = await listSessions(refreshed.body.accessToken)
+    const legacySummary = withLegacy.find(item => !item.current)
+    expect(legacySummary).toMatchObject({
+      deviceLabel: 'Firefox · Windows',
+      ipHint: '203.0.113.*',
+    })
   })
 
   it('only lets an owner revoke a non-current family, while the current family continues to work', async () => {
@@ -650,5 +682,142 @@ describe('device session families', () => {
     expect(banEvent.ipHash).toBeTruthy()
     expect(banEvent.deviceHint).toBe('Chrome · macOS')
     expect(first.accessToken).toBeTruthy()
+  })
+
+  it('enforces role-based absolute session lifetimes and clamps rotated cookie Max-Age and JWT exp', async () => {
+    const dayMs = 24 * 60 * 60 * 1000
+    await prisma.systemConfig.upsert({
+      where: { key: 'refreshTokenMaxAgeDays' },
+      create: { key: 'refreshTokenMaxAgeDays', value: 365, description: 'test' },
+      update: { value: 365 },
+    })
+
+    try {
+      // User is capped at 90 days even when refreshTokenMaxAgeDays is 365.
+      const { user, password } = await createTestUser('session-abs-user@test.local', 'Abs#Pass-2026')
+      const userLogin = await login(user.email, password)
+      const userRow = await prisma.refreshToken.findFirstOrThrow({
+        where: { userId: user.id },
+        orderBy: { id: 'desc' },
+      })
+      const userSpanDays = (userRow.absoluteExpiresAt!.getTime() - userRow.sessionStartedAt.getTime()) / dayMs
+      expect(userSpanDays).toBeGreaterThan(89.9)
+      expect(userSpanDays).toBeLessThan(90.1)
+      expect(userRow.expiresAt.getTime()).toBeLessThanOrEqual(userRow.absoluteExpiresAt!.getTime())
+
+      // Near absolute ceiling (90 seconds left): rotation clamps BOTH cookie Max-Age and JWT exp.
+      const nearCeiling = new Date(Date.now() + 90_000)
+      await prisma.refreshToken.update({
+        where: { id: userRow.id },
+        data: { absoluteExpiresAt: nearCeiling, expiresAt: nearCeiling },
+      })
+      const clampedRes = await api
+        .post('/api/auth/refresh')
+        .set('Cookie', userLogin.refreshCookie)
+        .expect(200)
+      const clampedClaims = jwt.decode(clampedRes.body.accessToken) as { exp?: number; iat?: number }
+      expect(Number.isInteger(clampedClaims.exp)).toBe(true)
+      expect(clampedClaims.exp! - clampedClaims.iat!).toBeLessThanOrEqual(90)
+      expect(clampedClaims.exp! - clampedClaims.iat!).toBeGreaterThanOrEqual(80)
+      const clampedCookie = refreshCookieFrom(clampedRes)
+      const maxAgeMatch = clampedCookie.match(/Max-Age=(\d+)/)
+      expect(maxAgeMatch).toBeTruthy()
+      expect(Number(maxAgeMatch![1])).toBeLessThanOrEqual(90)
+      expect(Number(maxAgeMatch![1])).toBeGreaterThanOrEqual(80)
+
+      // Past absolute ceiling -> refresh fails with 401 and marks row expired.
+      const rotatedRow = await prisma.refreshToken.findFirstOrThrow({
+        where: { userId: user.id, revoked: false },
+        orderBy: { id: 'desc' },
+      })
+      await prisma.refreshToken.update({
+        where: { id: rotatedRow.id },
+        data: { absoluteExpiresAt: new Date(Date.now() - 5_000), expiresAt: new Date(Date.now() + 60_000) },
+      })
+      await api
+        .post('/api/auth/refresh')
+        .set('Cookie', clampedCookie)
+        .expect(401)
+      const afterExpire = await prisma.refreshToken.findUniqueOrThrow({ where: { id: rotatedRow.id } })
+      expect(afterExpire.revoked).toBe(true)
+      expect(afterExpire.revokeReason).toBe('expired')
+
+      // Admin is capped at 7 days even when refreshTokenMaxAgeDays is 365.
+      const { user: admin, password: adminPassword } = await createTestUser('session-abs-admin@test.local', 'Adm#Pass-2026', 'admin')
+      const adminSession = await loginAs(admin.email, adminPassword)
+      expect(adminSession.accessToken).toBeTruthy()
+      const adminRow = await prisma.refreshToken.findFirstOrThrow({
+        where: { userId: admin.id, revoked: false },
+        orderBy: { id: 'desc' },
+      })
+      const adminSpanDays = (adminRow.absoluteExpiresAt!.getTime() - adminRow.sessionStartedAt.getTime()) / dayMs
+      expect(adminSpanDays).toBeGreaterThan(6.9)
+      expect(adminSpanDays).toBeLessThan(7.1)
+
+      // Once an admin session's absoluteExpiresAt passes, admin routes immediately reject even if expiresAt is still future.
+      await prisma.refreshToken.update({
+        where: { id: adminRow.id },
+        data: { absoluteExpiresAt: new Date(Date.now() - 5_000), expiresAt: new Date(Date.now() + 60_000) },
+      })
+      const expiredAdminRes = await api
+        .get('/api/admin/users')
+        .set(authHeader(adminSession.accessToken))
+        .expect(401)
+      expect(expiredAdminRes.body.error.code).toBe('SESSION_REVOKED')
+    } finally {
+      await prisma.systemConfig.deleteMany({ where: { key: 'refreshTokenMaxAgeDays' } })
+    }
+  })
+
+  it('caps active device families at 20 per user by evicting the oldest families on new logins, not on rotation', async () => {
+    const { user, password } = await createTestUser('session-cap-20@test.local', 'Cap#Pass-2026')
+    const baseTime = Date.now() - 60 * 60 * 1000
+    const seededSessionIds: string[] = []
+    for (let index = 0; index < 20; index += 1) {
+      const row = await prisma.refreshToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          absoluteExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          sessionStartedAt: new Date(baseTime + index * 1_000),
+          lastUsedAt: new Date(baseTime + index * 1_000),
+          deviceLabel: 'Chrome · macOS',
+          ipHint: '203.0.113.*',
+        },
+      })
+      seededSessionIds.push(row.sessionId)
+    }
+
+    // 21st login must evict only the oldest seeded session (index 0) and keep active count at 20.
+    const newestLogin = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const activeRows = await prisma.refreshToken.findMany({
+      where: { userId: user.id, revoked: false },
+      select: { sessionId: true },
+    })
+    expect(activeRows).toHaveLength(20)
+    expect(activeRows.some(row => row.sessionId === seededSessionIds[0])).toBe(false)
+    expect(activeRows.some(row => row.sessionId === seededSessionIds[1])).toBe(true)
+
+    const evictedRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: user.id, sessionId: seededSessionIds[0] },
+    })
+    expect(evictedRow.revoked).toBe(true)
+    expect(evictedRow.revokeReason).toBe('session_limit')
+
+    const limitEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(limitEvent.detailSafe).toEqual({ reason: 'session_limit', revokedCount: 1 })
+
+    // Rotating the newest session at the 20-family cap must NOT evict any other family.
+    await api.post('/api/auth/refresh').set('Cookie', newestLogin.refreshCookie).expect(200)
+    const activeAfterRotate = await prisma.refreshToken.findMany({
+      where: { userId: user.id, revoked: false },
+      select: { sessionId: true },
+    })
+    expect(activeAfterRotate).toHaveLength(20)
+    expect(activeAfterRotate.some(row => row.sessionId === seededSessionIds[1])).toBe(true)
   })
 })

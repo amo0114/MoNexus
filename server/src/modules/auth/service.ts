@@ -22,6 +22,7 @@ import {
   revokeRefreshSessionByTokenHash,
   type SessionRequestMetadata,
 } from './sessionService.js'
+import { computeSessionExpiry } from './sessionPolicy.js'
 import { recordSecurityEvent } from './securityEvents.js'
 import { createAuthChallenge } from './mfa.js'
 import { clearLoginFailures, enforceLoginVerification, recordLoginFailure } from './loginFailures.js'
@@ -112,14 +113,30 @@ export async function loginUser(
       })
     }
 
-    await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-    const session = await createStoredRefreshToken(user.id, ip, userAgent, tx, maxAgeMs)
+    const now = new Date()
+    await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: now } })
+    const session = await createStoredRefreshToken(
+      user.id,
+      ip,
+      userAgent,
+      tx,
+      maxAgeMs,
+      undefined,
+      user.role,
+      now,
+    )
     return { kind: 'authenticated' as const, user, session }
   })
 
   if (issued.kind === 'mfa_challenge') return issued
 
-  const accessToken = generateAccessToken(issued.user.id, issued.user.role, issued.session.sessionId)
+  const accessToken = generateAccessToken(
+    issued.user.id,
+    issued.user.role,
+    issued.session.sessionId,
+    undefined,
+    issued.session.accessTokenExpiresInSeconds,
+  )
 
   return {
     kind: 'authenticated',
@@ -219,7 +236,17 @@ export async function refreshAccessToken(
       return handleRevokedRefreshToken(tx, storedToken, metadata, now)
     }
 
-    if (storedToken.expiresAt <= now) {
+    const nextExpiry = computeSessionExpiry({
+      role: storedToken.user.role,
+      configuredMaxAgeMs: maxAgeMs,
+      now,
+      existing: {
+        sessionStartedAt: storedToken.sessionStartedAt,
+        absoluteExpiresAt: storedToken.absoluteExpiresAt,
+      },
+    })
+
+    if (storedToken.expiresAt <= now || nextExpiry.expired) {
       await tx.refreshToken.updateMany({
         where: { id: storedToken.id, revoked: false },
         data: { revoked: true, revokedAt: now, revokeReason: 'expired' },
@@ -255,9 +282,12 @@ export async function refreshAccessToken(
       if (afterCas.revoked) {
         return handleRevokedRefreshToken(tx, afterCas, metadata, postCasNow)
       }
-      if (afterCas.expiresAt <= postCasNow) {
+      if (
+        afterCas.expiresAt <= postCasNow
+        || (afterCas.absoluteExpiresAt !== null && afterCas.absoluteExpiresAt <= postCasNow)
+      ) {
         await tx.refreshToken.updateMany({
-          where: { id: afterCas.id, revoked: false, expiresAt: { lte: postCasNow } },
+          where: { id: afterCas.id, revoked: false },
           data: { revoked: true, revokedAt: postCasNow, revokeReason: 'expired' },
         })
         return { kind: 'expired' as const }
@@ -274,13 +304,18 @@ export async function refreshAccessToken(
       {
         sessionId: storedToken.sessionId,
         sessionStartedAt: storedToken.sessionStartedAt,
+        absoluteExpiresAt: nextExpiry.absoluteExpiresAt,
       },
+      storedToken.user.role,
+      now,
     )
     return {
       kind: 'rotated' as const,
       userId: storedToken.userId,
       role: storedToken.user.role,
       refreshToken: next.refreshToken,
+      refreshTokenMaxAgeMs: next.maxAgeMs,
+      accessTokenExpiresInSeconds: next.accessTokenExpiresInSeconds,
       sessionId: next.sessionId,
       mfaVersion: storedToken.user.role === 'admin' ? storedToken.user.mfaVersion : undefined,
     }
@@ -302,9 +337,10 @@ export async function refreshAccessToken(
       result.role === 'admin' && typeof result.mfaVersion === 'number'
         ? { verified: true, version: result.mfaVersion }
         : undefined,
+      result.accessTokenExpiresInSeconds,
     ),
     refreshToken: result.refreshToken,
-    refreshTokenMaxAgeMs: maxAgeMs,
+    refreshTokenMaxAgeMs: result.refreshTokenMaxAgeMs,
   }
 }
 

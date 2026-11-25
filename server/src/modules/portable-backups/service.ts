@@ -229,6 +229,7 @@ export async function importPortableBackup(
     const rewrittenProductImages = await rewriteRestoredProductImageUrls(restoredObjectUrls)
     await prisma.$transaction([
       prisma.refreshToken.deleteMany(),
+      prisma.authChallenge.deleteMany(),
       prisma.passwordResetToken.deleteMany(),
       prisma.emailVerificationToken.deleteMany(),
       prisma.adminLog.create({
@@ -377,13 +378,15 @@ async function runExport(job: PortableBackupJob, passphrase: string) {
   }
 }
 
-async function dumpDatabase(destination: string, snapshot?: string) {
+export async function dumpDatabase(destination: string, snapshot?: string) {
   const { url, env } = databaseProcessOptions()
   await runProgram('pg_dump', [
     '--format=custom',
     ...(snapshot ? ['--snapshot', snapshot] : []),
     '--no-owner',
     '--no-privileges',
+    '--exclude-table-data=public."RefreshToken"',
+    '--exclude-table-data=public."AuthChallenge"',
     '--file', destination,
     '--dbname', url.toString(),
   ], { env })

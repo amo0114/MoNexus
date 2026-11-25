@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
+import { parseDeviceHint } from '../../lib/deviceHint.js'
 import { prisma } from '../../lib/prisma.js'
 
 /**
@@ -231,35 +232,7 @@ export function hashSecurityEventIp(ip: string | null | undefined): string | nul
  * of the original user-agent is copied into the result.
  */
 export function getSecurityEventDeviceHint(userAgent: string | null | undefined): string | null {
-  if (typeof userAgent !== 'string' || userAgent.trim().length === 0) return null
-
-  const browser = /Edg\//i.test(userAgent)
-    ? 'Edge'
-    : /OPR\//i.test(userAgent)
-      ? 'Opera'
-      : /Firefox\//i.test(userAgent)
-        ? 'Firefox'
-        : /(?:Chrome|CriOS)\//i.test(userAgent)
-          ? 'Chrome'
-          : /Version\/[^ ]+.*Safari\//i.test(userAgent)
-            ? 'Safari'
-            : /bot|crawler|spider/i.test(userAgent)
-              ? 'Automated client'
-              : 'Unknown browser'
-
-  const platform = /iPad|iPhone|iPod/i.test(userAgent)
-    ? 'iOS'
-    : /Android/i.test(userAgent)
-      ? 'Android'
-      : /Windows/i.test(userAgent)
-        ? 'Windows'
-        : /Macintosh|Mac OS X/i.test(userAgent)
-          ? 'macOS'
-          : /Linux/i.test(userAgent)
-            ? 'Linux'
-            : 'Unknown device'
-
-  return `${browser} · ${platform}`
+  return parseDeviceHint(userAgent)
 }
 
 /**
