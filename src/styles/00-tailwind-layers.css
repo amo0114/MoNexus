@@ -72,6 +72,11 @@
     padding-bottom: 9px;
   }
 
+  /* The 1px border leaves `py-2` secondary buttons at 38px. */
+  .btn-secondary {
+    min-height: 40px;
+  }
+
   /* Icon-only buttons: expand to the ≥40px touch target on touch
      devices / small viewports. */
   .icon-btn {

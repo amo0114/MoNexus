@@ -55,7 +55,7 @@ export default function StoreSortMenu({ value, onChange }: StoreSortMenuProps) {
         aria-label={`商品排序：${current.label}`}
         data-testid="store-sort-select"
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
+        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 max-md:min-h-10 text-xs font-medium transition-colors cursor-pointer focus-visible:outline-none focus-visible:[box-shadow:var(--shadow-focus)] ${
           value !== 'default' || open
             ? 'border-[var(--color-primary-border-subtle)] bg-[var(--color-primary-tint)] text-[var(--color-primary)] font-semibold'
             : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-text)]'

@@ -871,7 +871,7 @@ export default function StorePage() {
               aria-pressed={effectiveListOptions.inStock}
               onClick={() => toggleListOption('inStock')}
               data-testid="store-filter-instock"
-              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 max-md:min-h-10 text-xs font-medium transition-colors cursor-pointer ${
                 effectiveListOptions.inStock
                   ? 'border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary)] font-semibold'
                   : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-text)]'
@@ -884,7 +884,7 @@ export default function StorePage() {
               aria-pressed={effectiveListOptions.instant}
               onClick={() => toggleListOption('instant')}
               data-testid="store-filter-instant"
-              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+              className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 max-md:min-h-10 text-xs font-medium transition-colors cursor-pointer ${
                 effectiveListOptions.instant
                   ? 'border-[var(--color-cta)] bg-[color-mix(in_srgb,var(--color-cta)_10%,transparent)] text-[var(--color-cta)] font-semibold'
                   : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-text)]'
@@ -899,7 +899,7 @@ export default function StorePage() {
                 aria-pressed={effectiveListOptions.affordable}
                 onClick={() => toggleListOption('affordable')}
                 data-testid="store-filter-affordable"
-                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                className={`inline-flex items-center gap-1 rounded-full border px-3 py-1.5 max-md:min-h-10 text-xs font-medium transition-colors cursor-pointer ${
                   effectiveListOptions.affordable
                     ? 'border-[var(--color-primary)] bg-[var(--color-primary-tint)] text-[var(--color-primary)] font-semibold'
                     : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-muted)] hover:border-[var(--color-primary-border-subtle)] hover:text-[var(--color-text)]'
@@ -913,7 +913,7 @@ export default function StorePage() {
               <button
                 type="button"
                 onClick={resetToolbarFilters}
-                className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)] px-1.5 py-1 cursor-pointer"
+                className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-primary)] px-1.5 py-1 max-md:min-h-10 cursor-pointer"
               >
                 重置
               </button>
