@@ -137,6 +137,65 @@ export async function hasActiveRefreshSessionSuccessor(
 }
 
 /**
+ * Replaces an existing session family for the SAME user when that browser
+ * authenticates again while presenting a refresh cookie from an earlier family
+ * (including a rotated predecessor of that family). Must run inside the user's
+ * advisory lock BEFORE enforcing the active-session cap or issuing the new
+ * family. Cookies belonging to any other user are never touched.
+ */
+export async function revokeSameUserRefreshCookieSession(
+  tx: Prisma.TransactionClient,
+  input: {
+    userId: number
+    tokenHash?: string | null
+    now: Date
+    metadata?: SessionRequestMetadata
+  },
+) {
+  if (!input.tokenHash) return 0
+
+  const presented = await tx.refreshToken.findFirst({
+    where: { tokenHash: input.tokenHash, userId: input.userId },
+    select: { sessionId: true },
+  })
+  if (!presented) return 0
+
+  const activeRevoked = await tx.refreshToken.updateMany({
+    where: {
+      userId: input.userId,
+      sessionId: presented.sessionId,
+      ...activeRefreshTokenWhere(input.now),
+    },
+    data: { revoked: true, revokedAt: input.now, revokeReason: 'login_replaced' },
+  })
+
+  // Clean up any already-expired unrevoked rows in the replaced family without
+  // counting them as active replacements.
+  await tx.refreshToken.updateMany({
+    where: {
+      userId: input.userId,
+      sessionId: presented.sessionId,
+      revoked: false,
+    },
+    data: { revoked: true, revokedAt: input.now, revokeReason: 'expired' },
+  })
+
+  if (activeRevoked.count > 0) {
+    await recordSecurityEvent({
+      type: 'session_revoked',
+      userId: input.userId,
+      sessionId: presented.sessionId,
+      ip: input.metadata?.ip,
+      userAgent: input.metadata?.userAgent,
+      detail: { reason: 'login_replaced', revokedCount: 1 },
+    }, tx)
+    return 1
+  }
+
+  return 0
+}
+
+/**
  * Enforces the per-user active family cap before a new login/register/MFA
  * family is inserted. Must be called inside the user's advisory-lock
  * transaction. Rotation never calls this because it stays in the same family.

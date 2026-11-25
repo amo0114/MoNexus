@@ -18,8 +18,9 @@ import { getOrders } from '../api/orders'
 import { getMemberTier, getPointsHistory, type TierResponse } from '../api/points'
 import { hasMerchantCapability } from '../auth/merchantAccess'
 import { logoutCurrentSession } from '../api/auth'
+import { getApiErrorMessage } from '../api/error'
 import { disablePush, isPushSupported } from '../lib/webPush'
-import { getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
+import { AuthSessionChangedError, getAuthSessionContext, matchesAuthSessionContext } from '../auth/sessionContext'
 import { formatPointLogAmount, pointLogVisual } from '../utils/pointLogDisplay'
 import { formatDateTime } from '../utils/datetime'
 import type { PointsHistoryItem } from './PointsHistorySheet'
@@ -266,17 +267,23 @@ export default function UserAvatarHoverCard({ user }: { user: AuthUser }) {
     setLoggingOut(true)
     try {
       if (isPushSupported()) await disablePush().catch(() => {})
-      await logoutCurrentSession()
-    } catch {
-      // ignore network failure and still clear local session below
-    } finally {
-      setLoggingOut(false)
-      setOpen(false)
-      setActiveSubmenu(null)
+      if (!matchesAuthSessionContext(logoutAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        return
+      }
+      await logoutCurrentSession(logoutAuthContext)
       if (matchesAuthSessionContext(logoutAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        setOpen(false)
+        setActiveSubmenu(null)
         logout(logoutAuthContext)
         navigate('/login')
       }
+    } catch (err: unknown) {
+      if (err instanceof AuthSessionChangedError) return
+      if (matchesAuthSessionContext(logoutAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        useAppStore.getState().showToast(getApiErrorMessage(err, '退出登录失败，请重试'), 'error')
+      }
+    } finally {
+      setLoggingOut(false)
     }
   }
 

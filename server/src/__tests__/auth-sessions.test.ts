@@ -6,6 +6,7 @@ import { prisma } from '../lib/prisma.js'
 import { refreshTokenCookieName } from '../lib/cookies.js'
 import { changePassword, loginUser, refreshAccessToken, revokeAllUserRefreshTokens } from '../modules/auth/service.js'
 import { hashRefreshToken } from '../modules/auth/sessionIssuance.js'
+import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 import { lockUserRefreshSessionMutations } from '../modules/auth/sessionService.js'
 import { approveMerchant, banUser, suspendMerchant } from '../modules/admin/service.js'
 import { config } from '../config/index.js'
@@ -819,5 +820,162 @@ describe('device session families', () => {
     })
     expect(activeAfterRotate).toHaveLength(20)
     expect(activeAfterRotate.some(row => row.sessionId === seededSessionIds[1])).toBe(true)
+  })
+
+  it('replaces only a same-account cookie family on final login/MFA issuance without touching failed logins, 202 pre-auth, or other users', async () => {
+    const { user: userA, password: passwordA } = await createTestUser('d6-replace-a@test.local', 'RepA#Pass-2026')
+    const { user: userB, password: passwordB } = await createTestUser('d6-replace-b@test.local', 'RepB#Pass-2026')
+
+    const sessionA1 = await login(userA.email, passwordA, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const sessionA1Id = sessionIdFromAccessToken(sessionA1.accessToken)
+    const sessionB1 = await login(userB.email, passwordB, 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+    const sessionB1Id = sessionIdFromAccessToken(sessionB1.accessToken)
+
+    // Wrong password presenting A1 cookie must NOT revoke A1.
+    await api
+      .post('/api/auth/login')
+      .set('Cookie', sessionA1.refreshCookie)
+      .send({ email: userA.email, password: 'wrong-password' })
+      .expect(401)
+    await api.post('/api/auth/refresh').set('Cookie', sessionA1.refreshCookie).expect(200)
+
+    // Rotate A1 -> A1b, then re-login as userA presenting the OLD rotated cookie A1:
+    // the entire A1 family (including active successor A1b) must be marked login_replaced.
+    const freshA = await login(userA.email, passwordA, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const freshAId = sessionIdFromAccessToken(freshA.accessToken)
+    const freshARotated = await api.post('/api/auth/refresh').set('Cookie', freshA.refreshCookie).expect(200)
+    const freshARotatedCookie = refreshCookieFrom(freshARotated)
+
+    // Re-login as userA carrying the rotated predecessor cookie `freshA.refreshCookie`:
+    const reloginA = await api
+      .post('/api/auth/login')
+      .set('Cookie', freshA.refreshCookie)
+      .send({ email: userA.email, password: passwordA })
+      .expect(200)
+    const reloginAId = sessionIdFromAccessToken(reloginA.body.accessToken)
+    expect(reloginAId).not.toBe(freshAId)
+
+    // The active successor of `freshAId` must have been replaced (`login_replaced`), not left orphaned.
+    await api.post('/api/auth/refresh').set('Cookie', freshARotatedCookie).expect(401)
+    const replacedRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: userA.id, sessionId: freshAId, revokeReason: 'login_replaced' },
+    })
+    expect(replacedRow.revoked).toBe(true)
+    expect(await prisma.securityEvent.count({
+      where: { userId: userA.id, sessionId: freshAId, type: 'session_revoked' },
+    })).toBeGreaterThanOrEqual(1)
+
+    // Logging in as userA while presenting userB's cookie must NEVER revoke userB's session.
+    await api
+      .post('/api/auth/login')
+      .set('Cookie', sessionB1.refreshCookie)
+      .send({ email: userA.email, password: passwordA })
+      .expect(200)
+    const bActive = await prisma.refreshToken.findFirst({
+      where: { userId: userB.id, sessionId: sessionB1Id, revoked: false },
+    })
+    expect(bActive).not.toBeNull()
+
+    // Admin MFA flow: 202 pre-auth and wrong TOTP must NOT replace existing admin cookie;
+    // final MFA verify success MUST replace same-admin cookie with login_replaced.
+    const { user: admin, password: adminPassword } = await createTestUser('d6-replace-admin@test.local', 'Adm#Pass-2026', 'admin')
+    const adminFirst = await loginAs(admin.email, adminPassword)
+    const adminFirstId = sessionIdFromAccessToken(adminFirst.accessToken)
+    const adminDb = await prisma.user.findUniqueOrThrow({ where: { id: admin.id } })
+    const adminSecret = decryptMfaSecret(adminDb.mfaSecretEncrypted!)
+
+    const preAuth = await api
+      .post('/api/auth/login')
+      .set('Cookie', adminFirst.cookies)
+      .send({ email: admin.email, password: adminPassword })
+      .expect(202)
+    // Existing admin session must remain active after 202 pre-auth.
+    await api.get('/api/admin/users').set(authHeader(adminFirst.accessToken)).expect(200)
+
+    // Wrong MFA code must NOT revoke existing admin cookie.
+    const validTotp = generateTotp(adminSecret)
+    const wrongTotp = `${validTotp.slice(0, -1)}${validTotp.endsWith('0') ? '1' : '0'}`
+    await api
+      .post('/api/auth/mfa/verify')
+      .set('Cookie', adminFirst.cookies)
+      .send({ challengeId: preAuth.body.challengeId, method: 'totp', code: wrongTotp })
+      .expect(401)
+    await api.get('/api/admin/users').set(authHeader(adminFirst.accessToken)).expect(200)
+
+    // Successful MFA verify replaces adminFirst with login_replaced.
+    const verified = await api
+      .post('/api/auth/mfa/verify')
+      .set('Cookie', adminFirst.cookies)
+      .send({ challengeId: preAuth.body.challengeId, method: 'totp', code: generateTotp(adminSecret) })
+      .expect(200)
+    expect(sessionIdFromAccessToken(verified.body.accessToken)).not.toBe(adminFirstId)
+    await api.get('/api/admin/users').set(authHeader(adminFirst.accessToken)).expect(401)
+    const adminReplaced = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: admin.id, sessionId: adminFirstId, revokeReason: 'login_replaced' },
+    })
+    expect(adminReplaced.revoked).toBe(true)
+    expect(sessionA1Id).toBeTruthy()
+  })
+
+  it('clears the refresh cookie on password-change only when expectedSessionId and presented cookie match, rejecting mismatches with 409 before mutation', async () => {
+    const { user: userA, password: passwordA } = await createTestUser('d6-pwd-a@test.local', 'PwdA#Old-2026')
+    const { user: userB, password: passwordB } = await createTestUser('d6-pwd-b@test.local', 'PwdB#Old-2026')
+
+    const sessionA = await login(userA.email, passwordA)
+    const sessionAId = sessionIdFromAccessToken(sessionA.accessToken)
+    const sessionB = await login(userB.email, passwordB)
+
+    // 1. Mismatched cookie (userB's cookie presented with userA's Bearer + clearCookie: true)
+    // must return 409 SESSION_CHANGED without changing password or emitting Set-Cookie.
+    const mismatchRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(sessionA.accessToken))
+      .set('Cookie', sessionB.refreshCookie)
+      .send({
+        currentPassword: passwordA,
+        newPassword: 'PwdA#New-ShouldNotApply',
+        expectedSessionId: sessionAId,
+        clearCookie: true,
+      })
+      .expect(409)
+    expect(mismatchRes.body.error.code).toBe('SESSION_CHANGED')
+    expect(mismatchRes.headers['set-cookie']).toBeUndefined()
+    // Old password still works and userB's cookie is untouched.
+    const stillValidA = await login(userA.email, passwordA)
+    await api.post('/api/auth/refresh').set('Cookie', sessionB.refreshCookie).expect(200)
+
+    // 2. clearCookie: false revokes sessions and updates password WITHOUT emitting Set-Cookie.
+    const sessionA2Id = sessionIdFromAccessToken(stillValidA.accessToken)
+    const noClearRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(stillValidA.accessToken))
+      .set('Cookie', stillValidA.refreshCookie)
+      .send({
+        currentPassword: passwordA,
+        newPassword: 'PwdA#New-Step1-2026',
+        expectedSessionId: sessionA2Id,
+        clearCookie: false,
+      })
+      .expect(200)
+    expect(noClearRes.headers['set-cookie']).toBeUndefined()
+
+    // 3. Matching expectedSessionId + matching cookie + clearCookie: true clears the cookie.
+    const sessionA3 = await login(userA.email, 'PwdA#New-Step1-2026')
+    const sessionA3Id = sessionIdFromAccessToken(sessionA3.accessToken)
+    const clearRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(sessionA3.accessToken))
+      .set('Cookie', sessionA3.refreshCookie)
+      .send({
+        currentPassword: 'PwdA#New-Step1-2026',
+        newPassword: 'PwdA#New-Step2-2026',
+        expectedSessionId: sessionA3Id,
+        clearCookie: true,
+      })
+      .expect(200)
+    const rawSetCookie = clearRes.headers['set-cookie'] as unknown
+    const setCookies = Array.isArray(rawSetCookie) ? rawSetCookie.map(String) : typeof rawSetCookie === 'string' ? [rawSetCookie] : []
+    expect(setCookies.some(cookie => cookie.startsWith(`${refreshTokenCookieName}=;`) && cookie.includes('Expires=Thu, 01 Jan 1970'))).toBe(true)
+    await api.post('/api/auth/refresh').set('Cookie', sessionA3.refreshCookie).expect(401)
   })
 })

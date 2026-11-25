@@ -36,7 +36,7 @@ import CheckinCard from '../components/checkin/CheckinCard'
 import PushToggle from '../components/PushToggle'
 import { disablePush, isPushSupported } from '../lib/webPush'
 import { useCheckin } from '../hooks/useCheckin'
-import { getAuthSessionContext, getAuthSessionScopeKey, matchesAuthSessionContext } from '../auth/sessionContext'
+import { AuthSessionChangedError, getAuthSessionContext, getAuthSessionScopeKey, matchesAuthSessionContext } from '../auth/sessionContext'
 import UserAvatar from '../components/ui/UserAvatar'
 import { ExperienceProgressBar } from '../components/profile/ExperienceProgressBar'
 import { FluidSegmentedControl, type FluidSegmentOption } from '../components/ui/FluidSegmentedControl'
@@ -80,6 +80,7 @@ export default function ProfilePage() {
     orderId: number
   } | null>(null)
   const [listsLoading, setListsLoading] = useState(true)
+  const [loggingOut, setLoggingOut] = useState(false)
   const orderDetailRequestRef = useRef(0)
 
   const orders =
@@ -165,19 +166,28 @@ export default function ProfilePage() {
   }, [checkinLoaded])
 
   async function handleLogout() {
+    if (loggingOut) return
     const logoutAuthContext = getAuthSessionContext(useAuthStore.getState())
     if (!logoutAuthContext) return
+    setLoggingOut(true)
     try {
       // 退出前解绑本设备的推送订阅，避免继续收到上一个账号的提醒（尽力而为）。
       if (isPushSupported()) await disablePush().catch(() => {})
-      await logoutCurrentSession()
-    } catch {
-      // ignore
-    } finally {
+      if (!matchesAuthSessionContext(logoutAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        return
+      }
+      await logoutCurrentSession(logoutAuthContext)
       if (matchesAuthSessionContext(logoutAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
         logout(logoutAuthContext)
         navigate('/login')
       }
+    } catch (err: unknown) {
+      if (err instanceof AuthSessionChangedError) return
+      if (matchesAuthSessionContext(logoutAuthContext, getAuthSessionContext(useAuthStore.getState()))) {
+        showToast(getApiErrorMessage(err, '退出登录失败，请重试'), 'error')
+      }
+    } finally {
+      setLoggingOut(false)
     }
   }
 
@@ -616,11 +626,13 @@ export default function ProfilePage() {
           {/* 退出账号按钮 */}
           <div className="pt-2 flex justify-center">
             <button
-              onClick={handleLogout}
+              type="button"
+              onClick={() => void handleLogout()}
+              disabled={loggingOut}
               data-testid="profile-logout"
-              className="cursor-pointer text-[color-mix(in_srgb,var(--color-danger)_80%,transparent)] hover:text-[var(--color-danger)] font-semibold flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[color-mix(in_srgb,var(--color-danger)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-danger)_15%,transparent)] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] transition text-sm shadow-2xs"
+              className="cursor-pointer text-[color-mix(in_srgb,var(--color-danger)_80%,transparent)] hover:text-[var(--color-danger)] font-semibold flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[color-mix(in_srgb,var(--color-danger)_5%,transparent)] hover:bg-[color-mix(in_srgb,var(--color-danger)_15%,transparent)] border border-[color-mix(in_srgb,var(--color-danger)_20%,transparent)] transition text-sm shadow-2xs disabled:opacity-50"
             >
-              <LogOut className="w-4 h-4" /> 退出当前登录账号
+              <LogOut className="w-4 h-4" /> {loggingOut ? '退出中…' : '退出当前登录账号'}
             </button>
           </div>
         </div>

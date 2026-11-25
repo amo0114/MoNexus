@@ -1,5 +1,5 @@
 import { config } from '../../config/index.js'
-import { ipKeyGenerator } from 'express-rate-limit'
+import { clientIpRateLimitKey } from '../../lib/clientIp.js'
 import { abuseLimiter, buildAbuseLimiterKey, type AbuseLimiterBucket } from '../../lib/abuseLimiter.js'
 import { abuseProtectionUnavailable } from '../../lib/httpError.js'
 import { runRedisCommandWithTimeout } from '../../lib/redis.js'
@@ -57,7 +57,7 @@ export async function enforceLoginVerification(
   ip: string | undefined,
 ) {
   if (!trackingEnabled()) return
-  const ipKey = ipKeyGenerator(ip ?? 'unknown')
+  const ipKey = clientIpRateLimitKey(ip)
   const admission = await checkAbuseBucket(() => abuseLimiter.consume(LOGIN_IP_BUCKET, ipKey))
   if (!admission.allowed) {
     await enforceHumanVerification({ proof: { humanVerification: proof }, ip, action: 'login' })

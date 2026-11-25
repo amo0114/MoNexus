@@ -27,6 +27,11 @@ function isPasswordResetProtectionError(error: unknown): error is HttpError {
   return error instanceof HttpError && PASSWORD_RESET_PROTECTION_ERRORS.has(error.code)
 }
 
+function presentedRefreshToken(req: Request): string | undefined {
+  const value = req.cookies?.[refreshTokenCookieName]
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
     const { email, password, inviteCode, turnstileToken, humanVerification, agreements, nickname } = req.body
@@ -34,6 +39,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       email, password, inviteCode,
       req.ip, req.headers['user-agent'], { humanVerification, turnstileToken }, agreements,
       nickname,
+      presentedRefreshToken(req),
     )
     setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.status(201).json({ user: result.user, accessToken: result.accessToken })
@@ -78,6 +84,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     const result = await authService.loginUser(
       email, password,
       req.ip, req.headers['user-agent'], humanVerification,
+      presentedRefreshToken(req),
     )
     if (result.kind === 'mfa_challenge') {
       // A password-authenticated administrator remains pre-authenticated
@@ -136,6 +143,7 @@ export async function verifyMfa(req: Request, res: Response, next: NextFunction)
       code: req.body.code,
       ip: req.ip,
       userAgent: req.headers['user-agent'],
+      existingRefreshToken: presentedRefreshToken(req),
     })
     setRefreshTokenCookie(res, result.refreshToken, result.refreshTokenMaxAgeMs)
     res.json({
@@ -281,12 +289,22 @@ export async function resetPassword(req: Request, res: Response, next: NextFunct
 
 export async function changePassword(req: Request, res: Response, next: NextFunction) {
   try {
-    await passwordService.changePassword(
+    const result = await passwordService.changePassword(
       req.user!.userId,
       req.body.currentPassword,
       req.body.newPassword,
-      { ip: req.ip, userAgent: req.headers['user-agent'] },
+      {
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+        currentSessionId: typeof req.user?.sid === 'string' ? req.user.sid : undefined,
+        expectedSessionId: req.body.expectedSessionId,
+        clearCookie: req.body.clearCookie,
+        presentedRefreshToken: presentedRefreshToken(req),
+      },
     )
+    if (result.shouldClearCookie) {
+      clearRefreshTokenCookie(res)
+    }
     res.json({ message: '密码已修改，请重新登录' })
   } catch (err) {
     next(err)

@@ -20,6 +20,7 @@ import {
   lockUserRefreshSessionMutations,
   revokeAllUserRefreshTokens,
   revokeRefreshSessionByTokenHash,
+  revokeSameUserRefreshCookieSession,
   type SessionRequestMetadata,
 } from './sessionService.js'
 import { computeSessionExpiry } from './sessionPolicy.js'
@@ -56,6 +57,7 @@ export async function loginUser(
   ip?: string,
   userAgent?: string,
   humanVerification?: HumanVerificationRequest['humanVerification'],
+  existingRefreshToken?: string,
 ): Promise<LoginResult> {
   // Checked before the account lookup so unknown emails behave identically.
   await enforceLoginVerification(email, humanVerification, ip)
@@ -114,6 +116,12 @@ export async function loginUser(
     }
 
     const now = new Date()
+    await revokeSameUserRefreshCookieSession(tx, {
+      userId: user.id,
+      tokenHash: existingRefreshToken ? hashRefreshToken(existingRefreshToken) : null,
+      now,
+      metadata: { ip, userAgent },
+    })
     await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: now } })
     const session = await createStoredRefreshToken(
       user.id,

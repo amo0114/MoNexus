@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { config } from '../../config/index.js'
+import { normalizeClientIp } from '../../lib/clientIp.js'
 import { sessionDeviceLabel } from '../../lib/deviceHint.js'
 import { notFound, HttpError, type ErrorCode } from '../../lib/httpError.js'
 import { getSystemConfigValue } from '../../lib/systemConfig.js'
@@ -49,7 +50,9 @@ interface RequesterContext {
 
 function hashIp(ip: string | undefined): string | null {
   if (!ip) return null
-  return createHmac('sha256', config.jwtSecret).update(`file-grant-ip:${ip}`).digest('hex').slice(0, 32)
+  const normalized = normalizeClientIp(ip.trim())
+  if (!normalized) return null
+  return createHmac('sha256', config.jwtSecret).update(`file-grant-ip:${normalized}`).digest('hex').slice(0, 32)
 }
 
 class FileAccessDenied extends HttpError {

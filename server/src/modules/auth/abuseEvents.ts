@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
+import { normalizeClientIp } from '../../lib/clientIp.js'
 import { prisma } from '../../lib/prisma.js'
 
 /**
@@ -284,7 +285,9 @@ function hashIdentifier(
   options: AbuseEventHashOptions,
 ): string | null {
   if (typeof value !== 'string') return null
-  const normalized = kind === 'email' ? value.trim().toLowerCase() : value.trim()
+  const normalized = kind === 'email'
+    ? value.trim().toLowerCase()
+    : normalizeClientIp(value.trim())
   const maxLength = kind === 'email' ? MAX_EMAIL_LENGTH : MAX_IP_LENGTH
   if (!normalized || normalized.length > maxLength) return null
 

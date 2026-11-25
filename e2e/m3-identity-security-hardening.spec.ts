@@ -133,7 +133,6 @@ async function goToProfile(page: Page) {
   await expect(page).toHaveURL(/\/profile$/)
   await page.getByRole('tab', { name: '账号设置' }).click()
   await expect(page.getByTestId('session-manager')).toBeVisible()
-  await page.getByTestId('session-toggle-all').click()
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -312,12 +311,70 @@ test('shows safe session summaries and confirms non-current device revocation', 
   await expect(page.getByTestId('session-current-badge')).toBeVisible()
   await expect(page.getByText('当前浏览器')).toBeVisible()
   await expect(page.getByText('203.0.113.*')).toBeVisible()
+  await expect(page.getByText(/最近续签：/).first()).toBeVisible()
+  await expect(page.getByTestId('session-toggle-all')).toHaveCount(0)
   await expect(page.getByTestId('session-revoke-device')).toHaveCount(1)
 
   await page.getByTestId('session-revoke-device').click()
   await expect(page.getByRole('heading', { name: '退出此设备？' })).toBeVisible()
   await page.getByRole('button', { name: '确认退出' }).click()
   await expect(page.getByText('另一台浏览器')).toHaveCount(0)
+})
+
+test('shows up to three sessions by default and expands/collapses the remainder', async ({ page }) => {
+  const nonce = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const sessions = [
+    {
+      sessionId: `current-${nonce}`,
+      deviceLabel: '当前浏览器',
+      ipHint: '203.0.113.*',
+      sessionStartedAt: '2030-01-01T00:00:00.000Z',
+      lastUsedAt: '2030-01-01T00:04:00.000Z',
+      current: true,
+    },
+    {
+      sessionId: `other-1-${nonce}`,
+      deviceLabel: '设备二',
+      ipHint: '198.51.100.*',
+      sessionStartedAt: '2030-01-01T00:00:00.000Z',
+      lastUsedAt: '2030-01-01T00:03:00.000Z',
+      current: false,
+    },
+    {
+      sessionId: `other-2-${nonce}`,
+      deviceLabel: '设备三',
+      ipHint: '198.51.100.*',
+      sessionStartedAt: '2030-01-01T00:00:00.000Z',
+      lastUsedAt: '2030-01-01T00:02:00.000Z',
+      current: false,
+    },
+    {
+      sessionId: `other-3-${nonce}`,
+      deviceLabel: '设备四',
+      ipHint: 'IPv6 地址',
+      sessionStartedAt: '2030-01-01T00:00:00.000Z',
+      lastUsedAt: '2030-01-01T00:01:00.000Z',
+      current: false,
+    },
+  ]
+
+  await mockNormalLogin(page)
+  await page.route(apiRoute('/auth/sessions'), route => route.fulfill({ json: { items: sessions } }))
+
+  await loginThroughPage(page)
+  await goToProfile(page)
+
+  await expect(page.getByTestId('session-device')).toHaveCount(3)
+  await expect(page.getByText('设备四')).toHaveCount(0)
+  await expect(page.getByTestId('session-toggle-all')).toHaveText('查看其余 1 台设备')
+
+  await page.getByTestId('session-toggle-all').click()
+  await expect(page.getByTestId('session-device')).toHaveCount(4)
+  await expect(page.getByText('设备四')).toBeVisible()
+  await expect(page.getByTestId('session-toggle-all')).toHaveText('收起设备列表')
+
+  await page.getByTestId('session-toggle-all').click()
+  await expect(page.getByTestId('session-device')).toHaveCount(3)
 })
 
 test('confirms revoking all other devices while retaining the current session', async ({ page }) => {

@@ -7,7 +7,11 @@ import {
   notFound,
 } from '../../lib/httpError.js'
 import { getRefreshTokenMaxAgeMs } from '../../lib/systemConfig.js'
-import { lockUserRefreshSessionMutations, revokeAllUserRefreshTokens } from './sessionService.js'
+import {
+  lockUserRefreshSessionMutations,
+  revokeAllUserRefreshTokens,
+  revokeSameUserRefreshCookieSession,
+} from './sessionService.js'
 import { recordSecurityEvent } from './securityEvents.js'
 import {
   claimMfaRecoveryCode,
@@ -23,7 +27,7 @@ import {
   verifyTotp,
   type AuthChallengePurpose,
 } from './mfa.js'
-import { buildAuthUser, generateAccessToken, createStoredRefreshToken } from './sessionIssuance.js'
+import { buildAuthUser, generateAccessToken, hashRefreshToken, createStoredRefreshToken } from './sessionIssuance.js'
 
 type MfaFactorMethod = 'totp' | 'recovery_code'
 type MfaVerificationOutcome =
@@ -316,6 +320,7 @@ export async function verifyAdminMfaLogin(input: {
   code: string
   ip?: string
   userAgent?: string
+  existingRefreshToken?: string
 }) {
   const pointer = await findMfaChallengeOwner(input.challengeId, 'admin_login')
   const maxAgeMs = await getRefreshTokenMaxAgeMs()
@@ -378,6 +383,12 @@ export async function verifyAdminMfaLogin(input: {
       }
 
       const now = new Date()
+      await revokeSameUserRefreshCookieSession(tx, {
+        userId: user.id,
+        tokenHash: input.existingRefreshToken ? hashRefreshToken(input.existingRefreshToken) : null,
+        now,
+        metadata: { ip: input.ip, userAgent: input.userAgent },
+      })
       await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: now } })
       const session = await createStoredRefreshToken(
         user.id,

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
+import { normalizeClientIp } from '../../lib/clientIp.js'
 import { parseDeviceHint } from '../../lib/deviceHint.js'
 import { prisma } from '../../lib/prisma.js'
 
@@ -218,8 +219,8 @@ export function serializeSecurityEventDetail<T extends SecurityEventType>(
  */
 export function hashSecurityEventIp(ip: string | null | undefined): string | null {
   if (typeof ip !== 'string') return null
-  const normalized = ip.trim()
-  if (normalized.length === 0 || normalized.length > 128) return null
+  const normalized = normalizeClientIp(ip.trim())
+  if (!normalized) return null
 
   return crypto
     .createHmac('sha256', config.jwtSecret)
