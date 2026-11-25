@@ -1,22 +1,67 @@
-# 用户登录设备与会话数据安全加固交接
+# Handoff: fix-auth-device-session-hardening
 
-- 任务契约：[fix-auth-device-session-hardening.contract.md](fix-auth-device-session-hardening.contract.md)
-- 基线：`origin/develop@5b2624a`
-- 分支：`fix/auth-device-session-hardening`（worktree：`/root/.t3/worktrees/MoNexus-new/fix-auth-device-session-a3a370eea07d6246`）
-- 隔离测试库：`monexus_test_session_hardening`（PostgreSQL 16，合成测试数据）
+- Spec / 契约：[docs/handoffs/fix-auth-device-session-hardening.contract.md](fix-auth-device-session-hardening.contract.md)
+- 审查记录：无（待 Codex 按固定 SHA 独立审查）
+- 写入负责人：Gemini（更新时间 2026-11-25）
+- 分支 / worktree：`fix/auth-device-session-hardening` / `/root/.t3/worktrees/MoNexus-new/fix-auth-device-session-a3a370eea07d6246`
+- Base：`origin/develop@5b2624a`；已验证代码 revision：`2a04ede`（本交接提交仅更新本文档，不改动代码）
+- 隔离资源：独立可丢弃测试库 `monexus_test_session_hardening`（PostgreSQL 16，合成测试数据）；Node `v22.23.1` / npm `10.9.8`（`/root/.nvm/versions/node/v22.23.1/bin`）
 - 独立审查对话：`thread:delegated-task:command%3Amcp%3A85fc1595-986e-4bca-9653-92f1cc3a6678%3Adelegate-task%3A0688eca4-0eb8-48ea-a168-374793b34770`
 
-## 当前状态
+## 已完成（附证据）
 
-- 状态：实施中（已建立工作区、Node 22.23.1 环境、依赖与隔离测试库，正在按 Commit 1 → Commit 2 → Commit 3 推进）
-- 授权状态：仅授权本地实施、验证与送交 Codex 审查；**未授权** push、创建/合并 PR 或操作 `master`。
+1. **Commit 1 — `e2ac73f`**：`fix(auth): bound refresh replay escalation and complete revocation audit metadata`
+   - 统一 `refreshAccessToken` 正常路径与 CAS 失败路径的重放分类逻辑，过期/已有终结标记/无活跃后继时仅返回 `401`，确保重放家族写入终结标记 `'refresh_replay'`（含获批的 M3 D-07 修订）。
+   - `revokeAllUserRefreshTokens` 按单次 `now` 统计并记录活跃家族数，同时将已过期未吊销行标记为 `'expired'`；补齐改密/重置密码/用户封禁解封/商家审批停用恢复的 `{ ip, userAgent }` 审计透传。
+   - 验证：`server build`、`test:architecture`、`check:architecture`、6 个后端核心测试套件（92/92）全部 exit 0。
+2. **Commit 2 — `6694c73`**：`feat(auth): minimize session metadata, enforce absolute lifetimes, cap, and retention`
+   - Prisma schema 与双迁移：`20261125100000_refresh_token_session_hardening`（新增 `absoluteExpiresAt` / `deviceLabel` / `ipHint`，回填非管理员活跃行与收紧管理员 7 天硬上限）及独立单语句并发索引迁移 `20261125100100_refresh_token_expires_at_id_idx`（`CREATE INDEX CONCURRENTLY`）。
+   - D2：`RefreshToken` 新写入一律仅持久化 `deviceLabel`/`ipHint` 并对旧列写 `null`，读侧兼容旧行；`FileGrantLog.userAgent` 写入与读侧改为受控客户端摘要。
+   - D5：角色分级绝对有效期（`admin <= 7d`，非管理员 `30..90d`）、Cookie `Max-Age` 与 Access JWT 整数秒 `exp` 同步裁剪、管理员鉴权中间件校验 `absoluteExpiresAt`、单用户 20 台活跃家族上限（按最旧 `lastUsedAt` 淘汰 `'session_limit'`）。
+   - D4：`sessionRetentionCron.ts`（经 `defineLeasedCron` / `CronLease` 接入 `main.ts`）每日按推进游标与用户锁整族清理过期超 30 天家族，并幂等分批回填/脱敏历史 `RefreshToken` 与 `FileGrantLog`；`portable-backups/service.ts` 在 `pg_dump` 中排除 `RefreshToken` 与 `AuthChallenge` 表数据并在恢复事务清空两表。
+   - 抽离纯函数有界线性 UA 解析器 `server/src/lib/deviceHint.ts`（512 UTF-8 字节截断、零回溯正则、扩展客户端/OS 识别与白名单校验）。
+   - 验证：前后端构建、`test:architecture`、`check:architecture`、`check:migrations`、8 个后端测试套件（92/92）全部 exit 0。
+3. **Commit 3 — `2a04ede`**：`fix(auth): replace same-account login cookies, harden password-change/IPv6/proxy guards and UI`
+   - D6：同账号密码登录/注册/管理员 MFA 验证最终成功签发时，在用户锁内先替换请求携带的同账号旧 Cookie 家族（`'login_replaced'`，位于 20 台上限淘汰之前；失败登录、202 pre-auth 与跨账号 Cookie 不受影响）；改密端到端支持 `expectedSessionId` + `clearCookie`（前端在 `withAuthCookieMutationLock` 锁内仅在 `supportsCrossTabAuthLock()` 为真时请求清 Cookie，服务端在锁内先核对 Bearer `sid` 与 Cookie 家族一致再改密并清 Cookie，不匹配返回 `409 SESSION_CHANGED`）。
+   - D7：`clientIp.ts` 新增 `normalizeClientIp`（IPv4-mapped IPv6 剥离与 RFC 5952 IPv6 压缩规范化）与 `clientIpRateLimitKey`（IPv6 `/56` 聚合），接入 `securityEvents.ts`、`abuseEvents.ts`、`orders/fileAccess.ts`、`abuseLimiter.ts`、`auth/routes.ts`、`authProtection.ts`、`loginFailures.ts` 与 `notifications/realtime/streamController.ts`；`server/src/config/index.ts` 增加生产 `DEPLOY_TOPOLOGY` ↔ `TRUST_PROXY` 启动硬校验。
+   - 前端加固：`SessionManager.tsx` 默认展示前 3 条、「最近活跃」改为「最近续签」、列表防乱序回写、确认弹窗绑定 `AuthSessionContext`；`ProfilePage.tsx` 与 `UserAvatarHoverCard.tsx` 退出失败不再静默吞错清本地状态且防止 `disablePush()` 期间跨标签切号串话；`AdminFileGovernance.tsx` 改称「客户端摘要」；更新 `e2e/m3-identity-security-hardening.spec.ts` 与 `server/src/modules/auth/README.md`。
+   - 验证：前后端构建、架构/迁移检查、全量前端单测（244 文件 / 1984 用例）、11 个后端核心测试套件（139 用例）全部 exit 0。
 
-## 计划提交切片
+## 待完成
 
-1. **Commit 1**：重放 DoS 状态机修复 + `revokeAllUserRefreshTokens` 活跃家族计数与全路径审计元数据透传 + 契约/交接文档 + 回归测试。
-2. **Commit 2**：Prisma Schema 与双迁移（字段/回填 + 单语句 `CREATE INDEX CONCURRENTLY`）+ D2 写侧最小化与历史回填 + D5 绝对有效期与 20 台设备上限 + D4 每日家族级清理 Cron 与可移植备份排除 + 回归测试。
-3. **Commit 3**：D6 同账号重登替换与改密安全清 Cookie + D7 IP 规范化/IPv6 `/56`、有界线性 UA 解析器、生产拓扑启动守卫 + 前端 `SessionManager` / `ProfilePage` / `ProfileIdentityCard` / `AdminFileGovernance` 加固 + 模块文档更新 + 回归测试。
+- 由 Codex 对固定提交范围 `5b2624a..<HEAD>` 在独立可丢弃测试库上完成独立代码审查与验证。
+- 如审查提出有效 P0/P1/P2 finding，完成修复与复审；全部关闭后向 Owner 汇报结果并等待后续授权（当前**未授权** push、建 PR 或合并）。
+
+## 已批准的设计决策
+
+- D1–D7 与 M3 D-07 修订均记录于 [fix-auth-device-session-hardening.contract.md](fix-auth-device-session-hardening.contract.md)，由 Gemini 与 Codex 联合审校并于 2026-11-25 获 Owner 批准实施。
+- 明确延期（本次未改动）：`SecurityEvent`/`FileGrantLog` `ipHash` 迁移独立密钥；管理端查询 `SecurityEvent` 与普通用户登录写 `SecurityEvent`；`orders/fileAccess.ts` 对 `suspended` 商家策略调整；拆分推荐与站内流量 `visitorId`。
+
+## 风险与阻断
+
+- 当前无实现阻断。
+- 注意：PR 涉及认证、会话与中间件，按 `AGENTS.md` §5，将来获授权创建 PR 时须在创建即附带 `run-e2e` 标签。
 
 ## 验证记录
 
-（待各提交与最终快照验证完成后如实补齐命令、退出码与对应 SHA。）
+| 命令 | 结果（exit code） | revision |
+|---|---|---|
+| `npm --prefix server run build` | PASS (0) | `2a04ede` |
+| `npm run build` | PASS (0) | `2a04ede` |
+| `npm run test:architecture` | PASS (0) | `2a04ede` |
+| `npm run check:architecture` | PASS (0) | `2a04ede` |
+| `npm run check:migrations` | PASS (0) | `2a04ede` |
+| `npm test`（全量前端 Vitest） | PASS (0) — 244 files, 1984 tests | `2a04ede` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/lib/clientIp.test.ts src/lib/deviceHint.test.ts src/__tests__/config-trust-proxy.test.ts src/__tests__/auth-security-events.test.ts src/__tests__/abuse-events.test.ts src/__tests__/registration-abuse-primitives.test.ts src/__tests__/auth-sessions.test.ts src/__tests__/auth-session-retention-and-backup.test.ts src/__tests__/auth-mfa.test.ts src/__tests__/auth.test.ts src/modules/notifications/__tests__/realtime-hub-controller.test.ts`（对 `monexus_test_session_hardening`） | PASS (0) — 11 files, 139 tests | `2a04ede` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/refresh-token-wiring.test.ts src/__tests__/admin-file-governance.test.ts src/__tests__/file-delivery-chain.test.ts src/__tests__/system-config.test.ts`（含于 Commit 2 8-suite 联合执行） | PASS (0) — 8 files, 92 tests | `6694c73` |
+| `REDIS_ENABLED=false API_RATE_LIMIT_MAX=3000 npm --prefix server test -- src/__tests__/governance-v1.test.ts`（含于 Commit 1 6-suite 联合执行） | PASS (0) — 6 files, 92 tests | `e2ac73f` |
+| `git diff --check` | PASS (0) | `2a04ede` |
+
+## 未运行 / 无法验证
+
+- Playwright 浏览器 E2E（含已更新的 `e2e/m3-identity-security-hardening.spec.ts`）— 未在本轮本地启动全栈服务执行；须在最终 `CI OK`（带 `run-e2e` 标签）或独立验证阶段覆盖。
+- 后端未修改模块的其余全量集成测试分片、真实 Redis 联调与生产部署预检完整环境 — 未在本地全量运行，留待独立审查抽检与 GitHub Actions `CI OK`。
+
+## 下一步
+
+- 提交本交接文档后，将固定提交范围 `5b2624a..<HEAD>` 交由 Codex 审查会话在独立可丢弃测试库上执行独立审查与复核。
