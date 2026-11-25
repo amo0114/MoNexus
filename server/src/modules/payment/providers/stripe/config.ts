@@ -6,7 +6,8 @@ import type { ProviderEnvironment } from '../types.js'
 
 export const STRIPE_PROVIDER_NAME = 'stripe' as const
 export const STRIPE_CAPABILITY_VERSION = 'stripe-v1'
-export const STRIPE_PAYMENT_METHODS = ['card'] as const
+export const STRIPE_WECHAT_PAY_METHOD = 'wechat_pay' as const
+export const STRIPE_PAYMENT_METHODS = ['card', STRIPE_WECHAT_PAY_METHOD] as const
 export const STRIPE_DEFAULT_HOST = 'api.stripe.com'
 export const STRIPE_API_VERSION = '2026-07-29.dahlia' as const
 
@@ -17,6 +18,7 @@ export const STRIPE_META = {
   amountMinor: 'monexus_amount_minor',
   currency: 'monexus_currency',
   accountKey: 'monexus_account_key',
+  paymentMethod: 'monexus_payment_method',
 } as const
 
 export type StripeMode = 'test' | 'live'
@@ -30,6 +32,7 @@ export type StripeRuntimeConfig = {
   returnBaseUrl?: string
   chargeCurrency?: RechargeCurrency
   minimumAmountMinor?: bigint
+  wechatPayMinimumAmountMinor?: bigint
 }
 
 export type StripeRequestOptions = { idempotencyKey?: string }

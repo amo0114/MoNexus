@@ -13,7 +13,7 @@ export const QUOTE_TTL_MS = 10 * 60 * 1000
 
 const PROVIDER_PAYMENT_METHODS: Readonly<Record<PaymentProviderName, readonly string[]>> = {
   simulator: ['card', 'redirect', 'qr_code', 'form_post'],
-  stripe: ['card'],
+  stripe: ['card', 'wechat_pay'],
   paypal: ['redirect'],
   wechat_pay: ['native'],
   alipay: ['wap', 'page'],

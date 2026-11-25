@@ -452,6 +452,27 @@ describe('RechargePage', () => {
     expect(createRechargeQuote).not.toHaveBeenCalled()
   })
 
+  it('quotes Stripe WeChat separately from Stripe card and VMQFox WeChat', async () => {
+    const user = userEvent.setup()
+    getRechargeConfig.mockImplementation(async (currency: string) =>
+      configFor(currency as 'CNY' | 'USD', {
+        providers: [
+          { provider: 'stripe', paymentMethods: [method('card'), method('wechat_pay')] },
+          { provider: 'vmqfox', paymentMethods: [method('wechat'), method('alipay')] },
+        ],
+      }),
+    )
+    renderAt('/recharge')
+    await readyCheckout()
+    expect(screen.getByRole('button', { name: 'Stripe · 银行卡' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '微信支付' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Stripe · 微信支付' }))
+    await user.click(screen.getByTestId('recharge-suggested-1000'))
+    await waitFor(() => expect(createRechargeQuote).toHaveBeenLastCalledWith(
+      expect.objectContaining({ provider: 'stripe', paymentMethod: 'wechat_pay', amountMinor: '1000' }),
+    ))
+  })
+
   it('lets a buyer return to an unpaid Stripe Checkout Session', async () => {
     const user = userEvent.setup()
     const url = 'https://checkout.stripe.com/c/pay/cs_test_return'

@@ -8627,6 +8627,11 @@
                 "pattern": "^[1-9][0-9]{0,5}$",
                 "description": "经核实的银行卡最低收款额，按收款币种最小单位填写。新配置激活前必填。"
               },
+              "wechatPayMinimumAmountMinor": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]{0,5}$",
+                "description": "经核实的 Stripe 微信支付最低收款额，单位为人民币分。仅 CNY 商户支持，提供此字段后校验 Stripe 微信支付状态。"
+              },
               "provider": {
                 "type": "string",
                 "enum": [
