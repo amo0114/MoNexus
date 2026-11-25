@@ -23,6 +23,7 @@ import { parseSafeProductReturnTo } from '../../utils/returnTo'
 import { rememberRechargeReturnTo } from './session'
 import { createRechargeIslandFeedback } from './islandFeedback'
 import { captureFeedbackOwner } from '../../lib/completionFeedback'
+import { goToRedirect } from './paymentActions'
 
 function displayStatus(orderStatus: string, resumePayment: boolean): string {
   if (resumePayment && (orderStatus === 'created' || orderStatus === 'pending_payment')) {
@@ -126,8 +127,9 @@ export default function RechargeResult({
         let next = await getRechargeOrder(orderId)
         if (cancelled || !isCurrent()) return
         if (peekPendingOrder() === orderId) takePendingOrder()
+        const resumingApproval = resumePayment && next.provider !== 'stripe'
         if (
-          resumePayment
+          resumingApproval
           && !next.adminSandbox
           && !completeSucceeded.current
           && !completeInFlight.current
@@ -151,7 +153,7 @@ export default function RechargeResult({
         statusRef.current = next.status
         setOrder(next)
         setError('')
-        feedback.update(next, resumePayment)
+        feedback.update(next, resumingApproval)
         if (next.status === 'credited' && !creditedRefreshed.current) {
           creditedRefreshed.current = true
           void refreshCurrentUser()
@@ -214,9 +216,10 @@ export default function RechargeResult({
   }
 
   const action = order.action
-  const shownStatus = order.adminSandbox ? order.status : displayStatus(order.status, resumePayment)
+  const resumingApproval = resumePayment && order.provider !== 'stripe'
+  const shownStatus = order.adminSandbox ? order.status : displayStatus(order.status, resumingApproval)
   const adminSandboxPending = order.adminSandbox && !isTerminalOrderStatus(order.status)
-  const waiting = !order.adminSandbox && !resumePayment && (order.status === 'created' || order.status === 'pending_payment')
+  const waiting = !order.adminSandbox && !resumingApproval && (order.status === 'created' || order.status === 'pending_payment')
   const confirming = !order.adminSandbox && isConfirmingOrderStatus(shownStatus)
   const payableNotice = buildPayableRecognitionNotice(order)
 
@@ -255,6 +258,25 @@ export default function RechargeResult({
           </span>
         </div>
       </div>
+
+      {waiting && order.provider === 'stripe' && action?.type === 'redirect' && Date.parse(action.expiresAt ?? order.expiresAt) > Date.now() && (
+        <div className="space-y-2">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => {
+              try {
+                goToRedirect(action.url)
+              } catch (err) {
+                setError(getApiErrorMessage(err, '无法打开 Stripe 付款页面'))
+              }
+            }}
+          >
+            继续 Stripe 付款
+          </button>
+          {error && <p role="alert" className="text-sm text-[var(--color-danger)]">{error}</p>}
+        </div>
+      )}
 
       {waiting && action?.type === 'qr_code' && (
         <BrandedPaymentQr

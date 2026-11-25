@@ -7,6 +7,7 @@ import type { RechargeIdempotencyScope } from './types.js'
 
 const PROCESSING_TTL_MS = 15 * 60 * 1000
 export const RECHARGE_IDEMPOTENCY_COMPLETED_RETENTION_MS = 24 * 60 * 60 * 1000
+export const REFUND_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:refund:v1`
 
 export type RechargeIdempotencyClaim =
   | { kind: 'claimed'; claimToken: string; takeover: boolean }

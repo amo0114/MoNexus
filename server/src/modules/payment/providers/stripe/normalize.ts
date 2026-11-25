@@ -165,7 +165,7 @@ export function paymentFromCheckout(
   const mode = modeFromAccountKey(providerAccountKey) ?? (session.livemode ? 'live' : 'test')
   const intentId = typeof session.payment_intent === 'string'
     ? session.payment_intent
-    : session.payment_intent?.id ?? session.id
+    : session.payment_intent?.id
   const expandedIntent = typeof session.payment_intent === 'object' && session.payment_intent
     ? session.payment_intent
     : null
@@ -179,7 +179,7 @@ export function paymentFromCheckout(
     providerAccountKey,
     orderId: session.client_reference_id ?? meta(session, STRIPE_META.orderId),
   })
-  if (status === 'succeeded' && (!matched || !livemodeMatches(mode, session.livemode))) {
+  if (status === 'succeeded' && (!intentId?.startsWith('pi_') || !matched || !livemodeMatches(mode, session.livemode))) {
     status = 'unknown'
   }
   const captureId = expandedIntent && typeof expandedIntent.latest_charge === 'string'
@@ -187,7 +187,7 @@ export function paymentFromCheckout(
     : null
   return {
     status,
-    providerPaymentId: intentId,
+    providerPaymentId: intentId ?? session.id,
     providerOrderId: session.id,
     providerCaptureId: captureId,
     amountMinor: amountMinor ?? 0n,

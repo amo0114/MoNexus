@@ -40,6 +40,7 @@ import {
   computeRechargeRequestDigest,
   rechargeIdempotencyInFlight,
   releaseRechargeIdempotencyClaim,
+  REFUND_BUSINESS_EVENT_KEY,
 } from './idempotency.js'
 import { serializeAmountMinor } from './money.js'
 import type { PaymentProviderName, RechargeCurrency } from './types.js'
@@ -48,7 +49,7 @@ import { recordPaymentRefund, recordRefundNotSupported } from '../payment/metric
 import { providerEnvironment } from './gates.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
-export const REFUND_BUSINESS_EVENT_KEY = (orderId: string) => `recharge:${orderId}:refund:v1`
+export { REFUND_BUSINESS_EVENT_KEY } from './idempotency.js'
 
 const refundReserveKey = (refundId: string) => `recharge-refund:${refundId}:reserve`
 
