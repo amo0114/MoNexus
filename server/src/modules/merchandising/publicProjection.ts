@@ -44,6 +44,12 @@ export interface OrganicCursorPayload {
   effectiveOrderCount: number
   productId: number
   filterHash: string
+  /**
+   * Keyset value of an explicit list sort (price / sales). Absent for the
+   * organic order; the sort itself is bound through filterHash, so old organic
+   * cursors stay valid without a version bump.
+   */
+  sortValue?: number
 }
 
 /** decorate 需要的 run 形状（只读三字段，不含任何订单数据）。 */
@@ -162,6 +168,7 @@ function isValidCursorPayload(value: unknown): value is OrganicCursorPayload {
     && v.productId > 0
     && typeof v.filterHash === 'string'
     && /^[0-9a-f]{64}$/.test(v.filterHash)
+    && (v.sortValue === undefined || (typeof v.sortValue === 'number' && Number.isInteger(v.sortValue)))
   )
 }
 
