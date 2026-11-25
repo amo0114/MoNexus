@@ -53,6 +53,7 @@ beforeEach(async () => {
     paymentMethodConfigurations: {
       list: async () => ({ data: [{
         active: true, is_default: true, wechat_pay: { available: wechatAvailable, display_preference: { value: 'on' } },
+        alipay: { available: true, display_preference: { value: 'on' } },
       }] }),
     },
     checkout: { sessions: {
@@ -189,6 +190,39 @@ describe('payment runtime versions', () => {
     await prisma.paymentAttempt.update({ where: { id: attempt.id }, data: { updatedAt: new Date(0) } })
     await recoverUnknownPayments()
     expect((await prisma.rechargeOrder.findUniqueOrThrow({ where: { id: accepted.id } })).status).toBe('credited')
+    expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: accepted.id } })).toBe(1)
+  })
+
+  it('binds Stripe Alipay to its own minimum and refuses a session settled under another wallet', async () => {
+    const alipaySettings = { ...settings, wechatPayMinimumAmountMinor: '600', alipayMinimumAmountMinor: '700' }
+    wechatAvailable = false
+    await expect(validateRuntimePayment(alipaySettings, credentials)).rejects.toThrow(/启用微信支付/)
+    wechatAvailable = true
+    await activate(0, credentials, alipaySettings)
+    const configuration = await getRechargeConfig(buyer, 'CNY', 'user')
+    expect(configuration.providers[0].paymentMethods).toEqual([
+      expect.objectContaining({ paymentMethod: 'card', minimumAmountMinor: '500' }),
+      expect.objectContaining({ paymentMethod: 'wechat_pay', minimumAmountMinor: '600' }),
+      expect.objectContaining({ paymentMethod: 'alipay', minimumAmountMinor: '700' }),
+    ])
+
+    const accepted = await order('alipay')
+    const session = sessions.get(accepted.paymentIntent!.attempts[0].providerOrderId!)!
+    expect(session.payment_method_types).toEqual(['alipay'])
+    expect(session.payment_method_options).toBeUndefined()
+    expect(session.metadata.monexus_payment_method).toBe('alipay')
+    markCheckoutPaid(accepted)
+    session.metadata = { ...session.metadata, monexus_payment_method: 'wechat_pay' }
+    session.payment_method_types = ['wechat_pay']
+    const wrongWallet = await callback(accepted, credentials.webhookSecret, 'evt_alipay_wrong_wallet')
+    await applyConfirmedPayment(wrongWallet.body.observationId)
+    expect(await prisma.rechargeCredit.count()).toBe(0)
+
+    session.metadata = { ...session.metadata, monexus_payment_method: 'alipay' }
+    session.payment_method_types = ['alipay']
+    const paid = await callback(accepted, credentials.webhookSecret, 'evt_alipay_paid')
+    await applyConfirmedPayment(paid.body.observationId)
+    await executeRechargeCredit({ rechargeOrderId: accepted.id })
     expect(await prisma.rechargeCredit.count({ where: { rechargeOrderId: accepted.id } })).toBe(1)
   })
 

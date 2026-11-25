@@ -73,3 +73,34 @@ it('does not retain an exit in reduced motion or steal focus from a new modal', 
   act(() => vi.advanceTimersByTime(20))
   expect(screen.getByRole('button', { name: '打开搜索' })).not.toHaveFocus()
 })
+
+it('restores focus even when a frame runs before the close commits', () => {
+  // Like Layout: the trigger cannot take focus while the surface is present (inert there).
+  function InertHost() {
+    const anchor = useRef<HTMLDivElement>(null)
+    const trigger = useRef<HTMLButtonElement>(null)
+    const [open, setOpen] = useState(false)
+    const [present, setPresent] = useState(false)
+    return <div ref={anchor}>
+      <button ref={trigger} disabled={present} onClick={() => setOpen(true)}>打开搜索</button>
+      <MobileSearchIsland open={open} anchorRef={anchor} backdropRootRef={anchor} triggerRef={trigger} onClose={() => setOpen(false)} onPresenceChange={setPresent} />
+    </div>
+  }
+  const frames: FrameRequestCallback[] = []
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  const flushFrames = () => { for (const callback of frames.splice(0)) callback(0) }
+  render(<InertHost />)
+  const trigger = screen.getByRole('button', { name: '打开搜索' })
+  fireEvent.click(trigger)
+  act(() => { flushFrames(); flushFrames() })
+  fireEvent.click(screen.getByRole('button', { name: '取消搜索' }))
+  act(() => {
+    vi.advanceTimersByTime(350)
+    // The exit timer fired; a frame lands before React commits the unmount.
+    flushFrames()
+  })
+  flushFrames()
+  expect(screen.queryByTestId('mobile-search-island')).toBeNull()
+  expect(trigger).toHaveFocus()
+})

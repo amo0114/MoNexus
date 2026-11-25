@@ -15,6 +15,8 @@ export interface ProductSummary {
   originalPrice?: number
   stock: number
   stockMode?: string
+  /** Server-derived: every active offer delivers instantly. */
+  instantDelivery?: boolean
   sales: number
   ratingAvg?: number
   ratingCount?: number

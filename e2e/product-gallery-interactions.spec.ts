@@ -95,6 +95,9 @@ async function openGallery(page: Page, withVideo = false) {
       await route.fulfill({ json: [] })
     } else if (path === apiPath('/orders/attention-count')) {
       await route.fulfill({ json: { count: 0 } })
+    } else if (path === apiPath('/points/tier')) {
+      // The navbar avatar hover card shows the member tier on every page.
+      await route.fulfill({ json: { tier: 'bronze', label: '普通会员', tone: 'neutral', lifetimeEarnedPoints: 0, bonusBps: 0, thresholds: { silver: 1000, gold: 5000, platinum: 20000 }, nextTier: 'silver', nextTierLabel: '银卡', pointsToNextTier: 1000 } })
     } else if (path === apiPath('/points/checkin/status')) {
       await route.fulfill({ json: { hasCheckedIn: false, streak: 0, totalDays: 0, points: 10 } })
     } else if (path === apiPath('/products/4242/video-playback')) {

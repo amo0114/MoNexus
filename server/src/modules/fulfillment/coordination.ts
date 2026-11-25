@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client'
 import type { CancellationAssessment, CheckoutExtension, FulfillmentProvider } from '../../extension-contracts/fulfillment.js'
 import { getFulfillmentProvider, listFulfillmentProviders } from './registry.js'
+import { conflict } from '../../lib/httpError.js'
 
 type Tx = Prisma.TransactionClient
 
@@ -9,6 +10,12 @@ type Tx = Prisma.TransactionClient
  * which provider (if any) owns remote work for the order.
  */
 export async function onOrderRefundedInTx(tx: Tx, orderId: number): Promise<void> {
+  const order = await tx.order.findUniqueOrThrow({
+    where: { id: orderId }, select: { externalFulfillmentProvider: true },
+  })
+  if (order.externalFulfillmentProvider && !getFulfillmentProvider(order.externalFulfillmentProvider)) {
+    throw conflict('外部履约方不可用，请重新装载插件后处理退款')
+  }
   for (const provider of listFulfillmentProviders()) {
     await provider.onOrderRefundedInTx(tx, orderId)
   }

@@ -1,3 +1,5 @@
+import { REFUND_BUSINESS_EVENT_KEY } from '../../lib/paymentOperationKeys.js'
+export { REFUND_BUSINESS_EVENT_KEY } from '../../lib/paymentOperationKeys.js'
 import { paymentRevisionEnvironment } from '../payment/providers/runtime.js'
 import { Prisma } from '@prisma/client'
 import {
@@ -40,7 +42,6 @@ import {
   computeRechargeRequestDigest,
   rechargeIdempotencyInFlight,
   releaseRechargeIdempotencyClaim,
-  REFUND_BUSINESS_EVENT_KEY,
 } from './idempotency.js'
 import { serializeAmountMinor } from './money.js'
 import type { PaymentProviderName, RechargeCurrency } from './types.js'
@@ -49,7 +50,6 @@ import { recordPaymentRefund, recordRefundNotSupported } from '../payment/metric
 import { providerEnvironment } from './gates.js'
 
 const TX = { timeout: 15_000, maxWait: 5_000 } as const
-export { REFUND_BUSINESS_EVENT_KEY } from './idempotency.js'
 
 const refundReserveKey = (refundId: string) => `recharge-refund:${refundId}:reserve`
 

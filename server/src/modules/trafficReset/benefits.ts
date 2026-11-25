@@ -1,4 +1,4 @@
-import { fakaInstanceId } from '../../lib/runtimeSettings/fakaBridge.js'
+import { fakaInstanceId, fakaMountedInTx } from '../../lib/runtimeSettings/fakaBridge.js'
 import type { Prisma } from '@prisma/client'
 import { randomUUID } from 'node:crypto'
 import { config } from '../../config/index.js'
@@ -34,6 +34,7 @@ export async function eligibleSource(tx: Tx, userId: number) {
 /** Called AFTER delivery inside Order -> Task -> Grant transaction. No HTTP. */
 export async function grantForOrderInTx(tx: Tx, orderId: number) {
   if (!config.trafficReset.grantsEnabled) return
+  if (!await fakaMountedInTx(tx)) return
   const source = await trustedOrder(tx, orderId)
   if (!source) return
   const sourceId = await eligibleSource(tx, source.order.userId)
@@ -46,6 +47,7 @@ export async function grantForOrderInTx(tx: Tx, orderId: number) {
 
 /** Existing grants only: querying/revalidation never issues a new benefit. */
 export async function refreshGrantInTx(tx: Tx, userId: number) {
+  if (!await fakaMountedInTx(tx)) return null
   await tx.$queryRaw`SELECT "id" FROM "TrafficResetBenefitGrant" WHERE "userId" = ${userId} AND "benefitCode" = ${BENEFIT_CODE} FOR UPDATE`
   const grant = await tx.trafficResetBenefitGrant.findUnique({ where: { userId_benefitCode: { userId, benefitCode: BENEFIT_CODE } } })
   if (!grant) return null

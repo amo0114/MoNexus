@@ -27,7 +27,7 @@ export async function assessAndBlockCancellationInTx(tx: Tx, orderId: number): P
     select: {
       deliveryModeSnapshot: true,
       fulfillmentJob: { select: { providerId: true } },
-      fakaBridgeTask: { select: { id: true } },
+      externalFulfillmentProvider: true,
     },
   })
   const { verdicts, assessedProviderIds } = await assessProviderCancellationsInTx(tx, orderId)
@@ -36,8 +36,8 @@ export async function assessAndBlockCancellationInTx(tx: Tx, orderId: number): P
 
   // A task whose owner could not answer (unregistered provider, no hook) is never "nothing happened".
   const unassessedJob = order.fulfillmentJob && !assessedProviderIds.includes(order.fulfillmentJob.providerId)
-  const unassessedFaka = order.fakaBridgeTask && !assessedProviderIds.includes('faka_bridge')
-  if (unassessedJob || unassessedFaka) verdicts.push('unsupported')
+  const unassessedPlugin = order.externalFulfillmentProvider && !assessedProviderIds.includes(order.externalFulfillmentProvider)
+  if (unassessedJob || unassessedPlugin) verdicts.push('unsupported')
 
   if (verdicts.length > 0) {
     return verdicts.reduce((worst, verdict) => (SEVERITY.indexOf(verdict) > SEVERITY.indexOf(worst) ? verdict : worst))

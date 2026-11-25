@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto'
 import { HttpError, paymentMethodUnavailable, paymentProviderUnavailable, paymentRefundNotSupported, paymentStateUnknown } from '../../../../lib/httpError.js'
 import { logger } from '../../../../lib/logger.js'
-import { getPlatformCurrencyLimits, serializeAmountMinor } from '../../../recharge/money.js'
-import type { RechargeCurrency } from '../../../recharge/types.js'
+import { getPlatformCurrencyLimits, serializeAmountMinor } from '../../../../lib/minorAmounts.js'
+import type { RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import type {
   CloseProviderPaymentInput,
   CloseResult,

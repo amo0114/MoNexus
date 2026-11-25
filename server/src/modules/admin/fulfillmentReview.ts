@@ -10,7 +10,7 @@ export async function reviewOrderFulfillment(adminUserId: number, orderId: numbe
   const result = await prisma.$transaction(async tx => {
     await tx.$queryRaw`SELECT "id" FROM "Order" WHERE "id" = ${orderId} FOR UPDATE`
     const order = await tx.order.findUnique({ where: { id: orderId }, include: {
-      delivery: { select: { id: true } }, fulfillmentJob: true, fakaBridgeTask: true, provisionTask: true,
+      delivery: { select: { id: true } }, fulfillmentJob: true, provisionTask: true,
     } })
     if (!order) throw notFound('订单不存在')
     if (!['pending', 'processing'].includes(order.status) || order.delivery) throw conflict('仅未交付且未结束的订单可核对取消')
@@ -26,13 +26,15 @@ export async function reviewOrderFulfillment(adminUserId: number, orderId: numbe
       }
     } else {
       if (!order.cancelRequestedAt) throw conflict('请先请求核对取消，再确认远端撤销证据')
-      // Xboard requires a verified revoke tombstone; human notes cannot replace it.
-      if (order.fakaBridgeTask) throw conflict('Xboard 订单须通过供应商撤销核验，请重新核对取消或处理撤销任务')
+      // Providers with a separate task model require their own verified cancellation.
+      if (order.externalFulfillmentProvider && order.externalFulfillmentProvider !== order.fulfillmentJob?.providerId) {
+        throw conflict('外部订单须通过供应商撤销核验，请重新核对取消或处理撤销任务')
+      }
       if (order.provisionTask) {
         const locked = await tx.$queryRaw<Array<{ id: number }>>`SELECT "id" FROM "ProvisionTask" WHERE "id" = ${order.provisionTask.id} FOR UPDATE SKIP LOCKED`
         if (!locked.length) throw conflict('任务正在认领，请稍后重新核对')
       }
-      const tasks = [order.fulfillmentJob, order.fakaBridgeTask, order.provisionTask].filter(Boolean)
+      const tasks = [order.fulfillmentJob, order.provisionTask].filter(Boolean)
       if (tasks.some(task => task!.leaseUntil && task!.leaseUntil > new Date())) throw conflict('任务仍在执行，请等待租约结束后核对')
       if (order.fulfillmentJob?.status === 'succeeded' || order.provisionTask?.status === 'succeeded') {
         throw conflict('已有开通成功证据，请先在远端撤销并核对')

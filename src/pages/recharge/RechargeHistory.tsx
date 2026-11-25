@@ -6,9 +6,10 @@ import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
 import EmptyState from '../../components/ui/EmptyState'
 import { TableSkeleton } from '../../components/ui/Skeleton'
-import { formatCurrencyAmount, formatPoints } from './money'
+import { formatCurrencyAmount, formatPoints } from '../../domain/recharge/money'
 import { buildPayableRecognitionNotice } from './payableCopy'
-import { orderStatusLabel, paymentChannelLabel } from './status'
+import { orderStatusLabel, paymentChannelLabel } from '../../domain/recharge/status'
+import { formatDateTime } from '../../utils/datetime'
 
 function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => void }) {
   const payableNotice = buildPayableRecognitionNotice(order)
@@ -20,7 +21,7 @@ function HistoryRow({ order, onOpen }: { order: RechargeOrder; onOpen: () => voi
     >
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <span className="text-sm font-bold text-[var(--color-text)]">{orderStatusLabel(order.status)}</span>
-        <span className="text-xs text-[var(--color-text-muted)]">{new Date(order.createdAt).toLocaleString()}</span>
+        <span className="text-xs text-[var(--color-text-muted)]">{formatDateTime(order.createdAt)}</span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span className="whitespace-nowrap">

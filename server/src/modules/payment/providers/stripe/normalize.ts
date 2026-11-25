@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto'
 import Stripe from 'stripe'
-import { serializeAmountMinor } from '../../../recharge/money.js'
-import { RECHARGE_CURRENCIES, type PaymentAttemptStatus, type RechargeCurrency } from '../../../recharge/types.js'
+import { serializeAmountMinor } from '../../../../lib/minorAmounts.js'
+import { RECHARGE_CURRENCIES, type PaymentAttemptStatus, type RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import type { NormalizedPayment, NormalizedRefund } from '../types.js'
-import { STRIPE_META, STRIPE_WECHAT_PAY_METHOD, modeFromAccountKey, stripeAccountKey, type StripeMode } from './config.js'
+import { STRIPE_META, isStripeWalletMethod, modeFromAccountKey, stripeAccountKey, type StripeMode, type StripeWalletMethod } from './config.js'
 
 export function asRechargeCurrency(value: string | null | undefined): RechargeCurrency | null {
   if (!value) return null
@@ -30,7 +30,7 @@ export function stripeMetadata(input: {
   amountMinor: bigint
   currency: RechargeCurrency
   providerAccountKey: string
-  paymentMethod?: typeof STRIPE_WECHAT_PAY_METHOD
+  paymentMethod?: StripeWalletMethod
 }): Stripe.MetadataParam {
   return {
     [STRIPE_META.orderId]: input.orderId,
@@ -126,13 +126,14 @@ function expectedMatches(input: {
   return true
 }
 
-function verifiedWechatMethod(object: {
+function verifiedWalletMethod(object: {
   metadata?: Stripe.Metadata | null
   payment_method_types?: string[]
-}): typeof STRIPE_WECHAT_PAY_METHOD | undefined {
-  if (meta(object, STRIPE_META.paymentMethod) === STRIPE_WECHAT_PAY_METHOD
+}): StripeWalletMethod | undefined {
+  const method = meta(object, STRIPE_META.paymentMethod)
+  if (isStripeWalletMethod(method)
     && object.payment_method_types?.length === 1
-    && object.payment_method_types[0] === STRIPE_WECHAT_PAY_METHOD) return STRIPE_WECHAT_PAY_METHOD
+    && object.payment_method_types[0] === method) return method
 }
 
 export function paymentFromIntent(
@@ -151,7 +152,7 @@ export function paymentFromIntent(
     providerAccountKey,
     orderId: meta(intent, STRIPE_META.orderId),
   })
-  const quotedPaymentMethod = verifiedWechatMethod(intent)
+  const quotedPaymentMethod = verifiedWalletMethod(intent)
   const amountConsistent = intent.status !== 'succeeded'
     || (intent.amount_received === intent.amount && intent.amount_received > 0)
   if (status === 'succeeded' && (!matched || !amountConsistent || !livemodeMatches(mode, intent.livemode)
@@ -193,7 +194,7 @@ export function paymentFromCheckout(
     providerAccountKey,
     orderId: session.client_reference_id ?? meta(session, STRIPE_META.orderId),
   })
-  const quotedPaymentMethod = verifiedWechatMethod(session)
+  const quotedPaymentMethod = verifiedWalletMethod(session)
   if (status === 'succeeded' && (!intentId?.startsWith('pi_') || !matched || !livemodeMatches(mode, session.livemode)
       || (meta(session, STRIPE_META.paymentMethod) != null && !quotedPaymentMethod))) {
     status = 'unknown'

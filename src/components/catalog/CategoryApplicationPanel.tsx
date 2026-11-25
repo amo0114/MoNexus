@@ -260,7 +260,7 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
             <select
               id="merchant-app-filter"
               data-testid="merchant-application-status-filter"
-              className="input py-2 pr-8 cursor-pointer"
+              className="input py-2 w-auto appearance-none cursor-pointer"
               value={status}
               onChange={(e) => { setStatus(e.target.value as CategoryApplicationStatus | ''); setPage(1) }}
             >
@@ -296,21 +296,23 @@ export default function CategoryApplicationPanel({ adapter = catalogGovernanceAp
           <table className="admin-table table-cards">
             <thead>
               <tr>
-                <th scope="col">申请名称</th>
-                <th scope="col">状态</th>
-                <th scope="col">审核结果</th>
-                <th scope="col" className="w-40">操作</th>
+                <th scope="col" className="whitespace-nowrap">申请名称</th>
+                <th scope="col" className="whitespace-nowrap">状态</th>
+                <th scope="col" className="whitespace-nowrap">审核结果</th>
+                <th scope="col" className="w-40 whitespace-nowrap">操作</th>
               </tr>
             </thead>
             <tbody>
               {items.map((a) => (
                 <tr key={a.id} data-testid={`application-row-${a.id}`} data-status={a.status}>
                   <td data-label="申请名称">
-                    <div className="max-w-full break-words font-semibold text-[var(--color-text)]">
-                      {a.proposedLabel}
-                      {a.proposedCode && <span className="font-mono text-xs text-[var(--color-text-muted)] ml-2 max-md:ml-0 max-md:block max-md:break-all">（{a.proposedCode}）</span>}
+                    <div className="min-w-0 max-md:text-right">
+                      <div className="max-w-full break-words font-semibold text-[var(--color-text)]">
+                        {a.proposedLabel}
+                        {a.proposedCode && <span className="font-mono text-xs text-[var(--color-text-muted)] ml-2 max-md:ml-0 max-md:block max-md:break-all">（{a.proposedCode}）</span>}
+                      </div>
+                      <div className="max-w-full break-words text-xs text-[var(--color-text-muted)] mt-0.5 line-clamp-2">{a.description}</div>
                     </div>
-                    <div className="max-w-full break-words text-xs text-[var(--color-text-muted)] mt-0.5 line-clamp-2">{a.description}</div>
                   </td>
                   <td data-label="状态">
                     <span

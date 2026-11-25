@@ -41,15 +41,9 @@ import { TableSkeleton } from '../ui/Skeleton'
 import EditorialFormDialog from './editorialManager/EditorialFormDialog'
 import RevokeEditorialDialog from './editorialManager/RevokeEditorialDialog'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 const PAGE_SIZE = 10
-
-/** Safe date formatting: unparseable input is shown verbatim. */
-function formatDateTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
-}
 
 /** Real adapter — passthrough to the frozen admin editorial API. */
 export interface AdminEditorialAdapter {

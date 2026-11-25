@@ -1,5 +1,6 @@
 import { posix as path } from 'node:path'
 import ts from 'typescript'
+import { cycleEdges } from './architecture-module-cycle-baseline.mjs'
 
 /** Parse module syntax, excluding type-only edges from the runtime graph. */
 export function readDependencies(source, filename = 'source.ts') {
@@ -61,7 +62,7 @@ function resolveSource(file, specifier, sources) {
 
 // wallet is the single writer of real balances, lots, allocations and PointLog
 // rows; the dev seed is not financial history and is the only exception.
-const walletWrites = /\.pointLog\.create(?:Many)?\(|\.pointAccount\.(?:update|updateMany|upsert)\(|UPDATE\s+"PointAccount"|\.pointLot\.(?:create|update|delete)|\.walletAllocation\.(?:create|update|delete)|\.walletOperation\.(?:create|update|delete)/
+const walletWrites = /\.pointLog\.create(?:Many)?\(|\.pointAccount\.(?:create|createMany|createManyAndReturn|update|updateMany|updateManyAndReturn|upsert|delete|deleteMany)\s*\(|UPDATE\s+"PointAccount"|\.pointLot\.(?:create|update|delete)|\.walletAllocation\.(?:create|update|delete)|\.walletOperation\.(?:create|update|delete)/
 const walletOwners = [`${modules}wallet/`, 'server/src/prisma/seed.ts']
 
 // AG-01: Prisma compiles a filtered relation _count into a GROUP BY over the
@@ -90,14 +91,45 @@ const rowClaimIntervalOwners = new Set([
   `${modules}notifications/realtime/hub.ts`, // SSE heartbeat, no business writes
 ])
 
-// AG-05: module-level static runtime import cycles as of 2026-11-23. Cycles may
-// only shrink; shrink this baseline when a decoupling lands.
-const moduleCycleBaseline = [
-  ['accountGovernance', 'adminAuthorization', 'adminExports', 'auth', 'catalog', 'checkout', 'fakaBridge',
-    'fulfillment', 'governance', 'invite', 'merchant', 'merchantFinance', 'merchantGovernance', 'orders', 'points',
-    'portable-backups', 'productVideos', 'trafficReset', 'valuePolicy', 'wallet', 'xboardAccounts'],
-  ['payment', 'recharge'],
-].map(members => new Set(members))
+// FE-01..03: frontend (src/) layering. Files directly under src/ (App, main) and
+// src/pages/ are composition roots; nothing below them may import a page.
+const web = 'src/'
+const webPages = 'src/pages/'
+const webClient = 'src/api/client.ts'
+// Direct HTTP client users outside src/api as of 2026-11-24; new calls go through an api module.
+const webClientOwners = new Set([
+  'src/components/ChatBindCard.tsx', 'src/components/admin/AdminDashboardPanel.tsx',
+  'src/components/merchandising/AdminProductSearchSelect.tsx', 'src/lib/webPush.ts',
+  'src/pages/ProfilePage.tsx',
+])
+const webDateOwner = 'src/utils/datetime.ts'
+const webLocaleDateOnly = new Set(['toLocaleDateString', 'toLocaleTimeString'])
+
+function hasTimeZoneOption(args) {
+  return args.some(arg => ts.isObjectLiteralExpression(arg)
+    && arg.properties.some(property => property.name && ts.isIdentifier(property.name) && property.name.text === 'timeZone'))
+}
+
+// FE-03: dates render in Asia/Shanghai through utils/datetime. Number.toLocaleString is
+// allowed, so toLocaleString is only flagged on an inline `new Date(...)` receiver.
+function checkWebDates(file, ast, failures) {
+  const visit = node => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const method = node.expression.name.text
+      const receiver = node.expression.expression
+      const dateReceiver = ts.isNewExpression(receiver) && ts.isIdentifier(receiver.expression) && receiver.expression.text === 'Date'
+      if ((webLocaleDateOnly.has(method) || (method === 'toLocaleString' && dateReceiver)) && !hasTimeZoneOption(node.arguments)) {
+        failures.push(`${file}:${lineOf(ast, node)} FE-03 date ${method}() without timeZone; use utils/datetime`)
+      }
+    }
+    if (ts.isNewExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.getText(ast) === 'Intl.DateTimeFormat' && !hasTimeZoneOption(node.arguments ?? [])) {
+      failures.push(`${file}:${lineOf(ast, node)} FE-03 Intl.DateTimeFormat without timeZone; use utils/datetime`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(ast)
+}
 
 function lineOf(ast, node) {
   return ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1
@@ -197,6 +229,9 @@ export function checkBoundaries(sources) {
       }
       if (/ontroller[^/]*\.ts$/.test(file)) checkControllerAwaits(file, ast, failures)
     }
+    if (file.startsWith(web) && file !== webDateOwner) {
+      checkWebDates(file, ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true), failures)
+    }
     const fromModule = moduleOf(file)
     if (fromModule && !moduleGraph.has(fromModule)) moduleGraph.set(fromModule, new Set())
     for (const dependency of readDependencies(source, file)) {
@@ -207,6 +242,10 @@ export function checkBoundaries(sources) {
         continue
       }
       if (file.startsWith(lib) && target.startsWith(modules)) fail('infrastructure must not import business modules')
+      if (file.startsWith(web) && file.includes('/', web.length) && !file.startsWith(webPages)
+        && target.startsWith(webPages)) fail('FE-01 only pages and the app root may import pages')
+      if (file.startsWith(web) && !file.startsWith('src/api/') && target === webClient
+        && !webClientOwners.has(file)) fail('FE-02 HTTP calls go through an api module, not api/client')
       if (file.startsWith(modules) && !file.startsWith(`${modules}admin/`) && target.startsWith(`${modules}admin/`)) fail('imports admin internals')
       if (file.startsWith(modules) && !file.startsWith(`${modules}merchant/`)
         && target.startsWith(`${modules}merchant/`) && target !== `${modules}merchant/identity.ts`) fail('imports merchant self-service internals')
@@ -214,8 +253,13 @@ export function checkBoundaries(sources) {
       // not reach back into the public read module.
       if (dependency.runtime && file.startsWith(`${modules}catalog/`)
         && target.startsWith(`${modules}products/`)) fail('catalog must not import the products read module')
+      if (dependency.runtime && file.startsWith(`${modules}catalog/`)
+        && target.startsWith(`${modules}orders/`)) fail('catalog must not import order workflows')
       // Chat binding mounts its own routes from app.ts; points stays independent of the bot channel.
       if (file.startsWith(`${modules}points/`) && target.startsWith(`${modules}chatbot/`)) fail('points must not import chatbot')
+      if (dependency.runtime && file.startsWith(`${modules}payment/`) && target.startsWith(`${modules}recharge/`)) {
+        fail('payment must reach recharge through the application entry point')
+      }
       for (const facade of facades) {
         const controller = path.join(path.dirname(facade), facade.endsWith('/adminService.ts') ? 'adminController.ts' : 'controller.ts')
         if (file !== controller && file.startsWith(path.dirname(facade) + '/') && target === facade) fail('implementation imports its own public service facade')
@@ -240,8 +284,14 @@ export function checkBoundaries(sources) {
   }
   for (const node of moduleGraph.keys()) moduleGraph.set(node, [...moduleGraph.get(node)].filter(target => moduleGraph.has(target)))
   for (const component of stronglyConnected(moduleGraph)) {
-    if (component.length < 2 || moduleCycleBaseline.some(baseline => component.every(member => baseline.has(member)))) continue
-    failures.push(`AG-05 module dependency cycle grew: ${component.sort().join(', ')}`)
+    if (component.length < 2) continue
+    const members = new Set(component)
+    const addedEdges = component.flatMap(from => moduleGraph.get(from)
+      .filter(to => members.has(to) && !cycleEdges[from]?.includes(to))
+      .map(to => `${from} → ${to}`))
+    if (addedEdges.length) {
+      failures.push(`AG-05 module dependency cycle grew: ${component.sort().join(', ')}; added edges: ${addedEdges.sort().join(', ')}`)
+    }
   }
   return failures
 }

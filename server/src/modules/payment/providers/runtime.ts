@@ -4,7 +4,7 @@ import { paymentProviderUnavailable } from '../../../lib/httpError.js'
 import { decryptIntegrationCredentials } from '../../../lib/runtimeSettings/credentials.js'
 import { config } from '../../../config/index.js'
 import { buildRuntimePaymentProvider, paymentAccountIdentity, paymentSettingsSchema, paymentCredentialsSchema, type RuntimePaymentName } from './runtimeConfig.js'
-import type { PaymentProviderName } from '../../recharge/types.js'
+import type { PaymentProviderName } from '../../../lib/paymentTypes.js'
 import type { PaymentProvider } from './types.js'
 export const paymentIntegrationKey = (name: string) => `payment:${name}`
 const clients = new Map<string, PaymentProvider>()

@@ -3,14 +3,14 @@ import { DashboardSummary } from '../../../api/merchant/dashboard'
 
 export default function SummaryCards({ data, loading }: { data?: DashboardSummary, loading: boolean }) {
   const renderCard = (label: string, value: string | number | undefined, tone?: 'cta' | 'warning') => {
-    const valueColor = tone === 'cta' ? 'text-[var(--color-cta)]' : tone === 'warning' ? 'text-orange-500' : 'text-[var(--color-text)]'
+    const valueColor = tone === 'cta' ? 'text-[var(--color-cta)]' : tone === 'warning' ? 'text-[var(--color-warning-accent)]' : 'text-[var(--color-text)]'
     return (
-      <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-4">
-        <div className="text-[var(--color-text-muted)] text-sm mb-1">{label}</div>
+      <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm transition-colors hover:border-[var(--color-primary-border-subtle)]">
+        <div className="text-[var(--color-text-muted)] text-xs sm:text-sm mb-1">{label}</div>
         {loading ? (
           <div className="animate-pulse bg-[var(--color-border)] rounded-md h-8 w-24"></div>
         ) : (
-          <div className={`font-heading text-2xl font-bold ${valueColor}`}>{typeof value === 'number' ? value.toLocaleString('zh-CN') : (value ?? '--')}</div>
+          <div className={`font-heading text-xl sm:text-2xl font-bold tabular-nums ${valueColor}`}>{typeof value === 'number' ? value.toLocaleString('zh-CN') : (value ?? '--')}</div>
         )}
       </div>
     )

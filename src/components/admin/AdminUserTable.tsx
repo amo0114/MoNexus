@@ -37,6 +37,7 @@ import { StatusChip } from './governance/GovernanceKit'
 import UserDetailSheet from './governance/UserDetailSheet'
 import { BanUserDialog } from './governance/BanDialogs'
 import { ExportButton } from './governance/Exports'
+import { formatDate } from '../../utils/datetime'
 
 const PAGE_SIZE = 20
 
@@ -468,7 +469,7 @@ export default function AdminUserTable() {
                       </div>
                       <div className="text-xs text-[var(--color-text-muted)] mt-1">{u.email}</div>
                     </td>
-                    <td className="text-[var(--color-text-muted)] text-sm" data-label="注册时间">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="text-[var(--color-text-muted)] text-sm" data-label="注册时间">{formatDate(u.createdAt)}</td>
                     <td className="font-bold text-[var(--color-cta)]" data-label="当前积分">{u.pointAccount?.balance ?? 0}</td>
                     <td data-label="状态">
                       <span className={`inline-flex items-center px-2.5 py-1 text-xs rounded font-bold border ${
@@ -517,7 +518,7 @@ export default function AdminUserTable() {
                     {!u.emailVerified && <div className="mt-1 text-[11px] text-[var(--color-warning-text)]">邮箱未验证</div>}
                   </td>
                   <td className="text-xs" data-label="注册 / 最近登录">
-                    <div className="text-[var(--color-text)]">{new Date(u.createdAt).toLocaleDateString('zh-CN')}</div>
+                    <div className="text-[var(--color-text)]">{formatDate(u.createdAt)}</div>
                     <div className="text-[var(--color-text-muted)]" title="最近一次成功登录">
                       {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : '登录时间未知'}
                     </div>

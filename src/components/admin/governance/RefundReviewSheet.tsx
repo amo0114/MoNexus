@@ -3,7 +3,7 @@ import { CheckCircle2, Loader2, RefreshCw } from 'lucide-react'
 import SideSheet from '../../ui/SideSheet'
 import { getRefundReview, submitRefundReview } from '../../../api/governance'
 import type { GVRefundDetail, GVRefundReviewAction } from '../../../types/governance'
-import { compareMinor, formatCurrencyAmount, formatPoints } from '../../../pages/recharge/money'
+import { compareMinor, formatCurrencyAmount, formatPoints } from '../../../domain/recharge/money'
 import {
   IntentKey,
   classifyGovernanceError,

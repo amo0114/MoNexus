@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Loader2, ShieldOff } from 'lucide-react'
 import AdminNav, { AdminTab, ADMIN_NAV_GROUPS } from '../components/admin/AdminNav'
 import AdminDashboardPanel from '../components/admin/AdminDashboardPanel'
@@ -12,7 +12,6 @@ import AdminOrderTable from '../components/admin/AdminOrderTable'
 import AnnouncementsAdmin from '../components/admin/AnnouncementsAdmin'
 import AdminFileGovernance from '../components/admin/AdminFileGovernance'
 import PortableBackupPanel from '../components/admin/PortableBackupPanel'
-import AdminFakaTasksPanel from '../components/admin/AdminFakaTasksPanel'
 import AbuseProtectionPanel from '../components/admin/AbuseProtectionPanel'
 import AdminStoragePanel from '../components/admin/AdminStoragePanel'
 import AdminMerchandisingPage from '../components/merchandising/AdminMerchandisingPage'
@@ -21,9 +20,12 @@ import AdminRechargePage from '../components/admin/recharge/AdminRechargePage'
 import AdminConfigPanel from '../components/admin/AdminConfigPanel'
 import WalletIntegrityPanel from '../components/admin/governance/WalletIntegrityPanel'
 import { AdminExportsPanel } from '../components/admin/governance/Exports'
+import { useAdminCapabilities } from '../stores/adminCapabilities'
 import { useAdminAccess } from '../auth/adminAccess'
 import EmptyState from '../components/ui/EmptyState'
 import ErrorState from '../components/ui/ErrorState'
+
+const AdminFakaTasksPanel = lazy(() => import('../components/admin/AdminFakaTasksPanel'))
 
 export type { AdminTab }
 export { ADMIN_NAV_GROUPS }
@@ -40,12 +42,15 @@ const TAB_ORDER: AdminTab[] = ADMIN_NAV_GROUPS.flatMap((g) => g.items.map((i) =>
 
 export default function AdminPage() {
   const access = useAdminAccess()
+  const { optionalFulfillment } = useAdminCapabilities()
+  const canEnter = (tab: AdminTab) => access.canEnter(tab)
+    && (tab !== 'faka' || optionalFulfillment?.mounted !== false)
   const [requestedTab, setRequestedTab] = useState<AdminTab | null>(null)
   const [visitedTabs, setVisitedTabs] = useState<Set<AdminTab>>(() => new Set())
   // Derived so a revoked tab falls back to the first entry still allowed.
-  const activeTab: AdminTab | null = requestedTab && access.canEnter(requestedTab)
+  const activeTab: AdminTab | null = requestedTab && canEnter(requestedTab)
     ? requestedTab
-    : TAB_ORDER.find(access.canEnter) ?? null
+    : TAB_ORDER.find(canEnter) ?? null
 
   useEffect(() => {
     if (!activeTab || !STATEFUL_TABS.has(activeTab)) return
@@ -87,7 +92,7 @@ export default function AdminPage() {
     <div className="fade-in">
       <div className="flex flex-col xl:flex-row gap-6 w-full">
         {/* Navigation Rail / Drawer */}
-        <AdminNav activeTab={activeTab} onTabChange={setRequestedTab} isTabAvailable={access.canEnter} />
+        <AdminNav activeTab={activeTab} onTabChange={setRequestedTab} isTabAvailable={canEnter} />
 
         {/* Main Content */}
         <div className="flex-grow min-w-0 card p-4 xl:p-6 min-h-[600px]">
@@ -96,7 +101,7 @@ export default function AdminPage() {
           {activeTab === 'users' && <AdminUserTable />}
           {activeTab === 'orders' && <AdminOrderTable />}
           {activeTab === 'recharge' && <AdminRechargePage />}
-          {activeTab === 'faka' && <AdminFakaTasksPanel />}
+          {activeTab === 'faka' && <Suspense fallback={null}><AdminFakaTasksPanel /></Suspense>}
           {activeTab === 'abuse' && <AbuseProtectionPanel />}
           {activeTab === 'files' && <AdminFileGovernance />}
           {activeTab === 'storage' && <AdminStoragePanel />}

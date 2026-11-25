@@ -1,7 +1,6 @@
 import { publicVideoSummary } from '../productVideos/service.js'
 import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
-import { usesStablePaidReset } from '../../lib/fakaBridge/paidResetSku.js'
 import { wrapCache } from '../../lib/cache.js'
 import { countAvailableByOfferId, countAvailableByProductId } from '../../lib/inventoryCounts.js'
 import { badRequest, HttpError, notFound } from '../../lib/httpError.js'
@@ -9,12 +8,8 @@ import { projectPublicTemplateAttributes, serializePublicOffer } from '../../lib
 import { getProductTemplate } from '../../lib/productCatalog/templates/registry.js'
 import { emptyProductDetails } from '../../lib/productCatalog/templates/productDetails.js'
 import { TEMPLATE_KEYS, type ProductDetails, type TemplateKey } from '../../lib/productCatalog/templates/types.js'
-import {
-  getFakaCapacityForPublicRead,
-  getCachedFakaCapacityByPlanId,
-  isFakaBridgeConfigured,
-  type FakaCapacitySnapshot,
-} from '../../lib/fakaBridge/index.js'
+import type { ExternalCapacitySnapshot } from '../../extension-contracts/fulfillmentCatalog.js'
+import { catalogForProvider } from '../fulfillment/offerBinding.js'
 import {
   buildProductDetailCacheKey,
   buildProductListCacheKey,
@@ -30,6 +25,7 @@ import {
 import {
   assertCursorFilterMatches,
   computeFilterHash,
+  cursorExpired,
   decodeOrganicCursor,
   decorateProducts,
   encodeOrganicCursor,
@@ -41,6 +37,7 @@ import {
 import { loadPublicAssuranceByProductIds } from '../catalog/assurance/service.js'
 import { queryRecommendationCandidates } from './recommendations.js'
 import { signRecommendationList } from '../recommendationEvents/token.js'
+import type { ProductListSort } from './schema.js'
 import {
   aggregateOfferAvailability,
   evaluatePublicOfferAvailability,
@@ -57,6 +54,25 @@ interface ProductListParams {
   audience?: import('../../lib/productCatalog/visibility.js').ProductAudience
   /** Internal shop scope; never accepted from the public `/api/products` query. */
   merchantId?: number
+  sort?: ProductListSort
+  /** Drop cards whose public availability is `unavailable` (same status the card renders). */
+  inStock?: boolean
+  instant?: boolean
+  /** Server-resolved caller; the price ceiling is read from their balance, never from the client. */
+  affordableForUserId?: number
+}
+
+const INSTANT_DELIVERY_MODES = ['instant_inventory', 'instant_fixed'] as const
+
+/**
+ * 「自动秒发」= every active offer delivers instantly; a product with no active
+ * offer falls back to its own projection. Mirrors `instantDeliverySql`.
+ */
+function isInstantDelivery(product: { deliveryMode: string; offers: Array<{ deliveryMode: string }> }) {
+  const modes: readonly string[] = INSTANT_DELIVERY_MODES
+  return product.offers.length > 0
+    ? product.offers.every(offer => modes.includes(offer.deliveryMode))
+    : modes.includes(product.deliveryMode)
 }
 
 const productListSelect = {
@@ -238,7 +254,7 @@ async function loadAvailabilityBatchFacts(
     offerAvailableCounts,
     productAvailableCounts,
     webhookMerchantIds: new Set(webhooks.map(webhook => webhook.merchantId)),
-    providerConfigured: isFakaBridgeConfigured(),
+    providerConfigured: catalogForProvider('faka_bridge')?.isConfigured() ?? false,
   }
 }
 
@@ -246,7 +262,7 @@ function publicOfferStatus(
   offer: AvailabilityOfferInput,
   merchantId: number | null,
   facts: AvailabilityBatchFacts,
-  fakaCapacity: FakaCapacitySnapshot | null,
+  fakaCapacity: ExternalCapacitySnapshot | null,
 ): AvailabilityStatus {
   return evaluatePublicOfferAvailability(offer, {
     availableInventory: facts.offerAvailableCounts.get(offer.id) ?? 0,
@@ -258,8 +274,8 @@ function publicOfferStatus(
 
 function fakaSnapshotForSku(
   offer: { externalIntegration?: string | null; externalSku?: string | null },
-  fakaBySku: Map<string, FakaCapacitySnapshot>,
-): FakaCapacitySnapshot | null {
+  fakaBySku: Map<string, ExternalCapacitySnapshot>,
+): ExternalCapacitySnapshot | null {
   if (offer.externalIntegration !== 'faka_bridge' || !offer.externalSku) return null
   return fakaBySku.get(offer.externalSku.trim().toLowerCase()) ?? null
 }
@@ -320,7 +336,7 @@ function serializePublicProductListItem(
   product: ProductListItem,
   offerAvailableCounts: Map<number, number>,
   productAvailableCounts: Map<number, number>,
-  fakaBySku: Map<string, FakaCapacitySnapshot>,
+  fakaBySku: Map<string, ExternalCapacitySnapshot>,
   availability: AvailabilityStatus,
 ) {
   // Visibility inputs (SPEC-CATALOG-VIS-001 §4.2) are read for the access check only, never serialized.
@@ -331,7 +347,7 @@ function serializePublicProductListItem(
   } = product
   const localAvailability = computePublicAvailability(product, offers, offerAvailableCounts, productAvailableCounts)
 
-  const fakaCaps: FakaCapacitySnapshot[] = []
+  const fakaCaps: ExternalCapacitySnapshot[] = []
   for (const offer of offers) {
     const cap = fakaSnapshotForSku(offer, fakaBySku)
     if (cap) fakaCaps.push(cap)
@@ -353,6 +369,7 @@ function serializePublicProductListItem(
     ...(fakaAvailability ?? localAvailability),
     fakaCapacity,
     availability: { status: availability },
+    instantDelivery: isInstantDelivery(product),
     ratingAvg: Number(product.ratingAvg),
   }
 }
@@ -365,15 +382,17 @@ function serializePublicProductListItem(
  */
 function loadFakaCapacityBySku(
   offers: Array<{ externalIntegration?: string | null; externalSku?: string | null }>
-): Map<string, FakaCapacitySnapshot> {
+): Map<string, ExternalCapacitySnapshot> {
+  const catalog = catalogForProvider('faka_bridge')
+  if (!catalog?.isConfigured()) return new Map()
   const skus = [
     ...new Set(
       offers
-        .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku && !usesStablePaidReset(o))
+        .filter(o => o.externalIntegration === 'faka_bridge' && o.externalSku && !catalog.usesAccountCapacity(o))
         .map(o => String(o.externalSku).trim().toLowerCase())
     ),
   ]
-  const map = new Map<string, FakaCapacitySnapshot>()
+  const map = new Map<string, ExternalCapacitySnapshot>()
   if (skus.length === 0) return map
 
   const primary: string[] = []
@@ -395,13 +414,13 @@ function loadFakaCapacityBySku(
   }
 
   for (const sku of primary) {
-    map.set(sku, getFakaCapacityForPublicRead(sku))
+    map.set(sku, catalog.capacityForPublicRead(sku))
   }
 
   // Fill plan-* siblings from a warm plan cache or the primary's public
   // projection.  Either route schedules at most one background probe.
   for (const { sku, planId } of deferredPlanSkus) {
-    const cached = getCachedFakaCapacityByPlanId(planId)
+    const cached = catalog.cachedCapacityByPlanId(planId)
     if (cached) {
       map.set(sku, { ...cached, sku })
     } else {
@@ -410,7 +429,7 @@ function loadFakaCapacityBySku(
       if (primaryCapacity) {
         map.set(sku, { ...primaryCapacity, sku })
       } else {
-        map.set(sku, getFakaCapacityForPublicRead(sku))
+        map.set(sku, catalog.capacityForPublicRead(sku))
       }
     }
   }
@@ -423,8 +442,8 @@ function loadFakaCapacityBySku(
  * remaining 相同，绝不能按规格数累加（否则 2 名额 × 8 周期 = 库存 16）。
  * 多 plan 商品（极少见）再对「去重后的 plan」求和。
  */
-function dedupeFakaCapsByPlan(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot[] {
-  const byKey = new Map<string, FakaCapacitySnapshot>()
+function dedupeFakaCapsByPlan(caps: ExternalCapacitySnapshot[]): ExternalCapacitySnapshot[] {
+  const byKey = new Map<string, ExternalCapacitySnapshot>()
   for (const c of caps) {
     if (c.source !== 'xboard') continue
     const key = c.planId != null ? `plan:${c.planId}` : `sku:${c.sku}`
@@ -444,7 +463,7 @@ function dedupeFakaCapsByPlan(caps: FakaCapacitySnapshot[]): FakaCapacitySnapsho
 }
 
 function projectFakaAvailability(
-  caps: FakaCapacitySnapshot[]
+  caps: ExternalCapacitySnapshot[]
 ): { stock: number; stockMode: string } | null {
   if (caps.length === 0) return null
   const unique = dedupeFakaCapsByPlan(caps)
@@ -461,7 +480,7 @@ function projectFakaAvailability(
 
 
 /** Public product payload must not leak internal SKU / plan / activeUsers. */
-function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
+function toPublicFakaCapacity(cap: ExternalCapacitySnapshot) {
   return {
     remaining: cap.remaining,
     capacityLimit: cap.capacityLimit,
@@ -472,7 +491,7 @@ function toPublicFakaCapacity(cap: FakaCapacitySnapshot) {
 }
 
 /** 列表/详情商品级 fakaCapacity：单 SKU 直接用；多周期同 plan 取首个 xboard 快照。 */
-function pickProductFakaCapacity(caps: FakaCapacitySnapshot[]): FakaCapacitySnapshot | null {
+function pickProductFakaCapacity(caps: ExternalCapacitySnapshot[]): ExternalCapacitySnapshot | null {
   if (caps.length === 0) return null
   if (caps.length === 1) return caps[0]
   const unique = dedupeFakaCapsByPlan(caps)
@@ -491,7 +510,7 @@ function serializePublicProductDetail(
   product: ProductDetail,
   offerAvailableCounts: Map<number, number>,
   productAvailableCounts: Map<number, number>,
-  fakaByOfferId: Map<number, FakaCapacitySnapshot>,
+  fakaByOfferId: Map<number, ExternalCapacitySnapshot>,
   offerStatusById: Map<number, AvailabilityStatus>,
 ) {
   const {
@@ -560,12 +579,52 @@ interface NormalizedProductFilters {
   categoryCode: string | null
   legacyCategory: string | null
   merchantId: number | null
+  sort: ProductListSort
+  inStock: boolean
+  instant: boolean
+  /** Resolved from the caller's balance; null = no affordability filter. */
+  maxPrice: number | null
 }
 
 interface RankedProductRow {
   id: number
   isHot: boolean
   effectiveOrderCount: number
+  sortValue: number | null
+}
+
+const EXPLICIT_SORT_SQL: Record<Exclude<ProductListSort, 'default'>, { column: Prisma.Sql; descending: boolean }> = {
+  sales: { column: Prisma.sql`p."sales"`, descending: true },
+  price_asc: { column: Prisma.sql`p."price"`, descending: false },
+  price_desc: { column: Prisma.sql`p."price"`, descending: true },
+}
+
+const instantModesSql = Prisma.join([...INSTANT_DELIVERY_MODES])
+
+function instantDeliverySql() {
+  return Prisma.sql`(
+    CASE WHEN EXISTS (SELECT 1 FROM "Offer" o WHERE o."productId" = p."id" AND o."status" = 'active')
+      THEN NOT EXISTS (
+        SELECT 1 FROM "Offer" o
+        WHERE o."productId" = p."id" AND o."status" = 'active'
+          AND o."deliveryMode" NOT IN (${instantModesSql})
+      )
+      ELSE p."deliveryMode" IN (${instantModesSql})
+    END
+  )`
+}
+
+/** Affordable when at least one active offer (or the offer-less product itself) fits the balance. */
+function affordableSql(maxPrice: number) {
+  return Prisma.sql`(
+    CASE WHEN EXISTS (SELECT 1 FROM "Offer" o WHERE o."productId" = p."id" AND o."status" = 'active')
+      THEN EXISTS (
+        SELECT 1 FROM "Offer" o
+        WHERE o."productId" = p."id" AND o."status" = 'active' AND o."price" <= ${maxPrice}
+      )
+      ELSE p."price" <= ${maxPrice}
+    END
+  )`
 }
 
 interface ProductListContext {
@@ -574,7 +633,7 @@ interface ProductListContext {
   run: ProjectionRun | null
 }
 
-function normalizeProductFilters(params: ProductListParams): NormalizedProductFilters {
+function normalizeProductFilters(params: ProductListParams, maxPrice: number | null): NormalizedProductFilters {
   const query = params.query?.trim().toLowerCase().normalize('NFKC') || null
   const categoryCode = params.categoryCode?.trim().toLowerCase() || null
   const legacy = params.category?.trim()
@@ -583,7 +642,17 @@ function normalizeProductFilters(params: ProductListParams): NormalizedProductFi
     categoryCode,
     legacyCategory: categoryCode || !legacy || legacy === '全部' ? null : legacy,
     merchantId: params.merchantId ?? null,
+    sort: params.sort ?? 'default',
+    inStock: params.inStock ?? false,
+    instant: params.instant ?? false,
+    maxPrice,
   }
+}
+
+async function resolveAffordableMaxPrice(userId: number | undefined): Promise<number | null> {
+  if (userId == null) return null
+  const account = await prisma.pointAccount.findUnique({ where: { userId }, select: { balance: true } })
+  return account?.balance ?? 0
 }
 
 function productFilterHashInput(
@@ -597,6 +666,12 @@ function productFilterHashInput(
     audience,
     // Unscoped lists keep their original hash so existing site-wide cursors stay valid.
     ...(filters.merchantId != null ? { merchantId: filters.merchantId } : {}),
+    // Same for list options: only non-default values enter the hash. The balance
+    // ceiling itself is left out so a points change mid-scroll does not 409.
+    ...(filters.sort !== 'default' ? { sort: filters.sort } : {}),
+    ...(filters.inStock ? { inStock: true } : {}),
+    ...(filters.instant ? { instant: true } : {}),
+    ...(filters.maxPrice != null ? { affordable: true } : {}),
   }
 }
 
@@ -629,6 +704,34 @@ async function listRankedProductRows(
     )`)
   }
 
+  if (filters.instant) where.push(instantDeliverySql())
+  if (filters.maxPrice != null) where.push(affordableSql(filters.maxPrice))
+
+  if (filters.sort !== 'default') {
+    const { column, descending } = EXPLICIT_SORT_SQL[filters.sort]
+    if (cursor) {
+      if (cursor.sortValue === undefined) throw cursorExpired()
+      where.push(descending
+        ? Prisma.sql`(${column}, p."id") < (${cursor.sortValue}, ${cursor.productId})`
+        : Prisma.sql`(${column}, p."id") > (${cursor.sortValue}, ${cursor.productId})`)
+    }
+    const direction = descending ? Prisma.sql`DESC` : Prisma.sql`ASC`
+    const sortedOffset = cursor ? Prisma.empty : Prisma.sql`OFFSET ${(page - 1) * pageSize}`
+    return prisma.$queryRaw<RankedProductRow[]>`
+      SELECT
+        p."id" AS "id",
+        false AS "isHot",
+        0 AS "effectiveOrderCount",
+        ${column} AS "sortValue"
+      FROM "Product" p
+      INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
+      WHERE ${Prisma.join(where, ' AND ')}
+      ORDER BY ${column} ${direction}, p."id" ${direction}
+      LIMIT ${pageSize + 1}
+      ${sortedOffset}
+    `
+  }
+
   const snapshotJoin = run
     ? Prisma.sql`LEFT JOIN "ProductMerchandisingSnapshot" s
         ON s."productId" = p."id" AND s."runId" = ${run.id}::uuid`
@@ -651,7 +754,8 @@ async function listRankedProductRows(
     SELECT
       p."id" AS "id",
       ${hotExpression} AS "isHot",
-      ${countExpression}::int AS "effectiveOrderCount"
+      ${countExpression}::int AS "effectiveOrderCount",
+      NULL::int AS "sortValue"
     FROM "Product" p
     INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
     ${snapshotJoin}
@@ -677,7 +781,7 @@ async function attachListMerchandising<
 }
 
 export async function listProducts(params: ProductListParams = {}) {
-  const filters = normalizeProductFilters(params)
+  const filters = normalizeProductFilters(params, await resolveAffordableMaxPrice(params.affordableForUserId))
   const audience = params.audience ?? 'guest'
   const cursor = params.cursor ? decodeOrganicCursor(params.cursor) : null
   if (cursor) assertCursorFilterMatches(cursor, productFilterHashInput(filters, audience))
@@ -690,6 +794,9 @@ export async function listProducts(params: ProductListParams = {}) {
     category: filters.legacyCategory ?? undefined,
     rankingRunId: run?.id ?? null,
     audience,
+    sort: filters.sort,
+    instant: filters.instant,
+    maxPrice: filters.maxPrice,
   })
 
   const load = () => listProductsFromDb(params, context)
@@ -729,7 +836,10 @@ export async function listProducts(params: ProductListParams = {}) {
         && (params.merchantId == null || row.merchantId === params.merchantId))
       .map(row => row.id),
   )
-  const visibleItems = baseResult.items.filter(item => visible.has(item.id))
+  // inStock filters after the cache on the same status the card renders, so a
+  // filtered page can come back short; the cursor still advances past it.
+  const visibleItems = baseResult.items.filter(item => visible.has(item.id)
+    && (!filters.inStock || item.availability.status !== 'unavailable'))
   const decorated = await attachListMerchandising({
     ...baseResult,
     items: visibleItems,
@@ -808,6 +918,7 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
             effectiveOrderCount: lastRow.effectiveOrderCount,
             productId: lastRow.id,
             filterHash,
+            ...(lastRow.sortValue != null ? { sortValue: lastRow.sortValue } : {}),
           })
         : null,
       hasMore,
@@ -878,7 +989,7 @@ async function getProductDetailFromDb(id: number, audience: ProductAudience = 'g
   // FakaBridge：详情页只读缓存并后台刷新，绝不在请求内串行外呼 Xboard。
   // Same batch read as the list, so period SKUs of one plan share one snapshot/probe.
   const fakaBySku = loadFakaCapacityBySku(product.offers)
-  const fakaByOfferId = new Map<number, FakaCapacitySnapshot>()
+  const fakaByOfferId = new Map<number, ExternalCapacitySnapshot>()
   for (const offer of product.offers) {
     const snapshot = fakaSnapshotForSku(offer, fakaBySku)
     if (snapshot) fakaByOfferId.set(offer.id, snapshot)

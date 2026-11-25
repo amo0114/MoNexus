@@ -6,7 +6,7 @@
 // audience caching, pagination and scroll restore stay in the page.
 
 import { Link } from 'react-router-dom'
-import { Star, Store } from 'lucide-react'
+import { Star, Store, Zap } from 'lucide-react'
 import PointCoin from '../ui/PointCoin'
 import ProductMediaFrame from '../ui/ProductMediaFrame'
 import BadgeMark from '../merchandising/BadgeMark'
@@ -57,6 +57,8 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
           ? '查看套餐'
           : `库存 ${product.stockMode === 'unlimited' ? '不限' : product.stock}`
 
+  const isInstantDelivery = !compact && product.instantDelivery === true
+
   const extraRows = Number(Boolean(disclosure?.kind === 'editorial' && disclosure.publicReason))
     + Number(Boolean(product.merchandising?.merchantPartner))
   const descriptionLines = Math.max(0, 2 - extraRows)
@@ -96,15 +98,28 @@ export default function StoreProductCard({ product, onOpen, href, onNavigate, se
             : '(min-width: 1280px) 25vw, (min-width: 1024px) 33vw, 50vw',
         }}
       >
-        {disclosure && (
-          <span
-            data-testid={`store-disclosure-${product.id}`}
-            data-kind={disclosure.kind}
-            className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] md:text-xs font-bold text-[var(--color-background)] shadow-sm"
-            style={{ background: disclosure.kind === 'sponsored' ? 'var(--color-primary)' : 'var(--color-cta)' }}
-          >
-            {disclosure.label}
-          </span>
+        {(disclosure || isInstantDelivery) && (
+          <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5">
+            {disclosure && (
+              <span
+                data-testid={`store-disclosure-${product.id}`}
+                data-kind={disclosure.kind}
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] md:text-xs font-bold text-[var(--color-background)] shadow-sm"
+                style={{ background: disclosure.kind === 'sponsored' ? 'var(--color-primary)' : 'var(--color-cta)' }}
+              >
+                {disclosure.label}
+              </span>
+            )}
+            {isInstantDelivery && (
+              <span
+                data-testid={`store-instant-badge-${product.id}`}
+                className="store-card-chip inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] md:text-[11px] font-semibold text-[var(--color-cta)] shadow-sm whitespace-nowrap"
+              >
+                <Zap className="w-3 h-3 shrink-0" aria-hidden="true" />
+                自动秒发
+              </span>
+            )}
+          </div>
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
         <BadgeMark

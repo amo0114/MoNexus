@@ -964,6 +964,8 @@ model Order {
   // 时对 null 回退到商品级快照，惯例同 productNameSnapshot）。
   offerId                 Int?
   offerNameSnapshot       String?
+  // Durable owner of plugin-backed fulfillment, independent of the current Offer binding.
+  externalFulfillmentProvider String?
   // P4b：下单时的交付字段模板快照。人工服务发货按它强制校验——商家改模板
   // 不改变已购未发货订单的履约契约（快照惯例同 deliveryModeSnapshot）。
   // null = 纯文本交付契约。

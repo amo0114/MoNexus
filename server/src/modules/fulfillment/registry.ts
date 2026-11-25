@@ -17,3 +17,7 @@ export function getFulfillmentProvider(id: string): FulfillmentProvider | undefi
 export function listFulfillmentProviders(): FulfillmentProvider[] {
   return [...providers.values()]
 }
+
+export function unregisterFulfillmentProvider(provider: FulfillmentProvider): void {
+  if (providers.get(provider.id) === provider) providers.delete(provider.id)
+}

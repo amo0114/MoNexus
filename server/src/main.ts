@@ -1,6 +1,7 @@
 import { startGovernanceWorker, stopGovernanceWorker } from './modules/governance/worker.js'
 import { startVideoWorker, stopVideoWorker } from './modules/productVideos/worker.js'
 import { app } from './app.js'
+import { startOptionalFulfillmentWorkers, stopOptionalFulfillmentWatcher } from './bootstrap/optionalFulfillment.js'
 import { config } from './config/index.js'
 import { clearCacheProcessState } from './lib/cache.js'
 import { logger } from './lib/logger.js'
@@ -58,6 +59,7 @@ const server = app.listen(config.port, () => {
     startAcceptTimeoutCron()
     startDisputeTimerCron()
     startFulfillmentBackgroundJobs()
+    startOptionalFulfillmentWorkers()
     startGrowthRewardCron()
     startPushCron()
     startLeaderboardCron()
@@ -131,7 +133,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopPaymentWorkers()
   stopPaymentPayloadRetentionCron()
   const videoStopPromise = stopVideoWorker()
-  const fulfillmentStopPromise = stopFulfillmentBackgroundJobs()
+  const fulfillmentStopPromise = stopOptionalFulfillmentWatcher().then(stopFulfillmentBackgroundJobs)
   stopTrafficCron()
   stopRecommendationEventsCron()
 

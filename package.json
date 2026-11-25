@@ -37,6 +37,7 @@
     "build": "tsc -b && vite build",
     "check:bundle-budget": "npm run build && node scripts/check-frontend-bundle-budget.mjs",
     "preview": "vite preview",
+    "lint": "eslint src --max-warnings 65",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:mobile-island": "vitest run src/stores/islandQueue.test.ts src/hooks/useIslandQueuePause.test.ts src/lib/completionFeedback.test.ts src/lib/productPublicationFeedback.test.ts src/realtime/__tests__/notificationIsland.test.ts src/components/ActionIslandNotice.test.tsx src/components/MobileSearchIsland.test.tsx src/components/StoreSearchPanel.test.tsx src/components/OrderSuccessIsland.test.tsx src/components/QuietIslandNotice.test.tsx src/components/AnnouncementBanner.test.tsx src/components/EmailVerificationBanner.test.tsx src/components/OrderDetailModal.test.tsx src/components/profile/InviteCard.test.tsx src/components/catalog/CategoryApplicationPanel.test.tsx src/components/merchant/MerchantAvailabilityModal.test.tsx src/components/merchandising/MerchantPromotionPage.test.tsx src/components/merchandising/promotionFeedback.test.ts src/pages/MerchantApplyPage.test.tsx src/pages/MerchantDashboardPage.test.tsx src/pages/recharge/islandFeedback.test.ts --maxWorkers=2",
@@ -69,8 +70,7 @@
     "react-easy-crop": "^6.2.3",
     "react-router-dom": "^6.28.0",
     "web-vitals": "^5.2.0",
-    "zustand": "^5.0.0",
-    "zxcvbn": "^4.4.2"
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
@@ -82,10 +82,12 @@
     "@types/dompurify": "^3.0.5",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@types/zxcvbn": "^4.4.5",
+    "@typescript-eslint/parser": "^8.72.2",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "axe-core": "^4.10.2",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "jsdom": "^26.1.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",

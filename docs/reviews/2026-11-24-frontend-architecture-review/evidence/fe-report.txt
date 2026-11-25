@@ -1,0 +1,322 @@
+## size by top dir (prod)
+components: 284 files / 61155 loc
+pages: 59 files / 13958 loc
+api: 54 files / 7711 loc
+types: 12 files / 2479 loc
+stores: 6 files / 1562 loc
+hooks: 13 files / 1287 loc
+utils: 19 files / 1173 loc
+realtime: 8 files / 982 loc
+auth: 5 files / 713 loc
+lib: 12 files / 599 loc
+src(root): 3 files / 312 loc
+extensions: 3 files / 310 loc
+
+## top-level dir dependency matrix (runtime edges, count)
+api -> auth: 7
+api -> lib: 1
+api -> stores: 5
+api -> types: 8
+auth -> api: 1
+auth -> stores: 2
+components -> api: 218
+components -> auth: 43
+components -> extensions: 1
+components -> hooks: 27
+components -> lib: 19
+components -> pages: 13
+components -> realtime: 6
+components -> stores: 145
+components -> types: 34
+components -> utils: 80
+extensions -> api: 2
+extensions -> stores: 1
+hooks -> api: 8
+hooks -> auth: 6
+hooks -> lib: 6
+hooks -> realtime: 2
+hooks -> stores: 12
+hooks -> utils: 1
+lib -> api: 2
+lib -> auth: 2
+lib -> hooks: 1
+lib -> stores: 4
+pages -> api: 63
+pages -> auth: 10
+pages -> components: 163
+pages -> hooks: 11
+pages -> lib: 12
+pages -> realtime: 3
+pages -> stores: 37
+pages -> types: 7
+pages -> utils: 14
+realtime -> api: 2
+realtime -> auth: 1
+realtime -> stores: 3
+src(root) -> api: 1
+src(root) -> auth: 2
+src(root) -> components: 9
+src(root) -> lib: 3
+src(root) -> pages: 24
+src(root) -> stores: 3
+stores -> api: 10
+stores -> auth: 3
+stores -> pages: 1
+stores -> types: 3
+stores -> utils: 1
+utils -> api: 1
+
+## type-only cross-dir edges
+api -> pages: 2
+api -> types: 18
+auth -> components: 1
+auth -> types: 3
+components -> api: 19
+components -> auth: 2
+components -> hooks: 3
+components -> lib: 1
+components -> stores: 2
+components -> types: 110
+components -> utils: 1
+extensions -> api: 1
+extensions -> types: 1
+hooks -> components: 1
+hooks -> realtime: 1
+hooks -> types: 4
+lib -> types: 1
+pages -> api: 16
+pages -> auth: 1
+pages -> components: 6
+pages -> types: 20
+realtime -> auth: 1
+utils -> pages: 1
+utils -> types: 3
+
+## upward edges (lower layer importing higher layer), runtime+type
+api -> stores: 5
+   src/api/auth.ts -> src/stores/authStore.ts
+   src/api/authRefresh.ts -> src/stores/authStore.ts
+   src/api/client.ts -> src/stores/authStore.ts
+   src/api/registry.ts -> src/stores/authStore.ts
+   src/api/storeCandidates.ts -> src/stores/authStore.ts
+api -> pages: 2
+   src/api/recharge.ts -> src/pages/recharge/paymentActions.ts (type)
+   src/api/recharge.ts -> src/pages/recharge/status.ts (type)
+auth -> components: 1
+   src/auth/adminAccess.ts -> src/components/admin/AdminNav.tsx (type)
+auth -> stores: 2
+   src/auth/adminAccess.ts -> src/stores/adminCapabilities.ts
+   src/auth/sessionStorageSync.ts -> src/stores/authStore.ts
+components -> pages: 13
+   src/components/admin/AdminRefundAuditPanel.tsx -> src/pages/recharge/money.ts
+   src/components/admin/AdminRefundAuditPanel.tsx -> src/pages/recharge/status.ts
+   src/components/admin/governance/RefundReviewSheet.tsx -> src/pages/recharge/money.ts
+   src/components/admin/recharge/AdminPaymentDisputes.tsx -> src/pages/recharge/money.ts
+   src/components/admin/recharge/AdminPaymentDisputes.tsx -> src/pages/recharge/status.ts
+   src/components/admin/recharge/AdminPaymentEvents.tsx -> src/pages/recharge/status.ts
+   src/components/admin/recharge/AdminPricePolicies.tsx -> src/pages/recharge/money.ts
+   src/components/admin/recharge/AdminPricePolicies.tsx -> src/pages/recharge/pricePolicyPreview.ts
+hooks -> components: 1
+   src/hooks/useOrderRenewal.ts -> src/components/PurchaseModal.tsx (type)
+lib -> stores: 4
+   src/lib/completionFeedback.ts -> src/stores/appStore.ts
+   src/lib/completionFeedback.ts -> src/stores/authStore.ts
+   src/lib/productPublicationFeedback.ts -> src/stores/appStore.ts
+   src/lib/recommendationTracking.ts -> src/stores/authStore.ts
+lib -> auth: 2
+   src/lib/completionFeedback.ts -> src/auth/sessionContext.ts
+   src/lib/recommendationTracking.ts -> src/auth/sessionContext.ts
+lib -> hooks: 1
+   src/lib/recommendationTracking.ts -> src/hooks/usePageView.ts
+lib -> api: 2
+   src/lib/recommendationTracking.ts -> src/api/authRefresh.ts
+   src/lib/webPush.ts -> src/api/client.ts
+stores -> pages: 1
+   src/stores/authStore.ts -> src/pages/storePageCache.ts
+utils -> pages: 1
+   src/utils/adminRechargeDisplay.ts -> src/pages/recharge/status.ts (type)
+utils -> api: 1
+   src/utils/governance.ts -> src/api/error.ts
+
+## components -> pages and pages -> pages (other page dir)
+  C->P src/components/admin/AdminRefundAuditPanel.tsx -> src/pages/recharge/money.ts 
+  C->P src/components/admin/AdminRefundAuditPanel.tsx -> src/pages/recharge/status.ts 
+  C->P src/components/admin/governance/RefundReviewSheet.tsx -> src/pages/recharge/money.ts 
+  C->P src/components/admin/recharge/AdminPaymentDisputes.tsx -> src/pages/recharge/money.ts 
+  C->P src/components/admin/recharge/AdminPaymentDisputes.tsx -> src/pages/recharge/status.ts 
+  C->P src/components/admin/recharge/AdminPaymentEvents.tsx -> src/pages/recharge/status.ts 
+  C->P src/components/admin/recharge/AdminPricePolicies.tsx -> src/pages/recharge/money.ts 
+  C->P src/components/admin/recharge/AdminPricePolicies.tsx -> src/pages/recharge/pricePolicyPreview.ts 
+  C->P src/components/admin/recharge/AdminRechargeOrders.tsx -> src/pages/recharge/money.ts 
+  C->P src/components/admin/recharge/AdminRechargeOrders.tsx -> src/pages/recharge/status.ts 
+  C->P src/components/admin/recharge/AdminReconciliation.tsx -> src/pages/recharge/money.ts 
+  C->P src/components/admin/recharge/AdminReconciliation.tsx -> src/pages/recharge/status.ts 
+  C->P src/components/admin/recharge/AdminSandboxPanel.tsx -> src/pages/recharge/money.ts 
+  P->P src/pages/LeaderboardPage.tsx -> src/pages/leaderboard/Podium.tsx 
+  P->P src/pages/LeaderboardPage.tsx -> src/pages/leaderboard/RankRow.tsx 
+  P->P src/pages/LeaderboardPage.tsx -> src/pages/leaderboard/MyRankBar.tsx 
+  P->P src/pages/LeaderboardPage.tsx -> src/pages/leaderboard/StatsPanel.tsx 
+  P->P src/pages/LeaderboardPage.tsx -> src/pages/leaderboard/format.ts 
+  P->P src/pages/RechargePage.tsx -> src/pages/recharge/RechargeCheckout.tsx 
+  P->P src/pages/RechargePage.tsx -> src/pages/recharge/RechargeHistory.tsx 
+  P->P src/pages/RechargePage.tsx -> src/pages/recharge/RechargeResult.tsx 
+  P->P src/pages/RechargePage.tsx -> src/pages/recharge/session.ts 
+  P->P src/pages/RechargePage.tsx -> src/pages/recharge/session.ts 
+  page->other-page-dir edges 10
+
+## cross-domain component edges (components/X -> components/Y, X!=Y, Y not ui)
+components/admin -> components/catalog: 14
+components/catalog -> components/merchant: 8
+components/merchant -> components/catalog: 5
+components/merchandising -> components/admin: 4
+components/store -> components/merchandising: 4
+components/catalog -> components/admin: 2
+components/(root) -> components/checkin: 1
+components/catalog -> components/store: 1
+components/merchant -> components/admin: 1
+components/ui -> components/catalog: 1
+
+## file-level import cycles (runtime static): 1
+  [5] src/auth/sessionStorageSync.ts, src/api/authRefresh.ts, src/api/client.ts, src/api/registry.ts, src/stores/authStore.ts
+
+## fan-in top 20 (prod importers)
+  137  src/stores/appStore.ts  (524 loc)
+  112  src/api/error.ts  (42 loc)
+  68  src/components/ui/Dialog.tsx  (91 loc)
+  59  src/stores/authStore.ts  (259 loc)
+  59  src/types/catalog.ts  (452 loc)
+  59  src/types/merchant.ts  (454 loc)
+  56  src/api/client.ts  (134 loc)
+  50  src/components/ui/EmptyState.tsx  (36 loc)
+  41  src/components/ui/Skeleton.tsx  (88 loc)
+  39  src/auth/sessionContext.ts  (157 loc)
+  30  src/api/catalog.ts  (843 loc)
+  27  src/types/product.ts  (80 loc)
+  27  src/auth/adminAccess.ts  (203 loc)
+  25  src/types/merchandising.ts  (445 loc)
+  23  src/components/admin/AdminPagination.tsx  (121 loc)
+  21  src/utils/governance.ts  (223 loc)
+  21  src/components/ui/ConfirmDialog.tsx  (90 loc)
+  20  src/lib/completionFeedback.ts  (57 loc)
+  20  src/api/admin.ts  (1065 loc)
+  19  src/types/governance.ts  (572 loc)
+
+## fan-out top 15
+  38  src/pages/MerchantDashboardPage.tsx  (993 loc)
+  37  src/App.tsx  (245 loc)
+  37  src/pages/ProductDetailPage.tsx  (908 loc)
+  34  src/components/Layout.tsx  (899 loc)
+  27  src/pages/ProfilePage.tsx  (680 loc)
+  25  src/pages/merchant/ProductEditPage.tsx  (758 loc)
+  24  src/pages/AdminPage.tsx  (142 loc)
+  22  src/components/admin/AdminProductPanel.tsx  (628 loc)
+  20  src/components/OrderDetailModal.tsx  (839 loc)
+  20  src/pages/merchant/ProductCreateWizard.tsx  (803 loc)
+  19  src/components/catalog/AdminPlatformProductWizard.tsx  (718 loc)
+  18  src/components/admin/AdminUserTable.tsx  (753 loc)
+  17  src/pages/recharge/RechargeResult.tsx  (347 loc)
+  16  src/components/admin/AdminSettlementPanel.tsx  (553 loc)
+  16  src/pages/LoginPage.tsx  (763 loc)
+
+## largest prod files
+  1065  src/api/admin.ts  useState=0 useEffect=0
+  1013  src/pages/CreditsPage.tsx  useState=6 useEffect=4
+  993  src/pages/MerchantDashboardPage.tsx  useState=41 useEffect=6
+  939  src/pages/StorePage.tsx  useState=9 useEffect=14
+  908  src/pages/ProductDetailPage.tsx  useState=21 useEffect=8
+  899  src/components/Layout.tsx  useState=13 useEffect=15
+  843  src/api/catalog.ts  useState=0 useEffect=0
+  839  src/components/OrderDetailModal.tsx  useState=6 useEffect=1
+  803  src/pages/merchant/ProductCreateWizard.tsx  useState=20 useEffect=3
+  778  src/components/catalog/AdminCategoryManager.tsx  useState=21 useEffect=3
+  763  src/pages/LoginPage.tsx  useState=15 useEffect=3
+  758  src/pages/merchant/ProductEditPage.tsx  useState=33 useEffect=5
+  753  src/components/admin/AdminUserTable.tsx  useState=24 useEffect=2
+  725  src/components/merchandising/AdminPromotionCampaignManager.tsx  useState=14 useEffect=1
+  718  src/components/catalog/AdminPlatformProductWizard.tsx  useState=17 useEffect=2
+  707  src/components/merchant/MerchantOfferManagerModal.tsx  useState=8 useEffect=1
+  705  src/api/merchandising.ts  useState=0 useEffect=0
+  680  src/pages/ProfilePage.tsx  useState=11 useEffect=3
+  659  src/components/merchandising/AdminEntitlementManager.tsx  useState=24 useEffect=1
+  628  src/components/admin/AdminProductPanel.tsx  useState=26 useEffect=1
+  614  src/components/admin/recharge/AdminPricePolicies.tsx  useState=11 useEffect=1
+  613  src/components/admin/governance/UserDetailSheet.tsx  useState=9 useEffect=1
+  609  src/components/admin/adminConfigMeta.ts  useState=0 useEffect=0
+  604  src/components/catalog/ProductDetailDesktop.tsx  useState=9 useEffect=3
+  604  src/components/merchant/MerchantProductFormModal.tsx  useState=6 useEffect=3
+  594  src/components/admin/AnnouncementsAdmin.tsx  useState=10 useEffect=1
+  589  src/components/catalog/ProductDetailMobile.tsx  useState=8 useEffect=0
+  572  src/types/governance.ts  useState=0 useEffect=0
+  567  src/components/catalog/RichTextEditor.tsx  useState=4 useEffect=2
+  562  src/components/admin/AdminRefundAuditPanel.tsx  useState=11 useEffect=1
+  files >300: 99  >500: 39  >800: 9  total prod: 478
+
+## most useState per file
+  41 state / 6 effects  src/pages/MerchantDashboardPage.tsx
+  33 state / 5 effects  src/pages/merchant/ProductEditPage.tsx
+  26 state / 1 effects  src/components/admin/AdminProductPanel.tsx
+  24 state / 2 effects  src/components/admin/AdminUserTable.tsx
+  24 state / 1 effects  src/components/merchandising/AdminEntitlementManager.tsx
+  21 state / 8 effects  src/pages/ProductDetailPage.tsx
+  21 state / 3 effects  src/components/catalog/AdminCategoryManager.tsx
+  21 state / 3 effects  src/components/admin/AbuseProtectionPanel.tsx
+  20 state / 3 effects  src/pages/merchant/ProductCreateWizard.tsx
+  20 state / 4 effects  src/components/catalog/ProductDraftAssistant.tsx
+  19 state / 1 effects  src/components/catalog/AdminFakaImportPreview.tsx
+  19 state / 1 effects  src/components/admin/AdminAiSettingsPanel.tsx
+  18 state / 1 effects  src/components/admin/AdminOrderTable.tsx
+  17 state / 2 effects  src/components/catalog/AdminPlatformProductWizard.tsx
+  15 state / 3 effects  src/pages/LoginPage.tsx
+
+## longest / most complex functions
+  len=879 cc=32  src/pages/MerchantDashboardPage.tsx:79 MerchantDashboardPage
+  len=858 cc=46  src/pages/StorePage.tsx:81 StorePage
+  len=855 cc=125  src/components/Layout.tsx:44 Layout
+  len=833 cc=103  src/pages/ProductDetailPage.tsx:75 ProductDetailPage
+  len=695 cc=15  src/pages/CreditsPage.tsx:318 CreditsPage
+  len=688 cc=40  src/pages/merchant/ProductEditPage.tsx:65 ProductEditPage
+  len=688 cc=48  src/pages/LoginPage.tsx:75 LoginPage
+  len=683 cc=101  src/components/OrderDetailModal.tsx:156 OrderDetailModal
+  len=663 cc=41  src/pages/merchant/ProductCreateWizard.tsx:134 ProductCreateWizard
+  len=649 cc=18  src/components/catalog/AdminCategoryManager.tsx:129 AdminCategoryManager
+  len=634 cc=32  src/components/admin/AdminUserTable.tsx:96 AdminUserTable
+  len=588 cc=48  src/pages/ProfilePage.tsx:92 ProfilePage
+  len=587 cc=15  src/components/admin/AdminProductPanel.tsx:41 AdminProductPanel
+  len=566 cc=37  src/components/merchant/MerchantOfferManagerModal.tsx:141 MerchantOfferManagerModal
+  len=562 cc=16  src/components/merchandising/AdminEntitlementManager.tsx:97 AdminEntitlementManager
+  len=551 cc=17  src/components/merchant/MerchantProductFormModal.tsx:26 MerchantProductFormModal
+  len=531 cc=38  src/components/catalog/ProductDetailMobile.tsx:58 ProductDetailMobile
+  len=525 cc=17  src/components/admin/AdminSettlementPanel.tsx:28 AdminSettlementPanel
+  len=505 cc=11  src/components/admin/AdminOrderTable.tsx:38 AdminOrderTable
+  len=504 cc=46  src/components/catalog/AdminPlatformProductWizard.tsx:94 AdminPlatformProductWizard
+  by cc:
+  cc=125 len=855  src/components/Layout.tsx:44 Layout
+  cc=103 len=833  src/pages/ProductDetailPage.tsx:75 ProductDetailPage
+  cc=101 len=683  src/components/OrderDetailModal.tsx:156 OrderDetailModal
+  cc=84 len=357  src/components/catalog/ProductDraftAssistant.tsx:51 ProductDraftAssistant
+  cc=62 len=504  src/components/PurchaseModal.tsx:40 PurchaseModal
+  cc=62 len=92  src/api/admin.ts:623 isValidAdminProductOffer
+  cc=57 len=297  src/components/DeliveryContent.tsx:90 DeliveryContent
+  cc=55 len=355  src/components/catalog/productDetail/desktop/DesktopPurchasePanel.tsx:83 DesktopPurchasePanel
+  cc=55 len=282  src/components/admin/productPanel/AdminProductTable.tsx:111 <anon>
+  cc=54 len=88  src/pages/merchant/productCreation/draft.ts:69 validateCreationStep
+  cc=49 len=262  src/components/admin/governance/MerchantReviewSheet.tsx:61 MerchantReviewSheet
+  cc=48 len=688  src/pages/LoginPage.tsx:75 LoginPage
+  cc=48 len=588  src/pages/ProfilePage.tsx:92 ProfilePage
+  cc=48 len=214  src/components/admin/governance/UserDetailSheet.tsx:74 UserDetailSheet
+  cc=46 len=858  src/pages/StorePage.tsx:81 StorePage
+  functions len>=150: 139, cc>=30: 50
+
+## type-safety & escape hatches (prod)
+  any=82 as=258 nonNull=81 tsIgnore=0 eslintDisable=13
+  top as-cast files: src/api/admin.ts(18), src/components/merchant/MerchantProductFormModal.tsx(11), src/api/catalog.ts(11), src/components/catalog/AdminPlatformProductWizard.tsx(10), src/components/admin/AdminUserTable.tsx(8), src/components/catalog/ProductDraftAssistant.tsx(8), src/components/catalog/ProductContentSuggestionDialog.tsx(8), src/components/admin/AdminAiSettingsPanel.tsx(6)
+  axios imported outside api/client: src/api/authRefresh.ts, src/hooks/useCursorList.ts, src/hooks/useShopProducts.ts, src/hooks/useProductRecommendations.ts, src/api/governance.ts
+  fetch() callers: src/realtime/notificationStream.ts, src/lib/recommendationTracking.ts, src/hooks/usePageView.ts
+  storage callers: 16 src/auth/sessionStorageSync.ts, src/components/merchandising/MerchantPromotionPage.tsx, src/lib/ThemeProvider.tsx, src/auth/pendingAuthSession.ts, src/pages/StorePage.tsx, src/hooks/useAnnouncements.ts, src/api/auth.ts, src/api/authRefresh.ts, src/realtime/announcementSyncBroadcast.ts, src/components/EmailVerificationBanner.tsx, src/hooks/useProductFavorite.ts, src/stores/authStore.ts, src/hooks/usePageView.ts, src/pages/recharge/session.ts, src/lib/chunkRecovery.ts, src/components/ScrollToTop.tsx
+
+## who imports api/ (by importer top dir)
+components/admin: 101, api: 62, components/catalog: 45, pages/(root): 36, components/(root): 26, pages/merchant: 18, components/merchandising: 17, components/merchant: 14, stores: 10, hooks: 8, pages/recharge: 8, components/auth: 7, components/profile: 5, components/checkin: 3, extensions: 2, lib: 2, realtime: 2, src(root): 1, auth: 1, pages/legal: 1, utils: 1
+
+## test coverage by dir (test files / prod files)
+src(root): 0/3, api: 20/54, auth: 2/5, components: 142/284, extensions: 0/3, hooks: 5/13, lib: 7/12, pages: 39/59, realtime: 7/8, stores: 7/6, types: 1/12, utils: 10/19 | total tests 246
+  >400 loc prod files without same-name test: 24 / 67

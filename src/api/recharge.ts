@@ -1,6 +1,6 @@
 import api from './client'
-import type { PublicPaymentAction } from '../pages/recharge/paymentActions'
-import type { PaymentProviderName, RechargeOrderStatus } from '../pages/recharge/status'
+import type { PublicPaymentAction } from '../domain/recharge/paymentActions'
+import type { PaymentProviderName, RechargeOrderStatus } from '../domain/recharge/status'
 
 export type RechargeAmountSource = 'suggested' | 'custom'
 

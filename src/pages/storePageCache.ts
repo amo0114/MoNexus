@@ -1,8 +1,12 @@
+import { registerIdentityScopedMetadataCleanup } from '../stores/authStore'
+
 export interface StorePageCache {
   feedItems: unknown[]
   seenIds: number[]
   category: string
   searchQuery: string
+  /** Server-side sort/filter toggles the cached feed was fetched with. */
+  listOptions?: unknown
   nextCursor: string | null
   hasMore: boolean
   scrollY: number
@@ -25,3 +29,5 @@ export function setStorePageCache(cache: StorePageCache | null) {
 export function clearStorePageCache() {
   storePageCache = null
 }
+
+registerIdentityScopedMetadataCleanup(clearStorePageCache)

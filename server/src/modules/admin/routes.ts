@@ -1,5 +1,5 @@
 import { paymentSettingsRoutes } from './paymentSettings.js'
-import { fakaSettings } from './fakaSettings.js'
+import { optionalFulfillmentHandler, optionalFulfillmentStatus, refreshOptionalFulfillment, setOptionalFulfillmentMounted } from '../../bootstrap/optionalFulfillment.js'
 import { governanceAdminRoutes } from './governanceRoutes.js'
 import { createAnnouncementSchema, updateAnnouncementSchema, listAnnouncementsQuerySchema } from '../announcements/adminSchema.js'
 import * as announcementController from '../announcements/adminController.js'
@@ -20,10 +20,7 @@ import {
   previewSettlementsSchema, listSettlementBatchesQuerySchema, listRecoveryCasesQuerySchema, merchantRecoveryActionSchema,
   createAfterSalesSchema, decideAfterSalesSchema, rejectAfterSalesSchema,
   systemConfigKeyParamSchema, updateSystemConfigSchema,
-  setFakaCapacitySchema, previewFakaPlanSchema, importFakaPlanSchema, addFakaOffersSchema,
   listAdminProductsQuerySchema, archiveProductSchema, adminOfferPatchSchema,
-  rebindOfferSkuSchema, confirmFakaSyncSchema,
-  listFakaTasksQuerySchema,
   mailDeliveryTestSchema,
   abuseOverviewQuerySchema,
   listAbuseReferralsQuerySchema,
@@ -54,7 +51,6 @@ import { valuePolicyGovernanceRoutes } from '../valuePolicy/governanceRoutes.js'
 import { categoryAdminRoutes } from '../catalog/adminRoutes.js'
 import { categoryApplicationAdminRoutes } from '../catalog/applicationAdminRoutes.js'
 import { adminAssuranceRouter } from '../catalog/assurance/routes.js'
-import { adminSourceDescriptionRouter } from '../catalog/sourceDescriptionRoutes.js'
 import { rechargeAdminRoutes } from '../recharge/adminRoutes.js'
 import { getBuildInfo } from './buildInfo.js'
 import { aiSettingsRoutes } from './aiSettings.js'
@@ -85,7 +81,6 @@ router.use('/product-categories', categoryAdminRoutes)
 // T-CAT-BE-002 §7.3：管理员分类申请审核（列表/approve/reject，CAS + AdminLog）。
 router.use('/category-applications', categoryApplicationAdminRoutes)
 router.use(adminAssuranceRouter)
-router.use(adminSourceDescriptionRouter)
 router.use(rechargeAdminRoutes)
 
 router.get('/stats', controller.stats)
@@ -119,7 +114,17 @@ router.get('/mail/status', controller.mailStatus)
 router.use(mailSettingsRoutes)
 router.use(integrationSettingsRoutes)
 router.use(paymentSettingsRoutes)
-router.use('/integrations/faka-bridge/config', fakaSettings.router)
+router.get('/integrations/faka-bridge/plugin', async (_req, res, next) => {
+  try {
+    await refreshOptionalFulfillment(true)
+    res.json(optionalFulfillmentStatus())
+  } catch (error) { next(error) }
+})
+router.put('/integrations/faka-bridge/plugin', validate(z.object({ mounted: z.boolean() }).strict()), async (req, res, next) => {
+  try { res.json(await setOptionalFulfillmentMounted(req.body.mounted, req.user!.userId)) }
+  catch (error) { next(error) }
+})
+router.use(optionalFulfillmentHandler('adminRoutes'))
 router.post('/mail/test', adminMailTestLimiter, validate(mailDeliveryTestSchema), controller.mailTest)
 // SPEC-STORAGE-001：对象存储控制台（MFA 已由本 router 统一要求）
 router.get('/storage/status', storageController.storageStatus)
@@ -219,22 +224,6 @@ router.post(
   validate({ params: adminOfferParamSchema }),
   controller.makeDefaultOffer,
 )
-router.post(
-  '/products/:id/offers/:offerId/rebind-sku/preview',
-  validate({ params: adminOfferParamSchema, body: rebindOfferSkuSchema }),
-  controller.previewRebindOfferSku,
-)
-router.post(
-  '/products/:id/offers/:offerId/rebind-sku',
-  validate({ params: adminOfferParamSchema, body: rebindOfferSkuSchema }),
-  controller.rebindOfferSku,
-)
-router.post('/products/:id/faka-sync/preview', validate({ params: idParamSchema }), controller.previewFakaSync)
-router.post(
-  '/products/:id/faka-sync',
-  validate({ params: idParamSchema, body: confirmFakaSyncSchema }),
-  controller.confirmFakaSync,
-)
 router.post('/products/:id/inventory', validate({ params: idParamSchema, body: importInventorySchema }), controller.importInventory)
 // T-CAT-BE-004（D-CAT-15）：管理员库存先 preview → confirm，与商家共用领域分析器。
 router.post('/products/:id/inventory/preview', validate({ params: idParamSchema, body: previewInventorySchema }), controller.previewInventory)
@@ -242,25 +231,7 @@ router.post('/products/:id/inventory/preview', validate({ params: idParamSchema,
 router.post('/products/:id/offers/:offerId/inventory/preview', validate({ params: adminOfferParamSchema, body: previewOfferInventorySchema }), controller.previewOfferInventory)
 router.post('/products/:id/offers/:offerId/inventory', validate({ params: adminOfferParamSchema, body: importOfferInventorySchema }), controller.importOfferInventory)
 router.post('/products/:id/offers/:offerId/capacity/adjust', validate({ params: adminOfferParamSchema, body: adjustOfferCapacitySchema }), controller.adjustOfferCapacity)
-// FakaBridge Xboard 管理：仅平台管理员（本路由组已 requireAdmin + MFA）
-router.get('/faka/catalog', controller.fakaCatalog)
-router.post('/faka/import/preview', validate(previewFakaPlanSchema), controller.previewFakaPlan)
-router.post('/faka/import', validate(importFakaPlanSchema), controller.importFakaPlan)
-router.post(
-  '/products/:id/faka-offers',
-  validate({ params: idParamSchema, body: addFakaOffersSchema }),
-  controller.addFakaOffers
-)
-router.put(
-  '/products/:id/faka-capacity',
-  validate({ params: idParamSchema, body: setFakaCapacitySchema }),
-  controller.setFakaCapacity
-)
-router.get('/faka/tasks', validate({ query: listFakaTasksQuerySchema }), controller.listFakaTasks)
-router.get('/faka/tasks/stats', controller.fakaTaskStats)
 router.get('/fulfillment/providers', controller.listFulfillmentProviders)
-router.post('/faka/tasks/:id/retry', validate({ params: idParamSchema }), controller.retryFakaTask)
-router.post('/faka/tasks/:id/revoke', validate({ params: idParamSchema }), controller.forceFakaRevoke)
 // P5：吊销交付文件（违法/恶意内容治理）。
 router.post('/delivery-files/:id/revoke', validate({ params: idParamSchema, body: revokeDeliveryFileSchema }), controller.revokeDeliveryFile)
 // P5.5 T1：文件治理——分页列表 + 单文件签名发放流水（审计）。

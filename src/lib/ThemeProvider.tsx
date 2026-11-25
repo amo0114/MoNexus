@@ -42,6 +42,15 @@ function normalizeTheme(raw: string | null): Theme | null {
   return null
 }
 
+function replaceFaviconHref(link: HTMLLinkElement, nextHref: string) {
+  if (link.getAttribute('href') === nextHref) return
+  // Re-inserting the <link> forces Chromium/Edge/Safari to immediately repaint
+  // the browser tab icon instead of sticking to the initial cached favicon.
+  const next = link.cloneNode(true) as HTMLLinkElement
+  next.setAttribute('href', nextHref)
+  link.replaceWith(next)
+}
+
 function applyTheme(t: Theme) {
   const root = document.documentElement
   root.classList.toggle('dark', t === 'dark')
@@ -60,18 +69,23 @@ function applyTheme(t: Theme) {
   }
 
   const variant = ASSET_VARIANT[t]
+  const ico = document.getElementById('brand-favicon-ico') as HTMLLinkElement | null
+  if (ico) {
+    replaceFaviconHref(ico, '/brand/ledger-knot/favicon-' + variant + '.ico')
+  }
+
   document
     .querySelectorAll<HTMLLinkElement>('link[data-brand-favicon-size]')
     .forEach((link) => {
       const size = link.dataset.brandFaviconSize
       if (size) {
-        link.href = '/brand/ledger-knot/favicon-' + variant + '-' + size + '.png'
+        replaceFaviconHref(link, '/brand/ledger-knot/favicon-' + variant + '-' + size + '.png')
       }
     })
 
   const appleTouchIcon = document.getElementById('brand-apple-touch-icon') as HTMLLinkElement | null
   if (appleTouchIcon) {
-    appleTouchIcon.href = '/brand/ledger-knot/favicon-' + variant + '-180.png'
+    replaceFaviconHref(appleTouchIcon, '/brand/ledger-knot/favicon-' + variant + '-180.png')
   }
 
   const themeColor = document.getElementById('brand-theme-color') as HTMLMetaElement | null

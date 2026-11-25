@@ -9,6 +9,7 @@ import {
 } from '../../api/assurance'
 import { getApiErrorMessage } from '../../api/error'
 import { useAppStore } from '../../stores/appStore'
+import { formatDate } from '../../utils/datetime'
 
 export default function MerchantAssuranceSection({ productId }: { productId: number }) {
   const showToast = useAppStore((s) => s.showToast)
@@ -76,7 +77,7 @@ export default function MerchantAssuranceSection({ productId }: { productId: num
       {grant && (
         <p className="text-sm text-[var(--color-text)]">
           当前授权：{grant.status === 'active' ? '有效' : grant.status === 'expired' ? '已到期' : '已撤销'}
-          ，至 {new Date(grant.validUntil).toLocaleDateString()}
+          ，至 {formatDate(grant.validUntil)}
         </p>
       )}
       {application && (

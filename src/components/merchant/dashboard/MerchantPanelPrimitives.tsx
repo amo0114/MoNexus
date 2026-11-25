@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 // 商家后台各列表面板（商品/订单/结算）共用的表头单元格。
 export function Th({ children, align }: { children: ReactNode; align?: 'left' | 'right' }) {
   return (
-    <th className={`py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider ${align === 'right' ? 'text-right' : 'text-left'}`}>
+    <th className={`py-3 px-2.5 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap ${align === 'right' ? 'text-right' : 'text-left'}`}>
       {children}
     </th>
   )
@@ -17,11 +17,13 @@ export function PaginationControls({ page, total, setPage, testId }: { page: num
 
   return (
     <div className="flex items-center justify-between mt-4 px-2 pb-2 border-t border-[var(--color-border)] pt-4" data-testid={testId}>
-      <div className="text-sm text-[var(--color-text-muted)]">
+      <div className="text-sm text-[var(--color-text-muted)] tabular-nums">
         共 {total} 条记录，第 {page} / {totalPages} 页
       </div>
       <div className="flex items-center gap-2">
         <button
+          type="button"
+          aria-label="上一页"
           onClick={() => setPage(Math.max(1, page - 1))}
           disabled={page <= 1}
           className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"
@@ -29,6 +31,8 @@ export function PaginationControls({ page, total, setPage, testId }: { page: num
           <ChevronLeft className="w-4 h-4" />
         </button>
         <button
+          type="button"
+          aria-label="下一页"
           onClick={() => setPage(Math.min(totalPages, page + 1))}
           disabled={page >= totalPages}
           className="btn-secondary btn-sm disabled:opacity-50 flex items-center cursor-pointer"

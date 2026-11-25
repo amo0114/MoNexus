@@ -16,6 +16,7 @@ import { formatCommissionRate } from '../../utils/adminRechargeDisplay'
 import AdminSettlementBatches from './AdminSettlementBatches'
 import AdminMerchantRecoveryPanel from './AdminMerchantRecoveryPanel'
 import { useTabActions } from '../../auth/adminAccess'
+import { formatDateTime } from '../../utils/datetime'
 
 interface Props {
   active?: boolean
@@ -387,7 +388,7 @@ export default function AdminSettlementPanel({ active = true }: Props) {
                         ORD-{s.orderId}
                       </div>
                       <div className="text-xs text-[var(--color-text-muted)] mt-1">
-                        {new Date(s.createdAt).toLocaleString()}
+                        {formatDateTime(s.createdAt)}
                       </div>
                     </td>
                     <td className="font-bold text-sm text-[var(--color-text)]" data-label="商家">

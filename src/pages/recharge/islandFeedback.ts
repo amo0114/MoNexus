@@ -1,7 +1,7 @@
 import type { RechargeOrder } from '../../api/recharge'
 import { useAppStore } from '../../stores/appStore'
 import { captureFeedbackOwner } from '../../lib/completionFeedback'
-import { formatPoints } from './money'
+import { formatPoints } from '../../domain/recharge/money'
 
 /** Uses only fetched order state. This helper does not poll or infer payment. */
 export function createRechargeIslandFeedback(openHistory: () => void) {

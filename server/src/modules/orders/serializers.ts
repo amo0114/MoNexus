@@ -4,6 +4,7 @@ type OrderWithDelivery = {
   delivery?: ({ content?: unknown } & Record<string, unknown>) | null
   product?: ({ deliveryMode?: string | null } & Record<string, unknown>) | null
   deliveryModeSnapshot?: string | null
+  externalFulfillmentProvider?: string | null
   productNameSnapshot?: string | null
   productTypeSnapshot?: string | null
   productIconSnapshot?: string | null
@@ -89,7 +90,7 @@ function withUserOrderContract<T extends OrderWithDelivery>(order: T, includeTim
   // 复审补丁：买家契约只有 timeline——原始 statusEvents 必须剥离，否则
   // 到期遮蔽只盖 timeline 一份，交付附言仍从 statusEvents 泄漏（回归测试
   // 实测抓出）。商家/管理员序列化不走本函数，不受影响。
-  const { statusEvents: _rawEvents, ...buyerSafe } = normalized as typeof normalized & {
+  const { statusEvents: _rawEvents, externalFulfillmentProvider: _provider, ...buyerSafe } = normalized as typeof normalized & {
     statusEvents?: unknown
   }
   return {
@@ -267,14 +268,16 @@ export function fulfillmentReviewActions(order: {
   status?: unknown
   delivery?: { id?: unknown } | null
   cancelRequestedAt?: unknown
+  externalFulfillmentProvider?: string | null
   fakaBridgeTask?: TaskDiagnosticsShape | null
   fulfillmentJob?: TaskDiagnosticsShape | null
-  provisionTask?: { status?: string } | null
+  provisionTask?: { status?: string; leaseUntil?: Date | null } | null
 }): Array<'recheck_cancel' | 'confirm_cancelled'> {
-  if (!['pending', 'processing'].includes(String(order.status)) || order.delivery?.id) return []
-  if (!order.cancelRequestedAt && !order.fakaBridgeTask && !order.fulfillmentJob && !order.provisionTask) return []
-  const tasks = [order.fakaBridgeTask, order.fulfillmentJob]
+  if (!['pending', 'processing'].includes(String(order.status)) || order.delivery) return []
+  if (!order.cancelRequestedAt && !order.externalFulfillmentProvider && !order.fakaBridgeTask && !order.fulfillmentJob && !order.provisionTask) return []
+  const tasks = [order.fakaBridgeTask, order.fulfillmentJob, order.provisionTask]
   const canConfirm = Boolean(order.cancelRequestedAt) && !order.fakaBridgeTask
+    && (!order.externalFulfillmentProvider || order.externalFulfillmentProvider === order.fulfillmentJob?.providerId)
     && order.fulfillmentJob?.status !== 'succeeded' && order.provisionTask?.status !== 'succeeded'
     && !tasks.some(task => task?.leaseUntil != null && task.leaseUntil > new Date())
   return canConfirm ? ['recheck_cancel', 'confirm_cancelled'] : ['recheck_cancel']
@@ -290,7 +293,7 @@ function withExternalFulfillmentForStaff<T extends Record<string, unknown>>(orde
     offer?: { externalIntegration: string | null } | null
     product?: ProductWithCatalogLink | null
   }
-  const { fakaBridgeTask, fulfillmentJob, offer, product, ...rest } = raw
+  const { fakaBridgeTask, fulfillmentJob, offer, product, externalFulfillmentProvider, ...rest } = raw
 
   let nextProduct = product
   if (product) {
@@ -305,7 +308,7 @@ function withExternalFulfillmentForStaff<T extends Record<string, unknown>>(orde
 
   return {
     ...rest,
-    externalFulfillment: Boolean(offer?.externalIntegration || fulfillmentJob || fakaBridgeTask),
+    externalFulfillment: Boolean(offer?.externalIntegration || fulfillmentJob || externalFulfillmentProvider || fakaBridgeTask),
     fulfillmentDiagnostics: taskDiagnostics('xboard', fakaBridgeTask as TaskDiagnosticsShape | null)
       ?? taskDiagnostics('plugin', fulfillmentJob as TaskDiagnosticsShape | null),
     fulfillmentReviewActions: fulfillmentReviewActions({
@@ -346,7 +349,7 @@ export function serializeAdminOrderList<T extends OrderWithDelivery>(order: T) {
 export function serializeAdminOrderDetail<T extends OrderWithDelivery>(order: T) {
   // P7b：仲裁上下文透出任务态（同商家的安全投影，禁止整表透传）。
   // External executors are identified without exposing task payloads or credentials.
-  return withExternalFulfillmentForStaff(
-    withProvisionStatusForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))),
+  return withProvisionStatusForStaff(
+    withExternalFulfillmentForStaff(withDeliveryExpiry(withProductDisplaySnapshot(normalizeFulfillmentFields(order)))),
   )
 }

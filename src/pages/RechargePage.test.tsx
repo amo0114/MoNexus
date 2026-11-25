@@ -48,8 +48,8 @@ vi.mock('../api/adminRecharge', () => ({
   confirmAdminSandboxOrder,
 }))
 
-vi.mock('./recharge/paymentActions', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./recharge/paymentActions')>()
+vi.mock('../domain/recharge/paymentActions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../domain/recharge/paymentActions')>()
   return { ...actual, submitFormPost, goToRedirect }
 })
 
@@ -342,13 +342,51 @@ describe('RechargePage', () => {
     await user.type(screen.getByTestId('recharge-amount-custom'), '10.00')
     expect(await screen.findByTestId('recharge-quote-expired')).toHaveTextContent('报价已过期')
 
-    createRechargeQuote.mockResolvedValue(quote('1000', 'CNY'))
-    await user.clear(screen.getByTestId('recharge-amount-custom'))
-    await user.type(screen.getByTestId('recharge-amount-custom'), '10.00')
+    createRechargeQuote.mockResolvedValue({ ...quote('1000', 'CNY'), quoteId: 'quote-refreshed' })
+    await user.click(screen.getByRole('button', { name: '重新报价' }))
+    expect(screen.getByTestId('recharge-amount-custom')).toHaveValue('10.00')
     await waitFor(() => expect(screen.getByTestId('recharge-pay')).not.toBeDisabled())
+    expect(createRechargeOrder).not.toHaveBeenCalled()
     createRechargeOrder.mockRejectedValue(apiError('RECHARGE_QUOTE_CHANGED', '报价已变化'))
     await user.click(screen.getByTestId('recharge-pay'))
     expect(await screen.findByTestId('recharge-quote-changed')).toBeInTheDocument()
+  })
+
+  it('shows Stripe minimum rejection and does not reuse the consumed quote', async () => {
+    const user = userEvent.setup()
+    getRechargeConfig.mockImplementation(async (currency: string) =>
+      configFor(currency as 'CNY' | 'USD', {
+        providers: [{ provider: 'stripe', paymentMethods: [method('wechat_pay')] }],
+      }),
+    )
+    createRechargeOrder.mockRejectedValue(apiError(
+      'RECHARGE_AMOUNT_BELOW_MINIMUM', '金额低于 Stripe 当前最低收款额，请提高充值金额', 400,
+    ))
+    renderAt('/recharge')
+    await readyCheckout()
+    await user.type(screen.getByTestId('recharge-amount-custom'), '1')
+    const pay = screen.getByTestId('recharge-pay')
+    await waitFor(() => expect(pay).toBeEnabled())
+    await user.click(pay)
+    expect(await screen.findByText(/低于 Stripe 当前最低收款额/)).toBeInTheDocument()
+    expect(pay).toBeDisabled()
+    expect(screen.queryByTestId('recharge-quote-expired')).not.toBeInTheDocument()
+    expect(createRechargeOrder).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the same idempotency key when retrying an uncertain order creation', async () => {
+    const user = userEvent.setup()
+    createRechargeOrder.mockRejectedValue(apiError('PAYMENT_STATE_UNKNOWN', '支付状态待确认', 503))
+    renderAt('/recharge')
+    await readyCheckout()
+    await user.click(screen.getByTestId('recharge-suggested-1000'))
+    const pay = screen.getByTestId('recharge-pay')
+    await waitFor(() => expect(pay).toBeEnabled())
+    await user.click(pay)
+    await waitFor(() => expect(pay).toBeEnabled())
+    await user.click(pay)
+    expect(createRechargeOrder).toHaveBeenCalledTimes(2)
+    expect(createRechargeOrder.mock.calls[1]).toEqual(createRechargeOrder.mock.calls[0])
   })
 
   it('keeps administrator sandbox payments in the direct CNY checkout', async () => {

@@ -7,7 +7,8 @@ import type { FulfillmentInput } from '../types/order'
 import { agreementVersionsOf, LEGAL_PAGE_PATHS } from '../api/legal'
 import { getApiErrorMessage } from '../api/error'
 import { newIdempotencyKey } from '../utils/idempotencyKey'
-import { usePurchaseExtension } from '../extensions/registry'
+import { PurchaseExtensionBoundary } from '../extensions/registry'
+import type { PurchaseExtensionState } from '../extensions/purchase'
 import AnimatedNumber from './ui/AnimatedNumber'
 import { CONFIRM_ARM_MS } from './purchaseConfirmArm'
 
@@ -139,19 +140,7 @@ export default function PurchaseModal({
   const inFlightRef = useRef(false)
   const [inFlight, setInFlight] = useState(false)
 
-  const extension = usePurchaseExtension({
-    preview,
-    answers,
-    disabled: submitting || inFlight,
-    previewQuery,
-    setPreviewQuery,
-  })
-  const effectiveQueryKey = extension.effectiveQuery ? JSON.stringify(extension.effectiveQuery) : ''
-  useEffect(() => {
-    if (effectiveQueryKey) onPreviewQueryChange?.(JSON.parse(effectiveQueryKey))
-  }, [effectiveQueryKey, onPreviewQueryChange])
-
-  async function handleConfirm() {
+  async function handleConfirm(extension: PurchaseExtensionState) {
     if (!preview || !armed || submitting || inFlightRef.current) return
     if (!extension.ready) return
     // 协议校验时序：仅在用户点击提交按钮时拦截并聚焦协议提示，不在开窗时报红
@@ -214,7 +203,7 @@ export default function PurchaseModal({
   // 复审 P2：仅 enforce 门控提交；off（记录模式）勾选可选，不阻断结算。
   const missingAgreement = legalRequirement?.enforcement === 'enforce' && !agreementsChecked
 
-  return (
+  const render = (extension: PurchaseExtensionState) => (
     <Dialog open={!(hideWhileSubmitting && submitting)} onOpenChange={(o) => { if (!o && !submitting) onClose() }}>
       <DialogContent className="max-w-sm" data-testid="purchase-modal">
         <DialogTitle className="text-xl mb-2">{renewMode ? '确认续费' : '确认兑换'}</DialogTitle>
@@ -224,7 +213,7 @@ export default function PurchaseModal({
             : '你即将消耗积分兑换以下商品：'}
         </DialogDescription>
 
-        <form onSubmit={(e) => { e.preventDefault(); handleConfirm(); }}>
+        <form onSubmit={(e) => { e.preventDefault(); handleConfirm(extension); }}>
         {priceChanged && (
           <div
             className="flex items-start gap-2 text-sm rounded-lg border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-[var(--color-warning-text)] p-3 mb-4"
@@ -540,4 +529,9 @@ export default function PurchaseModal({
       </DialogContent>
     </Dialog>
   )
+  return <PurchaseExtensionBoundary
+    context={{ preview, answers, disabled: submitting || inFlight, previewQuery, setPreviewQuery }}
+    onEffectiveQuery={onPreviewQueryChange}
+  >{render}</PurchaseExtensionBoundary>
+
 }

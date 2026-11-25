@@ -8,6 +8,11 @@ export interface StoreProductQuery {
   q?: string
   categoryCode?: string
   category?: string
+  sort?: 'sales' | 'price_asc' | 'price_desc'
+  inStock?: boolean
+  instant?: boolean
+  /** The server applies the caller's own balance; no points value is sent. */
+  affordable?: boolean
 }
 
 interface ProductListResponse {

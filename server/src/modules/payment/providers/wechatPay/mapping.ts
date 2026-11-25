@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { PaymentAttemptStatus, RechargeCurrency } from '../../../recharge/types.js'
+import type { PaymentAttemptStatus, RechargeCurrency } from '../../../../lib/paymentTypes.js'
 import type { NormalizedPayment, NormalizedRefund } from '../types.js'
 
 /** Official Native out_trade_no: 6-32 of digits, letters, _ - | * */

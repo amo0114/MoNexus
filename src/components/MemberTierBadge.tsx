@@ -16,23 +16,23 @@ export function MemberTierBadge({ tier, label, className = '' }: Props) {
     case 'platinum':
       IconComponent = Sparkles
       badgeStyles =
-        'bg-gradient-to-r from-purple-500/20 via-fuchsia-500/25 to-indigo-500/20 text-purple-700 dark:text-purple-300 border-purple-400/50 dark:border-purple-400/60 shadow-[0_0_12px_rgba(168,85,247,0.25)] font-extrabold'
+        'bg-[#e2f0ea] dark:bg-[#172e29] text-[#1f5e50] dark:text-[#8dd0be] border-[#3a8371]/50 dark:border-[#5aa894]/45 font-bold'
       break
     case 'gold':
       IconComponent = Crown
       badgeStyles =
-        'bg-gradient-to-r from-amber-500/20 via-yellow-500/30 to-amber-600/20 text-amber-800 dark:text-amber-200 border-amber-400/60 dark:border-amber-400/60 shadow-[0_0_10px_rgba(245,158,11,0.22)] font-bold'
+        'bg-[#f8f1e1] dark:bg-[#2a2216] text-[#846123] dark:text-[#dfc083] border-[#b8934a]/55 dark:border-[#c49f58]/45 font-bold'
       break
     case 'silver':
       IconComponent = Shield
       badgeStyles =
-        'bg-gradient-to-r from-slate-200/70 via-cyan-100/70 to-slate-200/70 dark:from-slate-800/90 dark:via-cyan-950/80 dark:to-slate-800/90 text-cyan-900 dark:text-cyan-200 border-cyan-400/50 shadow-xs font-semibold'
+        'bg-[#eef4f8] dark:bg-[#192630] text-[#3a5d75] dark:text-[#9fc3db] border-[#8aa8be]/55 dark:border-[#6e92ad]/45 font-semibold'
       break
     case 'bronze':
     default:
       IconComponent = Medal
       badgeStyles =
-        'bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700 font-semibold'
+        'bg-[var(--color-background)] text-[var(--color-text-muted)] border-[var(--color-border)] font-semibold'
       break
   }
 

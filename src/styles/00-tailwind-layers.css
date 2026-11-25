@@ -41,14 +41,15 @@
   justify-content: center;
   gap: 0.5rem;
   cursor: pointer;
-  background: transparent;
-  color: var(--color-primary);
-  border: 2px solid var(--color-primary);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
   font-weight: 600;
   font-size: 0.875rem;
-  padding: 12px 24px;
+  padding: 10px 18px;
   border-radius: var(--radius-md);
-  transition: background-color 200ms ease, box-shadow 200ms ease, transform 150ms ease;
+  box-shadow: var(--shadow-sm);
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 150ms ease;
   font-family: inherit;
 }
 
@@ -71,6 +72,11 @@
     padding-bottom: 9px;
   }
 
+  /* The 1px border leaves `py-2` secondary buttons at 38px. */
+  .btn-secondary {
+    min-height: 40px;
+  }
+
   /* Icon-only buttons: expand to the ≥40px touch target on touch
      devices / small viewports. */
   .icon-btn {
@@ -84,6 +90,8 @@
 
 .btn-secondary:hover:not(:disabled) {
   background: var(--color-primary-tint);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
+  color: var(--color-primary);
 }
 
 .btn-secondary:focus-visible {
@@ -107,14 +115,30 @@
 
 .input {
   width: 100%;
-  padding: 12px 16px;
+  padding: 11px 14px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 16px;
+  line-height: 1.4;
   color: var(--color-text);
   font-family: inherit;
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+@media (min-width: 768px) {
+  .input {
+    padding: 8px 12px;
+    font-size: 0.875rem;
+  }
+}
+
+select.input.appearance-none {
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.625rem center;
+  background-size: 1rem 1rem;
 }
 
 .input::placeholder {

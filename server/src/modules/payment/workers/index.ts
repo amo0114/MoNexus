@@ -4,10 +4,10 @@ import { prisma } from '../../../lib/prisma.js'
 import { applyConfirmedPayment, writeOpenReconItem } from '../events/applyConfirmedPayment.js'
 import { recordNormalizedPaymentFact } from '../observations/record.js'
 import { resolveHistoricalProvider } from '../providers/registry.js'
-import { executeRechargeCredit } from '../../recharge/credit.js'
-import { applyRefundObservation, queryProviderRefund, submitProviderRefund } from '../../recharge/refund.js'
+import { executeRechargeCredit } from '../../../bootstrap/rechargePayment.js'
+import { applyRefundObservation, queryProviderRefund, submitProviderRefund } from '../../../bootstrap/rechargePayment.js'
 import { applyDisputeObservation } from '../disputes/service.js'
-import { PAYMENT_PROVIDER_NAMES, type PaymentProviderName } from '../../recharge/types.js'
+import { PAYMENT_PROVIDER_NAMES, type PaymentProviderName } from '../../../lib/paymentTypes.js'
 import {
   claimCreditTask,
   claimNextCreditTask,
@@ -24,8 +24,8 @@ import {
   recordProviderQuerySuccess,
 } from '../providers/circuitBreaker.js'
 import { config } from '../../../config/index.js'
-import { applyTerminalPaymentState } from '../../recharge/paymentCompletion.js'
-import { expireOrder, recoverProviderCreate } from '../../recharge/orderLifecycle.js'
+import { applyTerminalPaymentState } from '../../../bootstrap/rechargePayment.js'
+import { expireOrder, recoverProviderCreate } from '../../../bootstrap/rechargePayment.js'
 
 const TICK_MS = 2_000
 const PAID_NOT_CREDITED_MS = 30_000

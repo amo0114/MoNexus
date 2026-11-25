@@ -1,4 +1,4 @@
-import type { RechargeOrderStatus } from '../pages/recharge/status'
+import type { RechargeOrderStatus } from '../domain/recharge/status'
 
 export interface StatusBadgeConfig {
   label: string

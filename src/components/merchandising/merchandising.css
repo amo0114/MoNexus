@@ -24,12 +24,13 @@
   padding: 0.125rem 0.5rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill, 9999px);
-  background: var(--color-surface);
+  background: color-mix(in srgb, var(--color-surface) 94%, transparent);
   color: var(--color-text);
   font-size: 0.75rem;
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.16);
 }
 
 .merch-badge-icon {
@@ -38,21 +39,21 @@
   flex-shrink: 0;
 }
 
-/* Each badge carries its own accent tint so it is not color-blind-only:
- * the frozen label text is always rendered next to the icon. */
+/* Each badge carries its own high-contrast surface-backed tint so it remains
+ * legible over both dark and bright cover photos across all themes. */
 .merch-badge[data-badge='platform_owned'] {
-  background: var(--color-primary-tint, rgba(99, 102, 241, 0.09));
-  border-color: var(--color-primary-tint-strong, rgba(99, 102, 241, 0.16));
+  background: color-mix(in srgb, var(--color-surface) 92%, var(--color-primary) 8%);
+  border-color: color-mix(in srgb, var(--color-primary) 36%, var(--color-border));
   color: var(--color-primary);
 }
 .merch-badge[data-badge='platform_pick'] {
-  background: var(--color-warning-bg, #fffbeb);
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-warning-bg, #fffbeb) 12%);
   border-color: var(--color-warning-border, #fde68a);
   color: var(--color-warning-text, #78350f);
 }
 .merch-badge[data-badge='hot'] {
-  background: var(--color-primary-tint, rgba(239, 68, 68, 0.09));
-  border-color: var(--color-primary-tint-strong, rgba(239, 68, 68, 0.16));
+  background: color-mix(in srgb, var(--color-surface) 90%, var(--color-danger, #ef4444) 10%);
+  border-color: color-mix(in srgb, var(--color-danger, #ef4444) 36%, var(--color-border));
   color: var(--color-danger, #ef4444);
 }
 
@@ -214,7 +215,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  max-width: 56rem;
+  width: 100%;
 }
 .merch-promo-page-title {
   margin: 0;
@@ -226,11 +227,12 @@
 .merch-campaign-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.875rem;
-  padding: 1rem;
+  gap: 1rem;
+  padding: 1.25rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md, 0.5rem);
+  border-radius: var(--radius-lg, 0.75rem);
   background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
 }
 .merch-promo-header {
   display: flex;
@@ -371,9 +373,15 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem 1rem;
   margin: 0;
-  padding: 0.625rem 0.75rem;
+  padding: 0.75rem 0.875rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-background);
+}
+@media (max-width: 479px) {
+  .merch-promo-summary {
+    grid-template-columns: 1fr;
+  }
 }
 .merch-promo-summary div {
   display: flex;
@@ -412,13 +420,19 @@
   gap: 0.375rem;
 }
 .merch-filter-chip {
-  padding: 0.3125rem 0.625rem;
+  padding: 0.375rem 0.75rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill, 9999px);
   background: var(--color-background);
   color: var(--color-text);
   font-size: 0.75rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+.merch-filter-chip:hover {
+  border-color: var(--color-primary-border-subtle);
+  color: var(--color-primary);
 }
 .merch-filter-chip.is-active {
   border-color: var(--color-primary);
@@ -544,13 +558,19 @@
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
+  padding: 0.4375rem 0.875rem;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm, 0.25rem);
-  background: var(--color-background);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-surface);
   color: var(--color-text);
   font-size: 0.8125rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+.merch-btn:hover:not(:disabled) {
+  background: var(--color-background);
+  border-color: var(--color-primary-border-subtle);
 }
 .merch-btn:disabled {
   opacity: 0.5;

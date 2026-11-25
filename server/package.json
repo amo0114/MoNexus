@@ -17,6 +17,7 @@
     "check:build": "node --input-type=module -e \"await import('./dist/lib/productCatalog/templates/registry.js')\"",
     "prestart": "npm run check:runtime",
     "start": "node dist/main.js",
+    "package:fulfillment": "node scripts/package-fulfillment.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "node scripts/migrate-deploy.mjs",

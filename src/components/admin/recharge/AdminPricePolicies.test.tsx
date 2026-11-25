@@ -102,7 +102,7 @@ describe('AdminPricePolicies', () => {
     expect(screen.getByText('取最接近的整数；恰好半积分时取偶数')).toBeInTheDocument()
     expect(screen.getByText('保留 2 位小数')).toBeInTheDocument()
     expect(screen.getByText('HALF_EVEN')).toBeInTheDocument()
-    expect(screen.getAllByText(/（本地时间）/)).toHaveLength(2)
+    expect(screen.getAllByText(/（北京时间）/)).toHaveLength(2)
     fireEvent.click(screen.getByTestId('admin-price-policy-detail-close'))
 
     fireEvent.click(screen.getByTestId('admin-price-policy-activate-rp-cny-vmqfox-v1'))

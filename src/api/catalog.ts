@@ -1,4 +1,4 @@
-import type { ProductVideoSummary } from '../types/product'
+import type { ProductDetail, ProductVideoSummary } from '../types/product'
 /**
  * Catalog merchant adapter (T-CAT-FE-001A).
  *
@@ -173,6 +173,12 @@ export function createCatalogAdapter(transport: CatalogTransport = defaultTransp
 
 /** Production singleton (app use). Tests construct their own with a fixture transport. */
 export const catalogApi = createCatalogAdapter()
+
+/** Public product detail (what the store detail page renders). */
+export async function getPublicProductDetail(productId: number | string): Promise<ProductDetail> {
+  const { data } = await api.get<ProductDetail>(`/products/${productId}`)
+  return data
+}
 
 /* ------------------------------------------------------------------ *
  * Draft payload builder — the create body never leaks forbidden fields.

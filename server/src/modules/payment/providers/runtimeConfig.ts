@@ -1,10 +1,16 @@
 import { createPrivateKey, createPublicKey, X509Certificate } from 'node:crypto'
 import { z } from 'zod'
 import { config } from '../../../config/index.js'
-import { getPlatformCurrencyLimits } from '../../recharge/money.js'
+import { getPlatformCurrencyLimits } from '../../../lib/minorAmounts.js'
 import { paymentProviderUnavailable } from '../../../lib/httpError.js'
 import { createStripeProvider } from './stripe/index.js'
-import { createStripeSdk, assertStripeCredentialIsolation, type StripeRuntimeConfig } from './stripe/config.js'
+import {
+  STRIPE_WALLET_METHODS,
+  createStripeSdk,
+  assertStripeCredentialIsolation,
+  type StripeRuntimeConfig,
+  type StripeWalletMethod,
+} from './stripe/config.js'
 import { createPaypalProvider } from './paypal/index.js'
 import { assertPaypalEnvironmentIsolation } from './paypal/credentials.js'
 import { createWechatPayProvider } from './wechatPay/index.js'
@@ -28,6 +34,7 @@ export const paymentSettingsSchema = z.discriminatedUnion('provider', [
     settlementCurrency: z.string().regex(/^[A-Z]{3}$/).optional(),
     minimumAmountMinor: z.string().regex(/^[1-9][0-9]{0,5}$/).optional(),
     wechatPayMinimumAmountMinor: z.string().regex(/^[1-9][0-9]{0,5}$/).optional(),
+    alipayMinimumAmountMinor: z.string().regex(/^[1-9][0-9]{0,5}$/).optional(),
   }).strict(),
   z.object({ provider: z.literal('paypal'), mode, merchantId: id, clientId: id, payeeEmail: z.string().email().max(320).optional() }).strict(),
   z.object({ provider: z.literal('wechat_pay'), mode: z.literal('live'), mchid: id, appid: id, merchantSerialNo: id, platformSerialNo: id }).strict(),
@@ -42,6 +49,14 @@ export const paymentCredentialsSchema = z.discriminatedUnion('provider', [
   z.object({ provider: z.literal('alipay'), privateKey: secret, alipayPublicKey: secret.optional(), appCert: secret.optional(), alipayCert: secret.optional(), rootCert: secret.optional() }).strict(),
   z.object({ provider: z.literal('vmqfox'), merchantKey: secret }).strict(),
 ])
+const STRIPE_WALLETS: Record<StripeWalletMethod, {
+  label: string
+  minimumSetting: 'wechatPayMinimumAmountMinor' | 'alipayMinimumAmountMinor'
+}> = {
+  wechat_pay: { label: '微信支付', minimumSetting: 'wechatPayMinimumAmountMinor' },
+  alipay: { label: '支付宝', minimumSetting: 'alipayMinimumAmountMinor' },
+}
+
 export type PaymentSettings = z.infer<typeof paymentSettingsSchema>
 export type PaymentCredentials = z.infer<typeof paymentCredentialsSchema>
 export function paymentAccountIdentity(s: PaymentSettings) {
@@ -78,7 +93,10 @@ export function buildRuntimePaymentProvider(s: PaymentSettings, c: PaymentCreden
       returnBaseUrl: config.recharge.webhookPublicBaseUrl,
       chargeCurrency: s.chargeCurrency,
       minimumAmountMinor: s.minimumAmountMinor ? BigInt(s.minimumAmountMinor) : undefined,
-      wechatPayMinimumAmountMinor: s.wechatPayMinimumAmountMinor ? BigInt(s.wechatPayMinimumAmountMinor) : undefined,
+      walletMinimumAmountMinor: Object.fromEntries(STRIPE_WALLET_METHODS.flatMap(method => {
+        const value = s[STRIPE_WALLETS[method].minimumSetting]
+        return value ? [[method, BigInt(value)]] : []
+      })),
     }
     assertStripeCredentialIsolation(stripe)
     if (!/^(sk|rk)_(test|live)_[A-Za-z0-9]+$/.test(c.secretKey) || !c.webhookSecret.startsWith('whsec_')) throw paymentProviderUnavailable('Stripe 凭据格式不完整')
@@ -137,14 +155,19 @@ export async function validateRuntimePayment(s: PaymentSettings, c: PaymentCrede
     if (!account.charges_enabled || (account.capabilities?.card_payments && account.capabilities.card_payments !== 'active')) {
       throw paymentProviderUnavailable('Stripe 商户尚未开通银行卡收款')
     }
-    if (s.wechatPayMinimumAmountMinor) {
-      if (currency !== 'CNY' || BigInt(s.wechatPayMinimumAmountMinor) > getPlatformCurrencyLimits(currency).maxAmountMinor) {
-        throw paymentProviderUnavailable('Stripe 微信支付只支持 CNY，最低金额不得超出平台单笔上限')
-      }
+    const wallets = STRIPE_WALLET_METHODS.filter(method => s[STRIPE_WALLETS[method].minimumSetting])
+    if (wallets.length > 0) {
       const configurations = await stripe.paymentMethodConfigurations.list({ limit: 100 })
-      const wechat = configurations.data.find(item => item.active && item.is_default)?.wechat_pay
-      if (!wechat?.available || wechat.display_preference?.value !== 'on') {
-        throw paymentProviderUnavailable('请先在 Stripe 当前环境的默认支付方式配置中启用微信支付')
+      const defaults = configurations.data.find(item => item.active && item.is_default)
+      for (const method of wallets) {
+        const { label, minimumSetting } = STRIPE_WALLETS[method]
+        if (currency !== 'CNY' || BigInt(s[minimumSetting]!) > getPlatformCurrencyLimits(currency).maxAmountMinor) {
+          throw paymentProviderUnavailable(`Stripe ${label}只支持 CNY，最低金额不得超出平台单笔上限`)
+        }
+        const status = defaults?.[method]
+        if (!status?.available || status.display_preference?.value !== 'on') {
+          throw paymentProviderUnavailable(`请先在 Stripe 当前环境的默认支付方式配置中启用${label}`)
+        }
       }
     }
   }

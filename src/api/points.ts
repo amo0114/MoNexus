@@ -1,4 +1,5 @@
 import api from './client'
+import type { PointsHistoryItem } from '../components/PointsHistorySheet'
 
 export interface TierResponse {
   tier: 'bronze' | 'silver' | 'gold' | 'platinum'
@@ -8,10 +9,16 @@ export interface TierResponse {
   bonusBps: number
   thresholds: { silver: number; gold: number; platinum: number }
   nextTier: 'silver' | 'gold' | 'platinum' | null
+  nextTierLabel: string | null
   pointsToNextTier: number
 }
 
 export async function getMemberTier(): Promise<TierResponse> {
   const res = await api.get<TierResponse>('/points/tier')
+  return res.data
+}
+
+export async function getPointsHistory(): Promise<PointsHistoryItem[]> {
+  const res = await api.get<PointsHistoryItem[]>('/points/history')
   return res.data
 }

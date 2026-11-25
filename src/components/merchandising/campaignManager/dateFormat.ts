@@ -1,3 +1,4 @@
+import { formatDateTime as formatBusinessDateTime } from '../../../utils/datetime'
 /**
  * R09a — safe local-time formatting shared by both campaign dialogs.
  *
@@ -7,9 +8,7 @@
 
 /** Safe date formatting: unparseable input is shown verbatim. */
 export function formatDateTime(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  return date.toLocaleString()
+  return formatBusinessDateTime(iso)
 }
 
 /** Nullable timestamps render as — when absent; else safe local formatting. */

@@ -1,4 +1,4 @@
-import type { PaymentActionType, PaymentAttemptStatus, PaymentProviderName, RechargeCurrency } from '../../recharge/types.js'
+import type { PaymentActionType, PaymentAttemptStatus, PaymentProviderName, RechargeCurrency } from '../../../lib/paymentTypes.js'
 
 export type ProviderEnvironment = 'sandbox' | 'live' | 'test'
 

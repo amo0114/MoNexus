@@ -1,5 +1,5 @@
-import { getIsoCurrencyMetadata } from '../../../recharge/money.js'
-import type { RechargeCurrency } from '../../../recharge/types.js'
+import { getIsoCurrencyMetadata } from '../../../../lib/minorAmounts.js'
+import type { RechargeCurrency } from '../../../../lib/paymentTypes.js'
 
 export class PaypalAmountError extends Error {
   readonly code = 'PAYPAL_AMOUNT_INVALID'

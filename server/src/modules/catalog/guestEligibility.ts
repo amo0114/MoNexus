@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client'
-import { canonicalJson } from './externalCatalog.js'
+import { canonicalJson } from '../../lib/canonicalJson.js'
 
 /**
  * SPEC-CATALOG-VIS-001 §4.4 / §4.5（P1.5-A）——公开内容变更后的准入失效。

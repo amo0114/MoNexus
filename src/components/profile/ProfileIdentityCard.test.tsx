@@ -57,7 +57,14 @@ describe('profile pending actions', () => {
     expect(useAppStore.getState().toasts).toHaveLength(0)
   })
 
-  it('rejects a weak new password before calling the API', async () => {
+  it('shows the server policy reason when the new password is rejected', async () => {
+    vi.mocked(changePassword).mockRejectedValueOnce({
+      response: { status: 400, data: { error: {
+        code: 'VALIDATION_ERROR',
+        message: '参数校验失败',
+        details: [{ field: 'body.newPassword', message: '该密码过于常见，请更换' }],
+      } } },
+    })
     render(<ProfileIdentityCard />)
     fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
     fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'old-password' } })
@@ -65,6 +72,19 @@ describe('profile pending actions', () => {
     fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'P@ssw0rd' } })
     fireEvent.click(screen.getByRole('button', { name: '确认修改' }))
     expect(await screen.findByText('该密码过于常见，请更换')).toBeInTheDocument()
+    expect(screen.queryByText('参数校验失败')).not.toBeInTheDocument()
+    expect(changePassword).toHaveBeenCalledOnce()
+    expect(useAuthStore.getState().isLoggedIn).toBe(true)
+  })
+
+  it('rejects a too-short new password before calling the API', async () => {
+    render(<ProfileIdentityCard />)
+    fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'old-password' } })
+    fireEvent.change(screen.getByLabelText('新密码（至少 8 位）'), { target: { value: 'short' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'short' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认修改' }))
+    expect(await screen.findByText('密码至少 8 位')).toBeInTheDocument()
     expect(changePassword).not.toHaveBeenCalled()
   })
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { app } from '../app.js'
+import { app, externalBotWebhook } from '../app.js'
 import { errorHandler } from '../middlewares/errorHandler.js'
 import { productRoutes } from '../modules/products/routes.js'
 import { shareLinkRoutes } from '../modules/products/shareLinkRoutes.js'
@@ -12,7 +12,6 @@ import { deliveryFileRoutes } from '../modules/uploads/deliveryFileRoutes.js'
 import { publicSponsoredRouter } from '../modules/merchandising/promotions/publicRoutes.js'
 import { publicEditorialRouter } from '../modules/merchandising/editorial/routes.js'
 import { paymentWebhookRoutes } from '../modules/payment/webhooks/routes.js'
-import { xboardBotRoutes } from '../modules/chatbot/xboard/routes.js'
 
 // AG-06: app.ts mount order is load-bearing (AGENTS.md §3); comments alone do not guard it.
 type Layer = { name: string; handle: unknown }
@@ -29,7 +28,7 @@ describe('app mount order', () => {
     const json = stack.findIndex(layer => layer.name === 'jsonParser')
     expect(json).toBeGreaterThanOrEqual(0)
     expect(indexOf(paymentWebhookRoutes, 'payment webhooks')).toBeLessThan(json)
-    expect(indexOf(xboardBotRoutes, 'xboard bot v2')).toBeLessThan(json)
+    expect(indexOf(externalBotWebhook, 'xboard bot v2')).toBeLessThan(json)
   })
 
   it('mounts fixed product sub-paths before the greedy /:id router', () => {

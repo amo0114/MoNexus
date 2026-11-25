@@ -4790,6 +4790,29 @@
               "governance-v1"
             ]
           },
+          "optionalFulfillment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "installed",
+              "mounted"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "enum": [
+                  "faka_bridge"
+                ]
+              },
+              "installed": {
+                "type": "boolean"
+              },
+              "mounted": {
+                "type": "boolean"
+              }
+            }
+          },
           "permissions": {
             "type": "array",
             "items": {

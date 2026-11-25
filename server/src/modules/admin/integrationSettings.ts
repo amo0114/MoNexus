@@ -1,30 +1,23 @@
 import { randomUUID } from 'node:crypto'
 import { Prisma, type IntegrationConfig } from '@prisma/client'
 import { Router } from 'express'
-import rateLimit from 'express-rate-limit'
 import { z } from 'zod'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, conflict, forbidden, HttpError } from '../../lib/httpError.js'
+import { badRequest, forbidden, HttpError } from '../../lib/httpError.js'
 import { encryptIntegrationCredentials, decryptIntegrationCredentials } from '../../lib/runtimeSettings/credentials.js'
 import { shortlinkBootstrap, shortlinkCredentialsSchema, shortlinkSettingsSchema } from '../../lib/runtimeSettings/shortlink.js'
 import { createShortlinkClient, ShortlinkError } from '../../lib/shortlinkClient.js'
 import { validate } from '../../middlewares/validate.js'
+import { integrationProbeLimiter, integrationVersion, requireIntegrationVersion, withIntegrationLock } from './integrationControls.js'
+
+export { integrationProbeLimiter } from './integrationControls.js'
 
 const KEY = 'shortlink'
-const expectedVersionSchema = z.number().int().min(0).max(2147483646)
+const expectedVersionSchema = integrationVersion
 const versionBody = z.object({ expectedVersion: expectedVersionSchema }).strict()
 const saveBody = shortlinkSettingsSchema.extend({ expectedVersion: expectedVersionSchema, credentials: shortlinkCredentialsSchema.optional() }).strict()
 const enabledBody = versionBody.extend({ enabled: z.boolean() }).strict()
-const versionMatches = (row: IntegrationConfig | null, expected: number) => {
-  if ((row?.version ?? 0) !== expected) throw conflict('配置已被更新，请重新加载后操作')
-}
-async function locked<T>(work: (tx: Prisma.TransactionClient, row: IntegrationConfig | null) => Promise<T>) {
-  return prisma.$transaction(async tx => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('monexus:integration:shortlink'))`
-    return work(tx, await tx.integrationConfig.findUnique({ where: { key: KEY } }))
-  })
-}
 function dto(row: IntegrationConfig | null) {
   const bootstrap = shortlinkBootstrap()
   return {
@@ -52,8 +45,8 @@ function credentialsForDraft(row: IntegrationConfig) {
   } catch { throw badRequest('凭据不可用，请重新填写账号和密码') }
 }
 export async function saveShortlinkDraft(actor: number, input: z.infer<typeof saveBody>) {
-  return locked(async (tx, row) => {
-    versionMatches(row, input.expectedVersion)
+  return withIntegrationLock(KEY, async (tx, row) => {
+    requireIntegrationVersion(row, input.expectedVersion)
     if (!config.integrationCredentialsEncKey) throw forbidden('服务器尚未配置集成凭据加密密钥')
     const { expectedVersion: _version, credentials: replacement, ...settings } = input
     let credentials = replacement
@@ -76,7 +69,7 @@ export async function saveShortlinkDraft(actor: number, input: z.infer<typeof sa
 }
 export async function testShortlinkDraft(actor: number, expectedVersion: number) {
   const row = await prisma.integrationConfig.findUnique({ where: { key: KEY } })
-  versionMatches(row, expectedVersion)
+  requireIntegrationVersion(row, expectedVersion)
   if (!row?.draft) throw badRequest('请先保存短链配置草稿')
   const { settings, credentials } = credentialsForDraft(row)
   await audit(prisma, actor, 'draft.test', row.version, 'attempt')
@@ -86,14 +79,14 @@ export async function testShortlinkDraft(actor: number, expectedVersion: number)
     throw new HttpError(502, 'INTERNAL_SERVER_ERROR', err instanceof ShortlinkError && err.kind === 'timeout' ? '短链登录探测超时' : '短链登录探测失败，请检查地址和凭据')
   }
   await audit(prisma, actor, 'draft.test', row.version, 'authenticated')
-  return locked(async (tx, latest) => {
-    versionMatches(latest, expectedVersion)
+  return withIntegrationLock(KEY, async (tx, latest) => {
+    requireIntegrationVersion(latest, expectedVersion)
     return dto(await tx.integrationConfig.update({ where: { key: KEY }, data: { testedVersion: expectedVersion } }))
   })
 }
 export async function activateShortlinkDraft(actor: number, expectedVersion: number) {
-  return locked(async (tx, row) => {
-    versionMatches(row, expectedVersion)
+  return withIntegrationLock(KEY, async (tx, row) => {
+    requireIntegrationVersion(row, expectedVersion)
     if (!config.integrationCredentialsEncKey) throw forbidden('服务器尚未配置当前集成凭据加密密钥')
     if (!row?.draft || row.testedVersion !== row.version) throw badRequest('请先完成当前草稿的登录探测')
     const { settings, credentials } = credentialsForDraft(row)
@@ -111,8 +104,8 @@ export async function activateShortlinkDraft(actor: number, expectedVersion: num
   })
 }
 export async function rollbackShortlinkConfig(actor: number, expectedVersion: number) {
-  return locked(async (tx, row) => {
-    versionMatches(row, expectedVersion)
+  return withIntegrationLock(KEY, async (tx, row) => {
+    requireIntegrationVersion(row, expectedVersion)
     if (!row?.rollbackAvailable) throw badRequest('没有可回滚的配置')
     if (row.previousRevisionId) {
       const revision = await tx.integrationConfigRevision.findUniqueOrThrow({ where: { id: row.previousRevisionId } })
@@ -132,8 +125,8 @@ export async function rollbackShortlinkConfig(actor: number, expectedVersion: nu
   })
 }
 async function setShortlinkEnabled(actor: number, expectedVersion: number, enabled: boolean) {
-  return locked(async (tx, row) => {
-    versionMatches(row, expectedVersion)
+  return withIntegrationLock(KEY, async (tx, row) => {
+    requireIntegrationVersion(row, expectedVersion)
     const updated = await tx.integrationConfig.upsert({ where: { key: KEY },
       create: { key: KEY, version: 1, enabled, updatedBy: actor },
       update: { enabled, version: { increment: 1 }, testedVersion: null, updatedBy: actor },
@@ -143,8 +136,8 @@ async function setShortlinkEnabled(actor: number, expectedVersion: number, enabl
   })
 }
 export async function rewrapShortlinkCredentials(actor: number, expectedVersion: number) {
-  return locked(async (tx, row) => {
-    versionMatches(row, expectedVersion)
+  return withIntegrationLock(KEY, async (tx, row) => {
+    requireIntegrationVersion(row, expectedVersion)
     if (!row || !config.integrationCredentialsEncKey) throw badRequest('请先配置当前加密密钥')
     // One transaction: failure to recover any retained version leaves every ciphertext unchanged.
     const revisions = await tx.integrationConfigRevision.findMany({ where: { key: KEY } })
@@ -167,9 +160,6 @@ export async function rewrapShortlinkCredentials(actor: number, expectedVersion:
     return dto(updated)
   })
 }
-export const integrationProbeLimiter = rateLimit({ windowMs: 10 * 60_000, limit: 5, keyGenerator: req => String(req.user!.userId), standardHeaders: 'draft-8', legacyHeaders: false,
-  handler: (_req, res) => res.status(429).json({ error: { code: 'RATE_LIMITED', message: '探测次数过多，请稍后重试' } }),
-})
 export const integrationSettingsRoutes = Router()
 const base = '/integrations/shortlink/config'
 integrationSettingsRoutes.use(base, (_req, res, next) => { res.set('Cache-Control', 'no-store'); next() })
