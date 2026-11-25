@@ -11,7 +11,7 @@ import type { ReconciliationMismatchType } from '../../../lib/paymentTypes.js'
 import { recordAmountMismatch, recordPaymentObservationMetric, recordReconciliationMismatch } from '../metrics.js'
 import { findPaymentAttempt } from './findAttempt.js'
 import { matchesStripePaymentIdentity, stripeCheckoutSessionId } from '../providers/stripe/checkoutIdentity.js'
-import { STRIPE_WECHAT_PAY_METHOD } from '../providers/stripe/config.js'
+import { isStripeWalletMethod } from '../providers/stripe/config.js'
 import { REFUND_BUSINESS_EVENT_KEY } from '../../../lib/paymentOperationKeys.js'
 import { MANUAL_PAYMENT_RESOLUTION, manualPaymentResolutionSchema } from './manualResolution.js'
 import { resolveHistoricalProvider } from '../providers/registry.js'
@@ -355,8 +355,8 @@ async function applyConfirmedPaymentOnce(observationId: string): Promise<ApplyCo
         && payload.quotedAmountMinor !== order.amountMinor
       const quotedOrderMismatch = payload.quotedOrderId !== undefined
         && payload.quotedOrderId !== order.id
-      const requiresWechatMethod = order.provider === 'stripe' && order.paymentMethod === STRIPE_WECHAT_PAY_METHOD
-      const quotedMethodMismatch = (requiresWechatMethod || payload.quotedPaymentMethod !== undefined)
+      const requiresWalletMethod = order.provider === 'stripe' && isStripeWalletMethod(order.paymentMethod)
+      const quotedMethodMismatch = (requiresWalletMethod || payload.quotedPaymentMethod !== undefined)
         && payload.quotedPaymentMethod !== order.paymentMethod
       const providerAmountMismatch = payload.amountMinor !== attempt.expectedProviderAmountMinor
       if (

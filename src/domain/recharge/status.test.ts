@@ -12,6 +12,7 @@ describe('paymentChannelLabel', () => {
     expect(paymentChannelLabel('vmqfox', 'alipay', 'user')).toBe('支付宝支付')
     expect(paymentChannelLabel('vmqfox', 'wechat', 'user')).not.toMatch(/VMQFox|vmqfox/i)
     expect(paymentChannelLabel('vmqfox', 'alipay', 'user')).not.toMatch(/VMQFox|vmqfox/i)
+    expect(paymentChannelLabel('stripe', 'alipay', 'user')).toBe('Stripe · 支付宝')
   })
 
   it('keeps the VMQFox implementation name on admin surfaces', () => {
