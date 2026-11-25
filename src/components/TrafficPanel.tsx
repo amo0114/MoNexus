@@ -100,7 +100,7 @@ export default function TrafficPanel({ audience, range: controlledRange, active 
 
   const stale = data?.updatedAt && Date.now() - new Date(data.updatedAt).getTime() > 5 * 60_000
   return (
-    <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4 sm:p-6 mb-6 text-[var(--color-text)]" aria-label="访问统计" aria-busy={loading}>
+    <section className="card p-4 sm:p-6 mb-6 text-[var(--color-text)]" aria-label="访问统计" aria-busy={loading}>
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
           <h2 className="font-heading text-lg font-bold">访问统计</h2>
@@ -110,7 +110,7 @@ export default function TrafficPanel({ audience, range: controlledRange, active 
         </div>
         <div className="flex items-center gap-2">
           {!controlledRange && <RangePills value={range} onChange={setSelectedRange} options={DAY_RANGE_OPTIONS} ariaLabel="访问统计时间范围" />}
-          <button type="button" aria-label="刷新访问统计" disabled={loading} onClick={() => setRevision(value => value + 1)} className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] p-2.5 disabled:opacity-50"><RefreshCw className="w-4 h-4" /></button>
+          <button type="button" aria-label="刷新访问统计" disabled={loading} onClick={() => setRevision(value => value + 1)} className="min-h-10 min-w-10 inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] hover:border-[var(--color-primary-border-subtle)] p-2.5 transition-colors cursor-pointer disabled:opacity-50"><RefreshCw className="w-4 h-4" /></button>
         </div>
       </div>
       {loading && <p className="text-sm text-[var(--color-text-muted)] py-8" role="status">正在加载访问统计…</p>}
@@ -118,7 +118,7 @@ export default function TrafficPanel({ audience, range: controlledRange, active 
       {!loading && data && <>
         {!data.updatedAt ? <p className="text-sm text-[var(--color-text-muted)] py-6">正在准备首次统计，请稍后刷新。</p> : <>
           <div className="grid grid-cols-2 gap-3 mb-5">
-            {[{ label: '浏览量 PV', value: data.totals.pv, Icon: Eye }, { label: '访客数 UV', value: data.totals.uv, Icon: Users }].map(({ label, value, Icon }) => <div key={label} className="rounded-lg bg-[var(--color-surface)] p-4">
+            {[{ label: '浏览量 PV', value: data.totals.pv, Icon: Eye }, { label: '访客数 UV', value: data.totals.uv, Icon: Users }].map(({ label, value, Icon }) => <div key={label} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-4">
               <div className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]"><Icon className="w-4 h-4" />{label}</div>
               <div className="text-2xl font-bold tabular-nums mt-2">{number.format(value)}</div>
             </div>)}

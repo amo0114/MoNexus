@@ -17,6 +17,9 @@ type ProductListCacheParams = {
   rankingRunId?: string | null
   audience?: 'guest' | 'member'
   merchantId?: number
+  sort?: 'default' | 'sales' | 'price_asc' | 'price_desc'
+  instant?: boolean
+  maxPrice?: number | null
 }
 
 type ProductPublicInvalidationScope = {
@@ -78,6 +81,9 @@ export function normalizeProductListParams(params: ProductListCacheParams) {
 
   if (query) normalized.q = query
   if (params.merchantId != null) normalized.merchantId = params.merchantId
+  if (params.sort && params.sort !== 'default') normalized.orderBy = [`${params.sort}`, 'id']
+  if (params.instant) normalized.instant = true
+  if (params.maxPrice != null) normalized.maxPrice = params.maxPrice
 
   const categoryCode = normalizeCategoryCode(params.categoryCode)
   if (categoryCode) {
@@ -97,7 +103,7 @@ export function normalizeProductListParams(params: ProductListCacheParams) {
 }
 
 // Cache entries from older releases may carry review fields or legacy cursors.
-const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v4'
+const PUBLIC_PROJECTION_VERSION = 'public-availability-video-v5'
 const projectionVersion = () => config.xboardAccounts.paidResetEnabled ? `${PUBLIC_PROJECTION_VERSION}-paid-reset` : PUBLIC_PROJECTION_VERSION
 
 export async function buildProductListCacheKey(params: ProductListCacheParams) {

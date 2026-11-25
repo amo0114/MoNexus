@@ -13,6 +13,7 @@ describe('ExperienceProgressBar', () => {
     bonusBps: 0,
     thresholds: { silver: 500, gold: 2000, platinum: 10000 },
     nextTier: 'silver',
+    nextTierLabel: '银卡',
     pointsToNextTier: 350,
   }
 
@@ -24,6 +25,7 @@ describe('ExperienceProgressBar', () => {
     bonusBps: 1500,
     thresholds: { silver: 500, gold: 2000, platinum: 10000 },
     nextTier: null,
+    nextTierLabel: null,
     pointsToNextTier: 0,
   }
 

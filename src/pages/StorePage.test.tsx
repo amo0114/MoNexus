@@ -6,7 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { AuthUser } from '../types/merchant'
 import { beginPendingAuthSessionCommit } from '../auth/pendingAuthSession'
@@ -278,5 +278,48 @@ describe('StorePage scroll restoration and BackToTop', () => {
 
     await screen.findByTestId('back-to-top-button')
     expect(screen.getByTestId('back-to-top-button')).toBeInTheDocument()
+  })
+})
+
+describe('StorePage list options', () => {
+  it('forwards filter and sort toggles to the server and keeps its order', async () => {
+    const cheap = makeProduct(301, '低价商品')
+    const pricey = makeProduct(302, '高价商品')
+    apiGet.mockImplementation((url: string, config?: { params?: Record<string, unknown> }) => {
+      if (url === '/storefront/candidates') {
+        return Promise.resolve({ data: { version: 1, generatedAt: '2026-10-25T00:00:00Z', sponsored: [], editorial: [] } })
+      }
+      if (url === '/products') {
+        // Deliberately not price-ordered: the page must render what the server returned.
+        const items = config?.params?.sort ? [pricey, cheap] : [cheap, pricey]
+        return Promise.resolve({ data: { items, nextCursor: null, hasMore: false } })
+      }
+      throw new Error(`unexpected api.get url: ${url}`)
+    })
+    loginMemberForTest()
+
+    render(
+      <MemoryRouter>
+        <StorePage />
+      </MemoryRouter>,
+    )
+    await screen.findByTestId('store-product-card-301', {}, { timeout: 3000 })
+
+    fireEvent.click(screen.getByTestId('store-filter-affordable'))
+    fireEvent.click(screen.getByTestId('store-sort-select'))
+    fireEvent.click(screen.getByRole('option', { name: '积分从低到高' }))
+
+    await waitFor(() => {
+      const productCalls = apiGet.mock.calls.filter(([url]) => url === '/products')
+      expect(productCalls.at(-1)?.[1]?.params).toMatchObject({ affordable: true, sort: 'price_asc' })
+    })
+    for (const [url, config] of apiGet.mock.calls) {
+      if (url === '/products') expect(config?.params).not.toHaveProperty('maxPrice')
+    }
+    await waitFor(() => {
+      const cards = screen.getAllByTestId(/^store-product-card-/).map((el) => el.dataset.testid)
+      expect(cards).toEqual(['store-product-card-302', 'store-product-card-301'])
+    })
+    expect(apiGet.mock.calls.filter(([url]) => url === '/storefront/candidates')).toHaveLength(1)
   })
 })

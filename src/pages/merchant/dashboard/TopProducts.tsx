@@ -11,10 +11,10 @@ export default function TopProducts({ data, loading }: { data: DashboardTopProdu
         <table className="table-cards w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-[var(--color-border)]">
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">排名</th>
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">商品名</th>
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider text-right">售出件数</th>
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider text-right">积分收入</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">排名</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">商品名</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider text-right whitespace-nowrap">售出件数</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider text-right whitespace-nowrap">积分收入</th>
             </tr>
           </thead>
           <tbody>
@@ -33,10 +33,10 @@ export default function TopProducts({ data, loading }: { data: DashboardTopProdu
             ) : (
               data.map((item, i) => (
                 <tr key={item.productId} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                  <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="排名">{i + 1}</td>
-                  <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)] truncate max-w-[150px]" title={item.name} data-label="商品名">{item.name}</td>
-                  <td className="py-3 px-2 text-sm text-[var(--color-text)] text-right" data-label="售出件数">{item.soldCount}</td>
-                  <td className="py-3 px-2 text-sm text-[var(--color-cta)] text-right font-bold" data-label="积分收入">{item.pointsRevenue}</td>
+                  <td className="py-3 px-2 text-sm text-[var(--color-text-muted)] tabular-nums whitespace-nowrap" data-label="排名">{i + 1}</td>
+                  <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)] truncate max-w-[180px]" title={item.name} data-label="商品名">{item.name}</td>
+                  <td className="py-3 px-2 text-sm text-[var(--color-text)] text-right tabular-nums whitespace-nowrap" data-label="售出件数">{item.soldCount}</td>
+                  <td className="py-3 px-2 text-sm text-[var(--color-cta)] text-right font-bold tabular-nums whitespace-nowrap" data-label="积分收入">{item.pointsRevenue}</td>
                 </tr>
               ))
             )}

@@ -88,7 +88,7 @@ function LinkAction({ children, onClick, disabled, testId }: LinkActionProps) {
       onClick={onClick}
       disabled={disabled}
       data-testid={testId}
-      className={`text-[var(--color-primary)] hover:underline text-sm mr-3 last:mr-0 cursor-pointer btn-sm ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+      className={`inline-flex items-center justify-center rounded-md px-2 py-1 text-xs font-medium text-[var(--color-primary)] bg-[color-mix(in_srgb,var(--color-primary)_6%,transparent)] hover:bg-[var(--color-primary-tint-strong)] transition-colors cursor-pointer whitespace-nowrap btn-sm ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
     >
       {children}
     </button>
@@ -240,94 +240,102 @@ export default function MerchantProductsPanel({
                 )
                 return (
                   <tr key={p.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                    <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="ID">{p.id}</td>
-                    <td className="py-3 px-2 text-sm font-medium text-[var(--color-text)]" data-label="名称">{p.name}</td>
-                    <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="价格">{p.price}</td>
-                    <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="可售资源/销量">
-                      {rowOffers.length > 0 ? (
-                        <div className="space-y-1" data-testid={`merchant-product-availability-${p.id}`}>
-                          {inventoryManaged && (
-                            <div className="font-medium text-[var(--color-text)]">
-                              商品交付库存汇总：{p.availableStock ?? stockCount}
-                            </div>
-                          )}
-                          {rowOffers.map((offer) => (
-                            <div key={offer.id} className="text-xs">
-                              <span className="font-medium text-[var(--color-text)]">{offer.name}</span>：{getOfferAvailabilityLabel(offer)}
-                            </div>
-                          ))}
-                          <div className="text-xs">商品累计已售：{p.sales}</div>
-                        </div>
-                      ) : (
-                        <span className="whitespace-nowrap">
-                          {getAvailabilityLabel(p)}{' '}
-                          {p.stockMode !== 'unlimited' && stockCount}
-                          {' / 已售 '}{p.sales}
-                        </span>
-                      )}
-                      {isLowStock && (
-                        <span
-                          className="inline-flex items-center gap-1 ml-2 px-2 py-0.5 rounded text-xs font-bold border bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]"
-                          data-testid={`low-stock-badge-${p.id}`}
-                        >
-                          <AlertTriangle className="w-3 h-3" /> 低库存
-                        </span>
-                      )}
+                    <td className="py-3 px-2.5 text-sm text-[var(--color-text-muted)] tabular-nums whitespace-nowrap" data-label="ID">{p.id}</td>
+                    <td className="py-3 px-2.5 text-sm font-medium text-[var(--color-text)] min-w-[140px] max-w-[240px]" data-label="名称">
+                      <span className="line-clamp-2" title={p.name}>{p.name}</span>
                     </td>
-                    <td className="py-3 px-2 text-sm" data-label="状态">
-                      <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
-                      {p.guestReview && (
-                        <div
-                          className={`mt-1 text-xs ${
-                            p.guestReview === 'rejected' || p.guestReview === 'revoked'
-                              ? 'text-red-500'
-                              : 'text-[var(--color-text-muted)]'
-                          }`}
-                          data-testid={`merchant-product-guest-review-${p.id}`}
-                        >
-                          {MERCHANT_GUEST_REVIEW_LABELS[p.guestReview]}
-                        </div>
-                      )}
+                    <td className="py-3 px-2.5 text-sm text-[var(--color-text)] tabular-nums whitespace-nowrap" data-label="价格">{p.price}</td>
+                    <td className="py-3 px-2.5 text-sm text-[var(--color-text-muted)] min-w-[170px]" data-label="可售资源/销量">
+                      <div className="flex flex-col max-md:items-end gap-1">
+                        {rowOffers.length > 0 ? (
+                          <div className="space-y-1 max-md:text-right" data-testid={`merchant-product-availability-${p.id}`}>
+                            {inventoryManaged && (
+                              <div className="font-medium text-[var(--color-text)]">
+                                商品交付库存汇总：{p.availableStock ?? stockCount}
+                              </div>
+                            )}
+                            {rowOffers.map((offer) => (
+                              <div key={offer.id} className="text-xs">
+                                <span className="font-medium text-[var(--color-text)]">{offer.name}</span>：{getOfferAvailabilityLabel(offer)}
+                              </div>
+                            ))}
+                            <div className="text-xs">商品累计已售：{p.sales}</div>
+                          </div>
+                        ) : (
+                          <span className="whitespace-nowrap">
+                            {getAvailabilityLabel(p)}{' '}
+                            {p.stockMode !== 'unlimited' && stockCount}
+                            {' / 已售 '}{p.sales}
+                          </span>
+                        )}
+                        {isLowStock && (
+                          <span
+                            className="inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded text-xs font-bold border bg-[color-mix(in_srgb,var(--color-danger)_10%,transparent)] text-[var(--color-danger)] border-[color-mix(in_srgb,var(--color-danger)_25%,transparent)]"
+                            data-testid={`low-stock-badge-${p.id}`}
+                          >
+                            <AlertTriangle className="w-3 h-3" /> 低库存
+                          </span>
+                        )}
+                      </div>
                     </td>
-                    <td className="py-3 px-2 text-right whitespace-nowrap" data-label="操作">
-                      {rowOffers.length > 0 && (
-                        <LinkAction onClick={() => onManageAvailability(p)}>
-                          管理可售资源
+                    <td className="py-3 px-2.5 text-sm whitespace-nowrap" data-label="状态">
+                      <div className="flex flex-col max-md:items-end gap-1">
+                        <StatusPill kind={p.status === 'active' ? 'active' : 'inactive'} />
+                        {p.guestReview && (
+                          <div
+                            className={`text-xs whitespace-normal max-w-[160px] max-md:text-right ${
+                              p.guestReview === 'rejected' || p.guestReview === 'revoked'
+                                ? 'text-[var(--color-danger)]'
+                                : 'text-[var(--color-text-muted)]'
+                            }`}
+                            data-testid={`merchant-product-guest-review-${p.id}`}
+                          >
+                            {MERCHANT_GUEST_REVIEW_LABELS[p.guestReview]}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3 px-2.5 text-right" data-label="操作">
+                      <div className="flex flex-wrap items-center justify-end gap-1.5 min-w-[180px] max-w-[280px] ml-auto">
+                        {rowOffers.length > 0 && (
+                          <LinkAction onClick={() => onManageAvailability(p)}>
+                            管理可售资源
+                          </LinkAction>
+                        )}
+                        {inventoryManaged && (
+                          <LinkAction onClick={() => onManageInventory(p)}>
+                            管理交付库存
+                          </LinkAction>
+                        )}
+                        {capacityManaged && (
+                          <LinkAction onClick={() => onAdjustCapacity(p)}>
+                            {p.deliveryMode === 'manual_service' ? '调整服务名额' : '调整可售名额'}
+                          </LinkAction>
+                        )}
+                        {(inventoryManaged || capacityManaged) && (
+                          <LinkAction onClick={() => onViewInventoryLog(p)}>
+                            可售资源记录
+                          </LinkAction>
+                        )}
+                        <LinkAction onClick={() => onEditProduct(p.id)}>
+                          编辑
                         </LinkAction>
-                      )}
-                      {inventoryManaged && (
-                        <LinkAction onClick={() => onManageInventory(p)}>
-                          管理交付库存
+                        <LinkAction onClick={() => onManageOffers(p)}>
+                          规格管理
                         </LinkAction>
-                      )}
-                      {capacityManaged && (
-                        <LinkAction onClick={() => onAdjustCapacity(p)}>
-                          {p.deliveryMode === 'manual_service' ? '调整服务名额' : '调整可售名额'}
+                        {onOpenTrace && (
+                          <LinkAction onClick={() => onOpenTrace(p)}>
+                            批次与修订
+                          </LinkAction>
+                        )}
+                        <LinkAction
+                          onClick={() => onToggleProductStatus(p)}
+                          disabled={publishingProductIds.has(p.id)}
+                          testId={`merchant-product-toggle-status-${p.id}`}
+                        >
+                          {p.status === 'active' ? '下架' : '上架'}
                         </LinkAction>
-                      )}
-                      {(inventoryManaged || capacityManaged) && (
-                        <LinkAction onClick={() => onViewInventoryLog(p)}>
-                          可售资源记录
-                        </LinkAction>
-                      )}
-                      <LinkAction onClick={() => onEditProduct(p.id)}>
-                        编辑
-                      </LinkAction>
-                      <LinkAction onClick={() => onManageOffers(p)}>
-                        规格管理
-                      </LinkAction>
-                      {onOpenTrace && (
-                        <LinkAction onClick={() => onOpenTrace(p)}>
-                          批次与修订
-                        </LinkAction>
-                      )}
-                      <LinkAction
-                        onClick={() => onToggleProductStatus(p)}
-                        disabled={publishingProductIds.has(p.id)}
-                        testId={`merchant-product-toggle-status-${p.id}`}
-                      >
-                        {p.status === 'active' ? '下架' : '上架'}
-                      </LinkAction>
+                      </div>
                     </td>
                   </tr>
                 )

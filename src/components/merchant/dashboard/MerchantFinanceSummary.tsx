@@ -25,17 +25,17 @@ export default function MerchantFinanceSummary() {
   if (!summary) return null
   return (
     <section className="mb-6" data-testid="merchant-finance-summary">
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {ITEMS.map(item => (
-          <div key={item.key} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] p-3" title={item.hint}>
-            <div className="text-xs text-[var(--color-text-muted)]">{item.label}</div>
-            <div className={`font-heading text-lg font-bold ${item.key === 'outstandingRecovery' && summary.outstandingRecovery > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-text)]'}`}>
+          <div key={item.key} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] p-3.5 transition-colors hover:border-[var(--color-primary-border-subtle)]" title={item.hint}>
+            <div className="text-xs text-[var(--color-text-muted)] mb-1">{item.label}</div>
+            <div className={`font-heading text-lg font-bold tabular-nums ${item.key === 'outstandingRecovery' && summary.outstandingRecovery > 0 ? 'text-[var(--color-danger)]' : 'text-[var(--color-text)]'}`}>
               {Number(summary[item.key]).toLocaleString()}
             </div>
           </div>
         ))}
       </div>
-      <p className="text-xs text-[var(--color-text-muted)] mt-2">单位：积分。收益为平台内可消费的结算积分，不代表可提现现金。</p>
+      <p className="text-xs text-[var(--color-text-muted)] mt-2.5">单位：积分。收益为平台内可消费的结算积分，不代表可提现现金。</p>
     </section>
   )
 }

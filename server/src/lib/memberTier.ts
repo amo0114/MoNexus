@@ -30,6 +30,8 @@ export interface TierResponseDTO {
   bonusBps: number
   thresholds: TierThresholds
   nextTier: Exclude<MemberTier, 'bronze'> | null
+  /** Display name of `nextTier`, so clients never hardcode tier names. */
+  nextTierLabel: string | null
   pointsToNextTier: number
 }
 
@@ -172,6 +174,7 @@ export function formatTierResponse(
     bonusBps: config.bonusBps[tier],
     thresholds: config.thresholds,
     nextTier,
+    nextTierLabel: nextTier ? tierMeta[nextTier].label : null,
     pointsToNextTier,
   }
 }

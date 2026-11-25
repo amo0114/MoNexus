@@ -5,6 +5,8 @@ export interface StorePageCache {
   seenIds: number[]
   category: string
   searchQuery: string
+  /** Server-side sort/filter toggles the cached feed was fetched with. */
+  listOptions?: unknown
   nextCursor: string | null
   hasMore: boolean
   scrollY: number

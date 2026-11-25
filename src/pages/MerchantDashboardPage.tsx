@@ -611,8 +611,8 @@ export default function MerchantDashboardPage() {
   }
 
   return (
-    <div className="flex flex-col md:flex-row gap-6">
-      {/* Sidebar — <md: sticky horizontal pill strip (spec M4); ≥md: card rail */}
+    <div className="flex flex-col lg:flex-row gap-5 lg:gap-6">
+      {/* Sidebar — <lg: sticky horizontal pill strip; ≥lg: card rail */}
       <MerchantNav
         activeKey={activeTab}
         onSelect={({ key, path }) => { if (path) { navigate(path) } else { setActiveTab(key) } }}
@@ -733,18 +733,20 @@ export default function MerchantDashboardPage() {
                     ) : (
                       settlements.map((s) => (
                         <tr key={s.id} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="ID">{s.id}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="订单号">{s.orderId}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text)]" data-label="订单金额">{s.orderAmount}</td>
-                          <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label={SETTLEMENT_TERM.PLATFORM_FEE}>{s.commissionAmount}积分 ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
-                          <td className="py-3 px-2 text-sm font-bold text-[var(--color-cta)]" data-label="结算金额">{s.settlementAmount}积分</td>
-                          <td className="py-3 px-2 text-sm" data-label="状态">
-                            <RegistryPill value={s.status} category="settlementStatuses" />
-                            {!s.payable && s.blockReason && (
-                              <div className="text-xs text-[var(--color-danger)] mt-1">{blockReasonToUserMessage(s.blockReason)}</div>
-                            )}
+                          <td className="py-3 px-2.5 text-sm text-[var(--color-text-muted)] tabular-nums whitespace-nowrap" data-label="ID">{s.id}</td>
+                          <td className="py-3 px-2.5 text-sm text-[var(--color-text)] tabular-nums whitespace-nowrap" data-label="订单号">{s.orderId}</td>
+                          <td className="py-3 px-2.5 text-sm text-[var(--color-text)] tabular-nums whitespace-nowrap" data-label="订单金额">{s.orderAmount}</td>
+                          <td className="py-3 px-2.5 text-sm text-[var(--color-text-muted)] tabular-nums whitespace-nowrap" data-label={SETTLEMENT_TERM.PLATFORM_FEE}>{s.commissionAmount}积分 ({(Number(s.commissionRate) * 100).toFixed(0)}%)</td>
+                          <td className="py-3 px-2.5 text-sm font-bold text-[var(--color-cta)] tabular-nums whitespace-nowrap" data-label="结算金额">{s.settlementAmount}积分</td>
+                          <td className="py-3 px-2.5 text-sm" data-label="状态">
+                            <div className="flex flex-col max-md:items-end gap-1">
+                              <RegistryPill value={s.status} category="settlementStatuses" />
+                              {!s.payable && s.blockReason && (
+                                <div className="text-xs text-[var(--color-danger)]">{blockReasonToUserMessage(s.blockReason)}</div>
+                              )}
+                            </div>
                           </td>
-                          <td className="py-3 px-2 text-xs text-[var(--color-text-muted)]" data-label="入账与调整">
+                          <td className="py-3 px-2.5 text-xs text-[var(--color-text-muted)] min-w-[140px]" data-label="入账与调整">
                             <SettlementCreditNote settlement={s} />
                           </td>
                         </tr>
@@ -981,10 +983,10 @@ function StatCard({ label, value, tone }: { label: string; value: number | strin
     tone === 'cta'
       ? 'text-[var(--color-cta)]'
       : tone === 'warning'
-      ? 'text-orange-500'
+      ? 'text-[var(--color-warning-accent)]'
       : 'text-[var(--color-text)]'
   return (
-    <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-background)] max-md:p-3 p-4">
+    <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-background)] max-md:p-3 p-4 transition-colors hover:border-[var(--color-primary-border-subtle)]">
       <div className="text-[var(--color-text-muted)] max-md:text-xs text-sm mb-1">{label}</div>
       <div className={`font-heading max-md:text-xl text-2xl font-bold tabular-nums ${valueColor}`}>{typeof value === 'number' ? value.toLocaleString('zh-CN') : value}</div>
     </div>

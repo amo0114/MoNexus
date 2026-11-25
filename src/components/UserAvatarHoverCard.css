@@ -1,0 +1,191 @@
+/* =========================================================
+   UserAvatarHoverCard — Layout, Trigger Rim & Interactions
+   Shared 4-tier Eastern-craft palette lives in ../styles/tierCraft.css
+   ========================================================= */
+
+/* ---------- Trigger Avatar Quiet Rim (static, dignified) ---------- */
+.avatar-prestige-frame {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 9999px;
+  transition: box-shadow 260ms ease;
+}
+
+.avatar-prestige-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  pointer-events: none;
+}
+
+.avatar-prestige-frame[data-tier='bronze'] .avatar-prestige-ring {
+  border: 1.5px solid var(--color-border);
+}
+
+.avatar-prestige-frame[data-tier='silver'] .avatar-prestige-ring {
+  border: 1.5px solid #7ea1bc;
+  box-shadow: 0 0 0 2px rgba(126, 161, 188, 0.16);
+}
+
+.avatar-prestige-frame[data-tier='gold'] .avatar-prestige-ring {
+  border: 1.5px solid #b5924c;
+  box-shadow: 0 0 0 2.5px rgba(181, 146, 76, 0.18);
+}
+
+.avatar-prestige-frame[data-tier='platinum'] .avatar-prestige-ring {
+  border: 1.5px solid #2f7a68;
+  box-shadow: 0 0 0 2.5px rgba(47, 122, 104, 0.2), 0 2px 10px rgba(24, 72, 60, 0.16);
+}
+
+/* Tiny traditional seal stamp at bottom-right of collapsed navbar avatar */
+.avatar-seal-pip {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  border: 1.5px solid var(--color-surface);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.16);
+  pointer-events: none;
+  font-family: 'Songti SC', 'Noto Serif SC', 'STSong', 'SimSun', Georgia, serif;
+}
+
+.avatar-seal-pip[data-tier='silver'] {
+  background: #4e738f;
+  color: #f3f7fa;
+}
+
+.avatar-seal-pip[data-tier='gold'] {
+  background: #9e2a2b; /* 古法朱砂印 */
+  color: #fbf7ee;
+}
+
+.avatar-seal-pip[data-tier='platinum'] {
+  background: #236355; /* 温润青玉印 */
+  color: #eef6f3;
+}
+
+/* ---------- Card Shell Elevation (maps shared --tc-* tokens) ---------- */
+.avatar-card-shell {
+  border-radius: 1rem;
+  box-shadow: 0 16px 40px -12px rgba(20, 26, 33, 0.14), 0 2px 8px -2px rgba(20, 26, 33, 0.06);
+}
+
+.avatar-card-shell[data-tier='gold'] {
+  box-shadow:
+    0 18px 42px -14px rgba(56, 42, 18, 0.18),
+    0 2px 10px -2px rgba(181, 146, 76, 0.1);
+}
+
+.avatar-card-shell[data-tier='platinum'] {
+  box-shadow:
+    0 20px 44px -14px rgba(24, 68, 58, 0.22),
+    0 2px 10px -2px rgba(48, 116, 98, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.dark .avatar-card-shell[data-tier='gold'],
+:root[data-theme='dark'] .avatar-card-shell[data-tier='gold'] {
+  box-shadow: 0 22px 48px -12px rgba(0, 0, 0, 0.55);
+}
+
+.dark .avatar-card-shell[data-tier='platinum'],
+:root[data-theme='dark'] .avatar-card-shell[data-tier='platinum'] {
+  box-shadow:
+    0 24px 50px -14px rgba(4, 16, 14, 0.54),
+    inset 0 1px 0 rgba(196, 232, 222, 0.12);
+}
+
+/* ---------- Top Editorial Header (Subtle Watermark) ---------- */
+.avatar-card-topband {
+  position: relative;
+  height: 48px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 15px 0;
+  overflow: hidden;
+}
+
+.avatar-card-watermark {
+  position: absolute;
+  right: -18px;
+  top: -22px;
+  width: 112px;
+  height: 112px;
+  border-radius: 9999px;
+  border: 1px solid currentColor;
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+.avatar-card-watermark::after {
+  content: '';
+  position: absolute;
+  inset: 14px;
+  border-radius: 9999px;
+  border: 1px dashed currentColor;
+  opacity: 0.7;
+}
+
+.avatar-tier-seal {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---------- Interactive Rows & Stat Tiles inside Card ---------- */
+.avatar-card-stat {
+  transition: background-color 160ms ease;
+}
+.avatar-card-stat:hover,
+.avatar-card-stat[data-active='true'] {
+  background: var(--tc-hover-bg);
+}
+
+.avatar-card-row {
+  color: var(--tc-text);
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.avatar-card-row:hover,
+.avatar-card-row[data-active='true'] {
+  background: var(--tc-hover-bg);
+  color: var(--tc-hover-text);
+}
+
+.avatar-card-logout {
+  color: var(--tc-muted);
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.avatar-card-logout:hover {
+  background: var(--tc-danger-bg);
+  color: var(--tc-danger-text);
+}
+
+/* ---------- Understated Craft Progress Fill ---------- */
+.avatar-tier-fill[data-tier='bronze'] {
+  background: var(--color-text-muted);
+}
+
+.avatar-tier-fill[data-tier='silver'] {
+  background: linear-gradient(90deg, #5c819b, #769cb6, #98bad0);
+}
+
+.avatar-tier-fill[data-tier='gold'] {
+  background: linear-gradient(90deg, #8e6c2e, #b8934a, #cfa962);
+}
+
+.avatar-tier-fill[data-tier='platinum'] {
+  background: linear-gradient(90deg, #1f6456, #378875, #6eb2a0);
+}

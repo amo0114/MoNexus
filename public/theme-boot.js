@@ -21,6 +21,11 @@
     }
     var asset = variant === 'ink' ? 'black' : variant;
 
+    var ico = document.getElementById('brand-favicon-ico');
+    if (ico) {
+      ico.setAttribute('href', '/brand/ledger-knot/favicon-' + asset + '.ico');
+    }
+
     var icons = document.querySelectorAll('link[data-brand-favicon-size]');
     for (var i = 0; i < icons.length; i++) {
       var size = icons[i].getAttribute('data-brand-favicon-size');

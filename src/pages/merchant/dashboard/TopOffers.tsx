@@ -12,10 +12,10 @@ export default function TopOffers({ data, loading }: { data: DashboardTopOffer[]
         <table className="table-cards w-full text-left border-collapse">
           <thead>
             <tr className="border-b border-[var(--color-border)]">
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">排名</th>
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider">规格</th>
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider text-right">销量</th>
-              <th className="py-3 px-2 font-medium text-[var(--color-text-muted)] text-xs uppercase tracking-wider text-right">积分收入</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">排名</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider whitespace-nowrap">规格</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider text-right whitespace-nowrap">销量</th>
+              <th className="py-3 px-2 font-semibold text-[var(--color-text-muted)] text-xs tracking-wider text-right whitespace-nowrap">积分收入</th>
             </tr>
           </thead>
           <tbody>
@@ -34,13 +34,15 @@ export default function TopOffers({ data, loading }: { data: DashboardTopOffer[]
             ) : (
               data.map((item, i) => (
                 <tr key={`${item.offerId ?? 'none'}-${item.productId}`} className="border-b border-[var(--color-border)] hover:bg-[var(--color-background)] transition-colors">
-                  <td className="py-3 px-2 text-sm text-[var(--color-text-muted)]" data-label="排名">{i + 1}</td>
+                  <td className="py-3 px-2 text-sm text-[var(--color-text-muted)] tabular-nums whitespace-nowrap" data-label="排名">{i + 1}</td>
                   <td className="py-3 px-2 text-sm" data-label="规格">
-                    <div className="font-medium text-[var(--color-text)] truncate max-w-[150px]" title={item.offerName}>{item.offerName}</div>
-                    <div className="text-xs text-[var(--color-text-muted)] truncate max-w-[150px]" title={item.productName}>{item.productName}</div>
+                    <div className="min-w-0 max-md:text-right">
+                      <div className="font-medium text-[var(--color-text)] truncate max-w-[180px]" title={item.offerName}>{item.offerName}</div>
+                      <div className="text-xs text-[var(--color-text-muted)] truncate max-w-[180px]" title={item.productName}>{item.productName}</div>
+                    </div>
                   </td>
-                  <td className="py-3 px-2 text-sm text-[var(--color-text)] text-right" data-label="销量">{item.soldCount}</td>
-                  <td className="py-3 px-2 text-sm text-[var(--color-cta)] text-right font-bold" data-label="积分收入">{item.pointsRevenue}</td>
+                  <td className="py-3 px-2 text-sm text-[var(--color-text)] text-right tabular-nums whitespace-nowrap" data-label="销量">{item.soldCount}</td>
+                  <td className="py-3 px-2 text-sm text-[var(--color-cta)] text-right font-bold tabular-nums whitespace-nowrap" data-label="积分收入">{item.pointsRevenue}</td>
                 </tr>
               ))
             )}

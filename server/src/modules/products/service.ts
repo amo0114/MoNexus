@@ -25,6 +25,7 @@ import {
 import {
   assertCursorFilterMatches,
   computeFilterHash,
+  cursorExpired,
   decodeOrganicCursor,
   decorateProducts,
   encodeOrganicCursor,
@@ -36,6 +37,7 @@ import {
 import { loadPublicAssuranceByProductIds } from '../catalog/assurance/service.js'
 import { queryRecommendationCandidates } from './recommendations.js'
 import { signRecommendationList } from '../recommendationEvents/token.js'
+import type { ProductListSort } from './schema.js'
 import {
   aggregateOfferAvailability,
   evaluatePublicOfferAvailability,
@@ -52,6 +54,25 @@ interface ProductListParams {
   audience?: import('../../lib/productCatalog/visibility.js').ProductAudience
   /** Internal shop scope; never accepted from the public `/api/products` query. */
   merchantId?: number
+  sort?: ProductListSort
+  /** Drop cards whose public availability is `unavailable` (same status the card renders). */
+  inStock?: boolean
+  instant?: boolean
+  /** Server-resolved caller; the price ceiling is read from their balance, never from the client. */
+  affordableForUserId?: number
+}
+
+const INSTANT_DELIVERY_MODES = ['instant_inventory', 'instant_fixed'] as const
+
+/**
+ * 「自动秒发」= every active offer delivers instantly; a product with no active
+ * offer falls back to its own projection. Mirrors `instantDeliverySql`.
+ */
+function isInstantDelivery(product: { deliveryMode: string; offers: Array<{ deliveryMode: string }> }) {
+  const modes: readonly string[] = INSTANT_DELIVERY_MODES
+  return product.offers.length > 0
+    ? product.offers.every(offer => modes.includes(offer.deliveryMode))
+    : modes.includes(product.deliveryMode)
 }
 
 const productListSelect = {
@@ -348,6 +369,7 @@ function serializePublicProductListItem(
     ...(fakaAvailability ?? localAvailability),
     fakaCapacity,
     availability: { status: availability },
+    instantDelivery: isInstantDelivery(product),
     ratingAvg: Number(product.ratingAvg),
   }
 }
@@ -557,12 +579,52 @@ interface NormalizedProductFilters {
   categoryCode: string | null
   legacyCategory: string | null
   merchantId: number | null
+  sort: ProductListSort
+  inStock: boolean
+  instant: boolean
+  /** Resolved from the caller's balance; null = no affordability filter. */
+  maxPrice: number | null
 }
 
 interface RankedProductRow {
   id: number
   isHot: boolean
   effectiveOrderCount: number
+  sortValue: number | null
+}
+
+const EXPLICIT_SORT_SQL: Record<Exclude<ProductListSort, 'default'>, { column: Prisma.Sql; descending: boolean }> = {
+  sales: { column: Prisma.sql`p."sales"`, descending: true },
+  price_asc: { column: Prisma.sql`p."price"`, descending: false },
+  price_desc: { column: Prisma.sql`p."price"`, descending: true },
+}
+
+const instantModesSql = Prisma.join([...INSTANT_DELIVERY_MODES])
+
+function instantDeliverySql() {
+  return Prisma.sql`(
+    CASE WHEN EXISTS (SELECT 1 FROM "Offer" o WHERE o."productId" = p."id" AND o."status" = 'active')
+      THEN NOT EXISTS (
+        SELECT 1 FROM "Offer" o
+        WHERE o."productId" = p."id" AND o."status" = 'active'
+          AND o."deliveryMode" NOT IN (${instantModesSql})
+      )
+      ELSE p."deliveryMode" IN (${instantModesSql})
+    END
+  )`
+}
+
+/** Affordable when at least one active offer (or the offer-less product itself) fits the balance. */
+function affordableSql(maxPrice: number) {
+  return Prisma.sql`(
+    CASE WHEN EXISTS (SELECT 1 FROM "Offer" o WHERE o."productId" = p."id" AND o."status" = 'active')
+      THEN EXISTS (
+        SELECT 1 FROM "Offer" o
+        WHERE o."productId" = p."id" AND o."status" = 'active' AND o."price" <= ${maxPrice}
+      )
+      ELSE p."price" <= ${maxPrice}
+    END
+  )`
 }
 
 interface ProductListContext {
@@ -571,7 +633,7 @@ interface ProductListContext {
   run: ProjectionRun | null
 }
 
-function normalizeProductFilters(params: ProductListParams): NormalizedProductFilters {
+function normalizeProductFilters(params: ProductListParams, maxPrice: number | null): NormalizedProductFilters {
   const query = params.query?.trim().toLowerCase().normalize('NFKC') || null
   const categoryCode = params.categoryCode?.trim().toLowerCase() || null
   const legacy = params.category?.trim()
@@ -580,7 +642,17 @@ function normalizeProductFilters(params: ProductListParams): NormalizedProductFi
     categoryCode,
     legacyCategory: categoryCode || !legacy || legacy === '全部' ? null : legacy,
     merchantId: params.merchantId ?? null,
+    sort: params.sort ?? 'default',
+    inStock: params.inStock ?? false,
+    instant: params.instant ?? false,
+    maxPrice,
   }
+}
+
+async function resolveAffordableMaxPrice(userId: number | undefined): Promise<number | null> {
+  if (userId == null) return null
+  const account = await prisma.pointAccount.findUnique({ where: { userId }, select: { balance: true } })
+  return account?.balance ?? 0
 }
 
 function productFilterHashInput(
@@ -594,6 +666,12 @@ function productFilterHashInput(
     audience,
     // Unscoped lists keep their original hash so existing site-wide cursors stay valid.
     ...(filters.merchantId != null ? { merchantId: filters.merchantId } : {}),
+    // Same for list options: only non-default values enter the hash. The balance
+    // ceiling itself is left out so a points change mid-scroll does not 409.
+    ...(filters.sort !== 'default' ? { sort: filters.sort } : {}),
+    ...(filters.inStock ? { inStock: true } : {}),
+    ...(filters.instant ? { instant: true } : {}),
+    ...(filters.maxPrice != null ? { affordable: true } : {}),
   }
 }
 
@@ -626,6 +704,34 @@ async function listRankedProductRows(
     )`)
   }
 
+  if (filters.instant) where.push(instantDeliverySql())
+  if (filters.maxPrice != null) where.push(affordableSql(filters.maxPrice))
+
+  if (filters.sort !== 'default') {
+    const { column, descending } = EXPLICIT_SORT_SQL[filters.sort]
+    if (cursor) {
+      if (cursor.sortValue === undefined) throw cursorExpired()
+      where.push(descending
+        ? Prisma.sql`(${column}, p."id") < (${cursor.sortValue}, ${cursor.productId})`
+        : Prisma.sql`(${column}, p."id") > (${cursor.sortValue}, ${cursor.productId})`)
+    }
+    const direction = descending ? Prisma.sql`DESC` : Prisma.sql`ASC`
+    const sortedOffset = cursor ? Prisma.empty : Prisma.sql`OFFSET ${(page - 1) * pageSize}`
+    return prisma.$queryRaw<RankedProductRow[]>`
+      SELECT
+        p."id" AS "id",
+        false AS "isHot",
+        0 AS "effectiveOrderCount",
+        ${column} AS "sortValue"
+      FROM "Product" p
+      INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
+      WHERE ${Prisma.join(where, ' AND ')}
+      ORDER BY ${column} ${direction}, p."id" ${direction}
+      LIMIT ${pageSize + 1}
+      ${sortedOffset}
+    `
+  }
+
   const snapshotJoin = run
     ? Prisma.sql`LEFT JOIN "ProductMerchandisingSnapshot" s
         ON s."productId" = p."id" AND s."runId" = ${run.id}::uuid`
@@ -648,7 +754,8 @@ async function listRankedProductRows(
     SELECT
       p."id" AS "id",
       ${hotExpression} AS "isHot",
-      ${countExpression}::int AS "effectiveOrderCount"
+      ${countExpression}::int AS "effectiveOrderCount",
+      NULL::int AS "sortValue"
     FROM "Product" p
     INNER JOIN "ProductCategory" c ON c."id" = p."categoryId"
     ${snapshotJoin}
@@ -674,7 +781,7 @@ async function attachListMerchandising<
 }
 
 export async function listProducts(params: ProductListParams = {}) {
-  const filters = normalizeProductFilters(params)
+  const filters = normalizeProductFilters(params, await resolveAffordableMaxPrice(params.affordableForUserId))
   const audience = params.audience ?? 'guest'
   const cursor = params.cursor ? decodeOrganicCursor(params.cursor) : null
   if (cursor) assertCursorFilterMatches(cursor, productFilterHashInput(filters, audience))
@@ -687,6 +794,9 @@ export async function listProducts(params: ProductListParams = {}) {
     category: filters.legacyCategory ?? undefined,
     rankingRunId: run?.id ?? null,
     audience,
+    sort: filters.sort,
+    instant: filters.instant,
+    maxPrice: filters.maxPrice,
   })
 
   const load = () => listProductsFromDb(params, context)
@@ -726,7 +836,10 @@ export async function listProducts(params: ProductListParams = {}) {
         && (params.merchantId == null || row.merchantId === params.merchantId))
       .map(row => row.id),
   )
-  const visibleItems = baseResult.items.filter(item => visible.has(item.id))
+  // inStock filters after the cache on the same status the card renders, so a
+  // filtered page can come back short; the cursor still advances past it.
+  const visibleItems = baseResult.items.filter(item => visible.has(item.id)
+    && (!filters.inStock || item.availability.status !== 'unavailable'))
   const decorated = await attachListMerchandising({
     ...baseResult,
     items: visibleItems,
@@ -805,6 +918,7 @@ async function listProductsFromDb(params: ProductListParams, context: ProductLis
             effectiveOrderCount: lastRow.effectiveOrderCount,
             productId: lastRow.id,
             filterHash,
+            ...(lastRow.sortValue != null ? { sortValue: lastRow.sortValue } : {}),
           })
         : null,
       hasMore,
