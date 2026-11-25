@@ -1,4 +1,4 @@
-import { validateRuntimePayment } from '../modules/payment/providers/runtimeConfig.js'
+import { validateRuntimePayment, type PaymentSettings } from '../modules/payment/providers/runtimeConfig.js'
 import { executeRechargeCredit } from '../modules/recharge/credit.js'
 import { randomUUID, generateKeyPairSync } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -79,7 +79,11 @@ beforeEach(async () => {
   }) as never)
 })
 afterEach(() => { config.integrationCredentialsEncKey = original.key; config.integrationCredentialsEncKeyPrevious = original.previous; Object.assign(config.recharge, original.recharge); vi.clearAllMocks() })
-async function activate(version = 0, replacement = credentials, account = settings) {
+async function activate(
+  version = 0,
+  replacement = credentials,
+  account: Extract<PaymentSettings, { provider: 'stripe' }> = settings,
+) {
   const saved = await managed.save(actor, { expectedVersion: version, settings: account, credentials: replacement })
   await managed.test(actor, saved.version)
   return managed.activate(actor, saved.version)
