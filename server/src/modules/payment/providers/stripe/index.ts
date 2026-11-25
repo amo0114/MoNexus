@@ -6,6 +6,7 @@ import {
   notFound,
   paymentMethodUnavailable,
   paymentProviderUnavailable,
+  rechargeAmountBelowMinimum,
 } from '../../../../lib/httpError.js'
 import { serializeAmountMinor } from '../../../../lib/minorAmounts.js'
 import type { RechargeCurrency } from '../../../../lib/paymentTypes.js'
@@ -118,6 +119,7 @@ function rethrowStripe(err: unknown): never {
   if (err instanceof RangeError) throw badRequest('stripe amount is invalid')
   if (err instanceof Stripe.errors.StripeInvalidRequestError) {
     if (err.code === 'resource_missing') throw notFound('stripe payment not found')
+    if (err.code === 'amount_too_small') throw rechargeAmountBelowMinimum('金额低于 Stripe 当前最低收款额，请提高充值金额')
     throw badRequest('stripe request was rejected')
   }
   throw paymentProviderUnavailable()
