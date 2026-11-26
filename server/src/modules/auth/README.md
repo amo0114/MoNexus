@@ -134,9 +134,8 @@ public-registration switch, written through `PUT /api/admin/config/registrationE
   `sessionStartedAt`, `lastUsedAt`, and `current`. New `RefreshToken` writes
   persist only minimized `deviceLabel` and `ipHint` (writing `null` to legacy
   `ip` and `userAgent` columns). Public IPv4 is redacted to `/24`; public IPv6
-  remains `'IPv6 地址'`; IPv4-mapped IPv6 is normalized to IPv4 first. Never
-  expose raw IP, complete User-Agent, token, token hash, MFA seed, or recovery
-  code.
+  remains `'IPv6 地址'`; IPv4-mapped IPv6 is normalized to IPv4 first.
+  Never expose raw IP, complete User-Agent, token, token hash, MFA seed, or recovery code.
 - `revokeOtherSessions` retains the caller's family. Same-account re-login
   (password login or admin MFA verification) replaces only a refresh cookie
   belonging to the same user (`login_replaced`) before enforcing the 20-family
