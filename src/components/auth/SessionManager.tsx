@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Laptop, Loader2, LogOut, RefreshCw, ShieldCheck } from 'lucide-react'
 import {
   getActiveSessions,
@@ -7,13 +7,22 @@ import {
   type ActiveSessionSummary,
 } from '../../api/auth'
 import { getApiErrorMessage } from '../../api/error'
+import {
+  getAuthSessionContext,
+  getAuthSessionScopeKey,
+  matchesAuthSessionContext,
+  type AuthSessionContext,
+} from '../../auth/sessionContext'
 import { useAppStore } from '../../stores/appStore'
+import { useAuthStore } from '../../stores/authStore'
 import ConfirmDialog from '../ui/ConfirmDialog'
 import { formatDateTime } from '../../utils/datetime'
 
+const DEFAULT_VISIBLE_SESSIONS = 3
+
 type PendingAction =
-  | { kind: 'single'; session: ActiveSessionSummary }
-  | { kind: 'others' }
+  | { kind: 'single'; session: ActiveSessionSummary; authContext: AuthSessionContext }
+  | { kind: 'others'; authContext: AuthSessionContext }
   | null
 
 function formatSessionTime(value: string) {
@@ -31,59 +40,113 @@ function formatSessionTime(value: string) {
 
 export default function SessionManager() {
   const showToast = useAppStore((state) => state.showToast)
+  const currentSessionKey = useAuthStore(getAuthSessionScopeKey)
   const [sessions, setSessions] = useState<ActiveSessionSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
   const [submitting, setSubmitting] = useState(false)
   const [showAllSessions, setShowAllSessions] = useState(false)
+  const loadSeqRef = useRef(0)
 
   const loadSessions = useCallback(async () => {
+    const requestSeq = ++loadSeqRef.current
+    const requestSessionKey = getAuthSessionScopeKey(useAuthStore.getState())
+    if (!requestSessionKey) {
+      setSessions([])
+      setError('')
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setError('')
     try {
-      setSessions(await getActiveSessions())
+      const items = await getActiveSessions()
+      if (
+        requestSeq !== loadSeqRef.current
+        || getAuthSessionScopeKey(useAuthStore.getState()) !== requestSessionKey
+      ) {
+        return
+      }
+      setSessions(items)
     } catch (requestError) {
+      if (
+        requestSeq !== loadSeqRef.current
+        || getAuthSessionScopeKey(useAuthStore.getState()) !== requestSessionKey
+      ) {
+        return
+      }
       setError(getApiErrorMessage(requestError, '无法加载登录设备'))
     } finally {
-      setLoading(false)
+      if (
+        requestSeq === loadSeqRef.current
+        && getAuthSessionScopeKey(useAuthStore.getState()) === requestSessionKey
+      ) {
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
+    loadSeqRef.current += 1
+    setPendingAction(null)
+    setShowAllSessions(false)
+    setSessions([])
+    setError('')
     void loadSessions()
-  }, [loadSessions])
+  }, [currentSessionKey, loadSessions])
+
+  function openPendingAction(next: { kind: 'single'; session: ActiveSessionSummary } | { kind: 'others' }) {
+    const authContext = getAuthSessionContext(useAuthStore.getState())
+    if (!authContext) return
+    setPendingAction(
+      next.kind === 'single'
+        ? { kind: 'single', session: next.session, authContext }
+        : { kind: 'others', authContext },
+    )
+  }
 
   async function handleConfirm() {
     const action = pendingAction
     if (!action || submitting) return
+    if (!matchesAuthSessionContext(action.authContext, getAuthSessionContext(useAuthStore.getState()))) {
+      setPendingAction(null)
+      return
+    }
 
     setSubmitting(true)
     try {
       if (action.kind === 'single') {
         await revokeSession(action.session.sessionId)
+        if (!matchesAuthSessionContext(action.authContext, getAuthSessionContext(useAuthStore.getState()))) {
+          return
+        }
         showToast('该设备已退出')
       } else {
         const result = await revokeOtherSessions()
+        if (!matchesAuthSessionContext(action.authContext, getAuthSessionContext(useAuthStore.getState()))) {
+          return
+        }
         showToast(result.revokedCount > 0 ? `已退出其他 ${result.revokedCount} 台设备` : '没有其他设备需要退出')
       }
       setPendingAction(null)
       await loadSessions()
     } catch (requestError) {
-      showToast(getApiErrorMessage(requestError, '退出设备失败，请稍后重试'), 'error')
+      if (matchesAuthSessionContext(action.authContext, getAuthSessionContext(useAuthStore.getState()))) {
+        showToast(getApiErrorMessage(requestError, '退出设备失败，请稍后重试'), 'error')
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
   const hasOtherSessions = sessions.some((session) => !session.current)
-  // A long-lived account can accumulate dozens of device sessions. Showing
-  // every row makes the profile feel like an endless settings page. Keep the
-  // current device visible even if the API's natural order changes, then show
-  // the next two entries until the user explicitly expands the list.
+  // Keep the current device visible even if the API's natural order changes,
+  // then show the next two most recent entries until the user expands the list.
   const prioritizedSessions = [...sessions].sort((a, b) => Number(b.current) - Number(a.current))
-  const visibleSessions = showAllSessions ? prioritizedSessions : prioritizedSessions.slice(0, 1)
-  const hiddenSessionCount = sessions.length - visibleSessions.length
+  const visibleSessions = showAllSessions ? prioritizedSessions : prioritizedSessions.slice(0, DEFAULT_VISIBLE_SESSIONS)
+  const hiddenSessionCount = Math.max(0, sessions.length - visibleSessions.length)
   const dialogTitle = pendingAction?.kind === 'single' ? '退出此设备？' : '退出其他设备？'
   const dialogDescription = pendingAction?.kind === 'single'
     ? `“${pendingAction.session.deviceLabel}”将需要重新登录。当前设备不会受影响。`
@@ -104,7 +167,7 @@ export default function SessionManager() {
         <button
           type="button"
           className="btn-secondary shrink-0 px-4 py-2 text-sm"
-          onClick={() => setPendingAction({ kind: 'others' })}
+          onClick={() => openPendingAction({ kind: 'others' })}
           disabled={loading || !hasOtherSessions || submitting}
           data-testid="session-revoke-others"
         >
@@ -142,7 +205,7 @@ export default function SessionManager() {
                     )}
                   </div>
                   <p className="mt-2 text-xs text-[var(--color-text-muted)]">IP：{session.ipHint}</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">最近活跃：{formatSessionTime(session.lastUsedAt)}</p>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">最近续签：{formatSessionTime(session.lastUsedAt)}</p>
                   <p className="mt-1 text-xs text-[var(--color-text-muted)]">登录时间：{formatSessionTime(session.sessionStartedAt)}</p>
                 </div>
                 {session.current ? (
@@ -151,7 +214,7 @@ export default function SessionManager() {
                   <button
                     type="button"
                     className="btn-secondary inline-flex min-h-10 shrink-0 items-center justify-center gap-1.5 border-[color-mix(in_srgb,var(--color-danger)_40%,transparent)] px-3 py-1.5 text-xs text-[var(--color-danger)]"
-                    onClick={() => setPendingAction({ kind: 'single', session })}
+                    onClick={() => openPendingAction({ kind: 'single', session })}
                     disabled={submitting}
                     data-testid="session-revoke-device"
                   >
@@ -161,7 +224,7 @@ export default function SessionManager() {
               </div>
             </article>
           ))}
-          {sessions.length > 1 && (
+          {sessions.length > DEFAULT_VISIBLE_SESSIONS && (
             <button
               type="button"
               onClick={() => setShowAllSessions((current) => !current)}

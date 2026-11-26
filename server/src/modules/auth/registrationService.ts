@@ -5,7 +5,7 @@ import {
   consumeAbuseBucket,
   enforceHumanVerification,
 } from './authProtection.js'
-import { buildAuthUser, generateAccessToken, createStoredRefreshToken } from './sessionIssuance.js'
+import { buildAuthUser, generateAccessToken, hashRefreshToken, createStoredRefreshToken } from './sessionIssuance.js'
 import bcrypt from 'bcryptjs'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
@@ -16,7 +16,7 @@ import { normalizeInviteCode } from '../../lib/inviteCode.js'
 import { claimInviteCodeForRegistration } from '../invite/service.js'
 import { ensureAccountInTx } from '../wallet/index.js'
 import { getRefreshTokenMaxAgeMs, getSystemConfigValue } from '../../lib/systemConfig.js'
-import { lockUserRefreshSessionMutations } from './sessionService.js'
+import { lockUserRefreshSessionMutations, revokeSameUserRefreshCookieSession } from './sessionService.js'
 import { getLegalRequirement, recordUserConsents, resolveConsentEvidence } from '../legal/service.js'
 import { createClaimedReferralGrowthReward, createRegistrationGrowthReward } from './growthRewards.js'
 import { generateDefaultNickname, normalizeUserNickname } from '../../lib/defaultNickname.js'
@@ -140,6 +140,7 @@ export async function registerUser(
   proof?: HumanVerificationRequest | string,
   agreements?: Record<string, string>,
   nickname?: string,
+  existingRefreshToken?: string,
 ) {
   // REG-03：必须是第一步——查重、bcrypt、建号事务都在其后，关闭态下不会
   // 产生任何可观测副作用（连"该邮箱已注册"这种探测口子也不给）。
@@ -251,15 +252,37 @@ export async function registerUser(
     if (!currentUser) throw notFound('用户不存在')
     if (await isAccountBanned(currentUser.id, tx)) throw badRequest('账号已被封禁')
 
-    const session = await createStoredRefreshToken(currentUser.id, ip, userAgent, tx, maxAgeMs)
+    const now = new Date()
+    await revokeSameUserRefreshCookieSession(tx, {
+      userId: currentUser.id,
+      tokenHash: existingRefreshToken ? hashRefreshToken(existingRefreshToken) : null,
+      now,
+      metadata: { ip, userAgent },
+    })
+    const session = await createStoredRefreshToken(
+      currentUser.id,
+      ip,
+      userAgent,
+      tx,
+      maxAgeMs,
+      undefined,
+      currentUser.role,
+      now,
+    )
     return { user: currentUser, session }
   })
-  const accessToken = generateAccessToken(issued.user.id, issued.user.role, issued.session.sessionId)
+  const accessToken = generateAccessToken(
+    issued.user.id,
+    issued.user.role,
+    issued.session.sessionId,
+    undefined,
+    issued.session.expiresAt,
+  )
 
   return {
     accessToken,
     refreshToken: issued.session.refreshToken,
-    refreshTokenMaxAgeMs: issued.session.maxAgeMs,
+    refreshTokenExpiresAt: issued.session.expiresAt,
     // Registration awards are only ledger rows at this point. Returning the
     // configured amount here would make clients advertise spendable points
     // that do not exist yet.

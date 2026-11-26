@@ -97,10 +97,13 @@ export default function ProfileIdentityCard() {
         setPwdError(passwordIssue)
         return
       }
-      await changePassword({ currentPassword, newPassword })
-      if (!isRequestContextCurrent(requestContext)) return
+      const result = await changePassword({ currentPassword, newPassword }, requestContext)
+      const stillSameSession = isRequestContextCurrent(requestContext)
+      if (!result?.sessionCleared && !stillSameSession) return
+      if (stillSameSession) {
+        logout(requestContext)
+      }
       showToast('密码已修改，请重新登录')
-      logout(requestContext)
       window.location.href = '/login'
     } catch (err: unknown) {
       if (isRequestContextCurrent(requestContext)) {

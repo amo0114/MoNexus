@@ -4,6 +4,7 @@ import { invalidate } from '../../lib/userStatusCache.js'
 import {
   lockUserRefreshSessionMutations,
   revokeAllUserRefreshTokens,
+  type SessionRequestMetadata,
 } from '../auth/sessionService.js'
 import { commandInTx, governanceConflict, writeGovernanceAudit } from '../governance/common.js'
 import { assertPermission } from '../adminAuthorization/service.js'
@@ -22,6 +23,7 @@ export async function createBan(
   userId: number,
   key: string,
   input: { reasonCode: string; reason: string; expiresAt: string | null },
+  metadata?: SessionRequestMetadata,
 ) {
   const result = await prisma.$transaction(async (tx) => {
     await assertPermission(actor, 'users.ban', tx)
@@ -50,7 +52,7 @@ export async function createBan(
         },
       })
       await tx.user.update({ where: { id: userId }, data: { status: 'banned' } })
-      await revokeAllUserRefreshTokens(userId, tx)
+      await revokeAllUserRefreshTokens(userId, tx, 'revoke_all', metadata)
       await writeGovernanceAudit(tx, actor, 'account.ban.created', 'user', userId, {
         reasonCode: input.reasonCode,
         reason: input.reason,
@@ -67,6 +69,7 @@ export async function releaseBan(
   banId: string,
   key: string,
   input: { expectedVersion: number; reason: string },
+  metadata?: SessionRequestMetadata,
 ) {
   const result = await prisma.$transaction(async (tx) => {
     await assertPermission(actor, 'users.ban', tx)
@@ -92,7 +95,7 @@ export async function releaseBan(
           },
         })
         await tx.user.update({ where: { id: userId }, data: { status: 'active' } })
-        await revokeAllUserRefreshTokens(userId, tx)
+        await revokeAllUserRefreshTokens(userId, tx, 'revoke_all', metadata)
         await writeGovernanceAudit(tx, actor, 'account.ban.released', 'user', userId, {
           reason: input.reason,
         })

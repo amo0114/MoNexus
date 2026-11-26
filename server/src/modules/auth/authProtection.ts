@@ -1,6 +1,6 @@
 import { LOGIN_PROOF_IP_BUCKET, consumeHumanChallengeIssue } from './abusePolicy.js'
 import { config } from '../../config/index.js'
-import { ipKeyGenerator } from 'express-rate-limit'
+import { clientIpRateLimitKey } from '../../lib/clientIp.js'
 import { abuseLimiter, type AbuseLimiterResult } from '../../lib/abuseLimiter.js'
 import { rateLimitedTotal } from '../../lib/metrics.js'
 import {
@@ -59,7 +59,7 @@ export async function enforceHumanVerification(input: {
   if (input.action === 'login') {
     // Bound provider work separately from expensive password verification.
     await consumeAbuseBucket(
-      () => abuseLimiter.consume(LOGIN_PROOF_IP_BUCKET, ipKeyGenerator(input.ip ?? 'unknown')),
+      () => abuseLimiter.consume(LOGIN_PROOF_IP_BUCKET, clientIpRateLimitKey(input.ip)),
       LOGIN_PROOF_IP_BUCKET.flow,
     )
   }
@@ -80,7 +80,7 @@ export async function issueHumanChallenge(action: HumanVerificationAction, ip?: 
   }
 
   await consumeAbuseBucket(
-    () => consumeHumanChallengeIssue(action, ipKeyGenerator(ip ?? 'unknown')),
+    () => consumeHumanChallengeIssue(action, clientIpRateLimitKey(ip)),
     action === 'login' ? 'login-human-challenge' : 'human-challenge',
   )
 

@@ -190,6 +190,27 @@ describe('SPEC-RAP-001 security primitives', () => {
     expect(ipKey.includes('203.0.113.17')).toBe(false)
     expect(userKey.endsWith(':42:60000')).toBe(true)
     expect(emailKey).toContain(':abuse:v1:registration:email:')
+
+    // IPv4-mapped IPv6 maps to the same key as bare IPv4; IPv6 hosts in the
+    // same /56 share one rate-limit key while different /56 blocks stay isolated.
+    expect(buildAbuseLimiterKey(TEST_BUCKET, '::ffff:203.0.113.17', {
+      cacheKeyPrefix: 'rap-test',
+      hashKey: HASH_KEY,
+    })).toBe(ipKey)
+    const v6Host1 = buildAbuseLimiterKey(TEST_BUCKET, '2001:0DB8:1234:5601::1', {
+      cacheKeyPrefix: 'rap-test',
+      hashKey: HASH_KEY,
+    })
+    const v6Host2 = buildAbuseLimiterKey(TEST_BUCKET, '2001:db8:1234:56ff::abcd', {
+      cacheKeyPrefix: 'rap-test',
+      hashKey: HASH_KEY,
+    })
+    const v6Other56 = buildAbuseLimiterKey(TEST_BUCKET, '2001:db8:1234:5700::1', {
+      cacheKeyPrefix: 'rap-test',
+      hashKey: HASH_KEY,
+    })
+    expect(v6Host1).toBe(v6Host2)
+    expect(v6Host1).not.toBe(v6Other56)
   })
 
   it('fails closed for a missing Redis client, malformed Lua result, or executor failure', async () => {

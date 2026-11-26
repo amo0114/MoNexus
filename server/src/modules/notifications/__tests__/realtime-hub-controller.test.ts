@@ -312,4 +312,47 @@ describe('stream controller timer cleanup (R-RT-003B)', () => {
     expect(hub.connectionCountValue()).toBe(0)
     expect(vi.getTimerCount()).toBe(0)
   })
+
+  it('aggregates per-IP SSE caps across the same IPv6 /56 subnet', async () => {
+    const prevPerIp = config.notificationRealtime.maxConnectionsPerIp
+    config.notificationRealtime.maxConnectionsPerIp = 1
+    try {
+      const hub = makeHub({ maxConnectionsPerIp: 1, maxConnectionsPerUser: 10 })
+      const exp = Math.floor(Date.now() / 1000) + 120
+      const req1 = Object.assign(new EventEmitter(), {
+        user: { userId: 11, role: 'user', exp },
+        ip: '2001:0DB8:1234:5601::1',
+      }) as unknown as Request
+      const req2 = Object.assign(new EventEmitter(), {
+        user: { userId: 12, role: 'user', exp },
+        ip: '2001:db8:1234:56ff::99',
+      }) as unknown as Request
+      const req3 = Object.assign(new EventEmitter(), {
+        user: { userId: 13, role: 'user', exp },
+        ip: '2001:db8:1234:5700::1',
+      }) as unknown as Request
+
+      const res1 = fakeResponse()
+      const next1 = vi.fn() as unknown as NextFunction
+      await notificationRealtimeStream(req1, res1, next1, healthyDependencies(hub))
+      expect(next1).not.toHaveBeenCalled()
+      expect(hub.ipConnectionCount('2001:db8:1234:5600::/56')).toBe(1)
+
+      const res2 = fakeResponse()
+      const next2 = vi.fn() as unknown as NextFunction
+      await notificationRealtimeStream(req2, res2, next2, healthyDependencies(hub))
+      expect(next2).toHaveBeenCalledWith(expect.objectContaining({ status: 429 }))
+      expect(res2.flushHeaders).not.toHaveBeenCalled()
+
+      const res3 = fakeResponse()
+      const next3 = vi.fn() as unknown as NextFunction
+      await notificationRealtimeStream(req3, res3, next3, healthyDependencies(hub))
+      expect(next3).not.toHaveBeenCalled()
+      expect(hub.ipConnectionCount('2001:db8:1234:5700::/56')).toBe(1)
+
+      await hub.closeAll()
+    } finally {
+      config.notificationRealtime.maxConnectionsPerIp = prevPerIp
+    }
+  })
 })

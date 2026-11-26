@@ -419,7 +419,7 @@ function FileRow({
                         <summary className="cursor-pointer hover:text-[var(--color-text)]">排障详情</summary>
                         <div className="mt-1 space-y-0.5 pl-2 border-l border-[var(--color-border)] text-xs text-[var(--color-text-muted)]">
                           {g.ipHash && <div>IP 哈希：<span className="font-mono select-all">{g.ipHash}</span></div>}
-                          {g.userAgent && <div className="break-all">客户端信息（UA）：{g.userAgent}</div>}
+                          {g.userAgent && <div className="break-all">客户端摘要：{g.userAgent}</div>}
                         </div>
                       </details>
                     )}

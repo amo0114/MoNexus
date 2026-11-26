@@ -564,8 +564,8 @@ export const CONFIG_METAS: Record<AdminSystemConfigKey, ConfigItemMeta> = {
     type: 'integer',
     min: 0,
     unit: '天',
-    label: '登录续期凭证有效期',
-    description: '新签发的登录续期凭证（Refresh Token）有效期天数；设为 0 时使用系统环境变量默认配置。',
+    label: '登录续期凭证滑动有效期',
+    description: '控制登录续期凭证（Refresh Token）的滑动闲置有效天数，设为 0 时使用环境变量默认值（7 天）；会话绝对有效期按角色封顶（管理员 ≤ 7 天，普通用户与商家 30–90 天）。',
   },
   defaultPageSize: {
     key: 'defaultPageSize',

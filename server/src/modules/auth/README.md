@@ -30,8 +30,16 @@ and `/me`.
 - `mfa.ts` supplies challenge, TOTP, encryption, and recovery-code primitives.
 - `sessionIssuance.ts` builds the shared auth response, signs access tokens, and
   creates hashed refresh credentials for registration, login, refresh, and MFA.
-- `sessionService.ts` owns user-scoped session locks, refresh records, family
-  revocation, and revoke-all auditing.
+- `sessionPolicy.ts` owns role-based absolute session lifetimes (`admin <= 7d`,
+  non-admin `30..90d`), per-user active family cap (`20`), and cookie/JWT expiry
+  clamping.
+- `sessionService.ts` owns user-scoped session locks, minimized refresh records,
+  same-account login replacement (`login_replaced`), session-limit eviction
+  (`session_limit`), family revocation, and revoke-all auditing.
+- `sessionRetentionCron.ts` runs daily via `defineLeasedCron` (`CronLease`) to
+  delete fully expired families past the 30-day replay/audit grace window and
+  run idempotent primary-key batched PII scrubs for legacy `RefreshToken` and
+  `FileGrantLog` rows.
 
 Implementation modules do not import the `service.ts` facade; the architecture
 check enforces this dependency direction. Controllers call registration, MFA,
@@ -59,7 +67,7 @@ behavior.
 | GET | `/api/auth/sessions` | Bearer | Lists only the caller's active session-family summaries. |
 | DELETE | `/api/auth/sessions/:sessionId` | Bearer | Revokes an owned, non-current family. Current session must use `/logout`; absent/non-owned IDs return 404. |
 | POST | `/api/auth/sessions/revoke-others` | Bearer | Revokes every other active family while retaining current. |
-| POST | `/api/auth/password-change` | Bearer | Requires current password and revokes all refresh sessions on success. |
+| POST | `/api/auth/password-change` | Bearer | Requires current password and revokes all refresh sessions on success. Optional `{ expectedSessionId, clearCookie }` clears the refresh cookie only when `expectedSessionId` matches both Bearer `sid` and any presented refresh cookie family (otherwise returns `409 SESSION_CHANGED` without mutating the password). |
 | POST | `/api/auth/forgot-password` | — | Requires a `forgot_password` human-verification proof when abuse protection is enforced. Account lookup, reset quota, database, and SMTP outcomes remain a generic 200; challenge and protection-dependency errors are account-independent 400/403/503 responses so the browser can retry safely. |
 | POST | `/api/auth/reset-password` | — | Uses email token and revokes all refresh sessions on success. |
 | POST | `/api/auth/send-verification` | Bearer | Applies shared Redis limits, invalidates earlier unused token, then sends a fragment-token verification email. |
@@ -123,26 +131,68 @@ public-registration switch, written through `PUT /api/admin/config/registrationE
   Refresh rotation creates a new row in the same family, so a refresh never
   appears as a new device.
 - Session summaries contain exactly `sessionId`, `deviceLabel`, `ipHint`,
-  `sessionStartedAt`, `lastUsedAt`, and `current`. Never expose raw IP,
-  complete User-Agent, token, token hash, MFA seed, or recovery code.
-- `revokeOtherSessions` retains the caller's family. Explicitly terminated
-  families only reject later stale cookies; a rotation predecessor replay still
-  keeps its stronger revoke-all security behavior.
+  `sessionStartedAt`, `lastUsedAt`, and `current`. New `RefreshToken` writes
+  persist only minimized `deviceLabel` and `ipHint` (writing `null` to legacy
+  `ip` and `userAgent` columns). Public IPv4 is redacted to `/24`; public IPv6
+  remains `'IPv6 地址'`; IPv4-mapped IPv6 is normalized to IPv4 first.
+  Never expose raw IP, complete User-Agent, token, token hash, MFA seed, or recovery code.
+- `revokeOtherSessions` retains the caller's family. Same-account re-login
+  (password login or admin MFA verification) replaces only a refresh cookie
+  belonging to the same user (`login_replaced`) before enforcing the 20-family
+  per-user cap (`session_limit`), and never touches another user's cookie or
+  pre-auth/failed-login cookies.
+- **Replay escalation & M3 D-07 revision**: Under the user lock, both the normal
+  and CAS-failure paths share one classification rule. A revoked token returns
+  `401` without user-wide revocation whenever it is already expired, its family
+  carries any terminal reason (`logout`, `single_session`, `revoke_others`,
+  `revoke_all`, `mfa_reconfigured`, `mfa_break_glass_reset`, `mfa_migration`,
+  `refresh_replay`, `expired`, `login_replaced`, `session_limit`), or its family
+  no longer has an unexpired active successor. Only an unexpired
+  `refresh_rotation` (or legacy `null`-reason) predecessor whose family still
+  holds an active successor escalates to `session_replay_detected`, writing a
+  terminal `refresh_replay` marker in the same transaction so repeated replays
+  cannot kick out newer logins.
 
 ## Token and Revocation Model
 
 - **Access token**: short-lived JWT (`config.jwtExpiresIn`) sent in
-  `Authorization: Bearer …`. Non-admin business routes remain stateless, so a
-  revoked device's already-issued access token can live until the existing
-  15-minute TTL. Admin tokens additionally carry `sid`, MFA verification and
-  MFA version claims; every admin request verifies the active session and
-  current MFA version, so an admin session revoke takes effect immediately.
+  `Authorization: Bearer …`. When bound to a session deadline, signing writes an
+  explicit integer `exp <= floor(expiresAt / 1000)` at signing time (rejecting
+  if `< 1s` remains) so commit/response latency can never overshoot the DB
+  deadline or SSE hard-expiry boundary. Admin tokens additionally carry `sid`,
+  MFA verification, and MFA version claims; every admin request verifies the
+  active unexpired session (including `absoluteExpiresAt`, and enforcing the
+  7-day ceiling immediately even on pre-backfill `NULL` rows) and current MFA
+  version.
 - **Refresh token**: 40-byte hex secret, stored only as a SHA-256 hash. It is
-  issued/rotated through HttpOnly + Secure-in-production Cookie. Default
-  lifetime comes from `SystemConfig.refreshTokenMaxAgeDays`.
-- Global revocation marks active `RefreshToken` rows as revoked with a closed
-  reason; it does **not** delete the rows. Historical rows preserve family
-  terminal/replay/audit semantics.
+  issued/rotated through HttpOnly + Secure-in-production Cookie whose `Max-Age`
+  is computed at response-write time from the persisted `expiresAt` (never
+  overshooting DB expiry, rejecting if `< 1s` remains). Sliding idle TTL comes
+  from `SystemConfig.refreshTokenMaxAgeDays`, bounded by role-based absolute
+  lifetimes (`admin`: `min(days, 7)` days; non-admin: `clamp(days, 30, 90)`
+  days). Schema migration is metadata-only (`ADD COLUMN` nullable +
+  `AuthSessionRetentionCursor` state table), while online primary-key batched
+  backfill (`backfillLegacyRefreshTokenAbsoluteExpiry`) runs per-user under
+  `lockUserRefreshSessionMutations` in `authSessionRetention`, sharing
+  `resolveLegacyAbsoluteExpiresAt` with refresh rotation so order of execution
+  never changes user outcomes or deadlocks with revocations.
+- Global revocation marks active unexpired `RefreshToken` rows as revoked with a
+  closed reason (recording the active family count in `SecurityEvent`) and marks
+  already-expired unrevoked rows as `expired`. Historical rows are retained for
+  at least 30 days after the entire family expires before the leased daily
+  retention cron filters eligible families in SQL (`NOT EXISTS`), persists its
+  last-processed `(expiresAt, id)` cursor in `AuthSessionRetentionCursor` across
+  bounded runs (wrapping to `null` at the tail), and deletes whole expired
+  families atomically under the user advisory lock.
+- Portable backups exclude `RefreshToken` and `AuthChallenge` table data via
+  `pg_dump --exclude-table-data` while preserving schema DDL, and restore
+  applies `pg_restore --use-list` filtering on both restore paths so even legacy
+  backups never commit ephemeral credentials before post-restore cleanup.
+- IP-based abuse limiters and SSE per-IP connection caps normalize IPv4-mapped
+  IPv6 to canonical IPv4 and aggregate IPv6 clients at `/56` via
+  `clientIpRateLimitKey`. Production boot also enforces the
+  `DEPLOY_TOPOLOGY` ↔ `TRUST_PROXY` hop table (`nginx → 1`, `caddy → 2`,
+  `cloudflare_openresty_nginx → 2`).
 - Password change, password reset, admin ban, MFA break-glass, and other
   explicit security boundaries call the shared revoke path in the same
   user-lock transaction as their state mutation.

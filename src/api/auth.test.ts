@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import api from './client'
-import { loginWithPassword } from './auth'
-import { AuthSessionChangedError } from '../auth/sessionContext'
+import { changePassword, loginWithPassword, logoutCurrentSession } from './auth'
+import { AuthSessionChangedError, getAuthSessionContext } from '../auth/sessionContext'
 import { beginPendingAuthSessionCommit } from '../auth/pendingAuthSession'
 import { useAuthStore } from '../stores/authStore'
 
@@ -98,6 +98,94 @@ describe('login cookie mutation ownership', () => {
     establishSession(userB, 'session-b')
 
     await expect(pendingLogin).rejects.toBeInstanceOf(AuthSessionChangedError)
+    expect(post).not.toHaveBeenCalled()
+    expect(useAuthStore.getState().user).toMatchObject(userB)
+  })
+})
+
+describe('changePassword & logoutCurrentSession cross-tab safety', () => {
+  const originalLocks = Object.getOwnPropertyDescriptor(navigator, 'locks')
+
+  afterEach(() => {
+    if (originalLocks) {
+      Object.defineProperty(navigator, 'locks', originalLocks)
+    } else {
+      Reflect.deleteProperty(navigator, 'locks')
+    }
+  })
+
+  it('requests server cookie clearing when Web Locks exist and clears local auth inside the lock', async () => {
+    const requestLock = vi.fn((_name: string, _options: unknown, cb: () => Promise<unknown>) => cb())
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request: requestLock },
+    })
+
+    establishSession(userA, 'session-pwd-locks')
+    const ctx = getAuthSessionContext(useAuthStore.getState())!
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { message: '密码已修改，请重新登录' } } as never)
+
+    const result = await changePassword({ currentPassword: 'old', newPassword: 'Fresh#Password-2026' }, ctx)
+    expect(result.sessionCleared).toBe(true)
+    expect(requestLock).toHaveBeenCalledTimes(1)
+    expect(post).toHaveBeenCalledWith(
+      '/auth/password-change',
+      {
+        currentPassword: 'old',
+        newPassword: 'Fresh#Password-2026',
+        expectedSessionId: 'session-pwd-locks',
+        clearCookie: true,
+      },
+      { skipAuthRefresh: true },
+    )
+    expect(useAuthStore.getState().isLoggedIn).toBe(false)
+  })
+
+  it('omits server cookie clearing when Web Locks are unavailable', async () => {
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: undefined,
+    })
+
+    establishSession(userA, 'session-pwd-nolocks')
+    const post = vi.spyOn(api, 'post').mockResolvedValue({ data: { message: 'ok' } } as never)
+
+    const result = await changePassword({ currentPassword: 'old', newPassword: 'Fresh#Password-2026' })
+    expect(result.sessionCleared).toBe(true)
+    expect(post).toHaveBeenCalledWith(
+      '/auth/password-change',
+      expect.objectContaining({
+        expectedSessionId: 'session-pwd-nolocks',
+        clearCookie: false,
+      }),
+      { skipAuthRefresh: true },
+    )
+    expect(useAuthStore.getState().isLoggedIn).toBe(false)
+  })
+
+  it('aborts changePassword before calling the API if another tab persisted a newer session', async () => {
+    establishSession(userA, 'session-old')
+    const ctx = getAuthSessionContext(useAuthStore.getState())!
+    const tokenB = createAccessToken(userB.id, 'session-other-tab')
+    localStorage.setItem('monexus-auth', JSON.stringify({
+      state: { user: userB, accessToken: tokenB },
+      version: 0,
+    }))
+    const post = vi.spyOn(api, 'post')
+
+    await expect(changePassword({ currentPassword: 'old', newPassword: 'Fresh#Password-2026' }, ctx))
+      .rejects.toBeInstanceOf(AuthSessionChangedError)
+    expect(post).not.toHaveBeenCalled()
+    expect(JSON.parse(localStorage.getItem('monexus-auth')!).state.accessToken).toBe(tokenB)
+  })
+
+  it('aborts logoutCurrentSession when passed a stale context after an account switch', async () => {
+    establishSession(userA, 'session-a')
+    const ctxA = getAuthSessionContext(useAuthStore.getState())!
+    establishSession(userB, 'session-b')
+    const post = vi.spyOn(api, 'post')
+
+    await expect(logoutCurrentSession(ctxA)).rejects.toBeInstanceOf(AuthSessionChangedError)
     expect(post).not.toHaveBeenCalled()
     expect(useAuthStore.getState().user).toMatchObject(userB)
   })

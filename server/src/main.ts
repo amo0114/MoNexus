@@ -18,6 +18,7 @@ import { startAcceptTimeoutCron, stopAcceptTimeoutCron } from './modules/orders/
 import { startDisputeTimerCron, stopDisputeTimerCron } from './modules/orders/disputeTimerCron.js'
 import { startFulfillmentBackgroundJobs, stopFulfillmentBackgroundJobs } from './modules/fulfillment/coordination.js'
 import { startGrowthRewardCron, stopGrowthRewardCron } from './modules/auth/growthRewardCron.js'
+import { startAuthSessionRetentionCron, stopAuthSessionRetentionCron } from './modules/auth/sessionRetentionCron.js'
 import { startPushCron, stopPushCron } from './modules/push/cron.js'
 import { startLeaderboardCron, stopLeaderboardCron } from './modules/leaderboard/cron.js'
 import { startLegalRetentionCron, stopLegalRetentionCron } from './modules/legal/cron.js'
@@ -61,6 +62,7 @@ const server = app.listen(config.port, () => {
     startFulfillmentBackgroundJobs()
     startOptionalFulfillmentWorkers()
     startGrowthRewardCron()
+    startAuthSessionRetentionCron()
     startPushCron()
     startLeaderboardCron()
     startLegalRetentionCron()
@@ -121,6 +123,7 @@ async function shutdown(signal: NodeJS.Signals) {
   stopAcceptTimeoutCron()
   stopDisputeTimerCron()
   stopGrowthRewardCron()
+  stopAuthSessionRetentionCron()
   stopPushCron()
   stopLeaderboardCron()
   stopLegalRetentionCron()

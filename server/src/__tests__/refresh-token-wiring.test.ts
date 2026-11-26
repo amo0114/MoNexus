@@ -30,7 +30,14 @@ function refreshCookieFrom(res: { headers: Record<string, unknown> }) {
 }
 
 function expectCookieMaxAge(cookie: string, seconds: number) {
-  expect(cookie).toContain(`Max-Age=${seconds}`)
+  const match = cookie.match(/Max-Age=(\d+)/)
+  expect(match).toBeTruthy()
+  const actual = Number(match![1])
+  // Cookie Max-Age is computed at response-write time from the persisted DB
+  // expiresAt, so it must stay within a few seconds below `seconds` and never
+  // overshoot it.
+  expect(actual).toBeLessThanOrEqual(seconds)
+  expect(actual).toBeGreaterThanOrEqual(seconds - 5)
 }
 
 function expectExpiresAround(expiresAt: Date, beforeMs: number, afterMs: number, maxAgeMs: number) {

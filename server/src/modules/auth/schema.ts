@@ -109,6 +109,8 @@ export const resetPasswordSchema = z.object({
 export const passwordChangeSchema = z.object({
   currentPassword: z.string().min(1, '请输入当前密码'),
   newPassword: newPasswordLengthSchema,
+  expectedSessionId: z.string().uuid('登录会话标识无效').optional(),
+  clearCookie: z.boolean().optional(),
 })
 
 export const updateMeSchema = z.object({

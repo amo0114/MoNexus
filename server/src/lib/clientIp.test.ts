@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { classifyClientIp, redactIpHint, routeGroupOf } from './clientIp.js'
+import {
+  classifyClientIp,
+  clientIpRateLimitKey,
+  normalizeClientIp,
+  redactIpHint,
+  routeGroupOf,
+} from './clientIp.js'
 
 describe('classifyClientIp', () => {
   it('classifies public IPv4 as public', () => {
@@ -47,13 +53,60 @@ describe('classifyClientIp', () => {
   it('strips IPv4-mapped IPv6 before classifying', () => {
     expect(classifyClientIp('::ffff:192.168.1.10')).toBe('private')
     expect(classifyClientIp('::ffff:203.0.113.50')).toBe('public')
+    expect(classifyClientIp('::ffff:cb00:7132')).toBe('public')
     expect(classifyClientIp('::ffff:127.0.0.1')).toBe('loopback')
   })
 })
 
+describe('normalizeClientIp', () => {
+  it('canonicalizes IPv4, IPv4-mapped IPv6 (dotted and hex), and RFC 5952 IPv6', () => {
+    expect(normalizeClientIp('203.0.113.50')).toBe('203.0.113.50')
+    expect(normalizeClientIp('::ffff:203.0.113.50')).toBe('203.0.113.50')
+    expect(normalizeClientIp('::FFFF:203.0.113.50')).toBe('203.0.113.50')
+    expect(normalizeClientIp('0:0:0:0:0:ffff:203.0.113.50')).toBe('203.0.113.50')
+    expect(normalizeClientIp('::ffff:cb00:7132')).toBe('203.0.113.50')
+    expect(normalizeClientIp('2001:0DB8:0000:0000:0000:0000:0000:0001')).toBe('2001:db8::1')
+    expect(normalizeClientIp('2001:db8:0:1:1:1:1:1')).toBe('2001:db8:0:1:1:1:1:1')
+    expect(normalizeClientIp('2001:db8:0:0:1:0:0:1')).toBe('2001:db8::1:0:0:1')
+    expect(normalizeClientIp('0:0:0:0:0:0:0:1')).toBe('::1')
+  })
+
+  it('rejects whitespace, zone IDs, and unparseable values', () => {
+    for (const bad of ['', ' ', ' 203.0.113.50 ', 'not-an-ip', 'fe80::1%eth0', null, undefined]) {
+      expect(normalizeClientIp(bad), String(bad)).toBeNull()
+    }
+  })
+})
+
+describe('clientIpRateLimitKey', () => {
+  it('unwraps IPv4-mapped IPv6 and collapses same-/56 IPv6 hosts into one canonical key', () => {
+    expect(clientIpRateLimitKey('203.0.113.50')).toBe('203.0.113.50')
+    expect(clientIpRateLimitKey('::ffff:203.0.113.50')).toBe('203.0.113.50')
+    expect(clientIpRateLimitKey('::ffff:cb00:7132')).toBe('203.0.113.50')
+
+    const hostA = clientIpRateLimitKey('2001:0DB8:1234:5678::1')
+    const hostB = clientIpRateLimitKey('2001:db8:1234:56ff:abcd:ef01:2345:6789')
+    const otherSubnet = clientIpRateLimitKey('2001:db8:1234:5700::1')
+
+    expect(hostA).toBe('2001:db8:1234:5600::/56')
+    expect(hostB).toBe('2001:db8:1234:5600::/56')
+    expect(otherSubnet).toBe('2001:db8:1234:5700::/56')
+    expect(clientIpRateLimitKey(hostA)).toBe(hostA)
+  })
+
+  it('maps missing or invalid inputs to unknown', () => {
+    expect(clientIpRateLimitKey(undefined)).toBe('unknown')
+    expect(clientIpRateLimitKey(null)).toBe('unknown')
+    expect(clientIpRateLimitKey('')).toBe('unknown')
+    expect(clientIpRateLimitKey('not-an-ip')).toBe('unknown')
+  })
+})
+
 describe('redactIpHint', () => {
-  it('redacts public IPv4 to a /24 hint and keeps public IPv6 opaque', () => {
+  it('redacts public IPv4 (including IPv4-mapped IPv6) to a /24 hint and keeps public IPv6 opaque', () => {
     expect(redactIpHint('203.0.113.50')).toBe('203.0.113.*')
+    expect(redactIpHint('::ffff:203.0.113.50')).toBe('203.0.113.*')
+    expect(redactIpHint('::ffff:cb00:7132')).toBe('203.0.113.*')
     expect(redactIpHint('2001:db8::1')).toBe('IPv6 地址')
   })
 
