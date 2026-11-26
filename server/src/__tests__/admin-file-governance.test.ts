@@ -178,7 +178,7 @@ describe('GET /api/admin/delivery-files/:id/grants', () => {
     })
 
     const base = Date.now()
-    const mkGrant = (outcome: string, role: string, offsetMs: number) =>
+    const mkGrant = (outcome: string, role: string, offsetMs: number, userAgent = 'vitest-agent') =>
       prisma.fileGrantLog.create({
         data: {
           fileId: file.id,
@@ -187,14 +187,14 @@ describe('GET /api/admin/delivery-files/:id/grants', () => {
           role,
           outcome,
           ipHash: 'hash-abc',
-          userAgent: 'vitest-agent',
+          userAgent,
           expiresAt: outcome === 'granted' ? new Date(base + 600_000) : null,
           createdAt: new Date(base - offsetMs),
         },
       })
-    const oldest = await mkGrant('granted', 'buyer', 3000)
-    const middle = await mkGrant('denied_window', 'buyer', 2000)
-    const newest = await mkGrant('denied_revoked', 'merchant', 1000)
+    const oldest = await mkGrant('granted', 'buyer', 3000, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 Chrome/131.0 Safari/537.36')
+    const middle = await mkGrant('denied_window', 'buyer', 2000, 'vitest-agent')
+    const newest = await mkGrant('denied_revoked', 'merchant', 1000, 'Firefox · Windows')
 
     const page1 = await api
       .get(`/api/admin/delivery-files/${file.id}/grants`)
@@ -204,13 +204,14 @@ describe('GET /api/admin/delivery-files/:id/grants', () => {
 
     expect(page1.body.total).toBe(3)
     expect(page1.body.items.map((g: any) => g.id)).toEqual([newest.id, middle.id])
+    expect(page1.body.items[0].userAgent).toBe('Firefox · Windows')
     expect(page1.body.items[1]).toMatchObject({
       orderId: order.id,
       userId: merchantUser.id,
       role: 'buyer',
       outcome: 'denied_window',
       ipHash: 'hash-abc',
-      userAgent: 'vitest-agent',
+      userAgent: '浏览器会话',
       expiresAt: null,
     })
 
@@ -220,6 +221,7 @@ describe('GET /api/admin/delivery-files/:id/grants', () => {
       .set(authHeader(accessToken))
       .expect(200)
     expect(page2.body.items.map((g: any) => g.id)).toEqual([oldest.id])
+    expect(page2.body.items[0].userAgent).toBe('Chrome · macOS')
     expect(page2.body.items[0].expiresAt).not.toBeNull()
   })
 

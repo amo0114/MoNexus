@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
+import { normalizeClientIp } from '../../lib/clientIp.js'
+import { parseDeviceHint } from '../../lib/deviceHint.js'
 import { prisma } from '../../lib/prisma.js'
 
 /**
@@ -40,6 +42,9 @@ export const SESSION_REVOCATION_REASONS = [
   'mfa_break_glass_reset',
   'mfa_migration',
   'refresh_replay',
+  'expired',
+  'login_replaced',
+  'session_limit',
 ] as const
 export type SessionRevocationReason = typeof SESSION_REVOCATION_REASONS[number]
 
@@ -214,8 +219,8 @@ export function serializeSecurityEventDetail<T extends SecurityEventType>(
  */
 export function hashSecurityEventIp(ip: string | null | undefined): string | null {
   if (typeof ip !== 'string') return null
-  const normalized = ip.trim()
-  if (normalized.length === 0 || normalized.length > 128) return null
+  const normalized = normalizeClientIp(ip.trim())
+  if (!normalized) return null
 
   return crypto
     .createHmac('sha256', config.jwtSecret)
@@ -228,35 +233,7 @@ export function hashSecurityEventIp(ip: string | null | undefined): string | nul
  * of the original user-agent is copied into the result.
  */
 export function getSecurityEventDeviceHint(userAgent: string | null | undefined): string | null {
-  if (typeof userAgent !== 'string' || userAgent.trim().length === 0) return null
-
-  const browser = /Edg\//i.test(userAgent)
-    ? 'Edge'
-    : /OPR\//i.test(userAgent)
-      ? 'Opera'
-      : /Firefox\//i.test(userAgent)
-        ? 'Firefox'
-        : /(?:Chrome|CriOS)\//i.test(userAgent)
-          ? 'Chrome'
-          : /Version\/[^ ]+.*Safari\//i.test(userAgent)
-            ? 'Safari'
-            : /bot|crawler|spider/i.test(userAgent)
-              ? 'Automated client'
-              : 'Unknown browser'
-
-  const platform = /iPad|iPhone|iPod/i.test(userAgent)
-    ? 'iOS'
-    : /Android/i.test(userAgent)
-      ? 'Android'
-      : /Windows/i.test(userAgent)
-        ? 'Windows'
-        : /Macintosh|Mac OS X/i.test(userAgent)
-          ? 'macOS'
-          : /Linux/i.test(userAgent)
-            ? 'Linux'
-            : 'Unknown device'
-
-  return `${browser} · ${platform}`
+  return parseDeviceHint(userAgent)
 }
 
 /**

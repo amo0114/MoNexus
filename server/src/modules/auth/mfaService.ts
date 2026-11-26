@@ -7,7 +7,11 @@ import {
   notFound,
 } from '../../lib/httpError.js'
 import { getRefreshTokenMaxAgeMs } from '../../lib/systemConfig.js'
-import { lockUserRefreshSessionMutations, revokeAllUserRefreshTokens } from './sessionService.js'
+import {
+  lockUserRefreshSessionMutations,
+  revokeAllUserRefreshTokens,
+  revokeSameUserRefreshCookieSession,
+} from './sessionService.js'
 import { recordSecurityEvent } from './securityEvents.js'
 import {
   claimMfaRecoveryCode,
@@ -23,11 +27,11 @@ import {
   verifyTotp,
   type AuthChallengePurpose,
 } from './mfa.js'
-import { buildAuthUser, generateAccessToken, createStoredRefreshToken } from './sessionIssuance.js'
+import { buildAuthUser, generateAccessToken, hashRefreshToken, createStoredRefreshToken } from './sessionIssuance.js'
 
 type MfaFactorMethod = 'totp' | 'recovery_code'
 type MfaVerificationOutcome =
-  | { kind: 'issued'; user: { id: number; email: string; role: string; status: string; nickname: string | null; mfaVersion: number; pointAccount: { balance: number } | null }; session: { refreshToken: string; maxAgeMs: number; sessionId: string }; recoveryCodes?: string[]; recoveryCodeRemaining?: number }
+  | { kind: 'issued'; user: { id: number; email: string; role: string; status: string; nickname: string | null; mfaVersion: number; pointAccount: { balance: number } | null }; session: { refreshToken: string; expiresAt: Date; absoluteExpiresAt: Date; sessionId: string }; recoveryCodes?: string[]; recoveryCodeRemaining?: number }
   | { kind: 'verification_failed' | 'too_many_attempts' | 'challenge_invalid' }
 
 /** Forces a transaction rollback when a recovery-code claim lost its challenge race. */
@@ -170,9 +174,10 @@ function issueMfaLoginResponse(outcome: Extract<MfaVerificationOutcome, { kind: 
       outcome.user.role,
       outcome.session.sessionId,
       { verified: true, version: outcome.user.mfaVersion },
+      outcome.session.expiresAt,
     ),
     refreshToken: outcome.session.refreshToken,
-    refreshTokenMaxAgeMs: outcome.session.maxAgeMs,
+    refreshTokenExpiresAt: outcome.session.expiresAt,
     ...(outcome.recoveryCodes === undefined ? {} : { recoveryCodes: outcome.recoveryCodes }),
     ...(outcome.recoveryCodeRemaining === undefined ? {} : { recoveryCodeRemaining: outcome.recoveryCodeRemaining }),
   }
@@ -265,8 +270,17 @@ export async function confirmAdminMfaEnrollment(input: {
 
       const recoveryCodes = await replaceMfaRecoveryCodes(user.id, { tx })
       await revokeAllUserRefreshTokens(user.id, tx, 'mfa_migration', { ip: input.ip, userAgent: input.userAgent })
-      await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-      const session = await createStoredRefreshToken(user.id, input.ip, input.userAgent, tx, maxAgeMs)
+      await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: now } })
+      const session = await createStoredRefreshToken(
+        user.id,
+        input.ip,
+        input.userAgent,
+        tx,
+        maxAgeMs,
+        undefined,
+        user.role,
+        now,
+      )
       const enrolled = await tx.user.findUniqueOrThrow({
         where: { id: user.id },
         include: { pointAccount: true },
@@ -306,6 +320,7 @@ export async function verifyAdminMfaLogin(input: {
   code: string
   ip?: string
   userAgent?: string
+  existingRefreshToken?: string
 }) {
   const pointer = await findMfaChallengeOwner(input.challengeId, 'admin_login')
   const maxAgeMs = await getRefreshTokenMaxAgeMs()
@@ -367,8 +382,24 @@ export async function verifyAdminMfaLogin(input: {
         throw new MfaChallengeChangedError()
       }
 
-      await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-      const session = await createStoredRefreshToken(user.id, input.ip, input.userAgent, tx, maxAgeMs)
+      const now = new Date()
+      await revokeSameUserRefreshCookieSession(tx, {
+        userId: user.id,
+        tokenHash: input.existingRefreshToken ? hashRefreshToken(input.existingRefreshToken) : null,
+        now,
+        metadata: { ip: input.ip, userAgent: input.userAgent },
+      })
+      await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: now } })
+      const session = await createStoredRefreshToken(
+        user.id,
+        input.ip,
+        input.userAgent,
+        tx,
+        maxAgeMs,
+        undefined,
+        user.role,
+        now,
+      )
       const recoveryCodeRemaining = input.method === 'recovery'
         ? await countUnusedMfaRecoveryCodes(user.id, tx)
         : undefined

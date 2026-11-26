@@ -149,4 +149,30 @@ describe('AdminFileGovernance race condition & consistency protection', () => {
     await new Promise((r) => setTimeout(r, 20))
     expect(screen.queryByText('collapsed-file-user@test.com')).not.toBeInTheDocument()
   })
+
+  it('labels grant device summaries as 客户端摘要 instead of raw UA', async () => {
+    mocks.listGrants.mockResolvedValueOnce({
+      items: [
+        {
+          id: 301,
+          fileId: 10,
+          userId: 3,
+          orderId: 3003,
+          outcome: 'granted',
+          role: 'buyer',
+          ipHash: 'abc123',
+          userAgent: 'Chrome · macOS',
+          createdAt: '2026-09-03T10:00:00.000Z',
+        },
+      ],
+      total: 1,
+    })
+
+    render(<AdminFileGovernance />)
+    expect(await screen.findByText('alpha.zip')).toBeInTheDocument()
+
+    fireEvent.click(screen.getAllByRole('button', { name: '查看流水' })[0])
+    expect(await screen.findByText('客户端摘要：Chrome · macOS')).toBeInTheDocument()
+    expect(screen.queryByText(/客户端信息（UA）/)).not.toBeInTheDocument()
+  })
 })

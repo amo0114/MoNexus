@@ -1,9 +1,12 @@
+import crypto from 'node:crypto'
 import jwt from 'jsonwebtoken'
 import { describe, expect, it } from 'vitest'
-import { api, authHeader, createTestMerchant, createTestUser } from './helpers.js'
+import { api, authHeader, createTestMerchant, createTestUser, loginAs } from './helpers.js'
 import { prisma } from '../lib/prisma.js'
-import { refreshTokenCookieName } from '../lib/cookies.js'
-import { changePassword, loginUser, refreshAccessToken } from '../modules/auth/service.js'
+import { refreshTokenCookieName, setRefreshTokenCookie } from '../lib/cookies.js'
+import { changePassword, loginUser, refreshAccessToken, revokeAllUserRefreshTokens } from '../modules/auth/service.js'
+import { generateAccessToken, hashRefreshToken } from '../modules/auth/sessionIssuance.js'
+import { decryptMfaSecret, generateTotp } from '../modules/auth/mfa.js'
 import { lockUserRefreshSessionMutations } from '../modules/auth/sessionService.js'
 import { approveMerchant, banUser, suspendMerchant } from '../modules/admin/service.js'
 import { config } from '../config/index.js'
@@ -131,11 +134,17 @@ describe('device session families', () => {
     const initialClaims = jwt.decode(original.accessToken) as { sid?: unknown } | null
 
     expect(initialClaims?.sid === originalRow.sessionId).toBe(true)
+    // D2 write-side minimization: new writes store only summaries and null out raw IP/UA columns.
+    expect(originalRow.ip).toBeNull()
+    expect(originalRow.userAgent).toBeNull()
+    expect(originalRow.deviceLabel).toBe('浏览器会话')
+    expect(originalRow.ipHint).toBe('未知 IP')
+    expect(originalRow.absoluteExpiresAt).toBeInstanceOf(Date)
 
     const refreshed = await api
       .post('/api/auth/refresh')
       .set('Cookie', original.refreshCookie)
-      .set('User-Agent', 'Sensitive Session UA / 1.0')
+      .set('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 Chrome/131.0 Safari/537.36')
       .expect(200)
     const refreshedRow = await prisma.refreshToken.findFirstOrThrow({
       where: { userId: user.id },
@@ -148,8 +157,13 @@ describe('device session families', () => {
       originalRevoked: originalAfterRefresh.revoked,
       sameSessionId: refreshedRow.sessionId === originalRow.sessionId,
       sameStartedAt: refreshedRow.sessionStartedAt.getTime() === originalRow.sessionStartedAt.getTime(),
+      sameAbsoluteExpiry: refreshedRow.absoluteExpiresAt?.getTime() === originalRow.absoluteExpiresAt?.getTime(),
       lastUsedAdvanced: refreshedRow.lastUsedAt.getTime() >= originalRow.lastUsedAt.getTime(),
       refreshedSid: refreshedClaims?.sid === originalRow.sessionId,
+      refreshedRawIpNull: refreshedRow.ip === null,
+      refreshedRawUaNull: refreshedRow.userAgent === null,
+      refreshedDeviceLabel: refreshedRow.deviceLabel === 'Chrome · macOS',
+      refreshedIpHint: refreshedRow.ipHint === '未知 IP',
     }
     const failedRotationInvariants = Object.entries(rotationInvariants)
       .filter(([, passed]) => !passed)
@@ -158,8 +172,9 @@ describe('device session families', () => {
 
     const items = await listSessions(refreshed.body.accessToken)
     const [current] = items
-    const noRawMetadata = !JSON.stringify(items).includes(originalRow.userAgent ?? '')
-      && !JSON.stringify(items).includes(originalRow.ip ?? '')
+    const noRawMetadata = !JSON.stringify(items).includes('Sensitive Session UA')
+      && !JSON.stringify(items).includes('Mozilla/')
+      && !JSON.stringify(items).includes('127.0.0.1')
     const hasOnlySummaryFields = current !== undefined
       && Object.keys(current).every(key => [
         'sessionId',
@@ -170,12 +185,32 @@ describe('device session families', () => {
         'current',
       ].includes(key))
       && current.current
+      && current.deviceLabel === 'Chrome · macOS'
       && current.sessionId === originalRow.sessionId
       && !('tokenHash' in current)
       && !('userAgent' in current)
       && !('ip' in current)
 
     expect(items.length === 1 && hasOnlySummaryFields && noRawMetadata).toBe(true)
+
+    // Legacy row read-side fallback during rolling upgrades: null summary columns fall back to raw columns via bounded parser.
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+        expiresAt: new Date(Date.now() + 3_600_000),
+        ip: '203.0.113.50',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/130.0',
+        deviceLabel: null,
+        ipHint: null,
+      },
+    })
+    const withLegacy = await listSessions(refreshed.body.accessToken)
+    const legacySummary = withLegacy.find(item => !item.current)
+    expect(legacySummary).toMatchObject({
+      deviceLabel: 'Firefox · Windows',
+      ipHint: '203.0.113.*',
+    })
   })
 
   it('only lets an owner revoke a non-current family, while the current family continues to work', async () => {
@@ -448,7 +483,610 @@ describe('device session families', () => {
       && attempts.filter(result => result.status === 'rejected').length === 1
       && activeTokenCount === 0
       && detail?.action === 'revoke_all_user_sessions'
-      && typeof detail?.revokedCount === 'number',
+      && detail?.revokedCount === 1,
     ).toBe(true)
+  })
+
+  it('triggers replay revocation only once per family and never lets repeated replays kick out newer logins', async () => {
+    const { user, password } = await createTestUser('session-replay-once@test.local', 'session-password')
+    const victim = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const secondDevice = await login(user.email, password, 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+
+    // Rotate victim once so victim.refreshCookie becomes a rotated predecessor.
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', victim.refreshCookie)
+      .expect(200)
+
+    // First replay revokes all currently active families (victim successor + secondDevice = 2).
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', victim.refreshCookie)
+      .expect(401)
+
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0)
+    const firstReplayEvents = await prisma.securityEvent.findMany({
+      where: { userId: user.id, type: 'session_replay_detected' },
+      orderBy: { id: 'asc' },
+    })
+    expect(firstReplayEvents).toHaveLength(1)
+    expect(firstReplayEvents[0]?.detailSafe).toEqual({
+      action: 'revoke_all_user_sessions',
+      revokedCount: 2,
+    })
+
+    // User recovers and logs in on a fresh device.
+    const recovered = await login(user.email, password, 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Safari/604.1')
+
+    // Replaying the old stolen predecessor again must return 401 without revoking the new login or spamming events.
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', victim.refreshCookie)
+      .expect(401)
+
+    await api
+      .post('/api/auth/refresh')
+      .set('Cookie', recovered.refreshCookie)
+      .expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(1)
+  })
+
+  it('does not treat a rotated predecessor as replay when its successor naturally expired or when the predecessor itself expired', async () => {
+    const { user, password } = await createTestUser('session-expired-predecessor@test.local', 'session-password')
+    const healthy = await login(user.email, password, 'Healthy Device')
+    const stale = await login(user.email, password, 'Stale Device')
+    const staleSessionId = sessionIdFromAccessToken(stale.accessToken)
+
+    // Rotate stale once -> predecessor has revokeReason='refresh_rotation', successor is active.
+    await api.post('/api/auth/refresh').set('Cookie', stale.refreshCookie).expect(200)
+
+    // Case 1: predecessor itself expired while successor is still active -> 401 expired, no global revoke.
+    const staleRows = await prisma.refreshToken.findMany({
+      where: { userId: user.id, sessionId: staleSessionId },
+      orderBy: { id: 'asc' },
+    })
+    expect(staleRows).toHaveLength(2)
+    const past = new Date(Date.now() - 60_000)
+    const future = new Date(Date.now() + 3_600_000)
+    await prisma.refreshToken.update({
+      where: { id: staleRows[0]!.id },
+      data: { expiresAt: past },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', stale.refreshCookie).expect(401)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(0)
+
+    // Case 2: predecessor is still unexpired, but its active successor naturally expired (never explicitly revoked).
+    await prisma.refreshToken.update({
+      where: { id: staleRows[0]!.id },
+      data: { expiresAt: future },
+    })
+    await prisma.refreshToken.update({
+      where: { id: staleRows[1]!.id },
+      data: { expiresAt: past },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', stale.refreshCookie).expect(401)
+
+    // Healthy session must remain active and no replay event recorded.
+    await api.post('/api/auth/refresh').set('Cookie', healthy.refreshCookie).expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(0)
+  })
+
+  it('requires an active family successor before escalating a legacy null-reason revoked row', async () => {
+    const { user, password } = await createTestUser('session-legacy-null@test.local', 'session-password')
+    const healthy = await login(user.email, password, 'Healthy Device')
+    const future = new Date(Date.now() + 3_600_000)
+
+    // Orphan legacy revoked row (no active successor in its family) -> 401 only, healthy survives.
+    const orphanRaw = crypto.randomBytes(40).toString('hex')
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashRefreshToken(orphanRaw),
+        revoked: true,
+        revokedAt: new Date(Date.now() - 10_000),
+        revokeReason: null,
+        expiresAt: future,
+      },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', [`${refreshTokenCookieName}=${orphanRaw}`]).expect(401)
+    await api.post('/api/auth/refresh').set('Cookie', healthy.refreshCookie).expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(0)
+
+    // Legacy null-reason row WITH an active successor in the same family -> escalates once, then becomes terminal.
+    const liveFamily = await login(user.email, password, 'Legacy Live Family')
+    const liveSessionId = sessionIdFromAccessToken(liveFamily.accessToken)
+    const legacyPredRaw = crypto.randomBytes(40).toString('hex')
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        sessionId: liveSessionId,
+        tokenHash: hashRefreshToken(legacyPredRaw),
+        revoked: true,
+        revokedAt: new Date(Date.now() - 10_000),
+        revokeReason: null,
+        expiresAt: future,
+      },
+    })
+    await api.post('/api/auth/refresh').set('Cookie', [`${refreshTokenCookieName}=${legacyPredRaw}`]).expect(401)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(1)
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0)
+
+    // Re-login after replay; replaying the legacy row a second time must not revoke the new login.
+    const afterReplay = await login(user.email, password, 'Fresh After Legacy Replay')
+    await api.post('/api/auth/refresh').set('Cookie', [`${refreshTokenCookieName}=${legacyPredRaw}`]).expect(401)
+    await api.post('/api/auth/refresh').set('Cookie', afterReplay.refreshCookie).expect(200)
+    expect(await prisma.securityEvent.count({ where: { userId: user.id, type: 'session_replay_detected' } })).toBe(1)
+  })
+
+  it('counts only active families in revokeAllUserRefreshTokens and preserves request audit metadata across password and admin revocations', async () => {
+    const { user, password } = await createTestUser('session-audit-count@test.local', 'Old#Pass-2026')
+    const first = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    await login(user.email, password, 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+
+    // Insert an already-expired unrevoked row that must not inflate active family count.
+    await prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+        revoked: false,
+        expiresAt: new Date(Date.now() - 60_000),
+      },
+    })
+
+    const revokedFamilies = await revokeAllUserRefreshTokens(user.id, undefined, 'revoke_all', {
+      ip: '203.0.113.55',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36',
+    })
+    expect(revokedFamilies).toBe(2)
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0)
+
+    const directEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(directEvent.detailSafe).toEqual({ reason: 'revoke_all', revokedCount: 2 })
+    expect(directEvent.ipHash).toBeTruthy()
+    expect(directEvent.deviceHint).toBe('Chrome · macOS')
+
+    // Verify HTTP password-change passes request ip/user-agent metadata to SecurityEvent.
+    const relogged = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    await api
+      .post('/api/auth/password-change')
+      .set(authHeader(relogged.accessToken))
+      .set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+      .send({ currentPassword: password, newPassword: 'New#Pass-2026-Strong' })
+      .expect(200)
+
+    const pwdEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(pwdEvent.ipHash).toBeTruthy()
+    expect(pwdEvent.deviceHint).toBe('Firefox · Windows')
+    expect(pwdEvent.detailSafe).toEqual({ reason: 'revoke_all', revokedCount: 1 })
+
+    // Verify HTTP admin ban passes admin request metadata to SecurityEvent.
+    const { user: admin, password: adminPassword } = await createTestUser('session-audit-admin@test.local', 'Admin#Pass-2026', 'admin')
+    const adminSession = await loginAs(admin.email, adminPassword)
+    await login(user.email, 'New#Pass-2026-Strong', 'Target Session')
+    await api
+      .put(`/api/admin/users/${user.id}/ban`)
+      .set(authHeader(adminSession.accessToken))
+      .set('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+      .send({ reason: 'audit metadata check' })
+      .expect(200)
+
+    const banEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(banEvent.ipHash).toBeTruthy()
+    expect(banEvent.deviceHint).toBe('Chrome · macOS')
+    expect(first.accessToken).toBeTruthy()
+  })
+
+  it('enforces role-based absolute session lifetimes and clamps rotated cookie Max-Age and JWT exp', async () => {
+    const dayMs = 24 * 60 * 60 * 1000
+    await prisma.systemConfig.upsert({
+      where: { key: 'refreshTokenMaxAgeDays' },
+      create: { key: 'refreshTokenMaxAgeDays', value: 365, description: 'test' },
+      update: { value: 365 },
+    })
+
+    try {
+      // User is capped at 90 days even when refreshTokenMaxAgeDays is 365.
+      const { user, password } = await createTestUser('session-abs-user@test.local', 'Abs#Pass-2026')
+      const userLogin = await login(user.email, password)
+      const userRow = await prisma.refreshToken.findFirstOrThrow({
+        where: { userId: user.id },
+        orderBy: { id: 'desc' },
+      })
+      const userSpanDays = (userRow.absoluteExpiresAt!.getTime() - userRow.sessionStartedAt.getTime()) / dayMs
+      expect(userSpanDays).toBeGreaterThan(89.9)
+      expect(userSpanDays).toBeLessThan(90.1)
+      expect(userRow.expiresAt.getTime()).toBeLessThanOrEqual(userRow.absoluteExpiresAt!.getTime())
+
+      // Near absolute ceiling (90 seconds left): rotation clamps BOTH cookie Max-Age and JWT exp.
+      const nearCeiling = new Date(Date.now() + 90_000)
+      await prisma.refreshToken.update({
+        where: { id: userRow.id },
+        data: { absoluteExpiresAt: nearCeiling, expiresAt: nearCeiling },
+      })
+      const clampedRes = await api
+        .post('/api/auth/refresh')
+        .set('Cookie', userLogin.refreshCookie)
+        .expect(200)
+      const clampedClaims = jwt.decode(clampedRes.body.accessToken) as { exp?: number; iat?: number }
+      expect(Number.isInteger(clampedClaims.exp)).toBe(true)
+      expect(clampedClaims.exp! - clampedClaims.iat!).toBeLessThanOrEqual(90)
+      expect(clampedClaims.exp! - clampedClaims.iat!).toBeGreaterThanOrEqual(80)
+      const clampedCookie = refreshCookieFrom(clampedRes)
+      const maxAgeMatch = clampedCookie.match(/Max-Age=(\d+)/)
+      expect(maxAgeMatch).toBeTruthy()
+      expect(Number(maxAgeMatch![1])).toBeLessThanOrEqual(90)
+      expect(Number(maxAgeMatch![1])).toBeGreaterThanOrEqual(80)
+
+      // Past absolute ceiling -> refresh fails with 401 and marks row expired.
+      const rotatedRow = await prisma.refreshToken.findFirstOrThrow({
+        where: { userId: user.id, revoked: false },
+        orderBy: { id: 'desc' },
+      })
+      await prisma.refreshToken.update({
+        where: { id: rotatedRow.id },
+        data: { absoluteExpiresAt: new Date(Date.now() - 5_000), expiresAt: new Date(Date.now() + 60_000) },
+      })
+      await api
+        .post('/api/auth/refresh')
+        .set('Cookie', clampedCookie)
+        .expect(401)
+      const afterExpire = await prisma.refreshToken.findUniqueOrThrow({ where: { id: rotatedRow.id } })
+      expect(afterExpire.revoked).toBe(true)
+      expect(afterExpire.revokeReason).toBe('expired')
+
+      // Admin is capped at 7 days even when refreshTokenMaxAgeDays is 365.
+      const { user: admin, password: adminPassword } = await createTestUser('session-abs-admin@test.local', 'Adm#Pass-2026', 'admin')
+      const adminSession = await loginAs(admin.email, adminPassword)
+      expect(adminSession.accessToken).toBeTruthy()
+      const adminRow = await prisma.refreshToken.findFirstOrThrow({
+        where: { userId: admin.id, revoked: false },
+        orderBy: { id: 'desc' },
+      })
+      const adminSpanDays = (adminRow.absoluteExpiresAt!.getTime() - adminRow.sessionStartedAt.getTime()) / dayMs
+      expect(adminSpanDays).toBeGreaterThan(6.9)
+      expect(adminSpanDays).toBeLessThan(7.1)
+
+      // Once an admin session's absoluteExpiresAt passes, admin routes immediately reject even if expiresAt is still future.
+      await prisma.refreshToken.update({
+        where: { id: adminRow.id },
+        data: { absoluteExpiresAt: new Date(Date.now() - 5_000), expiresAt: new Date(Date.now() + 60_000) },
+      })
+      const expiredAdminRes = await api
+        .get('/api/admin/users')
+        .set(authHeader(adminSession.accessToken))
+        .expect(401)
+      expect(expiredAdminRes.body.error.code).toBe('SESSION_REVOKED')
+    } finally {
+      await prisma.systemConfig.deleteMany({ where: { key: 'refreshTokenMaxAgeDays' } })
+    }
+  })
+
+  it('caps active device families at 20 per user by evicting the oldest families on new logins, not on rotation', async () => {
+    const { user, password } = await createTestUser('session-cap-20@test.local', 'Cap#Pass-2026')
+    const baseTime = Date.now() - 60 * 60 * 1000
+    const seededSessionIds: string[] = []
+    for (let index = 0; index < 20; index += 1) {
+      const row = await prisma.refreshToken.create({
+        data: {
+          userId: user.id,
+          tokenHash: hashRefreshToken(crypto.randomBytes(40).toString('hex')),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          absoluteExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          sessionStartedAt: new Date(baseTime + index * 1_000),
+          lastUsedAt: new Date(baseTime + index * 1_000),
+          deviceLabel: 'Chrome · macOS',
+          ipHint: '203.0.113.*',
+        },
+      })
+      seededSessionIds.push(row.sessionId)
+    }
+
+    // 21st login must evict only the oldest seeded session (index 0) and keep active count at 20.
+    const newestLogin = await login(user.email, password, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const activeRows = await prisma.refreshToken.findMany({
+      where: { userId: user.id, revoked: false },
+      select: { sessionId: true },
+    })
+    expect(activeRows).toHaveLength(20)
+    expect(activeRows.some(row => row.sessionId === seededSessionIds[0])).toBe(false)
+    expect(activeRows.some(row => row.sessionId === seededSessionIds[1])).toBe(true)
+
+    const evictedRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: user.id, sessionId: seededSessionIds[0] },
+    })
+    expect(evictedRow.revoked).toBe(true)
+    expect(evictedRow.revokeReason).toBe('session_limit')
+
+    const limitEvent = await prisma.securityEvent.findFirstOrThrow({
+      where: { userId: user.id, type: 'session_revoked' },
+      orderBy: { id: 'desc' },
+    })
+    expect(limitEvent.detailSafe).toEqual({ reason: 'session_limit', revokedCount: 1 })
+
+    // Rotating the newest session at the 20-family cap must NOT evict any other family.
+    await api.post('/api/auth/refresh').set('Cookie', newestLogin.refreshCookie).expect(200)
+    const activeAfterRotate = await prisma.refreshToken.findMany({
+      where: { userId: user.id, revoked: false },
+      select: { sessionId: true },
+    })
+    expect(activeAfterRotate).toHaveLength(20)
+    expect(activeAfterRotate.some(row => row.sessionId === seededSessionIds[1])).toBe(true)
+  })
+
+  it('replaces only a same-account cookie family on final login/MFA issuance without touching failed logins, 202 pre-auth, or other users', async () => {
+    const { user: userA, password: passwordA } = await createTestUser('d6-replace-a@test.local', 'RepA#Pass-2026')
+    const { user: userB, password: passwordB } = await createTestUser('d6-replace-b@test.local', 'RepB#Pass-2026')
+
+    const sessionA1 = await login(userA.email, passwordA, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const sessionA1Id = sessionIdFromAccessToken(sessionA1.accessToken)
+    const sessionB1 = await login(userB.email, passwordB, 'Mozilla/5.0 (Windows NT 10.0) Firefox/130.0')
+    const sessionB1Id = sessionIdFromAccessToken(sessionB1.accessToken)
+
+    // Wrong password presenting A1 cookie must NOT revoke A1.
+    await api
+      .post('/api/auth/login')
+      .set('Cookie', sessionA1.refreshCookie)
+      .send({ email: userA.email, password: 'wrong-password' })
+      .expect(401)
+    await api.post('/api/auth/refresh').set('Cookie', sessionA1.refreshCookie).expect(200)
+
+    // Rotate A1 -> A1b, then re-login as userA presenting the OLD rotated cookie A1:
+    // the entire A1 family (including active successor A1b) must be marked login_replaced.
+    const freshA = await login(userA.email, passwordA, 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Chrome/131.0 Safari/537.36')
+    const freshAId = sessionIdFromAccessToken(freshA.accessToken)
+    const freshARotated = await api.post('/api/auth/refresh').set('Cookie', freshA.refreshCookie).expect(200)
+    const freshARotatedCookie = refreshCookieFrom(freshARotated)
+
+    // Re-login as userA carrying the rotated predecessor cookie `freshA.refreshCookie`:
+    const reloginA = await api
+      .post('/api/auth/login')
+      .set('Cookie', freshA.refreshCookie)
+      .send({ email: userA.email, password: passwordA })
+      .expect(200)
+    const reloginAId = sessionIdFromAccessToken(reloginA.body.accessToken)
+    expect(reloginAId).not.toBe(freshAId)
+
+    // The active successor of `freshAId` must have been replaced (`login_replaced`), not left orphaned.
+    await api.post('/api/auth/refresh').set('Cookie', freshARotatedCookie).expect(401)
+    const replacedRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: userA.id, sessionId: freshAId, revokeReason: 'login_replaced' },
+    })
+    expect(replacedRow.revoked).toBe(true)
+    expect(await prisma.securityEvent.count({
+      where: { userId: userA.id, sessionId: freshAId, type: 'session_revoked' },
+    })).toBeGreaterThanOrEqual(1)
+
+    // Logging in as userA while presenting userB's cookie must NEVER revoke userB's session.
+    await api
+      .post('/api/auth/login')
+      .set('Cookie', sessionB1.refreshCookie)
+      .send({ email: userA.email, password: passwordA })
+      .expect(200)
+    const bActive = await prisma.refreshToken.findFirst({
+      where: { userId: userB.id, sessionId: sessionB1Id, revoked: false },
+    })
+    expect(bActive).not.toBeNull()
+
+    // Admin MFA flow: 202 pre-auth and wrong TOTP must NOT replace existing admin cookie;
+    // final MFA verify success MUST replace same-admin cookie with login_replaced.
+    const { user: admin, password: adminPassword } = await createTestUser('d6-replace-admin@test.local', 'Adm#Pass-2026', 'admin')
+    const adminFirst = await loginAs(admin.email, adminPassword)
+    const adminFirstId = sessionIdFromAccessToken(adminFirst.accessToken)
+    const adminDb = await prisma.user.findUniqueOrThrow({ where: { id: admin.id } })
+    const adminSecret = decryptMfaSecret(adminDb.mfaSecretEncrypted!)
+
+    const preAuth = await api
+      .post('/api/auth/login')
+      .set('Cookie', adminFirst.cookies)
+      .send({ email: admin.email, password: adminPassword })
+      .expect(202)
+    // Existing admin session must remain active after 202 pre-auth.
+    await api.get('/api/admin/users').set(authHeader(adminFirst.accessToken)).expect(200)
+
+    // Wrong MFA code must NOT revoke existing admin cookie.
+    const validTotp = generateTotp(adminSecret)
+    const wrongTotp = `${validTotp.slice(0, -1)}${validTotp.endsWith('0') ? '1' : '0'}`
+    await api
+      .post('/api/auth/mfa/verify')
+      .set('Cookie', adminFirst.cookies)
+      .send({ challengeId: preAuth.body.challengeId, method: 'totp', code: wrongTotp })
+      .expect(401)
+    await api.get('/api/admin/users').set(authHeader(adminFirst.accessToken)).expect(200)
+
+    // Successful MFA verify replaces adminFirst with login_replaced.
+    const verified = await api
+      .post('/api/auth/mfa/verify')
+      .set('Cookie', adminFirst.cookies)
+      .send({ challengeId: preAuth.body.challengeId, method: 'totp', code: generateTotp(adminSecret) })
+      .expect(200)
+    expect(sessionIdFromAccessToken(verified.body.accessToken)).not.toBe(adminFirstId)
+    await api.get('/api/admin/users').set(authHeader(adminFirst.accessToken)).expect(401)
+    const adminReplaced = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: admin.id, sessionId: adminFirstId, revokeReason: 'login_replaced' },
+    })
+    expect(adminReplaced.revoked).toBe(true)
+    expect(sessionA1Id).toBeTruthy()
+  })
+
+  it('clears the refresh cookie on password-change only when expectedSessionId and presented cookie match, rejecting mismatches with 409 before mutation', async () => {
+    const { user: userA, password: passwordA } = await createTestUser('d6-pwd-a@test.local', 'PwdA#Old-2026')
+    const { user: userB, password: passwordB } = await createTestUser('d6-pwd-b@test.local', 'PwdB#Old-2026')
+
+    const sessionA = await login(userA.email, passwordA)
+    const sessionAId = sessionIdFromAccessToken(sessionA.accessToken)
+    const sessionB = await login(userB.email, passwordB)
+
+    // 1. Mismatched cookie (userB's cookie presented with userA's Bearer + clearCookie: true)
+    // must return 409 SESSION_CHANGED without changing password or emitting Set-Cookie.
+    const mismatchRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(sessionA.accessToken))
+      .set('Cookie', sessionB.refreshCookie)
+      .send({
+        currentPassword: passwordA,
+        newPassword: 'PwdA#New-ShouldNotApply',
+        expectedSessionId: sessionAId,
+        clearCookie: true,
+      })
+      .expect(409)
+    expect(mismatchRes.body.error.code).toBe('SESSION_CHANGED')
+    expect(mismatchRes.headers['set-cookie']).toBeUndefined()
+    // Old password still works and userB's cookie is untouched.
+    const stillValidA = await login(userA.email, passwordA)
+    await api.post('/api/auth/refresh').set('Cookie', sessionB.refreshCookie).expect(200)
+
+    // 2. clearCookie: false revokes sessions and updates password WITHOUT emitting Set-Cookie.
+    const sessionA2Id = sessionIdFromAccessToken(stillValidA.accessToken)
+    const noClearRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(stillValidA.accessToken))
+      .set('Cookie', stillValidA.refreshCookie)
+      .send({
+        currentPassword: passwordA,
+        newPassword: 'PwdA#New-Step1-2026',
+        expectedSessionId: sessionA2Id,
+        clearCookie: false,
+      })
+      .expect(200)
+    expect(noClearRes.headers['set-cookie']).toBeUndefined()
+
+    // 3. Matching expectedSessionId + matching cookie + clearCookie: true clears the cookie.
+    const sessionA3 = await login(userA.email, 'PwdA#New-Step1-2026')
+    const sessionA3Id = sessionIdFromAccessToken(sessionA3.accessToken)
+    const clearRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(sessionA3.accessToken))
+      .set('Cookie', sessionA3.refreshCookie)
+      .send({
+        currentPassword: 'PwdA#New-Step1-2026',
+        newPassword: 'PwdA#New-Step2-2026',
+        expectedSessionId: sessionA3Id,
+        clearCookie: true,
+      })
+      .expect(200)
+    const rawSetCookie = clearRes.headers['set-cookie'] as unknown
+    const setCookies = Array.isArray(rawSetCookie) ? rawSetCookie.map(String) : typeof rawSetCookie === 'string' ? [rawSetCookie] : []
+    expect(setCookies.some(cookie => cookie.startsWith(`${refreshTokenCookieName}=;`) && cookie.includes('Expires=Thu, 01 Jan 1970'))).toBe(true)
+    await api.post('/api/auth/refresh').set('Cookie', sessionA3.refreshCookie).expect(401)
+  })
+
+  it('never overshoots persisted session deadline on delayed JWT signing or cookie writing, and rejects already-expired issuance', () => {
+    const t0 = new Date('2026-11-25T12:00:00.200Z')
+    const deadline = new Date(t0.getTime() + 3_000) // 12:00:03.200Z
+    const delayedNow = new Date(t0.getTime() + 1_500) // 12:00:01.700Z (1.5s remaining)
+
+    const token = generateAccessToken(1, 'user', crypto.randomUUID(), undefined, deadline, delayedNow)
+    const decoded = jwt.decode(token) as { exp?: number }
+    expect(Number.isInteger(decoded.exp)).toBe(true)
+    expect(decoded.exp! * 1_000).toBeLessThanOrEqual(deadline.getTime())
+    expect(decoded.exp).toBe(Math.floor(deadline.getTime() / 1_000))
+
+    let capturedMaxAge: number | undefined
+    const fakeRes = {
+      cookie: (_name: string, _value: string, options: { maxAge?: number }) => {
+        capturedMaxAge = options.maxAge
+      },
+    } as never
+    setRefreshTokenCookie(fakeRes, 'raw-refresh', deadline, delayedNow)
+    expect(capturedMaxAge).toBe(1_000)
+    expect(delayedNow.getTime() + capturedMaxAge!).toBeLessThanOrEqual(deadline.getTime())
+
+    // When delay consumes remaining time below 1s, both signing and cookie setting reject with 401.
+    const expiredNow = new Date(deadline.getTime() - 500)
+    expect(() => generateAccessToken(1, 'user', crypto.randomUUID(), undefined, deadline, expiredNow))
+      .toThrow(/登录会话已过期/)
+    expect(() => setRefreshTokenCookie(fakeRes, 'raw-refresh', deadline, expiredNow))
+      .toThrow(/Refresh Token 已过期/)
+  })
+
+  it('immediately enforces the 7-day cap on legacy NULL-absoluteExpiresAt admin sessions before backfill while preserving active non-admin sessions', async () => {
+    const dayMs = 24 * 60 * 60 * 1000
+    const { user: admin, password: adminPassword } = await createTestUser('legacy-null-admin@test.local', 'LegAdm#2026', 'admin')
+    const adminSession = await loginAs(admin.email, adminPassword)
+    const adminRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: admin.id, revoked: false },
+      orderBy: { id: 'desc' },
+    })
+    // Simulate a pre-backfill legacy admin session started 8 days ago with NULL absoluteExpiresAt.
+    await prisma.refreshToken.update({
+      where: { id: adminRow.id },
+      data: {
+        absoluteExpiresAt: null,
+        sessionStartedAt: new Date(Date.now() - 8 * dayMs),
+        expiresAt: new Date(Date.now() + 3 * dayMs),
+      },
+    })
+
+    const adminRouteRes = await api.get('/api/admin/users').set(authHeader(adminSession.accessToken)).expect(401)
+    expect(adminRouteRes.body.error.code).toBe('SESSION_REVOKED')
+    const meRes = await api.get('/api/auth/me').set(authHeader(adminSession.accessToken)).expect(401)
+    expect(meRes.body.error.code).toBe('SESSION_REVOKED')
+    await api.post('/api/auth/refresh').set('Cookie', adminSession.cookies).expect(401)
+
+    // A non-admin legacy row with NULL absoluteExpiresAt and 8-day age stays active before backfill.
+    const { user: normalUser, password: userPassword } = await createTestUser('legacy-null-user@test.local', 'LegUsr#2026')
+    const userSession = await login(normalUser.email, userPassword)
+    const userRow = await prisma.refreshToken.findFirstOrThrow({
+      where: { userId: normalUser.id, revoked: false },
+      orderBy: { id: 'desc' },
+    })
+    await prisma.refreshToken.update({
+      where: { id: userRow.id },
+      data: {
+        absoluteExpiresAt: null,
+        sessionStartedAt: new Date(Date.now() - 8 * dayMs),
+        expiresAt: new Date(Date.now() + 3 * dayMs),
+      },
+    })
+    await api.get('/api/auth/me').set(authHeader(userSession.accessToken)).expect(200)
+    await api.post('/api/auth/refresh').set('Cookie', userSession.refreshCookie).expect(200)
+  })
+
+  it('rejects password-change with 409 when clearCookie=true carries an unknown cookie or when the caller session was revoked before acquiring the user lock', async () => {
+    const { user, password } = await createTestUser('d6-pwd-strict@test.local', 'Strict#Old-2026')
+    const session = await login(user.email, password)
+    const sid = sessionIdFromAccessToken(session.accessToken)
+
+    // 1. Unknown/unrecognized refreshToken cookie with clearCookie=true -> 409 before password mutation.
+    const unknownCookieRes = await api
+      .post('/api/auth/password-change')
+      .set(authHeader(session.accessToken))
+      .set('Cookie', [`${refreshTokenCookieName}=unknown-unproven-cookie-token`])
+      .send({
+        currentPassword: password,
+        newPassword: 'Strict#New-ShouldFail',
+        expectedSessionId: sid,
+        clearCookie: true,
+      })
+      .expect(409)
+    expect(unknownCookieRes.body.error.code).toBe('SESSION_CHANGED')
+    expect(unknownCookieRes.headers['set-cookie']).toBeUndefined()
+
+    // Password was NOT mutated; old password still works.
+    await login(user.email, password)
+
+    // 2. Direct service call simulating a race where the Bearer session became inactive
+    // between route auth and acquiring the user lock -> rejected with 409 before password mutation.
+    await prisma.refreshToken.updateMany({
+      where: { userId: user.id, sessionId: sid },
+      data: { revoked: true, revokedAt: new Date(), revokeReason: 'single_session' },
+    })
+    await expect(changePassword(user.id, password, 'Strict#New-AfterRevoke', {
+      currentSessionId: sid,
+      expectedSessionId: sid,
+      clearCookie: true,
+    })).rejects.toMatchObject({ status: 409, code: 'SESSION_CHANGED' })
+
+    // Old password still works because the transaction aborted before password update.
+    await login(user.email, password)
   })
 })

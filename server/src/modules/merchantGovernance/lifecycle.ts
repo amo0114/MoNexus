@@ -4,6 +4,7 @@ import { forbidden, notFound, badRequest } from '../../lib/httpError.js'
 import {
   lockUserRefreshSessionMutations,
   revokeAllUserRefreshTokens,
+  type SessionRequestMetadata,
 } from '../auth/sessionService.js'
 import { isAccountBanned } from '../accountGovernance/status.js'
 import { assertPermission } from '../adminAuthorization/service.js'
@@ -195,6 +196,7 @@ export async function decideMerchant(
   action: 'approve' | 'reject' | 'suspend' | 'restore',
   input: MerchantDecision,
   key?: string,
+  metadata?: SessionRequestMetadata,
 ) {
   return prisma.$transaction(async (tx) => {
     const auth = await assertPermission(
@@ -260,7 +262,7 @@ export async function decideMerchant(
     })
     if (['approve', 'restore'].includes(action))
       await tx.user.update({ where: { id: m.userId }, data: { role: 'merchant' } })
-    if (action !== 'reject') await revokeAllUserRefreshTokens(m.userId, tx)
+    if (action !== 'reject') await revokeAllUserRefreshTokens(m.userId, tx, 'revoke_all', metadata)
     const application = ['approve', 'reject'].includes(action)
       ? await tx.merchantApplicationRevision.findUniqueOrThrow({
           where: { merchantId_version: { merchantId: id, version: m.currentApplicationVersion } },

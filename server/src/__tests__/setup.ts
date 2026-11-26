@@ -98,6 +98,7 @@ beforeEach(async ({ task }) => {
     "PushSubscription",
     "InviteRelation",
     "Review",
+    "AuthSessionRetentionCursor",
     "RefreshToken",
     "PasswordResetToken",
     "EmailVerificationToken",

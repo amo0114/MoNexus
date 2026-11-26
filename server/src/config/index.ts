@@ -514,9 +514,24 @@ if (env.NODE_ENV === 'production' && !mfaEncryptionKey) {
   process.exit(1)
 }
 
+const EXPECTED_PRODUCTION_TRUST_PROXY_BY_TOPOLOGY: Record<typeof env.DEPLOY_TOPOLOGY, number> = {
+  nginx: 1,
+  caddy: 2,
+  cloudflare_openresty_nginx: 2,
+}
+
 if (env.NODE_ENV === 'production' && env.TRUST_PROXY === 0) {
   console.error('[Config] TRUST_PROXY=0 is not allowed in production; set a hop count of 1 or 2')
   process.exit(1)
+}
+if (env.NODE_ENV === 'production') {
+  const expectedTrustProxy = EXPECTED_PRODUCTION_TRUST_PROXY_BY_TOPOLOGY[env.DEPLOY_TOPOLOGY]
+  if (env.TRUST_PROXY !== expectedTrustProxy) {
+    console.error(
+      `[Config] DEPLOY_TOPOLOGY=${env.DEPLOY_TOPOLOGY} requires TRUST_PROXY=${expectedTrustProxy} in production (got TRUST_PROXY=${env.TRUST_PROXY})`,
+    )
+    process.exit(1)
+  }
 }
 if (env.NODE_ENV === 'production' && !env.COOKIE_SECURE) {
   console.error('[Config] COOKIE_SECURE must be true in production')

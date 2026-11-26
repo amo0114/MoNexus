@@ -119,7 +119,7 @@ describe('TRUST_PROXY strict integer schema', () => {
     })
   })
 
-  it('refuses TRUST_PROXY=0 in production', () => {
+  it('refuses TRUST_PROXY=0 and DEPLOY_TOPOLOGY mismatches in production', () => {
     const missing = loadConfigWith({ TRUST_PROXY: undefined }, PROD_BASE_ENV)
     expect(missing.status).toBe(1)
     expect(spawnText(missing)).toMatch(/TRUST_PROXY/)
@@ -128,9 +128,32 @@ describe('TRUST_PROXY strict integer schema', () => {
     expect(zero.status).toBe(1)
     expect(spawnText(zero)).toMatch(/TRUST_PROXY/)
 
-    const ok = loadConfigWith({ TRUST_PROXY: '2' }, { ...PROD_BASE_ENV, TRUST_PROXY: '2' })
-    expect(ok.status, spawnText(ok)).toBe(0)
-    expect(parseCfg(ok)?.trustProxy).toBe(2)
+    for (const [deployTopology, trustProxy] of [
+      ['nginx', '1'],
+      ['caddy', '2'],
+      ['cloudflare_openresty_nginx', '2'],
+    ] as const) {
+      const ok = loadConfigWith(
+        { DEPLOY_TOPOLOGY: deployTopology, TRUST_PROXY: trustProxy },
+        PROD_BASE_ENV,
+      )
+      expect(ok.status, `${deployTopology}+${trustProxy}: ${spawnText(ok)}`).toBe(0)
+      expect(parseCfg(ok)).toEqual({ deployTopology, trustProxy: Number(trustProxy) })
+    }
+
+    for (const [deployTopology, trustProxy] of [
+      ['nginx', '2'],
+      ['caddy', '1'],
+      ['cloudflare_openresty_nginx', '1'],
+    ] as const) {
+      const mismatch = loadConfigWith(
+        { DEPLOY_TOPOLOGY: deployTopology, TRUST_PROXY: trustProxy },
+        PROD_BASE_ENV,
+      )
+      expect(mismatch.status, `${deployTopology}+${trustProxy} must fail`).toBe(1)
+      expect(spawnText(mismatch)).toMatch(/DEPLOY_TOPOLOGY/)
+      expect(spawnText(mismatch)).toMatch(/TRUST_PROXY/)
+    }
   })
 })
 

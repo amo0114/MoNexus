@@ -68,6 +68,12 @@ describe('security event serialization', () => {
     expect(rejectsUnknownEvent).toThrow('security event type is unsupported')
     expect(rejectsFreeFormDetail).toThrow('security event detail contains an unsupported field')
   })
+
+  it('normalizes IPv4-mapped IPv6 and IPv6 spellings before HMAC hashing', () => {
+    expect(hashSecurityEventIp('::ffff:203.0.113.42')).toBe(hashSecurityEventIp('203.0.113.42'))
+    expect(hashSecurityEventIp('2001:0DB8:0000:0000::0001')).toBe(hashSecurityEventIp('2001:db8::1'))
+    expect(hashSecurityEventIp('not-an-ip')).toBeNull()
+  })
 })
 
 describe('Pino MFA redaction', () => {

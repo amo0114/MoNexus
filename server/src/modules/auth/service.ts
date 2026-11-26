@@ -15,12 +15,15 @@ import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound, sessionRevoked, sessionChanged, unauthenticated } from '../../lib/httpError.js'
 import { getRefreshTokenMaxAgeMs } from '../../lib/systemConfig.js'
 import {
+  hasActiveRefreshSessionSuccessor,
   hasExplicitRefreshSessionTermination,
   lockUserRefreshSessionMutations,
   revokeAllUserRefreshTokens,
   revokeRefreshSessionByTokenHash,
+  revokeSameUserRefreshCookieSession,
   type SessionRequestMetadata,
 } from './sessionService.js'
+import { computeSessionExpiry } from './sessionPolicy.js'
 import { recordSecurityEvent } from './securityEvents.js'
 import { createAuthChallenge } from './mfa.js'
 import { clearLoginFailures, enforceLoginVerification, recordLoginFailure } from './loginFailures.js'
@@ -31,7 +34,7 @@ type AuthenticatedLoginResult = {
   kind: 'authenticated'
   accessToken: string
   refreshToken: string
-  refreshTokenMaxAgeMs: number
+  refreshTokenExpiresAt: Date
   user: ReturnType<typeof buildAuthUser>
 }
 
@@ -54,6 +57,7 @@ export async function loginUser(
   ip?: string,
   userAgent?: string,
   humanVerification?: HumanVerificationRequest['humanVerification'],
+  existingRefreshToken?: string,
 ): Promise<LoginResult> {
   // Checked before the account lookup so unknown emails behave identically.
   await enforceLoginVerification(email, humanVerification, ip)
@@ -111,41 +115,88 @@ export async function loginUser(
       })
     }
 
-    await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } })
-    const session = await createStoredRefreshToken(user.id, ip, userAgent, tx, maxAgeMs)
+    const now = new Date()
+    await revokeSameUserRefreshCookieSession(tx, {
+      userId: user.id,
+      tokenHash: existingRefreshToken ? hashRefreshToken(existingRefreshToken) : null,
+      now,
+      metadata: { ip, userAgent },
+    })
+    await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: now } })
+    const session = await createStoredRefreshToken(
+      user.id,
+      ip,
+      userAgent,
+      tx,
+      maxAgeMs,
+      undefined,
+      user.role,
+      now,
+    )
     return { kind: 'authenticated' as const, user, session }
   })
 
   if (issued.kind === 'mfa_challenge') return issued
 
-  const accessToken = generateAccessToken(issued.user.id, issued.user.role, issued.session.sessionId)
+  const accessToken = generateAccessToken(
+    issued.user.id,
+    issued.user.role,
+    issued.session.sessionId,
+    undefined,
+    issued.session.expiresAt,
+  )
 
   return {
     kind: 'authenticated',
     accessToken,
     refreshToken: issued.session.refreshToken,
-    refreshTokenMaxAgeMs: issued.session.maxAgeMs,
+    refreshTokenExpiresAt: issued.session.expiresAt,
     user: buildAuthUser({ ...issued.user, status: 'active' }, issued.user.pointAccount?.balance ?? 0),
   }
 }
 
-async function shouldTreatRevokedRefreshTokenAsReplay(
+async function classifyRevokedRefreshToken(
   tx: Prisma.TransactionClient,
-  token: { userId: number; sessionId: string; revokeReason: string | null },
-) {
-  // An explicit reason on the presented row is terminal. For a historical
-  // rotation/null row, inspect the whole family because its active successor
-  // may have been explicitly revoked after the rotation.
-  if (token.revokeReason !== null && token.revokeReason !== 'refresh_rotation') return false
-  return !(await hasExplicitRefreshSessionTermination(tx, token.userId, token.sessionId))
+  token: { userId: number; sessionId: string; revokeReason: string | null; expiresAt: Date },
+  now: Date,
+): Promise<'expired' | 'revoked' | 'replay'> {
+  if (token.expiresAt <= now) return 'expired'
+  // An explicit terminal reason on the presented row is terminal. For a
+  // rotated or legacy-null row, escalate to replay only while the family has
+  // no terminal marker AND still has an unexpired active successor.
+  if (token.revokeReason !== null && token.revokeReason !== 'refresh_rotation') return 'revoked'
+  if (await hasExplicitRefreshSessionTermination(tx, token.userId, token.sessionId)) return 'revoked'
+  if (!(await hasActiveRefreshSessionSuccessor(tx, token.userId, token.sessionId, now))) return 'revoked'
+  return 'replay'
 }
 
 async function handleRefreshReplay(
   tx: Prisma.TransactionClient,
-  token: { userId: number; sessionId: string },
+  token: { id: number; userId: number; sessionId: string },
   metadata: SessionRequestMetadata,
+  now: Date,
 ) {
-  const revokedCount = await revokeAllUserRefreshTokens(token.userId, tx, 'refresh_replay', metadata)
+  // Reuse the same lock-held `now` from replay classification so a successor
+  // that was active at classification time is always marked `refresh_replay`
+  // rather than drifting across an expiry boundary into `expired`.
+  const revokedCount = await revokeAllUserRefreshTokens(token.userId, tx, 'refresh_replay', metadata, now)
+  // Explicitly verify a `refresh_replay` marker exists on this family so the
+  // family revocation reason stays consistent with `session_replay_detected`.
+  const hasReplayMarker = await tx.refreshToken.findFirst({
+    where: {
+      userId: token.userId,
+      sessionId: token.sessionId,
+      revoked: true,
+      revokeReason: 'refresh_replay',
+    },
+    select: { id: true },
+  })
+  if (!hasReplayMarker) {
+    await tx.refreshToken.updateMany({
+      where: { id: token.id },
+      data: { revoked: true, revokedAt: now, revokeReason: 'refresh_replay' },
+    })
+  }
   await recordSecurityEvent({
     type: 'session_replay_detected',
     userId: token.userId,
@@ -155,6 +206,18 @@ async function handleRefreshReplay(
     detail: { action: 'revoke_all_user_sessions', revokedCount },
   }, tx)
   return { kind: 'reused' as const }
+}
+
+async function handleRevokedRefreshToken(
+  tx: Prisma.TransactionClient,
+  token: { id: number; userId: number; sessionId: string; revokeReason: string | null; expiresAt: Date },
+  metadata: SessionRequestMetadata,
+  now: Date,
+) {
+  const classification = await classifyRevokedRefreshToken(tx, token, now)
+  if (classification === 'expired') return { kind: 'expired' as const }
+  if (classification === 'revoked') return { kind: 'revoked' as const }
+  return handleRefreshReplay(tx, token, metadata, now)
 }
 
 export async function refreshAccessToken(
@@ -188,15 +251,23 @@ export async function refreshAccessToken(
       return { kind: 'session_changed' as const }
     }
 
+    const now = new Date()
     if (storedToken.revoked) {
-      if (!(await shouldTreatRevokedRefreshTokenAsReplay(tx, storedToken))) {
-        return { kind: 'revoked' as const }
-      }
-      return handleRefreshReplay(tx, storedToken, metadata)
+      return handleRevokedRefreshToken(tx, storedToken, metadata, now)
     }
 
-    const now = new Date()
-    if (storedToken.expiresAt < now) {
+    const nextExpiry = computeSessionExpiry({
+      role: storedToken.user.role,
+      configuredMaxAgeMs: maxAgeMs,
+      now,
+      existing: {
+        sessionStartedAt: storedToken.sessionStartedAt,
+        expiresAt: storedToken.expiresAt,
+        absoluteExpiresAt: storedToken.absoluteExpiresAt,
+      },
+    })
+
+    if (storedToken.expiresAt <= now || nextExpiry.expired) {
       await tx.refreshToken.updateMany({
         where: { id: storedToken.id, revoked: false },
         data: { revoked: true, revokedAt: now, revokeReason: 'expired' },
@@ -214,13 +285,13 @@ export async function refreshAccessToken(
 
     // CAS remains a defense against direct/out-of-band writers. Normal API
     // paths are already serialized by the user lock, but a failed CAS must
-    // still classify the post-write state instead of assuming replay.
+    // still classify the post-write state with the exact same state machine.
     const revoked = await tx.refreshToken.updateMany({
       where: {
         id: storedToken.id,
         tokenHash,
         revoked: false,
-        expiresAt: { gte: now },
+        expiresAt: { gt: now },
       },
       data: { revoked: true, revokedAt: now, revokeReason: 'refresh_rotation' },
     })
@@ -228,16 +299,17 @@ export async function refreshAccessToken(
     if (revoked.count !== 1) {
       const afterCas = await tx.refreshToken.findUnique({ where: { id: storedToken.id } })
       if (!afterCas) return { kind: 'invalid' as const }
+      const postCasNow = new Date()
       if (afterCas.revoked) {
-        if (!(await shouldTreatRevokedRefreshTokenAsReplay(tx, afterCas))) {
-          return { kind: 'revoked' as const }
-        }
-        return handleRefreshReplay(tx, afterCas, metadata)
+        return handleRevokedRefreshToken(tx, afterCas, metadata, postCasNow)
       }
-      if (afterCas.expiresAt < new Date()) {
+      if (
+        afterCas.expiresAt <= postCasNow
+        || (afterCas.absoluteExpiresAt !== null && afterCas.absoluteExpiresAt <= postCasNow)
+      ) {
         await tx.refreshToken.updateMany({
-          where: { id: afterCas.id, revoked: false, expiresAt: { lt: new Date() } },
-          data: { revoked: true, revokedAt: new Date(), revokeReason: 'expired' },
+          where: { id: afterCas.id, revoked: false },
+          data: { revoked: true, revokedAt: postCasNow, revokeReason: 'expired' },
         })
         return { kind: 'expired' as const }
       }
@@ -253,13 +325,18 @@ export async function refreshAccessToken(
       {
         sessionId: storedToken.sessionId,
         sessionStartedAt: storedToken.sessionStartedAt,
+        expiresAt: storedToken.expiresAt,
+        absoluteExpiresAt: nextExpiry.absoluteExpiresAt,
       },
+      storedToken.user.role,
+      now,
     )
     return {
       kind: 'rotated' as const,
       userId: storedToken.userId,
       role: storedToken.user.role,
       refreshToken: next.refreshToken,
+      refreshTokenExpiresAt: next.expiresAt,
       sessionId: next.sessionId,
       mfaVersion: storedToken.user.role === 'admin' ? storedToken.user.mfaVersion : undefined,
     }
@@ -281,9 +358,10 @@ export async function refreshAccessToken(
       result.role === 'admin' && typeof result.mfaVersion === 'number'
         ? { verified: true, version: result.mfaVersion }
         : undefined,
+      result.refreshTokenExpiresAt,
     ),
     refreshToken: result.refreshToken,
-    refreshTokenMaxAgeMs: maxAgeMs,
+    refreshTokenExpiresAt: result.refreshTokenExpiresAt,
   }
 }
 

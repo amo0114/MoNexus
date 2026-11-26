@@ -9,6 +9,7 @@
 import type { Request, Response, NextFunction } from 'express'
 import rateLimit from 'express-rate-limit'
 import { config } from '../../../config/index.js'
+import { clientIpRateLimitKey } from '../../../lib/clientIp.js'
 import { getSystemConfigValue } from '../../../lib/systemConfig.js'
 import { notFound, tooManyRequests } from '../../../lib/httpError.js'
 import {
@@ -149,7 +150,7 @@ export async function notificationRealtimeStream(
     res.status(401).json({ error: { code: 'UNAUTHORIZED', message: '登录已过期' } })
     return
   }
-  const ip = req.ip ?? '127.0.0.1'
+  const ip = clientIpRateLimitKey(req.ip ?? '127.0.0.1')
   const hub = dependencies.getHub()
 
   // Caps (CHK-SSE-008): user / IP / global — all before headers.

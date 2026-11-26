@@ -5,6 +5,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import { validate } from '../../middlewares/validate.js'
 import { authenticate, requireActiveUser } from '../../middlewares/auth.js'
 import { config } from '../../config/index.js'
+import { clientIpRateLimitKey } from '../../lib/clientIp.js'
 import { refreshTokenCookieName } from '../../lib/cookies.js'
 import {
   registerSchema,
@@ -55,7 +56,7 @@ function createAuthLimiter(flow: 'authentication' | 'authentication-password') {
     try {
       await consumeAbuseBucket(() => abuseLimiter.consume(
         { flow, dimension: 'ip', limit: 30, windowMs: 15 * 60 * 1000 },
-        ipKeyGenerator(req.ip ?? 'unknown'),
+        clientIpRateLimitKey(req.ip),
       ), flow)
       next()
     } catch (error) {

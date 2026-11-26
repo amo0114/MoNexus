@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto'
 import { config } from '../config/index.js'
+import { clientIpRateLimitKey } from './clientIp.js'
 import { runRedisCommandWithTimeout } from './redis.js'
 
 /**
@@ -93,14 +94,13 @@ function normalizeSubject(dimension: AbuseLimiterIdentifierDimension, subject: s
   // 'platform' 是复合标识 `<platform>:<platformId>`（如 `qq:430386193`）。
   // 机器人侧所有请求都来自同一台 AstrBot 主机，IP 维度对它们毫无区分度，
   // 因此刷绑定必须按「哪个平台账号在刷」计数。
-  const normalized = dimension === 'email'
-    ? subject.trim().toLowerCase()
-    : dimension === 'platform'
-      ? subject.trim().toLowerCase()
-      : subject.trim()
+  const trimmed = subject.trim()
   const maxLength = dimension === 'email' ? MAX_EMAIL_LENGTH : MAX_IP_LENGTH
-  if (!normalized || normalized.length > maxLength) unavailable()
-  return normalized
+  if (!trimmed || trimmed.length > maxLength) unavailable()
+  if (dimension === 'email' || dimension === 'platform') {
+    return trimmed.toLowerCase()
+  }
+  return clientIpRateLimitKey(trimmed)
 }
 
 function getHashKey(value: Buffer | undefined): Buffer {

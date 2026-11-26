@@ -3,7 +3,7 @@ import { useAuthStore } from '../stores/authStore'
 import { AuthUser, UserRole } from '../types/merchant'
 import { refreshAccessToken } from './authRefresh'
 import type { LegalRequirement } from './legal'
-import { withAuthCookieMutationLock } from './authCookieLock'
+import { supportsCrossTabAuthLock, withAuthCookieMutationLock } from './authCookieLock'
 import { broadcastAuthSessionChange } from '../auth/sessionStorageSync'
 import {
   beginPendingAuthSessionCommit,
@@ -17,6 +17,7 @@ import {
   matchesAuthSessionContext,
   readAccessTokenIdentity,
   readPersistedAuthIdentity,
+  type AuthSessionContext,
 } from '../auth/sessionContext'
 
 export { refreshAccessToken }
@@ -241,45 +242,48 @@ export async function finalizePendingAuthSession(
   })
 }
 
-export async function logoutCurrentSession(): Promise<void> {
-  const authContext = getAuthSessionContext(useAuthStore.getState())
+function assertTabOwnsSession(authContext: AuthSessionContext): void {
+  const currentContext = getAuthSessionContext(useAuthStore.getState())
+  if (!matchesAuthSessionContext(authContext, currentContext)) {
+    throw new AuthSessionChangedError()
+  }
+
+  const pendingAuthSession = readPendingAuthSessionCommit()
+  if (
+    pendingAuthSession
+    && (
+      pendingAuthSession.userId !== authContext.userId
+      || pendingAuthSession.sessionId !== authContext.sessionId
+    )
+  ) {
+    useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
+    throw new AuthSessionChangedError()
+  }
+
+  let persistedIdentity: ReturnType<typeof readPersistedAuthIdentity> = null
+  try {
+    persistedIdentity = readPersistedAuthIdentity(window.localStorage.getItem('monexus-auth'))
+  } catch {
+    // The server-side expected session check remains authoritative.
+  }
+  if (
+    persistedIdentity
+    && (
+      persistedIdentity.userId !== authContext.userId
+      || persistedIdentity.sessionId !== authContext.sessionId
+    )
+  ) {
+    useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
+    throw new AuthSessionChangedError()
+  }
+}
+
+export async function logoutCurrentSession(expectedContext?: AuthSessionContext): Promise<void> {
+  const authContext = expectedContext ?? getAuthSessionContext(useAuthStore.getState())
   if (!authContext) return
 
   await withAuthCookieMutationLock(async () => {
-    const currentContext = getAuthSessionContext(useAuthStore.getState())
-    if (!matchesAuthSessionContext(authContext, currentContext)) {
-      throw new AuthSessionChangedError()
-    }
-
-    const pendingAuthSession = readPendingAuthSessionCommit()
-    if (
-      pendingAuthSession
-      && (
-        pendingAuthSession.userId !== authContext.userId
-        || pendingAuthSession.sessionId !== authContext.sessionId
-      )
-    ) {
-      useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
-      throw new AuthSessionChangedError()
-    }
-
-    let persistedIdentity: ReturnType<typeof readPersistedAuthIdentity> = null
-    try {
-      persistedIdentity = readPersistedAuthIdentity(window.localStorage.getItem('monexus-auth'))
-    } catch {
-      // The server-side expected session check remains authoritative.
-    }
-    if (
-      persistedIdentity
-      && (
-        persistedIdentity.userId !== authContext.userId
-        || persistedIdentity.sessionId !== authContext.sessionId
-      )
-    ) {
-      useAuthStore.getState().invalidateLocalSessionFromAnotherTab()
-      throw new AuthSessionChangedError()
-    }
-
+    assertTabOwnsSession(authContext)
     await api.post('/auth/logout', { expectedSessionId: authContext.sessionId }, preAuthRequestConfig())
     broadcastAuthSessionChange(null)
   })
@@ -317,13 +321,41 @@ export async function updateMe(body: { nickname?: string; avatarUrl?: string | n
   return data
 }
 
-export async function changePassword(payload: {
-  currentPassword: string
-  newPassword: string
-}): Promise<{ message: string }> {
-  // A wrong current password is a business 401; refreshing and replaying would submit it twice.
-  const { data } = await api.post('/auth/password-change', payload, { skipAuthRefresh: true })
-  return data
+export async function changePassword(
+  payload: {
+    currentPassword: string
+    newPassword: string
+  },
+  expectedContext?: AuthSessionContext,
+): Promise<{ message: string; sessionCleared?: boolean }> {
+  const authContext = expectedContext ?? getAuthSessionContext(useAuthStore.getState())
+  if (!authContext) throw new AuthSessionChangedError()
+
+  return withAuthCookieMutationLock(async () => {
+    assertTabOwnsSession(authContext)
+    // Only request server-side cookie clearing when Web Locks serialize
+    // same-origin tabs; otherwise a late response could clear a newer login.
+    const clearCookie = supportsCrossTabAuthLock()
+    // A wrong current password is a business 401; refreshing and replaying would submit it twice.
+    const { data } = await api.post<{ message: string }>(
+      '/auth/password-change',
+      {
+        currentPassword: payload.currentPassword,
+        newPassword: payload.newPassword,
+        expectedSessionId: authContext.sessionId,
+        clearCookie,
+      },
+      preAuthRequestConfig(),
+    )
+
+    let sessionCleared = false
+    if (matchesAuthSessionContext(authContext, getAuthSessionContext(useAuthStore.getState()))) {
+      useAuthStore.getState().logout(authContext)
+      broadcastAuthSessionChange(null)
+      sessionCleared = true
+    }
+    return { ...data, sessionCleared }
+  })
 }
 
 export function decodeAccessTokenRole(token: string | null): UserRole | null {

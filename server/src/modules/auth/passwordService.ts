@@ -3,14 +3,20 @@ import bcrypt from 'bcryptjs'
 import type { Prisma } from '@prisma/client'
 import { config } from '../../config/index.js'
 import { prisma } from '../../lib/prisma.js'
-import { badRequest, HttpError, notFound, unauthenticated } from '../../lib/httpError.js'
+import { badRequest, HttpError, notFound, sessionChanged, sessionRevoked, unauthenticated } from '../../lib/httpError.js'
 import { consumePasswordReset } from './abusePolicy.js'
 import type { HumanVerificationRequest } from './humanVerification.js'
 import { getMailer } from '../../lib/mailer/index.js'
 import { renderMail } from '../../lib/mailer/templates/index.js'
 import { logger } from '../../lib/logger.js'
 import { passwordPolicyIssue, type PasswordContext } from '../../lib/passwordPolicy.js'
-import { lockUserRefreshSessionMutations, revokeAllUserRefreshTokens } from './sessionService.js'
+import { hashRefreshToken } from './sessionIssuance.js'
+import {
+  activeRefreshTokenWhere,
+  lockUserRefreshSessionMutations,
+  revokeAllUserRefreshTokens,
+  type SessionRequestMetadata,
+} from './sessionService.js'
 import {
   PASSWORD_BCRYPT_ROUNDS,
   normalizeEmailAddress,
@@ -179,7 +185,11 @@ async function applySuccessfulPasswordChange(
   })
 }
 
-export async function resetPasswordWithToken(rawToken: string, newPassword: string) {
+export async function resetPasswordWithToken(
+  rawToken: string,
+  newPassword: string,
+  metadata: SessionRequestMetadata = {},
+) {
   const tokenHash = hashAuthToken(rawToken)
   const stored = await prisma.passwordResetToken.findUnique({
     where: { tokenHash },
@@ -221,23 +231,85 @@ export async function resetPasswordWithToken(rawToken: string, newPassword: stri
     })
     // Revoke every refresh token outstanding for this user — if the
     // password is being reset, assume the prior session is compromised.
-    await revokeAllUserRefreshTokens(stored.userId, tx)
+    await revokeAllUserRefreshTokens(stored.userId, tx, 'revoke_all', metadata)
     return true
   })
 
   if (!consumed) throw badRequest('重置链接已被使用或已过期', 'BAD_REQUEST')
 }
 
-export async function changePassword(userId: number, currentPassword: string, newPassword: string) {
+export type ChangePasswordOptions = SessionRequestMetadata & {
+  currentSessionId?: string
+  expectedSessionId?: string
+  clearCookie?: boolean
+  presentedRefreshToken?: string
+}
+
+export async function changePassword(
+  userId: number,
+  currentPassword: string,
+  newPassword: string,
+  options: ChangePasswordOptions = {},
+): Promise<{ shouldClearCookie: boolean }> {
   const account = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, nickname: true } })
   if (!account) throw notFound('用户不存在')
   assertNewPasswordPolicy(newPassword, account, 'body.newPassword')
   const hashed = await bcrypt.hash(newPassword, PASSWORD_BCRYPT_ROUNDS)
+  const shouldClearCookie = options.clearCookie === true
+
   await prisma.$transaction(async tx => {
     await lockUserRefreshSessionMutations(tx, userId)
     const user = await tx.user.findUnique({ where: { id: userId } })
     if (!user) throw notFound('用户不存在')
     if (await isAccountBanned(user.id, tx)) throw badRequest('账号已被封禁')
+
+    const now = new Date()
+
+    // Re-verify inside the user lock that the caller's Bearer session family is
+    // still active; another tab or device may have replaced/revoked it between
+    // route authentication and acquiring the user lock.
+    if (options.currentSessionId !== undefined) {
+      const activeCurrent = await tx.refreshToken.findFirst({
+        where: {
+          userId,
+          sessionId: options.currentSessionId,
+          ...activeRefreshTokenWhere(now),
+        },
+        select: { id: true },
+      })
+      if (!activeCurrent) {
+        throw (options.expectedSessionId !== undefined || shouldClearCookie)
+          ? sessionChanged()
+          : sessionRevoked()
+      }
+    }
+
+    // When the caller binds the change to a specific session or asks to clear
+    // the shared refresh cookie, verify ownership inside the user lock before
+    // mutating the password so a stale tab never mutates or clears another
+    // session's cookie. Any presented cookie whose ownership cannot be proven
+    // to match the active expectedSessionId is rejected with 409.
+    if (options.expectedSessionId !== undefined && options.currentSessionId !== options.expectedSessionId) {
+      throw sessionChanged()
+    }
+    if (shouldClearCookie) {
+      if (
+        typeof options.expectedSessionId !== 'string'
+        || typeof options.currentSessionId !== 'string'
+        || options.expectedSessionId !== options.currentSessionId
+      ) {
+        throw sessionChanged()
+      }
+      if (typeof options.presentedRefreshToken === 'string' && options.presentedRefreshToken.length > 0) {
+        const cookieToken = await tx.refreshToken.findUnique({
+          where: { tokenHash: hashRefreshToken(options.presentedRefreshToken) },
+          select: { userId: true, sessionId: true },
+        })
+        if (!cookieToken || cookieToken.userId !== userId || cookieToken.sessionId !== options.expectedSessionId) {
+          throw sessionChanged()
+        }
+      }
+    }
 
     const valid = await bcrypt.compare(currentPassword, user.password)
     if (!valid) throw unauthenticated('当前密码错误')
@@ -247,6 +319,11 @@ export async function changePassword(userId: number, currentPassword: string, ne
       where: { userId, used: false },
       data: { used: true },
     })
-    await revokeAllUserRefreshTokens(userId, tx)
+    await revokeAllUserRefreshTokens(userId, tx, 'revoke_all', {
+      ip: options.ip,
+      userAgent: options.userAgent,
+    }, now)
   })
+
+  return { shouldClearCookie }
 }

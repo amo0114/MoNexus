@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../../lib/prisma.js'
 import { badRequest, notFound } from '../../lib/httpError.js'
 import { revokeAllUserRefreshTokens } from '../auth/service.js'
-import { lockUserRefreshSessionMutations } from '../auth/sessionService.js'
+import { lockUserRefreshSessionMutations, type SessionRequestMetadata } from '../auth/sessionService.js'
 
 // ---- Merchant Management ----
 
@@ -44,8 +44,8 @@ export async function getMerchantDetail(id: number) {
   return merchant
 }
 
-export async function approveMerchant(actor: number, id: number) {
-  await decideMerchant(actor, id, 'approve', { reasonCode: 'approved', note: '审核通过' })
+export async function approveMerchant(actor: number, id: number, metadata?: SessionRequestMetadata) {
+  await decideMerchant(actor, id, 'approve', { reasonCode: 'approved', note: '审核通过' }, undefined, metadata)
   return prisma.merchant.findUniqueOrThrow({where:{id}})
 }
 export async function rejectMerchant(actor: number, id: number, reason: string) {
@@ -53,8 +53,8 @@ export async function rejectMerchant(actor: number, id: number, reason: string) 
   await decideMerchant(actor, id, 'reject', { reasonCode: 'rejected', note: reason.trim() })
   return prisma.merchant.findUniqueOrThrow({where:{id}})
 }
-export async function suspendMerchant(actor: number, id: number) {
-  await decideMerchant(actor, id, 'suspend', { reasonCode: 'suspended', note: '管理员停用' })
+export async function suspendMerchant(actor: number, id: number, metadata?: SessionRequestMetadata) {
+  await decideMerchant(actor, id, 'suspend', { reasonCode: 'suspended', note: '管理员停用' }, undefined, metadata)
   return prisma.merchant.findUniqueOrThrow({where:{id}})
 }
 
