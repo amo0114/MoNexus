@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { api } from './helpers.js'
+import { app } from '../app.js'
 import { config } from '../config/index.js'
 
 const mutableConfig = config as typeof config & { metricsToken?: string }
@@ -51,16 +52,19 @@ describe('GET /api/metrics', () => {
 
   it('throttles repeated failed token attempts without counting successful scrapes', async () => {
     mutableConfig.metricsToken = 'test-metrics-token'
-    // Successful scrapes are skipped by the limiter, so they never trip it.
-    for (let i = 0; i < 25; i += 1) {
-      await api.get('/api/metrics').set('Authorization', 'Bearer test-metrics-token').expect(200)
+    // A dedicated client IP keeps this budget apart from the other tests, so
+    // exhausting it cannot 429 them whatever order they run in.
+    const trustProxy = app.get('trust proxy')
+    app.set('trust proxy', true)
+    try {
+      const scrape = (token: string) => api.get('/api/metrics').set('X-Forwarded-For', '203.0.113.77').set('Authorization', `Bearer ${token}`)
+      // Successful scrapes are skipped by the limiter, so they never trip it.
+      for (let i = 0; i < 25; i += 1) await scrape('test-metrics-token').expect(200)
+      const statuses: number[] = []
+      for (let i = 0; i < 21; i += 1) statuses.push((await scrape('wrong')).status)
+      expect(statuses.indexOf(429)).toBe(20)
+    } finally {
+      app.set('trust proxy', trustProxy)
     }
-    const statuses: number[] = []
-    for (let i = 0; i < 21; i += 1) {
-      statuses.push((await api.get('/api/metrics').set('Authorization', 'Bearer wrong')).status)
-    }
-    // The previous test already spent two failures of the 20-attempt budget.
-    expect(statuses.indexOf(429)).toBeGreaterThanOrEqual(18)
-    expect(statuses.at(-1)).toBe(429)
   })
 })
