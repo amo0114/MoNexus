@@ -15,6 +15,12 @@
 # whole workflow, so the required "CI OK" check stays Pending forever and the
 # PR cannot merge — path filtering already makes docs-only PRs finish fast.
 #
+# Tree reuse: the "reuse" job skips every heavy job when a completed,
+# successful same-repository CI run already ran all of them on the exact same
+# git tree (e.g. a release PR and the master push that follows it). Only runs
+# where every heavy job ran and passed upload the ci-verified-tree-<tree>
+# marker (kept 14 days); "CI OK" still reports on every run.
+#
 # Scheduling: the backend suite runs as 6 file-level shards. Main Playwright
 # runs as 2 shards, alongside the notification and catalog-ops suites.
 # Every Playwright job is self-contained (own dependencies, DB service and
@@ -125,13 +131,63 @@ jobs:
               - '.github/actions/setup-ubuntu-mirrors/**'
               - '.github/workflows/ci.yml'
 
+  reuse:
+    # The same tree usually goes through CI up to four times (PR, push to
+    # develop, release PR, push to master). When a completed same-repository
+    # CI run already passed every heavy job on this exact tree, those jobs are
+    # skipped here. Any lookup error leaves verified=false and runs everything.
+    name: Reuse verified tree
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      tree: ${{ steps.lookup.outputs.tree }}
+      verified: ${{ steps.lookup.outputs.verified }}
+      source_run: ${{ steps.lookup.outputs.source_run }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Look up a passing run for this tree
+        id: lookup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          verified=false
+          source_run=''
+          # Fork runs can upload an artifact with any name, so only markers
+          # from runs whose head is this repository count.
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=ci-verified-tree-$tree&per_page=20" \
+            --jq '.artifacts[] | select(.expired | not) | select(.workflow_run.head_repository_id == .workflow_run.repository_id) | .workflow_run.id')" \
+            || { echo "::warning::Verified-tree lookup failed; running the full suite"; runs=''; }
+          for run in $runs; do
+            state="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" --jq '"\(.path) \(.conclusion)"')" || continue
+            if [ "$state" = '.github/workflows/ci.yml success' ]; then
+              verified=true
+              source_run="$run"
+              break
+            fi
+          done
+          echo "verified=$verified" >> "$GITHUB_OUTPUT"
+          echo "source_run=$source_run" >> "$GITHUB_OUTPUT"
+          if [ "$verified" = true ]; then
+            echo "Tree $tree already passed in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$source_run; skipping heavy jobs"
+          else
+            echo "No passing run found for tree $tree; running the selected suite"
+          fi
+
   backend:
     name: Backend build and test
-    needs: changes
+    needs: [changes, reuse]
     # !failure() && !cancelled(): on push the `changes` job is skipped and a
     # plain `needs` would propagate that skip.
     if: >-
-      !failure() && !cancelled() && (
+      !failure() && !cancelled() && needs.reuse.outputs.verified != 'true' && (
         github.event_name == 'push' ||
         needs.changes.outputs.server == 'true'
       )
@@ -213,9 +269,9 @@ jobs:
 
   frontend:
     name: Frontend typecheck and build
-    needs: changes
+    needs: [changes, reuse]
     if: >-
-      !failure() && !cancelled() && (
+      !failure() && !cancelled() && needs.reuse.outputs.verified != 'true' && (
         github.event_name == 'push' ||
         needs.changes.outputs.frontend == 'true'
       )
@@ -269,12 +325,12 @@ jobs:
     # This job owns its dependencies, PostgreSQL service, backend build and
     # frontend dev server. It can start alongside frontend and backend after
     # path filtering; "CI OK" still requires all selected jobs to pass.
-    needs: changes
+    needs: [changes, reuse]
     # Runs on: any push to master/develop; PRs to master that touch code;
     # PRs to develop only when e2e files changed or the `run-e2e` label is
     # set (the post-merge push to develop still runs the full suite).
     if: >-
-      !failure() && !cancelled() && (
+      !failure() && !cancelled() && needs.reuse.outputs.verified != 'true' && (
         github.event_name == 'push' ||
         (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
         needs.changes.outputs.e2e == 'true' ||
@@ -485,9 +541,9 @@ jobs:
     # that job's database, ports, server processes, retries, or artifacts.
     # Like the compatibility job it is self-contained and starts alongside
     # frontend and backend after path filtering.
-    needs: changes
+    needs: [changes, reuse]
     if: >-
-      !failure() && !cancelled() && (
+      !failure() && !cancelled() && needs.reuse.outputs.verified != 'true' && (
         github.event_name == 'push' ||
         (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
         needs.changes.outputs.e2e == 'true' ||
@@ -580,9 +636,9 @@ jobs:
     # risk cross-spec pollution, so they run only via playwright.catalog-ops.config.ts
     # here, mirroring scripts/verify-catalog-ops-e2e.sh 1:1. Like the other Playwright
     # jobs it is self-contained and runs in parallel with frontend and backend.
-    needs: changes
+    needs: [changes, reuse]
     if: >-
-      !failure() && !cancelled() && (
+      !failure() && !cancelled() && needs.reuse.outputs.verified != 'true' && (
         github.event_name == 'push' ||
         (github.base_ref == 'master' && needs.changes.outputs.code == 'true') ||
         needs.changes.outputs.e2e == 'true' ||
@@ -662,9 +718,9 @@ jobs:
 
   external-dependencies:
     name: Real Redis and object storage
-    needs: changes
+    needs: [changes, reuse]
     if: >-
-      !failure() && !cancelled() && (
+      !failure() && !cancelled() && needs.reuse.outputs.verified != 'true' && (
         github.event_name == 'push' || needs.changes.outputs.server == 'true'
       )
     runs-on: ubuntu-24.04
@@ -787,7 +843,7 @@ jobs:
     # upstream job failed — skipped jobs (docs-only or unlabeled-E2E PRs)
     # count as success.
     name: CI OK
-    needs: [changes, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract, architecture, external-dependencies]
+    needs: [changes, reuse, backend, frontend, e2e, notification-realtime-e2e, catalog-ops-e2e, deployment-contract, architecture, external-dependencies]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -795,10 +851,36 @@ jobs:
       - name: Check upstream job results
         env:
           RESULTS: ${{ toJSON(needs) }}
+          REUSED_RUN: ${{ needs.reuse.outputs.source_run }}
         run: |
           echo "$RESULTS"
           if echo "$RESULTS" | grep -Eq '"result": *"(failure|cancelled)"'; then
             echo "::error::At least one upstream job failed or was cancelled"
             exit 1
           fi
+          if [ -n "$REUSED_RUN" ]; then
+            echo "Heavy jobs reused from $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$REUSED_RUN"
+          fi
           echo "All upstream jobs succeeded or were intentionally skipped"
+
+      # Only a run in which every heavy job actually ran and passed may vouch
+      # for this tree; path-filtered or reused runs do not write a marker.
+      - name: Write verified-tree marker
+        id: marker
+        if: >-
+          needs.reuse.outputs.tree != '' &&
+          needs.backend.result == 'success' &&
+          needs.frontend.result == 'success' &&
+          needs.e2e.result == 'success' &&
+          needs.notification-realtime-e2e.result == 'success' &&
+          needs.catalog-ops-e2e.result == 'success' &&
+          needs.external-dependencies.result == 'success'
+        run: echo "$GITHUB_SHA" > verified-tree.txt
+
+      - name: Upload verified-tree marker
+        if: steps.marker.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-verified-tree-${{ needs.reuse.outputs.tree }}
+          path: verified-tree.txt
+          retention-days: 14
